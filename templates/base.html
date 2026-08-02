@@ -17,7 +17,10 @@
                 <div class="flex items-center">
                     <a href="/" class="text-2xl font-bold text-indigo-400 tracking-tight">NZBoxer</a>
                 </div>
-                <div>
+                <div class="flex items-center gap-4">
+                    <a href="/settings" class="text-slate-300 hover:text-white px-3 py-2 rounded-md text-sm font-medium transition-colors">
+                        Settings
+                    </a>
                     <button hx-post="/sync" hx-target="#sync-result" hx-indicator="#sync-spinner" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded text-sm transition-colors flex items-center gap-2">
                         <svg id="sync-spinner" class="animate-spin h-4 w-4 htmx-indicator hidden" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                             <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>

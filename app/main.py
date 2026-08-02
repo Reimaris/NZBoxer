@@ -18,8 +18,8 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from app.config import scoring_config, settings
-from app.db.database import close_db, init_db
+from app.config import reload_settings_from_db, scoring_config, settings
+from app.db.database import async_session_factory, close_db, init_db
 
 # Configure logging
 logging.basicConfig(
@@ -48,6 +48,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Application lifecycle manager."""
     # 1. Initialize Database
     await init_db(settings.database_url)
+
+    # 1.5 Load settings from DB into memory
+    async with async_session_factory() as session:
+        await reload_settings_from_db(session)
 
     # 2. Setup and Start APScheduler
     interval_minutes = scoring_config.get("automation", {}).get("search_interval_minutes", 30)
@@ -178,3 +182,64 @@ async def get_status():
         "scheduler_running": scheduler.running,
         "jobs": [job.id for job in scheduler.get_jobs()]
     }
+
+@app.get("/settings", response_class=HTMLResponse)
+async def get_settings_page(request: Request):
+    """Render the settings form."""
+    from sqlalchemy import select
+
+    from app.db.models import SystemSettings
+    
+    async with async_session_factory() as session:
+        stmt = select(SystemSettings).where(SystemSettings.id == 1)
+        result = await session.execute(stmt)
+        db_settings = result.scalar_one_or_none()
+        
+    return templates.TemplateResponse(
+        request=request, name="settings.html", context={"db_settings": db_settings}
+    )
+
+from fastapi import Form
+
+
+@app.post("/settings", response_class=HTMLResponse)
+async def save_settings(
+    request: Request,
+    simkl_client_id: str = Form(""),
+    simkl_access_token: str = Form(""),
+    tmdb_api_key: str = Form(""),
+    treasure_maps_url: str = Form(""),
+    treasure_maps_api_key: str = Form(""),
+    torbox_api_key: str = Form(""),
+    scoring_config_yaml: str = Form("")
+):
+    """Save settings and update global cache."""
+    import yaml
+    from sqlalchemy import select
+
+    from app.db.models import SystemSettings
+    
+    # Validate YAML before saving
+    try:
+        yaml.safe_load(scoring_config_yaml)
+    except yaml.YAMLError as e:
+        return HTMLResponse(content=f'<div class="p-4 mb-4 bg-red-900 text-red-100 rounded">Invalid YAML: {e}</div>')
+
+    async with async_session_factory() as session:
+        stmt = select(SystemSettings).where(SystemSettings.id == 1)
+        result = await session.execute(stmt)
+        db_settings = result.scalar_one_or_none()
+        
+        if db_settings:
+            db_settings.simkl_client_id = simkl_client_id
+            db_settings.simkl_access_token = simkl_access_token
+            db_settings.tmdb_api_key = tmdb_api_key
+            db_settings.treasure_maps_url = treasure_maps_url
+            db_settings.treasure_maps_api_key = treasure_maps_api_key
+            db_settings.torbox_api_key = torbox_api_key
+            db_settings.scoring_config_yaml = scoring_config_yaml
+            
+            await session.commit()
+            await reload_settings_from_db(session)
+            
+    return HTMLResponse(content='<div class="p-4 mb-4 bg-green-900 text-green-100 rounded">Settings saved successfully!</div>')

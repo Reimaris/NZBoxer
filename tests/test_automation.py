@@ -1,5 +1,5 @@
 """Integration tests for the automation orchestrator."""
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -35,18 +35,18 @@ async def test_evaluate_and_download_new_movie(db_session):
     async def mock_get_url(*args, **kwargs):
         return "http://dl.com/guid-123"
 
-    with patch('app.core.automation.torbox.send_nzb_link', side_effect=mock_send_nzb) as mock_send:
-        with patch('app.core.automation.treasure_maps.get_download_url', side_effect=mock_get_url) as mock_url:
-            await _evaluate_and_download(db_session, search_results, movie=movie)
+    with patch('app.core.automation.torbox.send_nzb_link', side_effect=mock_send_nzb) as mock_send, \
+         patch('app.core.automation.treasure_maps.get_download_url', side_effect=mock_get_url):
+        await _evaluate_and_download(db_session, search_results, movie=movie)
+
+    assert mock_send.call_count == 1
+    assert mock_send.call_args[0][0] == "http://dl.com/guid-123"
             
-            # Should have downloaded
-            mock_send.assert_called_once_with("http://dl.com/guid-123")
-            
-            # Check DB history
-            await db_session.refresh(movie, ["download_history"])
-            assert len(movie.download_history) == 1
-            assert movie.download_history[0].nzb_title == search_results[0]["title"]
-            assert movie.status == MediaStatus.DOWNLOADED
+    # Check DB history
+    await db_session.refresh(movie, ["download_history"])
+    assert len(movie.download_history) == 1
+    assert movie.download_history[0].nzb_title == search_results[0]["title"]
+    assert movie.status == MediaStatus.DOWNLOADED
 
 @pytest.mark.asyncio
 async def test_evaluate_and_download_upgrade(db_session):

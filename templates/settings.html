@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto">
+    <div class="md:flex md:items-center md:justify-between mb-8">
+        <div class="min-w-0 flex-1">
+            <h2 class="text-2xl font-bold leading-7 text-white sm:truncate sm:text-3xl sm:tracking-tight">
+                System Settings
+            </h2>
+        </div>
+    </div>
+
+    <div id="settings-result"></div>
+
+    <form hx-post="/settings" hx-target="#settings-result" class="space-y-8 divide-y divide-slate-700">
+        
+        <!-- API Keys Section -->
+        <div class="grid grid-cols-1 gap-x-8 gap-y-10 md:grid-cols-3">
+            <div>
+                <h2 class="text-base font-semibold leading-7 text-white">API Keys</h2>
+                <p class="mt-1 text-sm leading-6 text-slate-400">Configure your connections to Simkl, TMDB, Treasure Maps, and TorBox.</p>
+            </div>
+
+            <div class="grid max-w-2xl grid-cols-1 gap-x-6 gap-y-8 sm:grid-cols-6 md:col-span-2">
+                
+                <!-- Simkl -->
+                <div class="sm:col-span-3">
+                    <label for="simkl_client_id" class="block text-sm font-medium leading-6 text-white">Simkl Client ID</label>
+                    <div class="mt-2">
+                        <input type="text" name="simkl_client_id" id="simkl_client_id" value="{{ db_settings.simkl_client_id if db_settings else '' }}" class="block w-full rounded-md border-0 bg-slate-800 py-1.5 text-white shadow-sm ring-1 ring-inset ring-slate-700 focus:ring-2 focus:ring-inset focus:ring-indigo-500 sm:text-sm sm:leading-6">
+                    </div>
+                </div>
+
+                <div class="sm:col-span-3">
+                    <label for="simkl_access_token" class="block text-sm font-medium leading-6 text-white">Simkl Access Token</label>
+                    <div class="mt-2">
+                        <input type="text" name="simkl_access_token" id="simkl_access_token" value="{{ db_settings.simkl_access_token if db_settings else '' }}" class="block w-full rounded-md border-0 bg-slate-800 py-1.5 text-white shadow-sm ring-1 ring-inset ring-slate-700 focus:ring-2 focus:ring-inset focus:ring-indigo-500 sm:text-sm sm:leading-6">
+                    </div>
+                </div>
+
+                <!-- TMDB -->
+                <div class="sm:col-span-6">
+                    <label for="tmdb_api_key" class="block text-sm font-medium leading-6 text-white">TMDB API Key (v3 auth)</label>
+                    <div class="mt-2">
+                        <input type="text" name="tmdb_api_key" id="tmdb_api_key" value="{{ db_settings.tmdb_api_key if db_settings else '' }}" class="block w-full rounded-md border-0 bg-slate-800 py-1.5 text-white shadow-sm ring-1 ring-inset ring-slate-700 focus:ring-2 focus:ring-inset focus:ring-indigo-500 sm:text-sm sm:leading-6">
+                    </div>
+                </div>
+
+                <!-- Treasure Maps -->
+                <div class="sm:col-span-4">
+                    <label for="treasure_maps_url" class="block text-sm font-medium leading-6 text-white">Treasure Maps URL (Newznab)</label>
+                    <div class="mt-2">
+                        <input type="url" name="treasure_maps_url" id="treasure_maps_url" value="{{ db_settings.treasure_maps_url if db_settings else '' }}" class="block w-full rounded-md border-0 bg-slate-800 py-1.5 text-white shadow-sm ring-1 ring-inset ring-slate-700 focus:ring-2 focus:ring-inset focus:ring-indigo-500 sm:text-sm sm:leading-6" placeholder="https://api.treasure-maps.com">
+                    </div>
+                </div>
+
+                <div class="sm:col-span-4">
+                    <label for="treasure_maps_api_key" class="block text-sm font-medium leading-6 text-white">Treasure Maps API Key</label>
+                    <div class="mt-2">
+                        <input type="text" name="treasure_maps_api_key" id="treasure_maps_api_key" value="{{ db_settings.treasure_maps_api_key if db_settings else '' }}" class="block w-full rounded-md border-0 bg-slate-800 py-1.5 text-white shadow-sm ring-1 ring-inset ring-slate-700 focus:ring-2 focus:ring-inset focus:ring-indigo-500 sm:text-sm sm:leading-6">
+                    </div>
+                </div>
+
+                <!-- TorBox -->
+                <div class="sm:col-span-4">
+                    <label for="torbox_api_key" class="block text-sm font-medium leading-6 text-white">TorBox API Key</label>
+                    <div class="mt-2">
+                        <input type="text" name="torbox_api_key" id="torbox_api_key" value="{{ db_settings.torbox_api_key if db_settings else '' }}" class="block w-full rounded-md border-0 bg-slate-800 py-1.5 text-white shadow-sm ring-1 ring-inset ring-slate-700 focus:ring-2 focus:ring-inset focus:ring-indigo-500 sm:text-sm sm:leading-6">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Scoring Matrix Section -->
+        <div class="grid grid-cols-1 gap-x-8 gap-y-10 md:grid-cols-3 pt-8">
+            <div>
+                <h2 class="text-base font-semibold leading-7 text-white">Scoring Configuration</h2>
+                <p class="mt-1 text-sm leading-6 text-slate-400">Edit the raw YAML matrix to adjust the scoring engine and automation intervals.</p>
+            </div>
+
+            <div class="grid max-w-2xl grid-cols-1 gap-x-6 gap-y-8 sm:grid-cols-6 md:col-span-2">
+                <div class="col-span-full">
+                    <label for="scoring_config_yaml" class="block text-sm font-medium leading-6 text-white">config.yaml content</label>
+                    <div class="mt-2">
+                        <textarea id="scoring_config_yaml" name="scoring_config_yaml" rows="20" class="block w-full rounded-md border-0 bg-slate-800 py-1.5 text-white shadow-sm ring-1 ring-inset ring-slate-700 focus:ring-2 focus:ring-inset focus:ring-indigo-500 sm:text-sm sm:leading-6 font-mono">{{ db_settings.scoring_config_yaml if db_settings else '' }}</textarea>
+                    </div>
+                    <p class="mt-3 text-sm leading-6 text-slate-400">Ensure the YAML remains valid. Invalid YAML will be rejected.</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="mt-6 flex items-center justify-end gap-x-6 pt-8">
+            <a href="/" class="text-sm font-semibold leading-6 text-white">Cancel</a>
+            <button type="submit" class="rounded-md bg-indigo-500 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500">Save Settings</button>
+        </div>
+    </form>
+</div>
+{% endblock %}

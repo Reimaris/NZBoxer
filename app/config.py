@@ -18,10 +18,15 @@ import logging
 import os
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
+
+# We need a forward reference for typing if needed, but we'll import locally in the function
+from typing import TYPE_CHECKING, Any
 
 import yaml
 from dotenv import load_dotenv
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 # Load .env file from the project root (one level up from app/)
 _ROOT = Path(__file__).parent.parent
@@ -94,3 +99,55 @@ def get_scoring_config() -> dict[str, Any]:
 # Convenience module-level singletons
 settings: Settings = get_settings()
 scoring_config: dict[str, Any] = get_scoring_config()
+
+
+async def reload_settings_from_db(session: AsyncSession) -> None:
+    """Load settings from the SQLite database and update the global cache.
+    
+    If the SystemSettings row does not exist, it will be created using the
+    current in-memory defaults (which were loaded from .env/config.yaml).
+    """
+    from sqlalchemy import select
+
+    from app.db.models import SystemSettings
+
+    stmt = select(SystemSettings).where(SystemSettings.id == 1)
+    result = await session.execute(stmt)
+    db_settings = result.scalar_one_or_none()
+
+    if not db_settings:
+        # Create default from current environment/yaml if not in DB
+        with (_ROOT / "config.yaml").open("r", encoding="utf-8") as f:
+            raw_yaml = f.read()
+
+        db_settings = SystemSettings(
+            id=1,
+            simkl_client_id=settings.simkl_client_id,
+            simkl_access_token=settings.simkl_access_token,
+            tmdb_api_key=settings.tmdb_api_key,
+            treasure_maps_url=settings.treasure_maps_url,
+            treasure_maps_api_key=settings.treasure_maps_api_key,
+            torbox_api_key=settings.torbox_api_key,
+            scoring_config_yaml=raw_yaml
+        )
+        session.add(db_settings)
+        await session.commit()
+        await session.refresh(db_settings)
+
+    # Overwrite global settings cache
+    settings.simkl_client_id = db_settings.simkl_client_id
+    settings.simkl_access_token = db_settings.simkl_access_token
+    settings.tmdb_api_key = db_settings.tmdb_api_key
+    settings.treasure_maps_url = db_settings.treasure_maps_url
+    settings.treasure_maps_api_key = db_settings.treasure_maps_api_key
+    settings.torbox_api_key = db_settings.torbox_api_key
+
+    # Overwrite scoring config cache
+    try:
+        new_scoring_config = yaml.safe_load(db_settings.scoring_config_yaml)
+        scoring_config.clear()
+        if new_scoring_config:
+            scoring_config.update(new_scoring_config)
+    except yaml.YAMLError as e:
+        logger.error("Failed to parse scoring_config_yaml from DB: %s", e)
+

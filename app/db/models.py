@@ -77,6 +77,38 @@ class Base(DeclarativeBase):
 
 
 # ---------------------------------------------------------------------------
+# SystemSettings Model
+# ---------------------------------------------------------------------------
+
+class SystemSettings(Base):
+    """Stores the global application configuration in the database.
+    
+    This is designed as a single-row table (id=1) so users can edit API keys
+    and the scoring matrix dynamically via the UI without editing text files.
+    """
+    
+    __tablename__ = "system_settings"
+    
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    
+    simkl_client_id: Mapped[str] = mapped_column(String(200), default="")
+    simkl_access_token: Mapped[str] = mapped_column(String(200), default="")
+    tmdb_api_key: Mapped[str] = mapped_column(String(200), default="")
+    treasure_maps_url: Mapped[str] = mapped_column(String(500), default="")
+    treasure_maps_api_key: Mapped[str] = mapped_column(String(200), default="")
+    torbox_api_key: Mapped[str] = mapped_column(String(200), default="")
+    
+    scoring_config_yaml: Mapped[str] = mapped_column(Text, default="")
+    
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+
+# ---------------------------------------------------------------------------
 # MediaItem Model
 # ---------------------------------------------------------------------------
 
