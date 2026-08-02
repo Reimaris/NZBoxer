@@ -18,7 +18,14 @@ from app.config import scoring_config
 from app.core.parser import parse_release_name
 from app.core.scorer import score_release
 from app.db.database import async_session_factory
-from app.db.models import DownloadHistory, MediaItem, MediaStatus, MediaType, Season, SeasonStatus
+from app.db.models import (
+    DownloadHistory,
+    MediaItem,
+    MediaStatus,
+    MediaType,
+    Season,
+    SeasonStatus,
+)
 from app.services import simkl, tmdb, torbox, treasure_maps
 
 logger = logging.getLogger(__name__)
@@ -37,7 +44,7 @@ async def sync_simkl_watchlist() -> None:
             
             await session.commit()
             logger.info("Simkl watchlist sync completed successfully.")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error("Simkl sync failed: %s", e)
             await session.rollback()
 
@@ -139,12 +146,12 @@ async def run_automation_cycle() -> None:
             await _process_movie(session, movie)
 
         # 3. Process Shows (Seasons)
-        stmt = select(Season).join(MediaItem).where(
+        season_stmt = select(Season).join(MediaItem).where(
             Season.monitored == True,
             Season.status.in_([SeasonStatus.SEARCHING, SeasonStatus.PENDING])
         ).options(selectinload(Season.media_item), selectinload(Season.download_history))
         
-        seasons_result = await session.execute(stmt)
+        seasons_result = await session.execute(season_stmt)
         for season in seasons_result.scalars():
             await _process_season(session, season)
 
@@ -168,13 +175,16 @@ async def _process_season(session: AsyncSession, season: Season) -> None:
 
 
 async def _evaluate_and_download(session: AsyncSession, search_results: list[dict[str, Any]], movie: MediaItem | None = None, season: Season | None = None) -> None:
+    best_candidate = None
+    highest_score: float = -9999.0
+
     if not search_results:
         return
 
-    best_candidate = None
-    highest_score = -9999.0
-
-    target = movie if movie else season
+    if movie is None and season is None:
+        raise ValueError("Must provide either a movie or a season")
+    
+    target: Any = movie if movie else season
     current_best_score = target.best_score or 0.0
     
     cutoffs = scoring_config.get("cutoffs", {})
@@ -211,24 +221,21 @@ async def _evaluate_and_download(session: AsyncSession, search_results: list[dic
 
     # Check if we should download
     should_download = False
-    is_upgrade = False
 
-    if target.best_score is None:
+    if target.best_score is None or highest_score >= (current_best_score + upgrade_threshold):
         should_download = True
-    elif highest_score >= (current_best_score + upgrade_threshold):
-        should_download = True
-        is_upgrade = True
 
     if should_download and scoring_config.get("automation", {}).get("auto_send_to_torbox", True):
+        title_for_log = target.media_item.title if isinstance(target, Season) else target.title
         logger.info("Downloading %s (Score: %s) for %s", 
-                    best_candidate["title"], highest_score, target.media_item.title if season else target.title)
+                    best_candidate["title"], highest_score, title_for_log)
         
         download_url = await treasure_maps.get_download_url(best_candidate["guid"])
         torbox_hash = await torbox.send_nzb_link(download_url)
         
         if torbox_hash:
             history = DownloadHistory(
-                media_item_id=movie.id if movie else season.media_item_id,
+                media_item_id=movie.id if movie else target.media_item_id,
                 season_id=season.id if season else None,
                 nzb_title=best_candidate["title"],
                 nzb_guid=best_candidate["guid"],
@@ -245,9 +252,9 @@ async def _evaluate_and_download(session: AsyncSession, search_results: list[dic
             )
             session.add(history)
             
-            target.status = MediaStatus.DOWNLOADED if movie else SeasonStatus.DOWNLOADED
+            target.status = MediaStatus.DOWNLOADED if isinstance(target, MediaItem) else SeasonStatus.DOWNLOADED
             if highest_score >= target_score:
-                target.status = MediaStatus.COMPLETED if movie else SeasonStatus.COMPLETED
-                logger.info("Target score reached for %s. Automation complete.", target.title if movie else target.media_item.title)
+                target.status = MediaStatus.COMPLETED if isinstance(target, MediaItem) else SeasonStatus.COMPLETED
+                logger.info("Target score reached for %s. Automation complete.", title_for_log)
                 
             await session.commit()

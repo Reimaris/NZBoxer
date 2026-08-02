@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import enum
 from datetime import datetime
-from typing import List, Optional
 
 from sqlalchemy import (
     Boolean,
@@ -27,7 +26,6 @@ from sqlalchemy import (
     func,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
-
 
 # ---------------------------------------------------------------------------
 # Enumerations
@@ -76,7 +74,6 @@ class SeasonStatus(str, enum.Enum):
 class Base(DeclarativeBase):
     """Shared base class for all ORM models."""
 
-    pass
 
 
 # ---------------------------------------------------------------------------
@@ -119,12 +116,12 @@ class MediaItem(Base):
 
     # --- External identifiers ---
     simkl_id: Mapped[int] = mapped_column(Integer, unique=True, nullable=False, index=True)
-    imdb_id: Mapped[Optional[str]] = mapped_column(String(20), nullable=True, index=True)
-    tmdb_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
+    imdb_id: Mapped[str | None] = mapped_column(String(20), nullable=True, index=True)
+    tmdb_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
 
     # --- Metadata ---
     title: Mapped[str] = mapped_column(String(500), nullable=False)
-    year: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    year: Mapped[int | None] = mapped_column(Integer, nullable=True)
     media_type: Mapped[MediaType] = mapped_column(
         Enum(MediaType, name="media_type_enum"), nullable=False
     )
@@ -135,15 +132,15 @@ class MediaItem(Base):
         server_default=MediaStatus.PENDING.value,
         index=True,
     )
-    poster_url: Mapped[Optional[str]] = mapped_column(String(1000), nullable=True)
-    overview: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    runtime_minutes: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    poster_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    overview: Mapped[str | None] = mapped_column(Text, nullable=True)
+    runtime_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     # --- Release date (movies: digital release; shows: first air date) ---
-    release_date: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    release_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # --- Sync tracking ---
-    simkl_synced_at: Mapped[Optional[datetime]] = mapped_column(
+    simkl_synced_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
 
@@ -159,13 +156,13 @@ class MediaItem(Base):
     )
 
     # --- Relationships ---
-    seasons: Mapped[List["Season"]] = relationship(
+    seasons: Mapped[list[Season]] = relationship(
         "Season",
         back_populates="media_item",
         cascade="all, delete-orphan",
         lazy="selectin",
     )
-    download_history: Mapped[List["DownloadHistory"]] = relationship(
+    download_history: Mapped[list[DownloadHistory]] = relationship(
         "DownloadHistory",
         back_populates="media_item",
         cascade="all, delete-orphan",
@@ -186,7 +183,7 @@ class MediaItem(Base):
         return datetime.now(tz=self.release_date.tzinfo) >= self.release_date
 
     @property
-    def best_score(self) -> Optional[float]:
+    def best_score(self) -> float | None:
         """Returns the highest score from all associated download history entries."""
         if not self.download_history:
             return None
@@ -241,8 +238,8 @@ class Season(Base):
         default=SeasonStatus.PENDING,
         server_default=SeasonStatus.PENDING.value,
     )
-    episode_count: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    air_date: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    episode_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    air_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # --- Audit timestamps ---
     created_at: Mapped[datetime] = mapped_column(
@@ -256,8 +253,8 @@ class Season(Base):
     )
 
     # --- Relationships ---
-    media_item: Mapped["MediaItem"] = relationship("MediaItem", back_populates="seasons")
-    download_history: Mapped[List["DownloadHistory"]] = relationship(
+    media_item: Mapped[MediaItem] = relationship("MediaItem", back_populates="seasons")
+    download_history: Mapped[list[DownloadHistory]] = relationship(
         "DownloadHistory",
         back_populates="season",
         cascade="all, delete-orphan",
@@ -271,7 +268,7 @@ class Season(Base):
         )
 
     @property
-    def best_score(self) -> Optional[float]:
+    def best_score(self) -> float | None:
         """Returns the highest score from all download history entries for this season."""
         if not self.download_history:
             return None
@@ -320,29 +317,29 @@ class DownloadHistory(Base):
     media_item_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("media_items.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    season_id: Mapped[Optional[int]] = mapped_column(
+    season_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("seasons.id", ondelete="CASCADE"), nullable=True, index=True
     )
 
     # --- NZB metadata ---
     nzb_title: Mapped[str] = mapped_column(String(1000), nullable=False)
-    nzb_guid: Mapped[Optional[str]] = mapped_column(String(500), nullable=True, index=True)
+    nzb_guid: Mapped[str | None] = mapped_column(String(500), nullable=True, index=True)
 
     # --- Scoring at time of download ---
-    score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    score: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     # --- Parsed release attributes (denormalized for quick display/comparison) ---
-    size_bytes: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    resolution: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
-    video_codec: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
-    audio_codec: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
-    source: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
-    release_group: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
-    bitrate_mbps: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    size_bytes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    resolution: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    video_codec: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    audio_codec: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    source: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    release_group: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    bitrate_mbps: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     # --- TorBox tracking ---
-    torbox_hash: Mapped[Optional[str]] = mapped_column(String(200), nullable=True, index=True)
-    torbox_sent_at: Mapped[Optional[datetime]] = mapped_column(
+    torbox_hash: Mapped[str | None] = mapped_column(String(200), nullable=True, index=True)
+    torbox_sent_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
 
@@ -352,10 +349,10 @@ class DownloadHistory(Base):
     )
 
     # --- Relationships ---
-    media_item: Mapped["MediaItem"] = relationship(
+    media_item: Mapped[MediaItem] = relationship(
         "MediaItem", back_populates="download_history"
     )
-    season: Mapped[Optional["Season"]] = relationship(
+    season: Mapped[Season | None] = relationship(
         "Season", back_populates="download_history"
     )
 

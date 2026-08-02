@@ -23,7 +23,7 @@ Usage (in background jobs / non-FastAPI contexts)::
 from __future__ import annotations
 
 import logging
-from typing import AsyncGenerator
+from collections.abc import AsyncGenerator
 
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
@@ -145,4 +145,4 @@ async def get_session() -> AsyncGenerator[AsyncSession, None]:
 
 
 # Convenience alias for use in background jobs (non-FastAPI context)
-async_session_factory = lambda: get_session_factory()()  # noqa: E731
+async_session_factory = lambda: get_session_factory()()

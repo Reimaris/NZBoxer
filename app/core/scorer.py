@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Any
 
 from app.config import scoring_config
 from app.core.parser import ParsedRelease

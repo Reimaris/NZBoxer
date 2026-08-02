@@ -33,8 +33,7 @@ async def search_movie(imdb_id: str) -> list[dict[str, Any]]:
         return []
 
     # Newznab usually expects the IMDB ID without the 'tt' prefix
-    if imdb_id.startswith("tt"):
-        imdb_id = imdb_id[2:]
+    imdb_id = imdb_id.removeprefix("tt")
 
     url = f"{settings.treasure_maps_url}/api"
     params = {
@@ -99,7 +98,7 @@ async def _execute_search(url: str, params: dict[str, Any]) -> list[dict[str, An
         except httpx.HTTPError as e:
             logger.error("Indexer search failed: %s", e)
             return []
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error("Failed to parse indexer results: %s", e)
             return []
 

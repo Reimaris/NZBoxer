@@ -19,7 +19,6 @@ SIMKL_BASE_URL = "https://api.simkl.com"
 
 class SimklError(Exception):
     """Base exception for Simkl API errors."""
-    pass
 
 
 async def get_watchlist(media_type: str = "movies") -> list[dict[str, Any]]:

@@ -8,9 +8,9 @@ and API endpoints for HTMX interactions.
 from __future__ import annotations
 
 import logging
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import AsyncGenerator
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import FastAPI, Request
@@ -93,10 +93,11 @@ app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 @app.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request):
     """Main dashboard displaying the watchlist."""
-    from app.db.database import async_session_factory
     from sqlalchemy import select
-    from app.db.models import MediaItem
     from sqlalchemy.orm import selectinload
+
+    from app.db.database import async_session_factory
+    from app.db.models import MediaItem
     
     async with async_session_factory() as session:
         stmt = select(MediaItem).order_by(MediaItem.created_at.desc()).options(selectinload(MediaItem.seasons))
@@ -104,14 +105,15 @@ async def dashboard(request: Request):
         items = result.scalars().all()
 
     return templates.TemplateResponse(
-        "dashboard.html", {"request": request, "items": items}
+        request=request, name="dashboard.html", context={"items": items}
     )
 
 @app.get("/items/{item_id}", response_class=HTMLResponse)
 async def item_detail(request: Request, item_id: int):
     """Detailed view for a single item (shows seasons if it's a series)."""
-    from app.db.database import async_session_factory
     from sqlalchemy.orm import selectinload
+
+    from app.db.database import async_session_factory
     from app.db.models import MediaItem
     
     async with async_session_factory() as session:
@@ -121,14 +123,15 @@ async def item_detail(request: Request, item_id: int):
         return HTMLResponse(content="Item not found", status_code=404)
 
     return templates.TemplateResponse(
-        "item_detail.html", {"request": request, "item": item}
+        request=request, name="item_detail.html", context={"item": item}
     )
 
 @app.post("/items/{item_id}/seasons/{season_number}/toggle")
 async def toggle_season(item_id: int, season_number: int):
     """HTMX endpoint to toggle season monitoring status."""
-    from app.db.database import async_session_factory
     from sqlalchemy import select
+
+    from app.db.database import async_session_factory
     from app.db.models import Season
     
     async with async_session_factory() as session:

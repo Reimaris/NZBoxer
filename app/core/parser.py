@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Any
 
 from guessit import guessit
 
@@ -41,7 +40,7 @@ def parse_release_name(release_name: str) -> ParsedRelease:
     """
     try:
         guess = guessit(release_name)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.error("Guessit failed to parse '%s': %s", release_name, e)
         guess = {}
 
