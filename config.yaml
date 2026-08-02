@@ -1,0 +1,175 @@
+# NZBoxer — Scoring & Automation Configuration
+# Edit this file to customize scoring, filters, and automation behavior.
+# No code changes required — the app reads this file on startup.
+
+# ---------------------------------------------------------------------------
+# API CONFIGURATION
+# API keys are loaded from .env; only non-secret settings belong here.
+# ---------------------------------------------------------------------------
+api:
+  torbox_base_url: "https://api.torbox.app/v1"
+  simkl_base_url: "https://api.simkl.com"
+  tmdb_base_url: "https://api.themoviedb.org/3"
+  # treasure_maps_url and treasure_maps_api_key come from .env
+
+# ---------------------------------------------------------------------------
+# AUTOMATION
+# ---------------------------------------------------------------------------
+automation:
+  # How often the background search job runs (in minutes)
+  search_interval_minutes: 30
+
+  # Minimum age of a Simkl item (days) before searching begins.
+  # Set to 0 to search immediately.
+  min_age_days: 1
+
+  # If true, automatically send best-scoring NZB to TorBox.
+  # If false, results are saved for manual review only.
+  auto_send_to_torbox: true
+
+  # For series: automatically set new seasons to monitored when found.
+  auto_monitor_new_seasons: false
+
+# ---------------------------------------------------------------------------
+# SCORING ENGINE
+# Each component contributes points to the total release score.
+# Higher = better. Negative values are penalties.
+# ---------------------------------------------------------------------------
+scoring:
+
+  # --- Resolution ---
+  resolution:
+    "2160p":  2000
+    "1080p":  1000
+    "720p":    500
+    "576p":    200
+    "480p":    100
+    default:     0
+
+  # --- Video Codec ---
+  video_codec:
+    "h265":   300
+    "hevc":   300
+    "h264":   200
+    "avc":    200
+    "xvid":    50
+    "divx":    50
+    default:    0
+
+  # --- Source / Origin ---
+  source:
+    "blu-ray":     500
+    "bluray":      500
+    "uhd bluray":  600
+    "uhd-bluray":  600
+    "web":         350
+    "web-dl":      400
+    "webrip":      250
+    "hdtv":        150
+    "pdtv":        100
+    "dvd":          80
+    default:          0
+
+  # --- Audio Codec ---
+  audio_codec:
+    "truehd atmos":  300
+    "atmos":         280
+    "dts-hd ma":     250
+    "dts-hd":        220
+    "dts":           150
+    "dolby digital plus": 180
+    "eac3":          180
+    "aac":           100
+    "mp3":            50
+    default:           0
+
+  # --- Audio Channels ---
+  audio_channels:
+    "7.1":  50
+    "5.1":  30
+    "2.0":  10
+    default: 0
+
+  # --- Bitrate Scoring (Mbit/s) ---
+  # Calculated from file size / runtime. Scored in brackets.
+  bitrate_brackets:
+    - min_mbps: 80
+      score: 300
+    - min_mbps: 50
+      score: 200
+    - min_mbps: 25
+      score: 100
+    - min_mbps: 10
+      score: 50
+    - min_mbps: 0
+      score: 0
+
+  # --- HDR Flags ---
+  hdr:
+    "hdr10plus":  200
+    "hdr10":      150
+    "hdr":        120
+    "dovi":       200
+    "dolby vision": 200
+    default:         0
+
+# ---------------------------------------------------------------------------
+# QUALITY CUTOFFS
+# When a release reaches or exceeds this score, searching stops for that item.
+# ---------------------------------------------------------------------------
+cutoffs:
+  # Score at which we consider the movie/episode "done" — no more upgrades.
+  target_score: 2500
+
+  # Minimum score DELTA required to trigger an upgrade download.
+  # Example: only upgrade if new score > current score + 300
+  upgrade_threshold: 300
+
+# ---------------------------------------------------------------------------
+# RELEASE GROUP FILTERS
+# ---------------------------------------------------------------------------
+release_groups:
+  # Groups always preferred (score bonus applied)
+  whitelist:
+    - "FraMeSToR"
+    - "SPARKS"
+    - "YIFY"
+    - "FLUX"
+    - "CMRG"
+    - "MZABI"
+    - "BHDStudio"
+    - "playBD"
+    - "DON"
+    - "EVO"
+  whitelist_bonus: 200
+
+  # Groups always rejected — NZB is discarded regardless of score.
+  blacklist:
+    - "RARBG-spam"
+    - "scene-nuke"
+    - "ETRG"
+    - "FUM"
+
+# ---------------------------------------------------------------------------
+# FILE SIZE / RUNTIME FILTERS (Anti-Spam)
+# ---------------------------------------------------------------------------
+filters:
+  # Minimum file size in MB. Releases smaller than this are rejected.
+  min_size_mb: 100
+
+  # Maximum file size in GB. Releases larger than this are rejected.
+  max_size_gb: 80
+
+  # Minimum NZB age in days before considering (avoids incomplete posts).
+  min_nzb_age_days: 0
+
+# ---------------------------------------------------------------------------
+# PREFERRED LANGUAGES
+# guessit language codes. Releases with these languages get a bonus.
+# ---------------------------------------------------------------------------
+language_preferences:
+  preferred:
+    - "en"
+  preferred_bonus: 100
+  # Releases without any of the preferred languages get this penalty.
+  missing_penalty: 0
