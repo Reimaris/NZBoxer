@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  nzboxer:
+    build: .
+    container_name: nzboxer
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=sqlite+aiosqlite:////app/data/nzboxer.db
+    env_file:
+      - .env
+    volumes:
+      - nzboxer_data:/app/data
+      - ./config.yaml:/app/config.yaml:ro
+    restart: unless-stopped
+
+volumes:
+  nzboxer_data:

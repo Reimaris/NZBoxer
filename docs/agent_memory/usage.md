@@ -40,11 +40,23 @@ This file provides comprehensive instructions on how to use NZBoxer.
 
 ## Running the Application
 
+### Option A: Docker (Recommended)
+
+Run the application using Docker Compose. The database will be stored persistently in a volume map to `/app/data`.
+
+```bash
+docker-compose up -d
+```
+
+### Option B: Local Python Environment
+
 The application is run via `uvicorn`. The APScheduler is integrated into the FastAPI lifespan and will automatically trigger the automation cycles.
 
 ```bash
 uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
+
+---
 
 - **Dashboard:** Navigate to `http://localhost:8000/` to see the current status of all movies and shows.
 - **Background Tasks:** Simkl syncing happens every hour, and automation (searching/upgrading) happens every 15 minutes.

@@ -51,11 +51,23 @@ nano config.yaml
 
 ### 3. Running the Service
 
-Start the FastAPI application. The background scheduler will automatically start syncing and searching.
+#### Option A: Docker (Recommended)
+
+The easiest way to run NZBoxer is via Docker Compose, which automatically manages dependencies and mounts a persistent SQLite database volume.
+
+```bash
+docker-compose up -d
+```
+
+#### Option B: Local Python Environment
+
+Start the FastAPI application natively. The background scheduler will automatically start syncing and searching.
 
 ```bash
 uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
+
+### 4. Access the Dashboard
 
 Access the dashboard at: [http://localhost:8000/](http://localhost:8000/)
 
