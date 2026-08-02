@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="flex justify-between items-end mb-8">
+    <h1 class="text-3xl font-bold text-slate-100">Watchlist</h1>
+</div>
+
+<div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
+    {% for item in items %}
+    <a href="/items/{{ item.id }}" class="bg-slate-800 rounded-lg overflow-hidden shadow-lg border border-slate-700 hover:border-indigo-500 transition-colors flex flex-col h-full group relative">
+        <div class="relative pb-[150%] overflow-hidden">
+            {% if item.poster_url %}
+            <img src="{{ item.poster_url }}" alt="{{ item.title }}" class="absolute inset-0 w-full h-full object-cover transition-transform duration-300 group-hover:scale-105">
+            {% else %}
+            <div class="absolute inset-0 w-full h-full bg-slate-700 flex flex-col items-center justify-center text-slate-400 p-4 text-center">
+                <svg class="w-12 h-12 mb-2 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                <span>No Poster</span>
+            </div>
+            {% endif %}
+            
+            <div class="absolute top-2 right-2 flex flex-col gap-1">
+                {% if item.status == 'downloaded' %}
+                <span class="bg-emerald-500 text-white px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider shadow-sm">Downloaded</span>
+                {% elif item.status == 'completed' %}
+                <span class="bg-purple-500 text-white px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider shadow-sm">Completed</span>
+                {% elif item.status == 'searching' %}
+                <span class="bg-blue-500 text-white px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider shadow-sm">Searching</span>
+                {% elif item.status == 'pending' %}
+                <span class="bg-slate-600 text-white px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider shadow-sm">Pending</span>
+                {% else %}
+                <span class="bg-slate-700 text-white px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider shadow-sm">{{ item.status }}</span>
+                {% endif %}
+            </div>
+            
+            <!-- Gradient overlay for text readability -->
+            <div class="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-slate-900 to-transparent pointer-events-none"></div>
+            
+            <div class="absolute inset-x-0 bottom-0 p-3">
+                <h3 class="font-bold text-white text-sm leading-tight drop-shadow-md">{{ item.title }}</h3>
+                <div class="flex items-center text-xs text-slate-300 mt-1 drop-shadow-md">
+                    <span>{{ item.year or 'N/A' }}</span>
+                    <span class="mx-1">•</span>
+                    <span class="capitalize">{{ item.media_type }}</span>
+                </div>
+            </div>
+        </div>
+    </a>
+    {% else %}
+    <div class="col-span-full bg-slate-800/50 rounded-lg border border-slate-700/50 p-12 text-center text-slate-400">
+        <svg class="mx-auto h-12 w-12 text-slate-500 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 4v16M17 4v16M3 8h4m10 0h4M3 12h18M3 16h4m10 0h4M4 20h16a1 1 0 001-1V5a1 1 0 00-1-1H4a1 1 0 00-1 1v14a1 1 0 001 1z" />
+        </svg>
+        <h3 class="text-lg font-medium text-slate-300 mb-1">Watchlist Empty</h3>
+        <p class="max-w-sm mx-auto">Click "Sync Simkl" in the top right to fetch your Plan to Watch items.</p>
+    </div>
+    {% endfor %}
+</div>
+{% endblock %}

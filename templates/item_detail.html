@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="mb-4">
+    <a href="/" class="text-indigo-400 hover:text-indigo-300 text-sm flex items-center gap-1 transition-colors w-max">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
+        Back to Dashboard
+    </a>
+</div>
+
+<div class="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden shadow-xl">
+    <div class="flex flex-col md:flex-row">
+        <!-- Poster Column -->
+        <div class="md:w-1/4 shrink-0 bg-slate-900 border-r border-slate-700/50 p-6 md:p-8 flex flex-col items-center">
+            {% if item.poster_url %}
+            <img src="{{ item.poster_url }}" alt="{{ item.title }}" class="w-full max-w-[240px] rounded-lg shadow-lg border border-slate-700">
+            {% else %}
+            <div class="w-full max-w-[240px] aspect-[2/3] bg-slate-800 rounded-lg flex items-center justify-center text-slate-500 border border-slate-700 shadow-lg">No Image</div>
+            {% endif %}
+            
+            <div class="mt-6 w-full max-w-[240px]">
+                <div class="text-xs text-slate-400 uppercase tracking-wider font-semibold mb-1">Status</div>
+                <div class="flex items-center gap-2 mb-4">
+                    <span class="relative flex h-3 w-3">
+                      {% if item.status == 'searching' %}
+                      <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                      <span class="relative inline-flex rounded-full h-3 w-3 bg-blue-500"></span>
+                      {% elif item.status == 'completed' %}
+                      <span class="relative inline-flex rounded-full h-3 w-3 bg-purple-500"></span>
+                      {% elif item.status == 'downloaded' %}
+                      <span class="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
+                      {% else %}
+                      <span class="relative inline-flex rounded-full h-3 w-3 bg-slate-500"></span>
+                      {% endif %}
+                    </span>
+                    <span class="text-slate-200 capitalize font-medium">{{ item.status }}</span>
+                </div>
+                
+                <div class="grid grid-cols-2 gap-4 pt-4 border-t border-slate-700">
+                    <div>
+                        <div class="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Type</div>
+                        <div class="text-slate-300 text-sm capitalize">{{ item.media_type }}</div>
+                    </div>
+                    <div>
+                        <div class="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Year</div>
+                        <div class="text-slate-300 text-sm">{{ item.year or 'N/A' }}</div>
+                    </div>
+                    <div>
+                        <div class="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Best Score</div>
+                        <div class="text-indigo-400 text-sm font-mono font-bold">{{ item.best_score|default(0, true)|int }}</div>
+                    </div>
+                    <div>
+                        <div class="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">TMDB ID</div>
+                        <div class="text-slate-300 text-sm">{{ item.tmdb_id or 'N/A' }}</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Details Column -->
+        <div class="p-6 md:p-8 flex-1">
+            <h1 class="text-3xl font-bold text-slate-100 mb-2">{{ item.title }}</h1>
+            <p class="text-slate-400 text-sm mb-8 leading-relaxed max-w-3xl">{{ item.overview or "No overview available for this item." }}</p>
+
+            {% if item.media_type == 'show' and item.seasons %}
+            <h2 class="text-xl font-semibold mb-4 text-slate-200 flex items-center gap-2">
+                <svg class="w-5 h-5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 002-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
+                Season Management
+            </h2>
+            <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 mb-8">
+                {% for season in item.seasons|sort(attribute='season_number') %}
+                <div class="flex justify-between items-center p-3 bg-slate-900/50 rounded-lg border border-slate-700 hover:border-slate-600 transition-colors">
+                    <div>
+                        <div class="font-medium text-slate-300">Season {{ season.season_number }}</div>
+                        <div class="text-xs text-slate-500 capitalize">{{ season.status }}</div>
+                    </div>
+                    <button hx-post="/items/{{ item.id }}/seasons/{{ season.season_number }}/toggle" hx-swap="outerHTML" 
+                            class="{% if season.monitored %}bg-emerald-600 hover:bg-emerald-700{% else %}bg-slate-700 hover:bg-slate-600{% endif %} text-white px-3 py-1.5 rounded-md text-xs font-semibold uppercase tracking-wider transition-colors shadow-sm">
+                        {% if season.monitored %}Monitored{% else %}Ignored{% endif %}
+                    </button>
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+            
+            {% if item.download_history %}
+            <h2 class="text-xl font-semibold mb-4 text-slate-200 flex items-center gap-2 mt-8">
+                <svg class="w-5 h-5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                Download History
+            </h2>
+            <div class="space-y-3">
+                {% for hist in item.download_history|sort(attribute='created_at', reverse=True) %}
+                <div class="p-4 bg-slate-900/80 rounded-lg border border-slate-700">
+                    <div class="font-mono text-sm text-indigo-300 mb-2 break-all line-clamp-2 hover:line-clamp-none transition-all cursor-pointer" title="{{ hist.nzb_title }}">{{ hist.nzb_title }}</div>
+                    <div class="flex flex-wrap gap-2 items-center">
+                        <span class="bg-indigo-600/20 text-indigo-400 border border-indigo-500/30 px-2 py-0.5 rounded text-xs font-mono font-bold">{{ hist.score|int }} pts</span>
+                        {% if hist.resolution %}<span class="bg-slate-800 text-slate-300 border border-slate-700 px-2 py-0.5 rounded text-xs">{{ hist.resolution }}</span>{% endif %}
+                        {% if hist.video_codec %}<span class="bg-slate-800 text-slate-300 border border-slate-700 px-2 py-0.5 rounded text-xs">{{ hist.video_codec }}</span>{% endif %}
+                        {% if hist.audio_codec %}<span class="bg-slate-800 text-slate-300 border border-slate-700 px-2 py-0.5 rounded text-xs">{{ hist.audio_codec }}</span>{% endif %}
+                        {% if hist.release_group %}<span class="bg-slate-800 text-slate-300 border border-slate-700 px-2 py-0.5 rounded text-xs">{{ hist.release_group }}</span>{% endif %}
+                        <span class="text-slate-500 text-xs ml-auto">{{ hist.created_at.strftime('%Y-%m-%d %H:%M') if hist.created_at else '' }}</span>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="mt-8 p-6 bg-slate-900/50 rounded-lg border border-slate-700/50 text-center text-slate-400 text-sm">
+                No downloads recorded for this item yet.
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}
