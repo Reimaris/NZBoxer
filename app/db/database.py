@@ -199,9 +199,10 @@ async def init_db(database_url: str) -> None:
             except Exception:
                 pass
                 
+            # Ensure provider_profiles.auto_monitor_next_season exists (model compat col, value unused)
             try:
                 await session.execute(
-                    __import__("sqlalchemy").text("ALTER TABLE provider_profiles DROP COLUMN auto_monitor_next_season;")
+                    __import__("sqlalchemy").text("ALTER TABLE provider_profiles ADD COLUMN auto_monitor_next_season BOOLEAN NOT NULL DEFAULT 0;")
                 )
             except Exception:
                 pass
