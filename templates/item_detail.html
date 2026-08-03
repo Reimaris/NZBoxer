@@ -34,6 +34,9 @@
                       {% endif %}
                     </span>
                     <span class="text-slate-200 capitalize font-medium">{{ item.status }}</span>
+                    {% if item.fail_count > 0 %}
+                    <span class="bg-red-900 text-white text-[10px] font-bold px-2 py-0.5 rounded ml-2 border border-red-700 cursor-help" title="{{ item.last_error }}">❌ {{ item.fail_count }} Fails</span>
+                    {% endif %}
                 </div>
                 
                 <div class="grid grid-cols-2 gap-4 pt-4 border-t border-slate-700">
@@ -70,8 +73,12 @@
             <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 mb-8">
                 {% for season in item.seasons|sort(attribute='season_number') %}
                 <div class="flex justify-between items-center p-3 bg-slate-900/50 rounded-lg border border-slate-700 hover:border-slate-600 transition-colors">
-                    <div>
-                        <div class="font-medium text-slate-300">Season {{ season.season_number }}</div>
+                        <div class="font-medium text-slate-300 flex items-center gap-2">
+                            Season {{ season.season_number }}
+                            {% if season.fail_count > 0 %}
+                            <span class="bg-red-900 text-white text-[10px] font-bold px-1.5 py-0.5 rounded border border-red-700 cursor-help" title="{{ season.last_error }}">❌ {{ season.fail_count }}</span>
+                            {% endif %}
+                        </div>
                         <div class="text-xs text-slate-500 capitalize">{{ season.status }}</div>
                     </div>
                     <button hx-post="/items/{{ item.id }}/seasons/{{ season.season_number }}/toggle" hx-swap="outerHTML" 

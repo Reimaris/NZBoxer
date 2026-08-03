@@ -92,6 +92,8 @@
                                         <option value="{{ n.id }}" {% if m_prof and m_prof.notification_channel_id == n.id %}selected{% endif %}>{{ n.name }}</option>
                                         {% endfor %}
                                     </select>
+                                    <label class="block text-[#d1d5db] text-xs uppercase tracking-wider mb-1">Suchlauf Intervall-Multiplikator</label>
+                                    <input type="number" name="movies_cycle_skip" value="{{ m_prof.search_cycle_skip if m_prof and m_prof.search_cycle_skip else '1' }}" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors text-sm font-mono" placeholder="1 = Jeder Lauf, 4 = Jeder 4. Lauf">
                                 </div>
                                 <div class="grid grid-cols-2 gap-4">
                                     <div>
@@ -155,6 +157,8 @@
                                         <option value="{{ n.id }}" {% if s_prof and s_prof.notification_channel_id == n.id %}selected{% endif %}>{{ n.name }}</option>
                                         {% endfor %}
                                     </select>
+                                    <label class="block text-[#d1d5db] text-xs uppercase tracking-wider mb-1 mt-4">Suchlauf Intervall-Multiplikator</label>
+                                    <input type="number" name="series_cycle_skip" value="{{ s_prof.search_cycle_skip if s_prof and s_prof.search_cycle_skip else '1' }}" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors text-sm font-mono" placeholder="1 = Jeder Lauf, 4 = Jeder 4. Lauf">
                                 </div>
                                 <div class="grid grid-cols-2 gap-4">
                                     <div>
@@ -179,6 +183,10 @@
                                     <label class="flex items-center gap-2 text-[#d1d5db] text-sm cursor-pointer mt-2">
                                         <input type="checkbox" name="series_prefer_seasons" value="True" {% if s_prof and s_prof.prefer_complete_seasons %}checked{% endif %} class="w-4 h-4 accent-[#d40060]">
                                         <span>Komplette Staffeln bevorzugen (Sucht zuerst nach SXX, bei Misserfolg nach einzelnen Episoden)</span>
+                                    </label>
+                                    <label class="flex items-center gap-2 text-[#d1d5db] text-sm cursor-pointer mt-4">
+                                        <input type="checkbox" name="series_auto_monitor" value="True" {% if s_prof and s_prof.auto_monitor_next_season %}checked{% endif %} class="w-4 h-4 accent-[#d40060]">
+                                        <span>Automatisch nächste Staffel aktivieren, wenn die aktuelle abgeschlossen ist</span>
                                     </label>
                                 </div>
                             </div>
@@ -223,6 +231,8 @@
                                         <option value="{{ n.id }}" {% if a_prof and a_prof.notification_channel_id == n.id %}selected{% endif %}>{{ n.name }}</option>
                                         {% endfor %}
                                     </select>
+                                    <label class="block text-[#d1d5db] text-xs uppercase tracking-wider mb-1 mt-4">Suchlauf Intervall-Multiplikator</label>
+                                    <input type="number" name="anime_cycle_skip" value="{{ a_prof.search_cycle_skip if a_prof and a_prof.search_cycle_skip else '1' }}" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors text-sm font-mono" placeholder="1 = Jeder Lauf, 4 = Jeder 4. Lauf">
                                 </div>
                                 <div class="grid grid-cols-2 gap-4">
                                     <div>
@@ -247,6 +257,10 @@
                                     <label class="flex items-center gap-2 text-[#d1d5db] text-sm cursor-pointer mt-2">
                                         <input type="checkbox" name="anime_prefer_seasons" value="True" {% if a_prof and a_prof.prefer_complete_seasons %}checked{% endif %} class="w-4 h-4 accent-[#d40060]">
                                         <span>Komplette Staffeln bevorzugen (Sucht zuerst nach SXX, bei Misserfolg nach einzelnen Episoden)</span>
+                                    </label>
+                                    <label class="flex items-center gap-2 text-[#d1d5db] text-sm cursor-pointer mt-4">
+                                        <input type="checkbox" name="anime_auto_monitor" value="True" {% if a_prof and a_prof.auto_monitor_next_season %}checked{% endif %} class="w-4 h-4 accent-[#d40060]">
+                                        <span>Automatisch nächste Staffel aktivieren, wenn die aktuelle abgeschlossen ist</span>
                                     </label>
                                 </div>
                             </div>

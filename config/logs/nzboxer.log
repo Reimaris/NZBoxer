@@ -1,0 +1,7 @@
+2026-08-03 11:27:50 - [INFO] - app.db.database - Initializing database: sqlite+aiosqlite:////app/config/nzboxer.db
+2026-08-03 11:28:10 - [INFO] - app.db.database - Initializing database: sqlite+aiosqlite:///./config/nzboxer.db
+2026-08-03 11:28:10 - [INFO] - app.db.database - Database initialized successfully.
+2026-08-03 11:28:10 - [INFO] - apscheduler.scheduler - Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2026-08-03 11:28:10 - [INFO] - apscheduler.scheduler - Added job "lifespan.<locals>._orchestrator_job" to job store "default"
+2026-08-03 11:28:10 - [INFO] - apscheduler.scheduler - Scheduler started
+2026-08-03 11:28:10 - [INFO] - app.main - APScheduler started. Base interval set to 15 minutes.

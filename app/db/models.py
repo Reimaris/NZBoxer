@@ -187,7 +187,8 @@ class ProviderProfile(Base):
     # Download & Automation Settings
     path: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     mode: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    interval_min: Mapped[int | None] = mapped_column(Integer, default=30)
+    search_cycle_skip: Mapped[int] = mapped_column(Integer, default=1)
+    current_cycle_count: Mapped[int] = mapped_column(Integer, default=0)
     resolution: Mapped[str | None] = mapped_column(String(100), default="Automatisch / beste")
     languages_csv: Mapped[str | None] = mapped_column(String(500), nullable=True)
     min_mb: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -197,6 +198,7 @@ class ProviderProfile(Base):
     # Series specific
     prefer_complete_seasons: Mapped[bool] = mapped_column(Boolean, default=False)
     episode_block_size: Mapped[int] = mapped_column(Integer, default=0)
+    auto_monitor_next_season: Mapped[bool] = mapped_column(Boolean, default=False)
     
     # Notification link
     notification_channel_id: Mapped[int | None] = mapped_column(
@@ -284,6 +286,10 @@ class MediaItem(Base):
     simkl_synced_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+
+    # --- Error Tracking ---
+    fail_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # --- Audit timestamps ---
     created_at: Mapped[datetime] = mapped_column(
@@ -383,6 +389,10 @@ class Season(Base):
     episode_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     air_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
+    # --- Error Tracking ---
+    fail_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     # --- Audit timestamps ---
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
@@ -462,6 +472,10 @@ class Episode(Base):
         server_default=EpisodeStatus.PENDING.value,
     )
     air_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # --- Error Tracking ---
+    fail_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()

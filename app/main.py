@@ -56,6 +56,11 @@ root_logger.addHandler(file_handler)
 
 logger = logging.getLogger(__name__)
 
+# Silence noisy loggers
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
+logging.getLogger("apscheduler").setLevel(logging.WARNING)
+
 # Scheduler instance
 scheduler = AsyncIOScheduler()
 
@@ -69,6 +74,24 @@ templates_dir.mkdir(exist_ok=True)
 static_dir.mkdir(exist_ok=True)
 
 templates = Jinja2Templates(directory=str(templates_dir))
+
+def relative_date(dt: datetime | None) -> str:
+    if not dt:
+        return ""
+    if dt.tzinfo is None:
+        now = datetime.now()
+    else:
+        now = datetime.now(dt.tzinfo)
+    delta = dt - now
+    days = delta.days
+    if days > 0:
+        return f"in {days} Tagen"
+    elif days < 0:
+        return f"vor {abs(days)} Tagen"
+    else:
+        return "Heute"
+
+templates.env.filters["relative_date"] = relative_date
 
 
 @asynccontextmanager
@@ -374,7 +397,7 @@ async def export_settings():
                     "media_type": prof.media_type,
                     "path": prof.path,
                     "mode": prof.mode,
-                    "interval_min": prof.interval_min,
+                    "search_cycle_skip": prof.search_cycle_skip,
                     "resolution": prof.resolution,
                     "languages_csv": prof.languages_csv,
                     "min_mb": prof.min_mb,
@@ -494,7 +517,7 @@ async def save_provider(
     # Profile settings
     enable_movies: bool = Form(False),
     movies_mode: str = Form(""),
-    movies_interval: int = Form(30),
+    movies_cycle_skip: int = Form(1),
     movies_resolution: str = Form(""),
     movies_langs: str = Form(""),
     movies_min_mb: int = Form(None),
@@ -504,7 +527,7 @@ async def save_provider(
     
     enable_series: bool = Form(False),
     series_mode: str = Form(""),
-    series_interval: int = Form(30),
+    series_cycle_skip: int = Form(1),
     series_resolution: str = Form(""),
     series_langs: str = Form(""),
     series_min_mb: int = Form(None),
@@ -512,11 +535,12 @@ async def save_provider(
     series_reject: str = Form(""),
     series_prefer_seasons: bool = Form(False),
     series_block_size: int = Form(5),
+    series_auto_monitor: bool = Form(False),
     series_notification: int = Form(None),
     
     enable_anime: bool = Form(False),
     anime_mode: str = Form(""),
-    anime_interval: int = Form(30),
+    anime_cycle_skip: int = Form(1),
     anime_resolution: str = Form(""),
     anime_langs: str = Form(""),
     anime_min_mb: int = Form(None),
@@ -524,6 +548,7 @@ async def save_provider(
     anime_reject: str = Form(""),
     anime_prefer_seasons: bool = Form(False),
     anime_block_size: int = Form(5),
+    anime_auto_monitor: bool = Form(False),
     anime_notification: int = Form(None)
 ):
     from sqlalchemy.orm import selectinload
@@ -559,7 +584,7 @@ async def save_provider(
                 provider_id=provider.id,
                 media_type="movies",
                 mode=movies_mode,
-                interval_min=movies_interval,
+                search_cycle_skip=movies_cycle_skip,
                 resolution=movies_resolution,
                 languages_csv=movies_langs,
                 min_mb=movies_min_mb,
@@ -574,7 +599,7 @@ async def save_provider(
                 provider_id=provider.id,
                 media_type="shows",
                 mode=series_mode,
-                interval_min=series_interval,
+                search_cycle_skip=series_cycle_skip,
                 resolution=series_resolution,
                 languages_csv=series_langs,
                 min_mb=series_min_mb,
@@ -582,6 +607,7 @@ async def save_provider(
                 reject_words_csv=series_reject,
                 prefer_complete_seasons=series_prefer_seasons,
                 episode_block_size=series_block_size,
+                auto_monitor_next_season=series_auto_monitor,
                 notification_channel_id=series_notification if series_notification else None
             )
             session.add(ps)
@@ -591,7 +617,7 @@ async def save_provider(
                 provider_id=provider.id,
                 media_type="anime",
                 mode=anime_mode,
-                interval_min=anime_interval,
+                search_cycle_skip=anime_cycle_skip,
                 resolution=anime_resolution,
                 languages_csv=anime_langs,
                 min_mb=anime_min_mb,
@@ -599,6 +625,7 @@ async def save_provider(
                 reject_words_csv=anime_reject,
                 prefer_complete_seasons=anime_prefer_seasons,
                 episode_block_size=anime_block_size,
+                auto_monitor_next_season=anime_auto_monitor,
                 notification_channel_id=anime_notification if anime_notification else None
             )
             session.add(pa)

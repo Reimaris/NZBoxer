@@ -182,6 +182,30 @@ async def init_db(database_url: str) -> None:
             except Exception:
                 pass
 
+            try:
+                await session.execute(
+                    __import__("sqlalchemy").text("ALTER TABLE provider_profiles ADD COLUMN search_cycle_skip INTEGER NOT NULL DEFAULT 1;")
+                )
+                await session.execute(
+                    __import__("sqlalchemy").text("ALTER TABLE provider_profiles ADD COLUMN current_cycle_count INTEGER NOT NULL DEFAULT 0;")
+                )
+                await session.execute(
+                    __import__("sqlalchemy").text("ALTER TABLE provider_profiles ADD COLUMN auto_monitor_next_season BOOLEAN NOT NULL DEFAULT 0;")
+                )
+            except Exception:
+                pass
+
+            for tbl in ["media_items", "seasons", "episodes"]:
+                try:
+                    await session.execute(
+                        __import__("sqlalchemy").text(f"ALTER TABLE {tbl} ADD COLUMN fail_count INTEGER NOT NULL DEFAULT 0;")
+                    )
+                    await session.execute(
+                        __import__("sqlalchemy").text(f"ALTER TABLE {tbl} ADD COLUMN last_error TEXT;")
+                    )
+                except Exception:
+                    pass
+
             await session.execute(
                 __import__("sqlalchemy").text("PRAGMA journal_mode=WAL;")
             )
