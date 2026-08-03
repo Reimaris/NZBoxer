@@ -91,9 +91,8 @@ async def get_watchlist(media_type: str, client_id: str, access_token: str) -> l
                 data = response.json()
                 items = data.get(media_type, [])
                 all_items.extend(items)
-            except httpx.HTTPError as e:
+            except Exception as e:
                 logger.error("Simkl API error for %s %s: %s", media_type, status, e)
-                if status == statuses[-1] and not all_items:
-                    raise SimklError(f"Simkl sync failed: {e}") from e
+                raise SimklError(f"Simkl sync failed for {media_type} {status}: {e}") from e
 
     return all_items
