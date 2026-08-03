@@ -902,7 +902,7 @@ async def manual_sync(background_tasks: BackgroundTasks):
 async def manual_search(background_tasks: BackgroundTasks):
     """Trigger manual full automation cycle."""
     from app.core.automation import run_automation_cycle
-    background_tasks.add_task(run_automation_cycle)
+    background_tasks.add_task(run_automation_cycle, force=True)
     
     return HTMLResponse(content='''
         <div class="bg-[#d40060] text-white px-4 py-3 rounded-md shadow-lg border border-[#a3004a] flex items-center justify-between animate-fade-in-down mb-4">

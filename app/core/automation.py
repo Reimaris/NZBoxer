@@ -192,9 +192,16 @@ async def _sync_season_episodes(session: AsyncSession, season: Season) -> None:
             session.add(new_ep)
 
 
-async def run_automation_cycle() -> None:
-    """Background job that searches for NZBs and pushes them to TorBox."""
-    logger.info("🔄 Starte Automatisierungs-Zyklus...")
+async def run_automation_cycle(force: bool = False) -> None:
+    """Background job that searches for NZBs and pushes them to TorBox.
+    
+    Args:
+        force: If True, bypass the per-provider cycle skip throttle and always run.
+    """
+    if force:
+        logger.info("🔍 Manueller Suchlauf gestartet (Intervall-Multiplikator wird ignoriert)...")
+    else:
+        logger.info("🔄 Starte Automatisierungs-Zyklus...")
     
     # 1. Sync watchlist first
     await sync_simkl_watchlist()
@@ -240,13 +247,21 @@ async def run_automation_cycle() -> None:
         active_shows_provider_ids = []
         
         for p in profiles:
-            p.current_cycle_count += 1
-            if p.current_cycle_count >= p.search_cycle_skip:
+            if force:
+                # Manual run: reset counter and always run all providers
                 p.current_cycle_count = 0
                 if p.media_type == "movies":
                     active_movie_provider_ids.append(p.provider_id)
                 elif p.media_type == "shows":
                     active_shows_provider_ids.append(p.provider_id)
+            else:
+                p.current_cycle_count += 1
+                if p.current_cycle_count >= p.search_cycle_skip:
+                    p.current_cycle_count = 0
+                    if p.media_type == "movies":
+                        active_movie_provider_ids.append(p.provider_id)
+                    elif p.media_type == "shows":
+                        active_shows_provider_ids.append(p.provider_id)
                     
         await session.commit()
 
