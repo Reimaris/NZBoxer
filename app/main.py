@@ -328,6 +328,49 @@ async def retry_item(item_id: int):
     return HTMLResponse(content="Error", status_code=400)
 
 
+@app.post("/items/{item_id}/confirm_grab")
+async def confirm_grab_item(item_id: int):
+    """Manually confirm and send the pending_candidate_json to TorBox for a MANUAL_GRAB item."""
+    from app.db.database import async_session_factory
+    from app.db.models import DownloadHistory, MediaItem, MediaStatus
+    from app.services import torbox, treasure_maps
+
+    async with async_session_factory() as session:
+        item = await session.get(MediaItem, item_id)
+        if not item or not item.pending_candidate_json:
+            return HTMLResponse(content='<div class="text-red-500">Kein ausstehender Kandidat gefunden.</div>', status_code=400)
+
+        candidate = item.pending_candidate_json
+        guid = candidate.get("guid", "")
+        title = candidate.get("title", "")
+
+        download_url = await treasure_maps.get_download_url(guid)
+        torbox_result = await torbox.send_nzb_link(download_url)
+
+        if not torbox_result or (not torbox_result.get("hash") and not torbox_result.get("id")):
+            return HTMLResponse(content='<div class="text-red-500">Fehler beim Senden an TorBox.</div>', status_code=500)
+
+        history = DownloadHistory(
+            media_item_id=item.id,
+            nzb_title=title,
+            nzb_guid=guid,
+            score=candidate.get("score"),
+            size_bytes=candidate.get("size_bytes"),
+            resolution=candidate.get("resolution"),
+            source=candidate.get("source"),
+            release_group=candidate.get("release_group"),
+            torbox_hash=str(torbox_result.get("hash")) if torbox_result.get("hash") else None,
+            torbox_id=str(torbox_result.get("id")) if torbox_result.get("id") else None,
+        )
+        session.add(history)
+        item.status = MediaStatus.DOWNLOADING
+        item.pending_candidate_json = None
+        item.fail_count = 0
+        item.last_error = None
+        await session.commit()
+        return HTMLResponse(content='<script>window.location.reload();</script>')
+
+
 @app.post("/items/{item_id}/ignore")
 async def ignore_item(item_id: int):
     """Set an item's status to IGNORED so automation skips it."""

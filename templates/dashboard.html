@@ -185,6 +185,11 @@
                                 <span class="bg-emerald-600 text-white text-[11px] font-bold px-2 py-1 rounded uppercase tracking-wider shadow-sm">DONE</span>
                             {% elif item.status.value == 'downloading' %}
                                 <span class="bg-orange-600 animate-pulse text-white text-[11px] font-bold px-2 py-1 rounded uppercase tracking-wider shadow-sm">DOWNLOADING</span>
+                            {% elif item.status.value == 'manual_grab' %}
+                                <span class="bg-yellow-500 text-black text-[11px] font-bold px-2 py-1 rounded uppercase tracking-wider shadow-sm animate-pulse">⚠ MANUAL</span>
+                                {% if item.pending_candidate_json %}
+                                <span class="text-[10px] text-yellow-300 font-mono max-w-[200px] truncate" title="{{ item.pending_candidate_json.title }}">{{ item.pending_candidate_json.title[:40] }}…</span>
+                                {% endif %}
                             {% elif item.status.value == 'searching' or item.status.value == 'pending' %}
                                 <span class="bg-[#d40060] text-white text-[11px] font-bold px-2 py-1 rounded uppercase tracking-wider shadow-sm">WANTED</span>
                             {% else %}
@@ -201,6 +206,12 @@
                     </td>
                     <td class="px-6 py-4 text-right">
                         <div class="flex justify-end gap-2">
+                            {% if item.status.value == 'manual_grab' and item.pending_candidate_json %}
+                                <button hx-post="/items/{{ item.id }}/confirm_grab" hx-swap="none" title="Kandidat an TorBox senden (Manuell bestätigen)" class="bg-yellow-500 hover:bg-yellow-400 text-black font-bold transition-colors p-1.5 rounded flex items-center gap-1 text-xs px-2">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg>
+                                    Senden
+                                </button>
+                            {% endif %}
 
                             <button hx-post="/items/{{ item.id }}/ignore" title="Ignorieren" class="bg-transparent border border-gray-600 text-gray-500 hover:bg-gray-600 hover:text-white transition-colors p-1.5 rounded">
                                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"></path></svg>

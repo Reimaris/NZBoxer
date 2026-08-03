@@ -45,6 +45,7 @@ def score_release(
     expected_alt_title: str | None = None,
     expected_season: int | None = None,
     expected_episode: int | None = None,
+    required_language: str | None = None,
 ) -> ScoreResult:
     """Calculate the score for a parsed release."""
     # 1. Apply hard filters (size, age, blacklist)
@@ -103,6 +104,32 @@ def score_release(
             # We are looking for a season pack. Reject if it's a single episode!
             if parsed.episode is not None:
                 return ScoreResult(0, True, f"Rejected single episode {parsed.episode} for season pack search", None)
+
+    # Language check — normalize common variants then hard-reject if language not present
+    if required_language and parsed.languages:
+        _LANG_MAP = {
+            # English
+            "english": "en", "eng": "en",
+            # German
+            "german": "de", "deutsch": "de", "ger": "de",
+            # French — VOSTFR (French audio or subtitles) counts as French
+            "french": "fr", "fra": "fr", "fre": "fr", "vostfr": "fr", "vf": "fr",
+            # Japanese
+            "japanese": "ja", "jpn": "ja",
+            # Spanish
+            "spanish": "es", "spa": "es",
+            # Italian
+            "italian": "it", "ita": "it",
+            # Portuguese
+            "portuguese": "pt", "por": "pt",
+            # Russian
+            "russian": "ru", "rus": "ru",
+        }
+        req_lang = required_language.strip().lower()
+        req_lang = _LANG_MAP.get(req_lang, req_lang)  # normalize
+        release_langs = {_LANG_MAP.get(l.lower(), l.lower()) for l in parsed.languages}
+        if req_lang not in release_langs:
+            return ScoreResult(0, True, f"Language mismatch: release has {list(parsed.languages)} but required '{required_language}'", None)
 
     groups_cfg = scoring_config.get("release_groups", {})
     blacklist = [g.lower() for g in groups_cfg.get("blacklist", [])]

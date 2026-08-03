@@ -238,6 +238,16 @@ async def init_db(database_url: str) -> None:
             await session.execute(
                 __import__("sqlalchemy").text("PRAGMA foreign_keys=ON;")
             )
+
+            # pending_candidate_json for manual grab fallback
+            for tbl in ["media_items", "seasons", "episodes"]:
+                try:
+                    await session.execute(
+                        __import__("sqlalchemy").text(f"ALTER TABLE {tbl} ADD COLUMN pending_candidate_json JSON;")
+                    )
+                except Exception:
+                    pass
+
             await session.commit()
 
     logger.info("Database initialized successfully.")

@@ -103,6 +103,10 @@ async def search_show(tvdb_id: str | int | None = None, tmdb_id: int | None = No
 async def _execute_search(url: str, params: dict[str, Any]) -> list[dict[str, Any]]:
     """Execute the search and parse the JSON results."""
     await _limiter.wait()
+    # Log the search URL for debugging (hide API key)
+    log_params = {k: v for k, v in params.items() if k != "apikey"}
+    request_for_log = httpx.Request("GET", url, params=log_params)
+    logger.info("    🔍 Indexer-Suche: %s", str(request_for_log.url))
     async with httpx.AsyncClient(timeout=30.0) as client:
         try:
             response = await client.get(url, params=params)

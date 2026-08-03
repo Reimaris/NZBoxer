@@ -52,6 +52,7 @@ class MediaStatus(str, enum.Enum):
     COMPLETED = "completed"
     CANCELED = "canceled"
     IGNORED = "ignored"
+    MANUAL_GRAB = "manual_grab"  # Title-search fallback found a candidate, needs user approval
 
 
 class SeasonStatus(str, enum.Enum):
@@ -64,6 +65,7 @@ class SeasonStatus(str, enum.Enum):
     COMPLETED = "completed"
     CANCELED = "canceled"
     IGNORED = "ignored"
+    MANUAL_GRAB = "manual_grab"  # Title-search fallback found a candidate, needs user approval
 
 
 class EpisodeStatus(str, enum.Enum):
@@ -76,6 +78,7 @@ class EpisodeStatus(str, enum.Enum):
     COMPLETED = "completed"
     CANCELED = "canceled"
     IGNORED = "ignored"
+    MANUAL_GRAB = "manual_grab"  # Title-search fallback found a candidate, needs user approval
 
 
 # ---------------------------------------------------------------------------
@@ -299,6 +302,9 @@ class MediaItem(Base):
     fail_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # --- Manual Grab (title-search fallback) ---
+    pending_candidate_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
     # --- Audit timestamps ---
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
@@ -401,6 +407,9 @@ class Season(Base):
     fail_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # --- Manual Grab (title-search fallback) ---
+    pending_candidate_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
     # --- Audit timestamps ---
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
@@ -484,6 +493,9 @@ class Episode(Base):
     # --- Error Tracking ---
     fail_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # --- Manual Grab (title-search fallback) ---
+    pending_candidate_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()

@@ -87,6 +87,23 @@
                                     <input type="text" name="movies_reject" value="{{ m_prof.reject_words_csv if m_prof and m_prof.reject_words_csv is not none else 'cam,ts,subbed' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors text-sm" placeholder="z.B. cam,ts,subbed">
                                 </div>
                                 <div class="flex flex-col">
+                                    <label class="h-6 text-[#d1d5db] text-xs uppercase tracking-wider mb-1 flex items-center gap-1">
+                                        Pflichtsprache
+                                        <span class="text-[#d40060] cursor-help" title="Nur Releases mit dieser Sprache werden akzeptiert. Releases ohne erkennbare Sprache werden nicht abgelehnt.">ℹ</span>
+                                    </label>
+                                    <select name="movies_langs" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors text-sm">
+                                        <option value="">Keine Einschränkung</option>
+                                        <option value="de" {% if m_prof and m_prof.languages_csv == 'de' %}selected{% endif %}>Deutsch (de)</option>
+                                        <option value="en" {% if m_prof and m_prof.languages_csv == 'en' %}selected{% endif %}>Englisch (en)</option>
+                                        <option value="fr" {% if m_prof and m_prof.languages_csv == 'fr' %}selected{% endif %}>Französisch (fr)</option>
+                                        <option value="ja" {% if m_prof and m_prof.languages_csv == 'ja' %}selected{% endif %}>Japanisch (ja)</option>
+                                        <option value="es" {% if m_prof and m_prof.languages_csv == 'es' %}selected{% endif %}>Spanisch (es)</option>
+                                        <option value="it" {% if m_prof and m_prof.languages_csv == 'it' %}selected{% endif %}>Italienisch (it)</option>
+                                        <option value="pt" {% if m_prof and m_prof.languages_csv == 'pt' %}selected{% endif %}>Portugiesisch (pt)</option>
+                                        <option value="ru" {% if m_prof and m_prof.languages_csv == 'ru' %}selected{% endif %}>Russisch (ru)</option>
+                                    </select>
+                                </div>
+                                <div class="flex flex-col">
                                     <label class="h-6 text-[#d1d5db] text-xs uppercase tracking-wider mb-1 flex items-center">Benachrichtigungs-Kanal</label>
                                     <select name="movies_notification" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors text-sm">
                                         <option value="">Keiner</option>
@@ -145,6 +162,23 @@
                                 <div class="flex flex-col">
                                     <label class="h-6 text-[#d1d5db] text-xs uppercase tracking-wider mb-1 flex items-center">Blacklist (CSV)</label>
                                     <input type="text" name="series_reject" value="{{ s_prof.reject_words_csv if s_prof and s_prof.reject_words_csv is not none else 'subbed,omU' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors text-sm" placeholder="z.B. subbed,omU">
+                                </div>
+                                <div class="flex flex-col">
+                                    <label class="h-6 text-[#d1d5db] text-xs uppercase tracking-wider mb-1 flex items-center gap-1">
+                                        Pflichtsprache
+                                        <span class="text-[#d40060] cursor-help" title="Nur Releases mit dieser Sprache werden akzeptiert.">ℹ</span>
+                                    </label>
+                                    <select name="series_langs" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors text-sm">
+                                        <option value="">Keine Einschränkung</option>
+                                        <option value="de" {% if s_prof and s_prof.languages_csv == 'de' %}selected{% endif %}>Deutsch (de)</option>
+                                        <option value="en" {% if s_prof and s_prof.languages_csv == 'en' %}selected{% endif %}>Englisch (en)</option>
+                                        <option value="fr" {% if s_prof and s_prof.languages_csv == 'fr' %}selected{% endif %}>Französisch (fr)</option>
+                                        <option value="ja" {% if s_prof and s_prof.languages_csv == 'ja' %}selected{% endif %}>Japanisch (ja)</option>
+                                        <option value="es" {% if s_prof and s_prof.languages_csv == 'es' %}selected{% endif %}>Spanisch (es)</option>
+                                        <option value="it" {% if s_prof and s_prof.languages_csv == 'it' %}selected{% endif %}>Italienisch (it)</option>
+                                        <option value="pt" {% if s_prof and s_prof.languages_csv == 'pt' %}selected{% endif %}>Portugiesisch (pt)</option>
+                                        <option value="ru" {% if s_prof and s_prof.languages_csv == 'ru' %}selected{% endif %}>Russisch (ru)</option>
+                                    </select>
                                 </div>
                                 <div class="flex flex-col">
                                     <label class="h-6 text-[#d1d5db] text-xs uppercase tracking-wider mb-1 flex items-center">Episoden Such-Blockgröße</label>
@@ -215,6 +249,23 @@
                                 <div class="flex flex-col">
                                     <label class="h-6 text-[#d1d5db] text-xs uppercase tracking-wider mb-1 flex items-center">Blacklist (CSV)</label>
                                     <input type="text" name="anime_reject" value="{{ a_prof.reject_words_csv if a_prof and a_prof.reject_words_csv is not none else 'subbed,omU' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors text-sm" placeholder="z.B. subbed,omU">
+                                </div>
+                                <div class="flex flex-col">
+                                    <label class="h-6 text-[#d1d5db] text-xs uppercase tracking-wider mb-1 flex items-center gap-1">
+                                        Pflichtsprache
+                                        <span class="text-[#d40060] cursor-help" title="Nur Releases mit dieser Sprache werden akzeptiert.">ℹ</span>
+                                    </label>
+                                    <select name="anime_langs" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors text-sm">
+                                        <option value="">Keine Einschränkung</option>
+                                        <option value="de" {% if a_prof and a_prof.languages_csv == 'de' %}selected{% endif %}>Deutsch (de)</option>
+                                        <option value="en" {% if a_prof and a_prof.languages_csv == 'en' %}selected{% endif %}>Englisch (en)</option>
+                                        <option value="fr" {% if a_prof and a_prof.languages_csv == 'fr' %}selected{% endif %}>Französisch (fr)</option>
+                                        <option value="ja" {% if a_prof and a_prof.languages_csv == 'ja' %}selected{% endif %}>Japanisch (ja)</option>
+                                        <option value="es" {% if a_prof and a_prof.languages_csv == 'es' %}selected{% endif %}>Spanisch (es)</option>
+                                        <option value="it" {% if a_prof and a_prof.languages_csv == 'it' %}selected{% endif %}>Italienisch (it)</option>
+                                        <option value="pt" {% if a_prof and a_prof.languages_csv == 'pt' %}selected{% endif %}>Portugiesisch (pt)</option>
+                                        <option value="ru" {% if a_prof and a_prof.languages_csv == 'ru' %}selected{% endif %}>Russisch (ru)</option>
+                                    </select>
                                 </div>
                                 <div class="flex flex-col">
                                     <label class="h-6 text-[#d1d5db] text-xs uppercase tracking-wider mb-1 flex items-center">Episoden Such-Blockgröße</label>

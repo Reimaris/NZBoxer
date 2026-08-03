@@ -382,16 +382,24 @@ async def _process_movie(session: AsyncSession, movie: MediaItem) -> None:
     )
     profile = (await session.execute(profile_stmt)).scalar_one_or_none()
     reject_words = [w.strip().lower() for w in profile.reject_words_csv.split(",") if w.strip()] if profile and profile.reject_words_csv else []
+    required_language = profile.languages_csv.strip() if profile and profile.languages_csv and profile.languages_csv.strip() else None
 
     results = []
+    is_title_fallback = False
     if movie.imdb_id:
         results = await treasure_maps.search_movie(imdb_id=movie.imdb_id, category=cat_id)
     if not results and movie.tmdb_id:
         results = await treasure_maps.search_movie(tmdb_id=movie.tmdb_id, category=cat_id)
     if not results:
+        logger.warning("    ⚠️ Keine ID-Treffer für Film '%s', falle auf Titelsuche zurück.", movie.title)
         results = await treasure_maps.search_movie(title=movie.title, category=cat_id)
+        is_title_fallback = True
 
-    await _evaluate_and_download(session, results, movie=movie, reject_words=reject_words)
+    await _evaluate_and_download(
+        session, results, movie=movie,
+        reject_words=reject_words, required_language=required_language,
+        is_title_fallback=is_title_fallback
+    )
 
 
 async def _process_season(session: AsyncSession, season: Season) -> None:
@@ -411,8 +419,8 @@ async def _process_season(session: AsyncSession, season: Season) -> None:
     profile = (await session.execute(profile_stmt)).scalar_one_or_none()
 
     reject_words = [w.strip().lower() for w in profile.reject_words_csv.split(",") if w.strip()] if profile and profile.reject_words_csv else []
+    required_language = profile.languages_csv.strip() if profile and profile.languages_csv and profile.languages_csv.strip() else None
     prefer_seasons = profile.prefer_complete_seasons if profile else False
-    block_size = profile.episode_block_size if profile and profile.episode_block_size else 1
 
     stmt = select(Episode).where(
         Episode.season_id == season.id,
@@ -428,15 +436,32 @@ async def _process_season(session: AsyncSession, season: Season) -> None:
 
     logger.info("    📺 Suche %d ausstehende Episoden.", len(missing_episodes))
 
-    results = []
+    async def _search_show_id_first(s: int, ep: str | None = None) -> tuple[list, bool]:
+        """Search by TVDB, then TMDB, then title fallback. Returns (results, is_title_fallback)."""
+        if tvdb_id:
+            r = await treasure_maps.search_show(tvdb_id=tvdb_id, season=s, ep=ep, category=cat_id)
+            if r:
+                return r, False
+        if tmdb_id:
+            r = await treasure_maps.search_show(tmdb_id=tmdb_id, season=s, ep=ep, category=cat_id)
+            if r:
+                return r, False
+        # Title fallback — warn operator
+        logger.warning("    ⚠️ Keine ID-Treffer für S%02d%s, falle auf Titelsuche zurück.", s, f"E{ep}" if ep else "")
+        r = await treasure_maps.search_show(title=season.media_item.title, season=s, ep=ep, category=cat_id)
+        return r, True
 
     if prefer_seasons:
         logger.info("    📦 Suche Season Pack für S%02d...", season.season_number)
-        results = await treasure_maps.search_show(tvdb_id=tvdb_id, tmdb_id=tmdb_id, title=season.media_item.title, season=season.season_number, category=cat_id)
+        results, is_fallback = await _search_show_id_first(season.season_number)
         if results:
-            grabbed = await _evaluate_and_download(session, results, season=season, target_episodes=missing_episodes, reject_words=reject_words)
+            grabbed = await _evaluate_and_download(
+                session, results, season=season, target_episodes=missing_episodes,
+                reject_words=reject_words, required_language=required_language,
+                is_title_fallback=is_fallback
+            )
             await session.refresh(season)
-            if grabbed or season.status in [SeasonStatus.DOWNLOADING, SeasonStatus.DOWNLOADED, SeasonStatus.COMPLETED]:
+            if grabbed or season.status in [SeasonStatus.DOWNLOADING, SeasonStatus.DOWNLOADED, SeasonStatus.COMPLETED, SeasonStatus.MANUAL_GRAB]:
                 # Season Pack was successful, check auto-monitor for next season
                 if season.media_item.auto_monitor_next_season:
                     next_s_stmt = select(Season).where(Season.media_item_id == season.media_item_id, Season.season_number == season.season_number + 1)
@@ -451,22 +476,20 @@ async def _process_season(session: AsyncSession, season: Season) -> None:
     # Process up to 5 individual episodes per cycle
     for ep in missing_episodes[:5]:
         logger.info("    📺 Suche Episode: S%02dE%02d", season.season_number, ep.episode_number)
-        ep_results = await treasure_maps.search_show(
-            tvdb_id=tvdb_id, 
-            tmdb_id=tmdb_id, 
-            title=season.media_item.title, 
-            season=season.season_number, 
-            ep=str(ep.episode_number), 
-            category=cat_id
-        )
+        ep_results, is_fallback = await _search_show_id_first(season.season_number, str(ep.episode_number))
 
-        # Fallback for Anime Absolute Episode Numbering if TVDB/TMDB fails
+        # Additional fallback for Anime Absolute Episode Numbering
         if not ep_results and season.media_item.media_type == MediaType.ANIME:
             ep_title_search = f"{season.media_item.title} {ep.episode_number:02d}"
             abs_res = await treasure_maps.search_show(title=ep_title_search, category=cat_id)
-            ep_results.extend(abs_res)
+            ep_results = abs_res
+            is_fallback = True
 
-        await _evaluate_and_download(session, ep_results, episode=ep, reject_words=reject_words)
+        await _evaluate_and_download(
+            session, ep_results, episode=ep,
+            reject_words=reject_words, required_language=required_language,
+            is_title_fallback=is_fallback
+        )
 
     # Check if all monitored episodes are finished
     stmt_check = select(Episode).where(
@@ -494,8 +517,10 @@ async def _evaluate_and_download(
     season: Season | None = None,
     episode: Any = None,
     target_episodes: Sequence[Any] | None = None,
-    reject_words: list[str] | None = None
-) -> None:
+    reject_words: list[str] | None = None,
+    required_language: str | None = None,
+    is_title_fallback: bool = False,
+) -> bool:
     from app.db.models import (
         BlacklistedRelease,
         EpisodeStatus,
@@ -573,7 +598,8 @@ async def _evaluate_and_download(
             expected_title=expected_title, expected_year=expected_year,
             expected_alt_title=expected_alt_title,
             expected_season=expected_season,
-            expected_episode=expected_episode
+            expected_episode=expected_episode,
+            required_language=required_language,
         )
 
         if score_res.is_rejected:
@@ -613,6 +639,32 @@ async def _evaluate_and_download(
 
     if not best_candidate:
         return False
+
+    # If this was a title-search fallback, don't auto-send to TorBox.
+    # Instead store the best candidate for manual approval.
+    if is_title_fallback:
+        from app.db.models import MediaStatus, SeasonStatus, EpisodeStatus
+        logger.warning("    ⚠️ Ergebnis aus Titelsuche — kein automatischer Download. Bester Kandidat muss manuell bestätigt werden.")
+        pending = {
+            "title": best_candidate["title"],
+            "guid": best_candidate["guid"],
+            "score": best_candidate["score"],
+            "size_bytes": best_candidate["size_bytes"],
+            "resolution": best_candidate["parsed"].resolution,
+            "source": best_candidate["parsed"].source,
+            "release_group": best_candidate["parsed"].release_group,
+        }
+        target.pending_candidate_json = pending
+        new_manual_status = MediaStatus.MANUAL_GRAB if movie else (SeasonStatus.MANUAL_GRAB if season else EpisodeStatus.MANUAL_GRAB)
+        target.status = new_manual_status
+        target.fail_count = 0
+        target.last_error = None
+        if target_episodes:
+            for ep in target_episodes:
+                ep.status = EpisodeStatus.MANUAL_GRAB
+                ep.pending_candidate_json = pending
+        await session.commit()
+        return True
 
     # Check if we should download
     should_download = False
