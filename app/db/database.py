@@ -156,6 +156,20 @@ async def init_db(database_url: str) -> None:
 
             try:
                 await session.execute(
+                    __import__("sqlalchemy").text("ALTER TABLE media_items ADD COLUMN mal_id INTEGER;")
+                )
+            except Exception:
+                pass
+
+            try:
+                await session.execute(
+                    __import__("sqlalchemy").text("ALTER TABLE media_items ADD COLUMN anilist_id INTEGER;")
+                )
+            except Exception:
+                pass
+
+            try:
+                await session.execute(
                     __import__("sqlalchemy").text("ALTER TABLE media_items ADD COLUMN alt_title VARCHAR(500);")
                 )
             except Exception:
