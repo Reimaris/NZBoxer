@@ -121,18 +121,37 @@ async def _sync_items(session: AsyncSession, simkl_items: list[dict[str, Any]], 
 
         # Fetch metadata from TMDB if available (for new items, or items missing release date)
         if tmdb_id and (is_new or not item.release_date):
+            details = None
+            if media_type in (MediaType.SHOW, MediaType.ANIME):
+                details = await tmdb.get_show_details(tmdb_id)
+                if not details and media_type == MediaType.ANIME:
+                    # Might be an anime movie
+                    details_movie = await tmdb.get_movie_details(tmdb_id)
+                    if details_movie:
+                        logger.info("    🔄 '%s' ist laut TMDB ein Film, ändere Medientyp zu MOVIE.", item.title)
+                        item.media_type = MediaType.MOVIE
+                        media_type = MediaType.MOVIE
+                        details = details_movie
+            
             if media_type == MediaType.MOVIE:
-                details = await tmdb.get_movie_details(tmdb_id)
+                if not details:
+                    details = await tmdb.get_movie_details(tmdb_id)
+                
                 if details:
-                    # Extract alt_title (German or original)
+                    # Update title to TMDB's english/default title if it differs from the romanji one
+                    if details.get("title") and details.get("title") != item.title:
+                        if not item.alt_title:
+                            item.alt_title = item.title  # Backup romaji title
+                        item.title = details.get("title")
+
+                    # Extract German alt_title
                     translations = details.get("translations", {}).get("translations", [])
                     de_trans = next((t for t in translations if t.get("iso_3166_1") == "DE"), None)
                     if de_trans and de_trans.get("data", {}).get("title"):
                         item.alt_title = de_trans["data"]["title"]
-                    elif details.get("original_title") and details.get("original_title") != details.get("title"):
+                    elif not item.alt_title and details.get("original_title") and details.get("original_title") != item.title:
                         item.alt_title = details.get("original_title")
 
-                # get_digital_release_date now finds type 4/5 or falls back to any release type
                 release_date = await tmdb.get_digital_release_date(tmdb_id)
                 if not release_date and details and details.get("release_date"):
                     try:
@@ -152,15 +171,19 @@ async def _sync_items(session: AsyncSession, simkl_items: list[dict[str, Any]], 
                     item.status = MediaStatus.SEARCHING
 
             elif media_type in (MediaType.SHOW, MediaType.ANIME):
-                details = await tmdb.get_show_details(tmdb_id)
                 if details:
                     item.overview = details.get("overview")
+
+                    if details.get("name") and details.get("name") != item.title:
+                        if not item.alt_title:
+                            item.alt_title = item.title
+                        item.title = details.get("name")
 
                     translations = details.get("translations", {}).get("translations", [])
                     de_trans = next((t for t in translations if t.get("iso_3166_1") == "DE"), None)
                     if de_trans and de_trans.get("data", {}).get("name"):
                         item.alt_title = de_trans["data"]["name"]
-                    elif details.get("original_name") and details.get("original_name") != details.get("name"):
+                    elif not item.alt_title and details.get("original_name") and details.get("original_name") != item.title:
                         item.alt_title = details.get("original_name")
 
                     for s in details.get("seasons", []):
