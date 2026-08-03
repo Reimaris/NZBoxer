@@ -50,7 +50,7 @@ async def send_nzb_link(nzb_url: str) -> dict[str, str | int | None]:
     }
 
     await _send_limiter.wait()
-    async with httpx.AsyncClient(timeout=15.0) as client:
+    async with httpx.AsyncClient(timeout=60.0) as client:
         try:
             response = await client.post(url, headers=headers, data=data)
             response.raise_for_status()
@@ -67,7 +67,7 @@ async def send_nzb_link(nzb_url: str) -> dict[str, str | int | None]:
                 return {}
 
         except httpx.HTTPError as e:
-            logger.error("Failed to send NZB to TorBox: %s", e)
+            logger.error("Failed to send NZB to TorBox: [%s] %s", type(e).__name__, e)
             return {}
 
 
