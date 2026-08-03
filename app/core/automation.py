@@ -228,6 +228,7 @@ async def run_automation_cycle(force: bool = False) -> None:
 
         # 0. Self-healing: fix failed downloads before searching
         await run_self_healing_cycle()
+        await run_download_check_cycle()
 
         # 1. Sync watchlist first
         await sync_simkl_watchlist()
@@ -615,13 +616,10 @@ async def _evaluate_and_download(
             )
             session.add(history)
 
-            new_status = None
             if best_candidate["score"] >= target_score:
-                new_status = MediaStatus.COMPLETED if movie else (SeasonStatus.COMPLETED if season else EpisodeStatus.COMPLETED)
                 logger.info("    ✅ Target score erreicht.")
-            else:
-                new_status = MediaStatus.DOWNLOADED if movie else (SeasonStatus.DOWNLOADED if season else EpisodeStatus.DOWNLOADED)
-
+            
+            new_status = MediaStatus.DOWNLOADING if movie else (SeasonStatus.DOWNLOADING if season else EpisodeStatus.DOWNLOADING)
             target.status = new_status
             target.fail_count = 0
             target.last_error = None

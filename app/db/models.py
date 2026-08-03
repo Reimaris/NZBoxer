@@ -47,6 +47,7 @@ class MediaStatus(str, enum.Enum):
 
     PENDING = "pending"
     SEARCHING = "searching"
+    DOWNLOADING = "downloading"
     DOWNLOADED = "downloaded"
     COMPLETED = "completed"
     CANCELED = "canceled"
@@ -58,6 +59,7 @@ class SeasonStatus(str, enum.Enum):
 
     PENDING = "pending"
     SEARCHING = "searching"
+    DOWNLOADING = "downloading"
     DOWNLOADED = "downloaded"
     COMPLETED = "completed"
     CANCELED = "canceled"
@@ -69,6 +71,7 @@ class EpisodeStatus(str, enum.Enum):
 
     PENDING = "pending"
     SEARCHING = "searching"
+    DOWNLOADING = "downloading"
     DOWNLOADED = "downloaded"
     COMPLETED = "completed"
     CANCELED = "canceled"

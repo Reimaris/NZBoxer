@@ -52,7 +52,7 @@ async def test_evaluate_and_download_new_movie(db_session):
     await db_session.refresh(movie, ["download_history"])
     assert len(movie.download_history) == 1
     assert movie.download_history[0].nzb_title == search_results[0]["title"]
-    assert movie.status == MediaStatus.DOWNLOADED
+    assert movie.status == MediaStatus.DOWNLOADING
 
 @pytest.mark.asyncio
 async def test_evaluate_and_download_upgrade(db_session):
