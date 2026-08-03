@@ -10,11 +10,13 @@ from typing import Any
 
 import httpx
 
-from app.config import settings
+from app.core.rate_limiter import RateLimiter
 
 logger = logging.getLogger(__name__)
+_limiter = RateLimiter(1.0)
 
 SIMKL_BASE_URL = "https://api.simkl.com"
+
 
 
 class SimklError(Exception):
@@ -29,6 +31,7 @@ async def request_pin(client_id: str) -> dict[str, Any]:
         "app-name": "nzboxer",
         "app-version": "0.1.0"
     }
+    await _limiter.wait()
     async with httpx.AsyncClient(timeout=10.0) as client:
         response = await client.get(url, params=params)
         response.raise_for_status()
@@ -43,6 +46,7 @@ async def check_pin(client_id: str, user_code: str) -> dict[str, Any]:
         "app-name": "nzboxer",
         "app-version": "0.1.0"
     }
+    await _limiter.wait()
     async with httpx.AsyncClient(timeout=10.0) as client:
         response = await client.get(url, params=params)
         response.raise_for_status()
@@ -75,15 +79,16 @@ async def get_watchlist(media_type: str, client_id: str, access_token: str) -> l
         "Content-Type": "application/json"
     }
 
+    await _limiter.wait()
     async with httpx.AsyncClient(timeout=10.0) as client:
         try:
             response = await client.get(url, params=params, headers=headers)
             response.raise_for_status()
             data = response.json()
-            
+
             # The API returns {"movies": [...]} or {"shows": [...]}
             return data.get(media_type, [])
-            
+
         except httpx.HTTPError as e:
             logger.error("Simkl API error: %s", e)
             raise SimklError(f"Simkl sync failed: {e}") from e

@@ -7,15 +7,19 @@ NZBs for downloading.
 from __future__ import annotations
 
 import logging
-
-import httpx
 from typing import Any
 
+import httpx
+
 from app.config import settings
+from app.core.rate_limiter import RateLimiter
 
 logger = logging.getLogger(__name__)
+_send_limiter = RateLimiter(1.0)
+_poll_limiter = RateLimiter(10.0)
 
 TORBOX_BASE_URL = "https://api.torbox.app/v1"
+
 
 
 class TorBoxError(Exception):
@@ -36,20 +40,21 @@ async def send_nzb_link(nzb_url: str) -> dict[str, str | int | None]:
         return {}
 
     url = f"{TORBOX_BASE_URL}/api/usenet/createusenetdownload"
-    
+
     headers = {
         "Authorization": f"Bearer {settings.torbox_api_key}"
     }
-    
+
     data = {
         "link": nzb_url
     }
 
+    await _send_limiter.wait()
     async with httpx.AsyncClient(timeout=15.0) as client:
         try:
             response = await client.post(url, headers=headers, data=data)
             response.raise_for_status()
-            
+
             result = response.json()
             if result.get("success"):
                 data = result.get("data", {})
@@ -60,7 +65,7 @@ async def send_nzb_link(nzb_url: str) -> dict[str, str | int | None]:
             else:
                 logger.error("TorBox API returned error: %s", result.get("detail"))
                 return {}
-                
+
         except httpx.HTTPError as e:
             logger.error("Failed to send NZB to TorBox: %s", e)
             return {}
@@ -78,12 +83,13 @@ async def check_download_status(download_id: str | int) -> dict[str, Any]:
     """
     if not settings.torbox_api_key:
         return {"status": "error", "detail": "Missing API key"}
-        
+
     url = f"{TORBOX_BASE_URL}/api/usenet/mylist"
     headers = {
         "Authorization": f"Bearer {settings.torbox_api_key}"
     }
-    
+
+    await _poll_limiter.wait()
     async with httpx.AsyncClient(timeout=15.0) as client:
         try:
             # We fetch the list and find the specific ID
@@ -92,7 +98,7 @@ async def check_download_status(download_id: str | int) -> dict[str, Any]:
             # We'll just fetch all and find it.
             response = await client.get(url, headers=headers)
             response.raise_for_status()
-            
+
             result = response.json()
             if result.get("success"):
                 downloads = result.get("data", [])
@@ -107,6 +113,6 @@ async def check_download_status(download_id: str | int) -> dict[str, Any]:
                 return {"status": "not_found", "detail": "Download ID not found in TorBox"}
             else:
                 return {"status": "error", "detail": result.get("detail")}
-                
+
         except httpx.HTTPError as e:
             return {"status": "error", "detail": str(e)}

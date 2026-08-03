@@ -15,6 +15,7 @@ from datetime import datetime
 from typing import Any
 
 from sqlalchemy import (
+    JSON,
     Boolean,
     DateTime,
     Enum,
@@ -23,7 +24,6 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
-    JSON,
     UniqueConstraint,
     func,
 )
@@ -94,14 +94,14 @@ class SystemSettings(Base):
     
     This is designed as a single-row table (id=1).
     """
-    
+
     __tablename__ = "system_settings"
-    
+
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     treasure_maps_api_key: Mapped[str] = mapped_column(String(200), default="")
     torbox_api_key: Mapped[str] = mapped_column(String(200), default="")
     tmdb_api_key: Mapped[str] = mapped_column(String(200), default="")
-    
+
     # Self-Healing & Automation (Defaults)
     scan_interval_multiplier: Mapped[int] = mapped_column(Integer, default=1)
     sh_max_retries: Mapped[int] = mapped_column(Integer, default=3)
@@ -109,10 +109,10 @@ class SystemSettings(Base):
     sh_auto_retry: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     sh_retry_wait_hours: Mapped[float] = mapped_column(Float, nullable=False, default=24.0)
     dry_run: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="0")
-    
+
     # Structured Scoring Settings
     scoring_settings: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=True)
-    
+
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
@@ -128,15 +128,15 @@ class SystemSettings(Base):
 class NotificationChannel(Base):
     """Represents a notification target, e.g., a Telegram bot."""
     __tablename__ = "notification_channels"
-    
+
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     type: Mapped[str] = mapped_column(String(50), nullable=False) # e.g., 'telegram'
     name: Mapped[str] = mapped_column(String(200), nullable=False)
-    
+
     # Provider specific fields (could be JSON, but let's keep them explicit for Telegram)
     bot_token: Mapped[str] = mapped_column(String(500), nullable=True)
     chat_id: Mapped[str] = mapped_column(String(200), nullable=True)
-    
+
     provider_profiles: Mapped[list[ProviderProfile]] = relationship(
         "ProviderProfile",
         back_populates="notification_channel"
@@ -145,21 +145,21 @@ class NotificationChannel(Base):
 class Provider(Base):
     """Represents a metadata provider, e.g., a Simkl account."""
     __tablename__ = "providers"
-    
+
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     type: Mapped[str] = mapped_column(String(50), nullable=False) # e.g., 'simkl'
     name: Mapped[str] = mapped_column(String(200), nullable=False)
-    
+
     # Simkl specific fields
     username: Mapped[str | None] = mapped_column(String(200), nullable=True)
     client_id: Mapped[str | None] = mapped_column(String(500), nullable=True)
     access_token: Mapped[str | None] = mapped_column(String(500), nullable=True)
-    
+
     movie_category_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     series_category_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     anime_category_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     bandwidth_mbit: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    
+
     profiles: Mapped[list[ProviderProfile]] = relationship(
         "ProviderProfile",
         back_populates="provider",
@@ -176,14 +176,14 @@ class Provider(Base):
 class ProviderProfile(Base):
     """Specific configuration for a provider's media type (Movies or Series)."""
     __tablename__ = "provider_profiles"
-    
+
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     provider_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("providers.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    
+
     media_type: Mapped[str] = mapped_column(String(50), nullable=False) # 'movies' or 'shows'
-    
+
     # Download & Automation Settings
     path: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     mode: Mapped[str | None] = mapped_column(String(100), nullable=True)
@@ -194,18 +194,18 @@ class ProviderProfile(Base):
     min_mb: Mapped[int | None] = mapped_column(Integer, nullable=True)
     max_mb: Mapped[int | None] = mapped_column(Integer, nullable=True)
     reject_words_csv: Mapped[str | None] = mapped_column(String(1000), nullable=True)
-    
+
     # Series specific
     prefer_complete_seasons: Mapped[bool] = mapped_column(Boolean, default=False)
     episode_block_size: Mapped[int] = mapped_column(Integer, default=0)
     # Kept for DB compat — the actual per-series flag lives on MediaItem
     auto_monitor_next_season: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
-    
+
     # Notification link
     notification_channel_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("notification_channels.id", ondelete="SET NULL"), nullable=True, index=True
     )
-    
+
     provider: Mapped[Provider] = relationship("Provider", back_populates="profiles")
     notification_channel: Mapped[NotificationChannel | None] = relationship(
         "NotificationChannel", back_populates="provider_profiles"
@@ -249,7 +249,7 @@ class MediaItem(Base):
 
     # --- Primary key ---
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    
+
     # --- Foreign key ---
     provider_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("providers.id", ondelete="CASCADE"), nullable=False, index=True
@@ -282,7 +282,7 @@ class MediaItem(Base):
 
     # --- Release date (movies: digital release; shows: first air date) ---
     release_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    
+
     auto_monitor_next_season: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="0")
 
     # --- Sync tracking ---
@@ -629,7 +629,7 @@ class BlacklistedRelease(Base):
     media_item_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("media_items.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    
+
     nzb_guid: Mapped[str | None] = mapped_column(String(500), nullable=True, index=True)
     nzb_title: Mapped[str] = mapped_column(String(1000), nullable=False)
     reason: Mapped[str] = mapped_column(String(500), nullable=True)
@@ -637,3 +637,18 @@ class BlacklistedRelease(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+
+
+# ---------------------------------------------------------------------------
+# DailyGrabCounter Model
+# ---------------------------------------------------------------------------
+
+class DailyGrabCounter(Base):
+    """Tracks daily NZB downloads (grabs) to enforce a hard daily limit of 400."""
+
+    __tablename__ = "daily_grab_counters"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    date_str: Mapped[str] = mapped_column(String(10), unique=True, index=True)  # YYYY-MM-DD
+    count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+

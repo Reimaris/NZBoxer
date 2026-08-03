@@ -13,10 +13,13 @@ from typing import Any
 import httpx
 
 from app.config import settings
+from app.core.rate_limiter import RateLimiter
 
 logger = logging.getLogger(__name__)
+_limiter = RateLimiter(0.1)
 
 TMDB_BASE_URL = "https://api.themoviedb.org/3"
+
 
 
 class TMDBError(Exception):
@@ -44,15 +47,16 @@ async def get_digital_release_date(tmdb_id: int) -> datetime | None:
     else:
         params["api_key"] = settings.tmdb_api_key
 
+    await _limiter.wait()
     async with httpx.AsyncClient(timeout=10.0) as client:
         try:
             response = await client.get(url, params=params, headers=headers)
             response.raise_for_status()
             data = response.json()
-            
+
             # We are looking for release date type 4 (Digital)
             earliest_date = None
-            
+
             for country_release in data.get("results", []):
                 for release in country_release.get("release_dates", []):
                     if release.get("type") == 4:
@@ -86,6 +90,7 @@ async def get_movie_details(tmdb_id: int) -> dict[str, Any] | None:
     else:
         params["api_key"] = settings.tmdb_api_key
 
+    await _limiter.wait()
     async with httpx.AsyncClient(timeout=10.0) as client:
         try:
             response = await client.get(url, params=params, headers=headers)
@@ -110,6 +115,7 @@ async def get_show_details(tmdb_id: int) -> dict[str, Any] | None:
     else:
         params["api_key"] = settings.tmdb_api_key
 
+    await _limiter.wait()
     async with httpx.AsyncClient(timeout=10.0) as client:
         try:
             response = await client.get(url, params=params, headers=headers)
@@ -134,6 +140,7 @@ async def get_season_details(tmdb_id: int, season_number: int) -> dict[str, Any]
     else:
         params["api_key"] = settings.tmdb_api_key
 
+    await _limiter.wait()
     async with httpx.AsyncClient(timeout=10.0) as client:
         try:
             response = await client.get(url, params=params, headers=headers)
