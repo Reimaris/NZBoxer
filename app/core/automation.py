@@ -649,3 +649,65 @@ async def _evaluate_and_download(
                 if channel.type == "telegram" and channel.bot_token and channel.chat_id:
                     msg = f"✅ <b>Started Download</b>\n\n<b>{log_title}</b>\n<code>{best_candidate['title']}</code>\n\nScore: {best_candidate['score']}"
                     await telegram.send_notification(msg, token=channel.bot_token, chat_id=channel.chat_id)
+
+async def manual_search_episode(session: AsyncSession, episode_id: int) -> bool:
+    """Manually search and download a single episode synchronously."""
+    from sqlalchemy.orm import selectinload
+    from app.db.models import Episode, EpisodeStatus, ProviderProfile, MediaType
+
+    stmt = select(Episode).where(Episode.id == episode_id).options(
+        selectinload(Episode.season).selectinload(Season.media_item).selectinload(MediaItem.provider)
+    )
+    episode = (await session.execute(stmt)).scalar_one_or_none()
+    
+    if not episode or not episode.season or not episode.season.media_item:
+        logger.error("❌ Episode %s nicht gefunden oder unvollständig.", episode_id)
+        return False
+
+    season = episode.season
+    media_item = season.media_item
+    
+    logger.info("🔍 Manuelle Suche für: %s S%02dE%02d gestartet", media_item.title, season.season_number, episode.episode_number)
+
+    # Status update to searching
+    episode.status = EpisodeStatus.SEARCHING
+    await session.commit()
+
+    tvdb_id = media_item.tvdb_id
+    tmdb_id = media_item.tmdb_id
+    cat_id = media_item.provider.series_category_id if media_item.provider else None
+    
+    if media_item.media_type == MediaType.ANIME and media_item.provider and media_item.provider.anime_category_id:
+        cat_id = media_item.provider.anime_category_id
+
+    profile_stmt = select(ProviderProfile).where(
+        ProviderProfile.provider_id == media_item.provider_id,
+        ProviderProfile.media_type == "shows"
+    )
+    profile = (await session.execute(profile_stmt)).scalar_one_or_none()
+    reject_words = [w.strip().lower() for w in profile.reject_words_csv.split(",") if w.strip()] if profile and profile.reject_words_csv else []
+
+    ep_str = str(episode.episode_number)
+    results = await treasure_maps.search_show(tvdb_id=tvdb_id, tmdb_id=tmdb_id, title=media_item.title, season=season.season_number, ep=ep_str, category=cat_id)
+
+    # Fallback for Anime Absolute Episode Numbering
+    if not results and media_item.media_type == MediaType.ANIME:
+        ep_title_search = f"{media_item.title} {episode.episode_number:02d}"
+        results = await treasure_maps.search_show(title=ep_title_search, category=cat_id)
+
+    if not results:
+        episode.fail_count += 1
+        episode.last_error = "Keine passenden Releases für diese Episode gefunden."
+        episode.status = EpisodeStatus.PENDING # Revert back
+        logger.warning("❌ %s", episode.last_error)
+        await session.commit()
+        return False
+
+    # Evaluate and download
+    # We pass target_episodes=[episode] so the status is updated to downloaded/completed correctly
+    await _evaluate_and_download(session, results, episode=episode, target_episodes=[episode], reject_words=reject_words)
+    
+    # Refresh to see if status changed
+    await session.refresh(episode)
+    return episode.status in [EpisodeStatus.DOWNLOADED, EpisodeStatus.COMPLETED]
+

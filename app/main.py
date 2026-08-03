@@ -269,6 +269,18 @@ async def toggle_season(item_id: int, season_number: int):
     return HTMLResponse(content="Error", status_code=400)
 
 
+@app.post("/episodes/{episode_id}/search")
+async def manual_search_episode_route(episode_id: int):
+    """Manually search and download a single episode synchronously."""
+    from app.db.database import async_session_factory
+    from app.core.automation import manual_search_episode
+    
+    async with async_session_factory() as session:
+        success = await manual_search_episode(session, episode_id)
+        # We reload the page in both cases so the user sees the updated status (completed/downloaded or failed + fail_count)
+        return HTMLResponse(content='<script>window.location.reload();</script>')
+
+
 @app.post("/items/{item_id}/retry")
 async def retry_item(item_id: int):
     """Reset item and season status to pending and delete blacklisted releases for this item."""
