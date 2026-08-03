@@ -58,10 +58,16 @@ def parse_release_name(release_name: str) -> ParsedRelease:
     elif lang_val:
         languages = [str(lang_val).lower()]
 
+    raw_year = guess.get("year")
+    if isinstance(raw_year, list):
+        year = int(raw_year[0]) if raw_year else None
+    else:
+        year = int(raw_year) if raw_year else None
+
     return ParsedRelease(
         original_title=release_name,
         title=guess.get("title"),
-        year=guess.get("year"),
+        year=year,
         resolution=_get_str("screen_size"),
         video_codec=_get_str("video_codec"),
         audio_codec=_get_str("audio_codec"),
