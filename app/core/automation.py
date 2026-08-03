@@ -6,6 +6,7 @@ Newznab indexers, evaluating scores, and sending releases to TorBox.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import Sequence
 from datetime import datetime, timezone
@@ -484,23 +485,30 @@ async def _process_season(session: AsyncSession, season: Season) -> None:
                         await session.commit()
                 return
 
-    # Process up to 5 individual episodes per cycle
-    for ep in missing_episodes[:5]:
-        logger.info("    📺 Suche Episode: S%02dE%02d", season.season_number, ep.episode_number)
-        ep_results, is_fallback = await _search_show_id_first(season.season_number, str(ep.episode_number))
+    # Process individual episodes (up to 5 per cycle, configurable via block_size)
+    block_size = profile.episode_block_size if profile and profile.episode_block_size else 5
+    for ep in missing_episodes[:block_size]:
+        try:
+            logger.info("    📺 Suche Episode: S%02dE%02d", season.season_number, ep.episode_number)
+            ep_results, is_fallback = await _search_show_id_first(season.season_number, str(ep.episode_number))
 
-        # Additional fallback for Anime Absolute Episode Numbering
-        if not ep_results and season.media_item.media_type == MediaType.ANIME:
-            ep_title_search = f"{season.media_item.title} {ep.episode_number:02d}"
-            abs_res = await treasure_maps.search_show(title=ep_title_search, category=cat_id)
-            ep_results = abs_res
-            is_fallback = True
+            # Additional fallback for Anime Absolute Episode Numbering
+            if not ep_results and season.media_item.media_type == MediaType.ANIME:
+                ep_title_search = f"{season.media_item.title} {ep.episode_number:02d}"
+                abs_res = await treasure_maps.search_show(title=ep_title_search, category=cat_id)
+                ep_results = abs_res
+                is_fallback = True
 
-        await _evaluate_and_download(
-            session, ep_results, episode=ep,
-            reject_words=reject_words, required_language=required_language,
-            is_title_fallback=is_fallback
-        )
+            await _evaluate_and_download(
+                session, ep_results, episode=ep,
+                reject_words=reject_words, required_language=required_language,
+                is_title_fallback=is_fallback
+            )
+        except Exception as ep_err:  # noqa: BLE001
+            logger.error("    ❌ Fehler beim Suchen von S%02dE%02d: %s", season.season_number, ep.episode_number, ep_err)
+        finally:
+            # Politeness delay between consecutive indexer requests
+            await asyncio.sleep(1.0)
 
     # Check if all monitored episodes are finished
     stmt_check = select(Episode).where(
