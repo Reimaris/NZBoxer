@@ -165,14 +165,21 @@ async def _sync_items(session: AsyncSession, simkl_items: list[dict[str, Any]], 
                     for s in details.get("seasons", []):
                         s_num = s.get("season_number")
                         if s_num is not None and s_num > 0:
-                            season_obj = Season(
-                                media_item_id=item.id,
-                                season_number=s_num,
-                                monitored=(s_num == 1),
-                                episode_count=s.get("episode_count"),
-                                status=SeasonStatus.SEARCHING if (s_num == 1) else SeasonStatus.PENDING
+                            # Check if season already exists to avoid UNIQUE constraint error
+                            existing_season_stmt = select(Season).where(
+                                Season.media_item_id == item.id,
+                                Season.season_number == s_num
                             )
-                            session.add(season_obj)
+                            existing_season = (await session.execute(existing_season_stmt)).scalar_one_or_none()
+                            if not existing_season:
+                                season_obj = Season(
+                                    media_item_id=item.id,
+                                    season_number=s_num,
+                                    monitored=(s_num == 1),
+                                    episode_count=s.get("episode_count"),
+                                    status=SeasonStatus.SEARCHING if (s_num == 1) else SeasonStatus.PENDING
+                                )
+                                session.add(season_obj)
 
         else:
             # Update existing
@@ -278,10 +285,14 @@ async def run_automation_cycle(force: bool = False) -> None:
             )
             movies_to_check = (await session.execute(stmt_m_rev)).scalars().all()
             for m in movies_to_check:
-                if m.release_date and m.release_date > datetime.now(timezone.utc):
+                # Ensure release_date is timezone-aware for comparison
+                rd = m.release_date
+                if rd and rd.tzinfo is None:
+                    rd = rd.replace(tzinfo=timezone.utc)
+                if rd and rd > datetime.now(timezone.utc):
                     m.status = MediaStatus.PENDING
                     m.fail_count = 0
-                    logger.info("    🔄 Film '%s' auf PENDING gesetzt (Release Date: %s liegt in der Zukunft)", m.title, m.release_date.strftime("%Y-%m-%d"))
+                    logger.info("    🔄 Film '%s' auf PENDING gesetzt (Release Date: %s liegt in der Zukunft)", m.title, rd.strftime("%Y-%m-%d"))
                 elif not m.release_date and m.year and m.year > datetime.now().year:
                     m.status = MediaStatus.PENDING
                     m.fail_count = 0
