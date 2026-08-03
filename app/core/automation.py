@@ -120,23 +120,45 @@ async def _sync_items(session: AsyncSession, simkl_items: list[dict[str, Any]], 
             is_new = False
 
         # Fetch metadata from TMDB if available (for new items, or items missing release date)
-        if tmdb_id and (is_new or not item.release_date):
+        if (tmdb_id or imdb_id) and (is_new or not item.release_date):
             details = None
-            if media_type in (MediaType.SHOW, MediaType.ANIME):
-                details = await tmdb.get_show_details(tmdb_id)
-                if not details and media_type == MediaType.ANIME:
-                    # Might be an anime movie
-                    details_movie = await tmdb.get_movie_details(tmdb_id)
-                    if details_movie:
-                        logger.info("    🔄 '%s' ist laut TMDB ein Film, ändere Medientyp zu MOVIE.", item.title)
-                        item.media_type = MediaType.MOVIE
-                        media_type = MediaType.MOVIE
-                        details = details_movie
-            
-            if media_type == MediaType.MOVIE:
-                if not details:
-                    details = await tmdb.get_movie_details(tmdb_id)
+            if tmdb_id:
+                if media_type in (MediaType.SHOW, MediaType.ANIME):
+                    details = await tmdb.get_show_details(tmdb_id)
+                    if not details and media_type == MediaType.ANIME:
+                        # Might be an anime movie
+                        details_movie = await tmdb.get_movie_details(tmdb_id)
+                        if details_movie:
+                            logger.info("    🔄 '%s' ist laut TMDB ein Film, ändere Medientyp zu MOVIE.", item.title)
+                            item.media_type = MediaType.MOVIE
+                            media_type = MediaType.MOVIE
+                            details = details_movie
                 
+                if media_type == MediaType.MOVIE and not details:
+                    details = await tmdb.get_movie_details(tmdb_id)
+            
+            # IMDB Fallback if TMDB ID failed or was missing
+            if not details and imdb_id:
+                logger.info("    🔍 TMDB Suche per ID fehlgeschlagen/fehlt. Nutze IMDB Fallback für '%s' (%s)...", item.title, imdb_id)
+                fallback_res = await tmdb.find_by_external_id(imdb_id)
+                if fallback_res:
+                    tmdb_id = fallback_res["id"]
+                    item.tmdb_id = tmdb_id
+                    
+                    if fallback_res["type"] == "movie":
+                        if media_type != MediaType.MOVIE:
+                            logger.info("    🔄 Ändere Medientyp für '%s' zu MOVIE durch IMDB-Fallback.", item.title)
+                            item.media_type = MediaType.MOVIE
+                            media_type = MediaType.MOVIE
+                        details = await tmdb.get_movie_details(tmdb_id)
+                    else:
+                        if media_type == MediaType.MOVIE:
+                            logger.info("    🔄 Ändere Medientyp für '%s' zu SHOW durch IMDB-Fallback.", item.title)
+                            item.media_type = MediaType.SHOW
+                            media_type = MediaType.SHOW
+                        details = await tmdb.get_show_details(tmdb_id)
+
+            if media_type == MediaType.MOVIE:
                 if details:
                     # Update title to TMDB's english/default title if it differs from the romanji one
                     if details.get("title") and details.get("title") != item.title:

@@ -159,3 +159,39 @@ async def get_season_details(tmdb_id: int, season_number: int) -> dict[str, Any]
         except httpx.HTTPError as e:
             logger.error("TMDB season details error for %d S%d: %s", tmdb_id, season_number, e)
             return None
+
+
+async def find_by_external_id(external_id: str, source: str = "imdb_id") -> dict[str, Any] | None:
+    """Find TMDB metadata by an external ID (e.g. imdb_id).
+    
+    Returns a dictionary with 'type' ('movie' or 'tv') and 'id' (the TMDB ID),
+    or None if not found.
+    """
+    if not settings.tmdb_api_key:
+        logger.warning("TMDB API key missing.")
+        return None
+
+    url = f"{TMDB_BASE_URL}/find/{external_id}"
+    params = {"external_source": source}
+    headers = {}
+    if settings.tmdb_api_key.startswith("ey"):
+        headers["Authorization"] = f"Bearer {settings.tmdb_api_key}"
+    else:
+        params["api_key"] = settings.tmdb_api_key
+
+    await _limiter.wait()
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        try:
+            response = await client.get(url, params=params, headers=headers)
+            response.raise_for_status()
+            data = response.json()
+            
+            if data.get("movie_results"):
+                return {"type": "movie", "id": data["movie_results"][0]["id"]}
+            elif data.get("tv_results"):
+                return {"type": "tv", "id": data["tv_results"][0]["id"]}
+                
+            return None
+        except httpx.HTTPError as e:
+            logger.error("TMDB find error for %s (%s): %s", external_id, source, e)
+            return None
