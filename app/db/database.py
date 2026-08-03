@@ -198,6 +198,13 @@ async def init_db(database_url: str) -> None:
                 )
             except Exception:
                 pass
+                
+            try:
+                await session.execute(
+                    __import__("sqlalchemy").text("ALTER TABLE provider_profiles DROP COLUMN auto_monitor_next_season;")
+                )
+            except Exception:
+                pass
 
             for tbl in ["media_items", "seasons", "episodes"]:
                 try:
