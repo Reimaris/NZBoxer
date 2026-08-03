@@ -546,36 +546,47 @@ async def save_global_settings(
                 res_map = scoring_res.setdefault("resolution", {})
                 if isinstance(res_map, dict):
                     v1080 = _get_int("res_1080p")
-                    if v1080 is not None: res_map["1080p"] = v1080
+                    if v1080 is not None:
+                        res_map["1080p"] = v1080
                     v2160 = _get_int("res_2160p")
-                    if v2160 is not None: res_map["2160p"] = v2160
+                    if v2160 is not None:
+                        res_map["2160p"] = v2160
                     v720 = _get_int("res_720p")
-                    if v720 is not None: res_map["720p"] = v720
+                    if v720 is not None:
+                        res_map["720p"] = v720
 
                 vc_map = scoring_res.setdefault("video_codec", {})
                 if isinstance(vc_map, dict):
                     vh265 = _get_int("codec_h265")
-                    if vh265 is not None: vc_map["h265"] = vh265
+                    if vh265 is not None:
+                        vc_map["h265"] = vh265
                     vh264 = _get_int("codec_h264")
-                    if vh264 is not None: vc_map["h264"] = vh264
+                    if vh264 is not None:
+                        vc_map["h264"] = vh264
 
                 src_map = scoring_res.setdefault("source", {})
                 if isinstance(src_map, dict):
                     vremux = _get_int("source_remux")
-                    if vremux is not None: src_map["remux"] = vremux
+                    if vremux is not None:
+                        src_map["remux"] = vremux
                     vbluray = _get_int("source_bluray")
-                    if vbluray is not None: src_map["bluray"] = vbluray
+                    if vbluray is not None:
+                        src_map["bluray"] = vbluray
                     vwebdl = _get_int("source_webdl")
-                    if vwebdl is not None: src_map["web-dl"] = vwebdl
+                    if vwebdl is not None:
+                        src_map["web-dl"] = vwebdl
                     vwebrip = _get_int("source_webrip")
-                    if vwebrip is not None: src_map["webrip"] = vwebrip
+                    if vwebrip is not None:
+                        src_map["webrip"] = vwebrip
 
             cutoffs = sc.setdefault("cutoffs", {})
             if isinstance(cutoffs, dict):
                 vtarget = _get_int("cutoffs_target")
-                if vtarget is not None: cutoffs["target_score"] = vtarget
+                if vtarget is not None:
+                    cutoffs["target_score"] = vtarget
                 vupg = _get_int("cutoffs_upgrade")
-                if vupg is not None: cutoffs["upgrade_threshold"] = vupg
+                if vupg is not None:
+                    cutoffs["upgrade_threshold"] = vupg
 
             db_settings.scoring_settings = sc
 

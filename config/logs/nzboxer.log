@@ -5,3 +5,105 @@
 2026-08-03 11:28:10 - [INFO] - apscheduler.scheduler - Added job "lifespan.<locals>._orchestrator_job" to job store "default"
 2026-08-03 11:28:10 - [INFO] - apscheduler.scheduler - Scheduler started
 2026-08-03 11:28:10 - [INFO] - app.main - APScheduler started. Base interval set to 15 minutes.
+2026-08-03 14:31:18 - [INFO] - app.db.database - Initializing database: sqlite+aiosqlite:///file:testdb?mode=memory&cache=shared
+2026-08-03 14:31:19 - [INFO] - app.db.database - Database initialized successfully.
+2026-08-03 14:31:19 - [INFO] - app.core.automation -     🏆 Top 1 Releases für Test Movie:
+2026-08-03 14:31:19 - [INFO] - app.core.automation -        1. [1600.0] Test.Movie.2023.1080p.WEB-DL.h264-GROUP
+2026-08-03 14:31:19 - [INFO] - app.core.automation -     📥 Sende an TorBox: Test.Movie.2023.1080p.WEB-DL.h264-GROUP (Score: 1600.0)
+2026-08-03 14:31:19 - [INFO] - app.db.database - Database connection closed.
+2026-08-03 14:31:19 - [INFO] - app.db.database - Initializing database: sqlite+aiosqlite:///file:testdb?mode=memory&cache=shared
+2026-08-03 14:31:19 - [INFO] - app.db.database - Database initialized successfully.
+2026-08-03 14:31:19 - [INFO] - app.core.automation -     🏆 Top 1 Releases für Upgrade Movie:
+2026-08-03 14:31:19 - [INFO] - app.core.automation -        1. [1200.0] Upgrade.Movie.2023.1080p.BluRay.x264-GROUP
+2026-08-03 14:31:19 - [INFO] - app.core.automation -     ❌ Bestes Release (Score 1200.0) liegt unter dem Upgrade-Schwellenwert.
+2026-08-03 14:31:19 - [INFO] - app.core.automation -     🏆 Top 1 Releases für Upgrade Movie:
+2026-08-03 14:31:19 - [INFO] - app.core.automation -        1. [1500.0] Upgrade.Movie.2023.1080p.BluRay.x264-GROUP
+2026-08-03 14:31:19 - [INFO] - app.core.automation -     📥 Sende an TorBox: Upgrade.Movie.2023.1080p.BluRay.x264-GROUP (Score: 1500.0)
+2026-08-03 14:31:20 - [INFO] - app.db.database - Database connection closed.
+2026-08-03 14:31:20 - [INFO] - app.db.database - Initializing database: sqlite+aiosqlite:///file:testdb?mode=memory&cache=shared
+2026-08-03 14:31:20 - [INFO] - app.db.database - Database initialized successfully.
+2026-08-03 14:31:20 - [INFO] - app.db.database - Database connection closed.
+2026-08-03 14:31:20 - [INFO] - app.db.database - Initializing database: sqlite+aiosqlite:///file:testdb?mode=memory&cache=shared
+2026-08-03 14:31:20 - [INFO] - app.db.database - Database initialized successfully.
+2026-08-03 14:31:21 - [INFO] - app.db.database - Database connection closed.
+2026-08-03 14:31:21 - [INFO] - app.db.database - Initializing database: sqlite+aiosqlite:///file:testdb?mode=memory&cache=shared
+2026-08-03 14:31:21 - [INFO] - app.db.database - Database initialized successfully.
+2026-08-03 14:31:21 - [INFO] - app.db.database - Database connection closed.
+2026-08-03 14:31:21 - [INFO] - app.db.database - Initializing database: sqlite+aiosqlite:///file:testdb?mode=memory&cache=shared
+2026-08-03 14:31:21 - [INFO] - app.db.database - Database initialized successfully.
+2026-08-03 14:31:22 - [INFO] - app.db.database - Database connection closed.
+2026-08-03 14:31:22 - [INFO] - app.db.database - Initializing database: sqlite+aiosqlite:///file:testdb?mode=memory&cache=shared
+2026-08-03 14:31:22 - [INFO] - app.db.database - Database initialized successfully.
+2026-08-03 14:31:22 - [INFO] - app.db.database - Database connection closed.
+2026-08-03 14:31:22 - [INFO] - app.db.database - Initializing database: sqlite+aiosqlite:///file:testdb?mode=memory&cache=shared
+2026-08-03 14:31:23 - [INFO] - app.db.database - Database initialized successfully.
+2026-08-03 14:31:23 - [INFO] - app.db.database - Database connection closed.
+2026-08-03 14:31:23 - [INFO] - app.db.database - Initializing database: sqlite+aiosqlite:///file:testdb?mode=memory&cache=shared
+2026-08-03 14:31:23 - [INFO] - app.db.database - Database initialized successfully.
+2026-08-03 14:31:23 - [INFO] - app.db.database - Database connection closed.
+2026-08-03 14:31:23 - [INFO] - app.db.database - Initializing database: sqlite+aiosqlite:///file:testdb?mode=memory&cache=shared
+2026-08-03 14:31:24 - [INFO] - app.db.database - Database initialized successfully.
+2026-08-03 14:31:24 - [INFO] - app.db.database - Database connection closed.
+2026-08-03 14:31:24 - [INFO] - app.db.database - Initializing database: sqlite+aiosqlite:///file:testdb?mode=memory&cache=shared
+2026-08-03 14:31:24 - [INFO] - app.db.database - Database initialized successfully.
+2026-08-03 14:31:25 - [INFO] - app.db.database - Database connection closed.
+2026-08-03 14:31:25 - [INFO] - app.db.database - Initializing database: sqlite+aiosqlite:///file:testdb?mode=memory&cache=shared
+2026-08-03 14:31:25 - [INFO] - app.db.database - Database initialized successfully.
+2026-08-03 14:31:25 - [INFO] - app.db.database - Database connection closed.
+2026-08-03 14:31:25 - [INFO] - app.db.database - Initializing database: sqlite+aiosqlite:///file:testdb?mode=memory&cache=shared
+2026-08-03 14:31:25 - [INFO] - app.db.database - Database initialized successfully.
+2026-08-03 14:31:26 - [INFO] - app.db.database - Database connection closed.
+2026-08-03 14:31:26 - [INFO] - app.db.database - Initializing database: sqlite+aiosqlite:///file:testdb?mode=memory&cache=shared
+2026-08-03 14:31:26 - [INFO] - app.db.database - Database initialized successfully.
+2026-08-03 14:31:26 - [INFO] - app.db.database - Database connection closed.
+2026-08-03 14:31:31 - [INFO] - app.db.database - Initializing database: sqlite+aiosqlite:///file:testdb?mode=memory&cache=shared
+2026-08-03 14:31:31 - [INFO] - app.db.database - Database initialized successfully.
+2026-08-03 14:31:31 - [INFO] - app.core.automation -     🏆 Top 1 Releases für Test Movie:
+2026-08-03 14:31:31 - [INFO] - app.core.automation -        1. [1600.0] Test.Movie.2023.1080p.WEB-DL.h264-GROUP
+2026-08-03 14:31:31 - [INFO] - app.core.automation -     📥 Sende an TorBox: Test.Movie.2023.1080p.WEB-DL.h264-GROUP (Score: 1600.0)
+2026-08-03 14:31:31 - [INFO] - app.db.database - Database connection closed.
+2026-08-03 14:31:31 - [INFO] - app.db.database - Initializing database: sqlite+aiosqlite:///file:testdb?mode=memory&cache=shared
+2026-08-03 14:31:31 - [INFO] - app.db.database - Database initialized successfully.
+2026-08-03 14:31:32 - [INFO] - app.core.automation -     🏆 Top 1 Releases für Upgrade Movie:
+2026-08-03 14:31:32 - [INFO] - app.core.automation -        1. [1200.0] Upgrade.Movie.2023.1080p.BluRay.x264-GROUP
+2026-08-03 14:31:32 - [INFO] - app.core.automation -     ❌ Bestes Release (Score 1200.0) liegt unter dem Upgrade-Schwellenwert.
+2026-08-03 14:31:32 - [INFO] - app.core.automation -     🏆 Top 1 Releases für Upgrade Movie:
+2026-08-03 14:31:32 - [INFO] - app.core.automation -        1. [1500.0] Upgrade.Movie.2023.1080p.BluRay.x264-GROUP
+2026-08-03 14:31:32 - [INFO] - app.core.automation -     📥 Sende an TorBox: Upgrade.Movie.2023.1080p.BluRay.x264-GROUP (Score: 1500.0)
+2026-08-03 14:31:32 - [INFO] - app.db.database - Database connection closed.
+2026-08-03 14:31:32 - [INFO] - app.db.database - Initializing database: sqlite+aiosqlite:///file:testdb?mode=memory&cache=shared
+2026-08-03 14:31:32 - [INFO] - app.db.database - Database initialized successfully.
+2026-08-03 14:31:32 - [INFO] - app.db.database - Database connection closed.
+2026-08-03 14:31:32 - [INFO] - app.db.database - Initializing database: sqlite+aiosqlite:///file:testdb?mode=memory&cache=shared
+2026-08-03 14:31:33 - [INFO] - app.db.database - Database initialized successfully.
+2026-08-03 14:31:33 - [INFO] - app.db.database - Database connection closed.
+2026-08-03 14:31:33 - [INFO] - app.db.database - Initializing database: sqlite+aiosqlite:///file:testdb?mode=memory&cache=shared
+2026-08-03 14:31:33 - [INFO] - app.db.database - Database initialized successfully.
+2026-08-03 14:31:33 - [INFO] - app.db.database - Database connection closed.
+2026-08-03 14:31:33 - [INFO] - app.db.database - Initializing database: sqlite+aiosqlite:///file:testdb?mode=memory&cache=shared
+2026-08-03 14:31:34 - [INFO] - app.db.database - Database initialized successfully.
+2026-08-03 14:31:34 - [INFO] - app.db.database - Database connection closed.
+2026-08-03 14:31:34 - [INFO] - app.db.database - Initializing database: sqlite+aiosqlite:///file:testdb?mode=memory&cache=shared
+2026-08-03 14:31:34 - [INFO] - app.db.database - Database initialized successfully.
+2026-08-03 14:31:35 - [INFO] - app.db.database - Database connection closed.
+2026-08-03 14:31:35 - [INFO] - app.db.database - Initializing database: sqlite+aiosqlite:///file:testdb?mode=memory&cache=shared
+2026-08-03 14:31:35 - [INFO] - app.db.database - Database initialized successfully.
+2026-08-03 14:31:35 - [INFO] - app.db.database - Database connection closed.
+2026-08-03 14:31:35 - [INFO] - app.db.database - Initializing database: sqlite+aiosqlite:///file:testdb?mode=memory&cache=shared
+2026-08-03 14:31:35 - [INFO] - app.db.database - Database initialized successfully.
+2026-08-03 14:31:36 - [INFO] - app.db.database - Database connection closed.
+2026-08-03 14:31:36 - [INFO] - app.db.database - Initializing database: sqlite+aiosqlite:///file:testdb?mode=memory&cache=shared
+2026-08-03 14:31:36 - [INFO] - app.db.database - Database initialized successfully.
+2026-08-03 14:31:36 - [INFO] - app.db.database - Database connection closed.
+2026-08-03 14:31:36 - [INFO] - app.db.database - Initializing database: sqlite+aiosqlite:///file:testdb?mode=memory&cache=shared
+2026-08-03 14:31:36 - [INFO] - app.db.database - Database initialized successfully.
+2026-08-03 14:31:37 - [INFO] - app.db.database - Database connection closed.
+2026-08-03 14:31:37 - [INFO] - app.db.database - Initializing database: sqlite+aiosqlite:///file:testdb?mode=memory&cache=shared
+2026-08-03 14:31:37 - [INFO] - app.db.database - Database initialized successfully.
+2026-08-03 14:31:37 - [INFO] - app.db.database - Database connection closed.
+2026-08-03 14:31:37 - [INFO] - app.db.database - Initializing database: sqlite+aiosqlite:///file:testdb?mode=memory&cache=shared
+2026-08-03 14:31:37 - [INFO] - app.db.database - Database initialized successfully.
+2026-08-03 14:31:38 - [INFO] - app.db.database - Database connection closed.
+2026-08-03 14:31:38 - [INFO] - app.db.database - Initializing database: sqlite+aiosqlite:///file:testdb?mode=memory&cache=shared
+2026-08-03 14:31:38 - [INFO] - app.db.database - Database initialized successfully.
+2026-08-03 14:31:38 - [INFO] - app.db.database - Database connection closed.
