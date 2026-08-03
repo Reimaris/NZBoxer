@@ -515,7 +515,25 @@ async def _evaluate_and_download(
         parsed = parse_release_name(title)
         runtime = movie.runtime_minutes if movie else None
 
-        score_res = score_release(parsed, size_bytes, runtime)
+        expected_title = None
+        expected_year = None
+        expected_alt_title = None
+        if movie:
+            expected_title = movie.title
+            expected_year = movie.year
+            expected_alt_title = movie.alt_title
+        elif season:
+            expected_title = season.media_item.title
+            expected_alt_title = season.media_item.alt_title
+        elif episode:
+            expected_title = episode.season.media_item.title
+            expected_alt_title = episode.season.media_item.alt_title
+
+        score_res = score_release(
+            parsed, size_bytes, runtime, 
+            expected_title=expected_title, expected_year=expected_year,
+            expected_alt_title=expected_alt_title
+        )
 
         if score_res.is_rejected:
             continue

@@ -39,7 +39,10 @@ def score_release(
     parsed: ParsedRelease,
     size_bytes: int,
     runtime_minutes: int | None,
-    age_days: int = 0
+    age_days: int = 0,
+    expected_title: str | None = None,
+    expected_year: int | None = None,
+    expected_alt_title: str | None = None,
 ) -> ScoreResult:
     """Calculate the score for a parsed release."""
     # 1. Apply hard filters (size, age, blacklist)
@@ -57,6 +60,30 @@ def score_release(
         return ScoreResult(0, True, f"Too large: {size_gb:.1f}GB > {max_size_gb}GB", None)
     if age_days < min_nzb_age:
         return ScoreResult(0, True, f"Too new: {age_days}d < {min_nzb_age}d", None)
+
+    # Title matching
+    if expected_title and parsed.title:
+        import re
+        def normalize(t: str) -> str:
+            # Remove punctuation and lowercase
+            return re.sub(r'[^a-z0-9]', '', t.lower())
+        
+        norm_expected = normalize(expected_title)
+        norm_parsed = normalize(parsed.title)
+        
+        match_found = (norm_expected in norm_parsed) or (norm_parsed in norm_expected)
+        
+        if not match_found and expected_alt_title:
+            norm_alt = normalize(expected_alt_title)
+            match_found = (norm_alt in norm_parsed) or (norm_parsed in norm_alt)
+            
+        if not match_found:
+            return ScoreResult(0, True, f"Title mismatch: '{parsed.title}' vs '{expected_title}' (alt: '{expected_alt_title}')", None)
+
+    # Year matching (allow +/- 1 year tolerance for movies)
+    if expected_year and parsed.year:
+        if abs(parsed.year - expected_year) > 1:
+            return ScoreResult(0, True, f"Year mismatch: {parsed.year} != {expected_year}", None)
 
     groups_cfg = scoring_config.get("release_groups", {})
     blacklist = [g.lower() for g in groups_cfg.get("blacklist", [])]
