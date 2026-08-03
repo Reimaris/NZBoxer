@@ -101,7 +101,10 @@ async def get_movie_details(tmdb_id: int) -> dict[str, Any] | None:
             response.raise_for_status()
             return response.json()
         except httpx.HTTPError as e:
-            logger.error("TMDB movie details error for %d: %s", tmdb_id, e)
+            if isinstance(e, httpx.HTTPStatusError) and e.response.status_code == 404:
+                logger.warning("TMDB movie details not found (404) for %d", tmdb_id)
+            else:
+                logger.error("TMDB movie details error for %d: %s", tmdb_id, e)
             return None
 
 
@@ -126,7 +129,10 @@ async def get_show_details(tmdb_id: int) -> dict[str, Any] | None:
             response.raise_for_status()
             return response.json()
         except httpx.HTTPError as e:
-            logger.error("TMDB tv details error for %d: %s", tmdb_id, e)
+            if isinstance(e, httpx.HTTPStatusError) and e.response.status_code == 404:
+                logger.warning("TMDB tv details not found (404) for %d", tmdb_id)
+            else:
+                logger.error("TMDB tv details error for %d: %s", tmdb_id, e)
             return None
 
 

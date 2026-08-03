@@ -438,7 +438,9 @@ async def _process_season(session: AsyncSession, season: Season) -> None:
         Episode.season_id == season.id,
         Episode.status == EpisodeStatus.SEARCHING,
         Episode.monitored == True
-    ).order_by(Episode.episode_number)
+    ).order_by(Episode.episode_number).options(
+        selectinload(Episode.season).selectinload(Season.media_item)
+    )
     episodes_res = await session.execute(stmt)
     missing_episodes = episodes_res.scalars().all()
 
