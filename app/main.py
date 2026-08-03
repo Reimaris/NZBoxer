@@ -944,7 +944,7 @@ async def run_system_check(request: Request):
             if db_settings and db_settings.torbox_api_key:
                 try:
                     r = await client.get(
-                        "https://api.torbox.app/v1/api/settings",
+                        "https://api.torbox.app/v1/api/user/me",
                         headers={"Authorization": f"Bearer {db_settings.torbox_api_key}"}
                     )
                     results["torbox"] = {"ok": r.status_code == 200, "msg": "Erfolgreich" if r.status_code == 200 else f"Fehler {r.status_code}"}
