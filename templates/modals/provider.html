@@ -40,7 +40,7 @@
                             <span class="text-[#d40060] cursor-help" title="Die Client ID Ihrer Simkl API App.">ℹ</span>
                             <a href="https://simkl.com/settings/developer/" target="_blank" class="ml-auto text-xs text-blue-400 hover:underline">Klick hier</a>
                         </label>
-                        <input type="password" name="client_id" value="{{ provider.client_id if provider else '' }}" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors font-mono">
+                        <input type="password" name="client_id" value="{{ '' if provider and provider.client_id == 'your_simkl_client_id_here' else (provider.client_id if provider and provider.client_id else '') }}" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors font-mono">
                     </div>
 
                     <div class="relative group">
@@ -49,7 +49,7 @@
                             <span class="text-[#d40060] cursor-help" title="Der geheime Access Token.">ℹ</span>
                         </label>
                         <div class="flex gap-2">
-                            <input type="password" id="access_token" name="access_token" value="{{ provider.access_token if provider else '' }}" class="flex-1 w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors font-mono">
+                            <input type="password" id="access_token" name="access_token" value="{{ '' if provider and provider.access_token == 'your_simkl_access_token_here' else (provider.access_token if provider and provider.access_token else '') }}" class="flex-1 w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors font-mono">
                             <button type="button" hx-post="/simkl/auth/start" hx-include="[name='client_id']" hx-target="#simkl-auth-container-modal" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition-colors text-sm whitespace-nowrap shadow-lg shadow-blue-900/20">
                                 Connect via PIN
                             </button>

@@ -60,7 +60,7 @@
                             </div>
                             <a href="https://www.themoviedb.org/settings/api" target="_blank" class="ml-auto text-xs text-blue-400 hover:underline">Klick hier</a>
                         </label>
-                        <input type="password" name="tmdb_api_key" value="{{ db_settings.tmdb_api_key if db_settings and db_settings.tmdb_api_key else '' }}" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-3 text-white focus:outline-none transition-colors font-mono">
+                        <input type="password" name="tmdb_api_key" value="{{ '' if db_settings and db_settings.tmdb_api_key == 'your_tmdb_api_v3_key_here' else (db_settings.tmdb_api_key if db_settings and db_settings.tmdb_api_key else '') }}" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-3 text-white focus:outline-none transition-colors font-mono">
                     </div>
                     
                     <div class="relative group">
@@ -76,7 +76,7 @@
                             </div>
                             <a href="https://torbox.app/settings" target="_blank" class="ml-auto text-xs text-blue-400 hover:underline">Klick hier</a>
                         </label>
-                        <input type="password" name="torbox_api_key" value="{{ db_settings.torbox_api_key if db_settings and db_settings.torbox_api_key else '' }}" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-3 text-white focus:outline-none transition-colors font-mono">
+                        <input type="password" name="torbox_api_key" value="{{ '' if db_settings and db_settings.torbox_api_key == 'your_torbox_api_key_here' else (db_settings.torbox_api_key if db_settings and db_settings.torbox_api_key else '') }}" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-3 text-white focus:outline-none transition-colors font-mono">
                     </div>
                     <div class="relative group">
                         <label class="block text-[#d1d5db] font-medium mb-1 flex items-center gap-2">
@@ -91,7 +91,7 @@
                             </div>
                             <a href="https://treasure-maps.com/" target="_blank" class="ml-auto text-xs text-blue-400 hover:underline">Klick hier</a>
                         </label>
-                        <input type="password" name="treasure_maps_api_key" value="{{ db_settings.treasure_maps_api_key if db_settings and db_settings.treasure_maps_api_key else '' }}" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-3 text-white focus:outline-none transition-colors font-mono">
+                        <input type="password" name="treasure_maps_api_key" value="{{ '' if db_settings and db_settings.treasure_maps_api_key == 'your_newznab_api_key_here' else (db_settings.treasure_maps_api_key if db_settings and db_settings.treasure_maps_api_key else '') }}" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-3 text-white focus:outline-none transition-colors font-mono">
                     </div>
                 </div>
             </div>
