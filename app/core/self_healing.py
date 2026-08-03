@@ -4,6 +4,9 @@ Self Healing Cycle
 Checks active downloads in TorBox. If a download has failed or errored out,
 it removes the associated DownloadHistory entry and blacklists the NZB so that
 the next automation cycle will pick the next best release.
+
+Also provides run_download_check_cycle() which checks the current TorBox
+download status and transitions DOWNLOADED items to COMPLETED once done.
 """
 from __future__ import annotations
 
@@ -15,7 +18,18 @@ from sqlalchemy.orm import selectinload
 
 from app.config import settings
 from app.db.database import async_session_factory
-from app.db.models import BlacklistedRelease, DownloadHistory, MediaItem, MediaStatus, Season, SeasonStatus, ProviderProfile
+from app.db.models import (
+    BlacklistedRelease,
+    DownloadHistory,
+    Episode,
+    EpisodeStatus,
+    MediaItem,
+    MediaStatus,
+    MediaType,
+    Season,
+    SeasonStatus,
+    ProviderProfile,
+)
 from app.services import torbox, telegram
 
 logger = logging.getLogger(__name__)
@@ -27,7 +41,7 @@ async def run_self_healing_cycle() -> None:
         logger.debug("TorBox API key missing. Skipping self-healing cycle.")
         return
         
-    logger.info("Starting self-healing cycle...")
+    logger.info("🔧 Starte Self-Healing-Zyklus...")
 
     async with async_session_factory() as session:
         # We look for DownloadHistory items that were recently sent, maybe we only check
@@ -65,7 +79,7 @@ async def run_self_healing_cycle() -> None:
             
             if status in ("failed", "error", "not_found"):
                 # Self healing triggered!
-                logger.warning("Self-Healing triggered! Download failed for %s", history.nzb_title)
+                logger.warning("⚠️ Self-Healing: Download fehlgeschlagen für %s", history.nzb_title)
                 
                 # 1. Blacklist it
                 blacklist_entry = BlacklistedRelease(
@@ -101,4 +115,129 @@ async def run_self_healing_cycle() -> None:
                 
         await session.commit()
     
-    logger.info("Self-healing cycle completed.")
+    logger.info("✅ Self-Healing-Zyklus abgeschlossen.")
+
+
+async def run_download_check_cycle() -> None:
+    """Checks TorBox for all DOWNLOADED items and updates their status.
+    
+    - completed / cached → set to COMPLETED
+    - downloading / queued → leave as DOWNLOADED (still in progress)
+    - failed / error / not_found → hand off to self-healing (blacklist + revert)
+    """
+    if not settings.torbox_api_key:
+        logger.debug("TorBox API key missing. Skipping download check.")
+        return
+
+    logger.info("🔎 Prüfe Download-Status bei TorBox...")
+
+    # Fetch full TorBox list once to avoid repeated API calls
+    try:
+        import httpx
+        headers = {"Authorization": f"Bearer {settings.torbox_api_key}"}
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.get("https://api.torbox.app/v1/api/usenet/mylist", headers=headers)
+            resp.raise_for_status()
+            tb_data = resp.json()
+    except Exception as e:
+        logger.error("❌ Konnte TorBox-Liste nicht abrufen: %s", e)
+        return
+
+    if not tb_data.get("success"):
+        logger.error("❌ TorBox API Fehler: %s", tb_data.get("detail"))
+        return
+
+    # Build lookup by id
+    tb_items: dict[str, dict] = {}
+    for item in tb_data.get("data", []) or []:
+        tb_items[str(item.get("id", ""))] = item
+
+    async with async_session_factory() as session:
+        # --- Movies ---
+        stmt = select(MediaItem).where(
+            MediaItem.status == MediaStatus.DOWNLOADED
+        ).options(selectinload(MediaItem.download_history))
+        movies = (await session.execute(stmt)).scalars().all()
+
+        # --- Seasons ---
+        stmt_s = select(Season).where(
+            Season.status == SeasonStatus.DOWNLOADED
+        ).options(selectinload(Season.download_history), selectinload(Season.media_item))
+        seasons = (await session.execute(stmt_s)).scalars().all()
+
+        def _get_tb_status(history: DownloadHistory) -> tuple[str, dict]:
+            if not history.torbox_id:
+                return "no_id", {}
+            tb = tb_items.get(str(history.torbox_id), {})
+            if not tb:
+                return "not_found", {}
+            return tb.get("download_state", "unknown"), tb
+
+        changed = 0
+        for movie in movies:
+            if not movie.download_history:
+                continue
+            latest = max(movie.download_history, key=lambda h: h.torbox_sent_at or datetime.min.replace(tzinfo=timezone.utc))
+            status, tb = _get_tb_status(latest)
+            title = movie.title
+
+            if status in ("completed", "cached", "paused"):
+                logger.info("    ✅ %s → COMPLETED (TorBox: %s)", title, status)
+                movie.status = MediaStatus.COMPLETED
+                changed += 1
+            elif status in ("failed", "error"):
+                logger.warning("    ⚠️ %s → fehlgeschlagen (%s), wird erneut gesucht.", title, status)
+                bl = BlacklistedRelease(
+                    media_item_id=movie.id,
+                    nzb_guid=latest.nzb_guid,
+                    nzb_title=latest.nzb_title,
+                    reason=f"TorBox: {status}"
+                )
+                session.add(bl)
+                await session.delete(latest)
+                movie.status = MediaStatus.SEARCHING
+                changed += 1
+            elif status == "not_found":
+                # Already gone from TorBox – likely completed
+                logger.info("    ✅ %s → COMPLETED (nicht mehr in TorBox-Liste)", title)
+                movie.status = MediaStatus.COMPLETED
+                changed += 1
+            else:
+                logger.info("    ⏳ %s → noch lädt (TorBox: %s)", title, status)
+
+        for season in seasons:
+            if not season.download_history:
+                continue
+            latest = max(season.download_history, key=lambda h: h.torbox_sent_at or datetime.min.replace(tzinfo=timezone.utc))
+            status, tb = _get_tb_status(latest)
+            title = f"{season.media_item.title} S{season.season_number:02d}"
+
+            if status in ("completed", "cached", "paused"):
+                logger.info("    ✅ %s → COMPLETED (TorBox: %s)", title, status)
+                season.status = SeasonStatus.COMPLETED
+                changed += 1
+            elif status in ("failed", "error"):
+                logger.warning("    ⚠️ %s → fehlgeschlagen (%s), wird erneut gesucht.", title, status)
+                bl = BlacklistedRelease(
+                    media_item_id=season.media_item_id,
+                    nzb_guid=latest.nzb_guid,
+                    nzb_title=latest.nzb_title,
+                    reason=f"TorBox: {status}"
+                )
+                session.add(bl)
+                await session.delete(latest)
+                season.status = SeasonStatus.SEARCHING
+                changed += 1
+            elif status == "not_found":
+                logger.info("    ✅ %s → COMPLETED (nicht mehr in TorBox-Liste)", title)
+                season.status = SeasonStatus.COMPLETED
+                changed += 1
+            else:
+                logger.info("    ⏳ %s → noch lädt (TorBox: %s)", title, status)
+
+        await session.commit()
+
+    if changed:
+        logger.info("🔎 Download-Check abgeschlossen: %d Status aktualisiert.", changed)
+    else:
+        logger.info("🔎 Download-Check abgeschlossen: Keine Änderungen.")

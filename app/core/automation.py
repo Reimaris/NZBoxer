@@ -17,6 +17,7 @@ from sqlalchemy.orm import selectinload
 from app.config import scoring_config
 from app.core.parser import parse_release_name
 from app.core.scorer import score_release
+from app.core.self_healing import run_self_healing_cycle, run_download_check_cycle
 from app.db.database import async_session_factory
 from app.db.models import (
     DownloadHistory,
@@ -203,6 +204,9 @@ async def run_automation_cycle(force: bool = False) -> None:
     else:
         logger.info("🔄 Starte Automatisierungs-Zyklus...")
     
+    # 0. Self-healing: fix failed downloads before searching
+    await run_self_healing_cycle()
+    
     # 1. Sync watchlist first
     await sync_simkl_watchlist()
 
@@ -293,6 +297,10 @@ async def run_automation_cycle(force: bool = False) -> None:
                 await _process_season(session, season)
         else:
             logger.info("⏩ Überspringe Serien-Suche in diesem Zyklus.")
+
+    # 4. Download-Check: update status for items already sent to TorBox
+    await run_download_check_cycle()
+
 
 
 async def _process_movie(session: AsyncSession, movie: MediaItem) -> None:
