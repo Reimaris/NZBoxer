@@ -181,12 +181,12 @@
                     </td>
                     <td class="px-6 py-4">
                         <div class="flex flex-col gap-1 items-start">
-                            {% if item.status == 'downloaded' or item.status == 'completed' %}
+                            {% if item.status.value == 'downloaded' or item.status.value == 'completed' %}
                                 <span class="bg-emerald-600 text-white text-[11px] font-bold px-2 py-1 rounded uppercase tracking-wider shadow-sm">DONE</span>
-                            {% elif item.status == 'searching' or item.status == 'pending' %}
+                            {% elif item.status.value == 'searching' or item.status.value == 'pending' %}
                                 <span class="bg-[#d40060] text-white text-[11px] font-bold px-2 py-1 rounded uppercase tracking-wider shadow-sm">WANTED</span>
                             {% else %}
-                                <span class="bg-slate-600 text-white text-[11px] font-bold px-2 py-1 rounded uppercase tracking-wider shadow-sm">{{ item.status }}</span>
+                                <span class="bg-slate-600 text-white text-[11px] font-bold px-2 py-1 rounded uppercase tracking-wider shadow-sm">{{ item.status.value }}</span>
                             {% endif %}
                             
                             {% if item.fail_count > 0 %}
