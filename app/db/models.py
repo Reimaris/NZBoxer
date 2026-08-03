@@ -198,6 +198,8 @@ class ProviderProfile(Base):
     # Series specific
     prefer_complete_seasons: Mapped[bool] = mapped_column(Boolean, default=False)
     episode_block_size: Mapped[int] = mapped_column(Integer, default=0)
+    # Kept for DB compat — the actual per-series flag lives on MediaItem
+    auto_monitor_next_season: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
     
     # Notification link
     notification_channel_id: Mapped[int | None] = mapped_column(
