@@ -184,10 +184,6 @@
                                         <input type="checkbox" name="series_prefer_seasons" value="True" {% if s_prof and s_prof.prefer_complete_seasons %}checked{% endif %} class="w-4 h-4 accent-[#d40060]">
                                         <span>Komplette Staffeln bevorzugen (Sucht zuerst nach SXX, bei Misserfolg nach einzelnen Episoden)</span>
                                     </label>
-                                    <label class="flex items-center gap-2 text-[#d1d5db] text-sm cursor-pointer mt-4">
-                                        <input type="checkbox" name="series_auto_monitor" value="True" {% if s_prof and s_prof.auto_monitor_next_season %}checked{% endif %} class="w-4 h-4 accent-[#d40060]">
-                                        <span>Automatisch nächste Staffel aktivieren, wenn die aktuelle abgeschlossen ist</span>
-                                    </label>
                                 </div>
                             </div>
                         </div>
@@ -257,10 +253,6 @@
                                     <label class="flex items-center gap-2 text-[#d1d5db] text-sm cursor-pointer mt-2">
                                         <input type="checkbox" name="anime_prefer_seasons" value="True" {% if a_prof and a_prof.prefer_complete_seasons %}checked{% endif %} class="w-4 h-4 accent-[#d40060]">
                                         <span>Komplette Staffeln bevorzugen (Sucht zuerst nach SXX, bei Misserfolg nach einzelnen Episoden)</span>
-                                    </label>
-                                    <label class="flex items-center gap-2 text-[#d1d5db] text-sm cursor-pointer mt-4">
-                                        <input type="checkbox" name="anime_auto_monitor" value="True" {% if a_prof and a_prof.auto_monitor_next_season %}checked{% endif %} class="w-4 h-4 accent-[#d40060]">
-                                        <span>Automatisch nächste Staffel aktivieren, wenn die aktuelle abgeschlossen ist</span>
                                     </label>
                                 </div>
                             </div>

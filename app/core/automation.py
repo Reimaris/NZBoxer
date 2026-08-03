@@ -343,7 +343,7 @@ async def _process_season(session: AsyncSession, season: Season) -> None:
             await session.refresh(season)
             if season.status in [SeasonStatus.DOWNLOADED, SeasonStatus.COMPLETED]:
                 # Season Pack was successful, check auto-monitor for next season
-                if profile and profile.auto_monitor_next_season:
+                if season.media_item.auto_monitor_next_season:
                     next_s_stmt = select(Season).where(Season.media_item_id == season.media_item_id, Season.season_number == season.season_number + 1)
                     next_s = (await session.execute(next_s_stmt)).scalar_one_or_none()
                     if next_s and not next_s.monitored:
@@ -377,7 +377,7 @@ async def _process_season(session: AsyncSession, season: Season) -> None:
     if not (await session.execute(stmt_check)).scalars().all():
         # Season is done
         season.status = SeasonStatus.COMPLETED
-        if profile and profile.auto_monitor_next_season:
+        if season.media_item.auto_monitor_next_season:
             next_s_stmt = select(Season).where(Season.media_item_id == season.media_item_id, Season.season_number == season.season_number + 1)
             next_s = (await session.execute(next_s_stmt)).scalar_one_or_none()
             if next_s and not next_s.monitored:

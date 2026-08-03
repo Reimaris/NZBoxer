@@ -198,7 +198,6 @@ class ProviderProfile(Base):
     # Series specific
     prefer_complete_seasons: Mapped[bool] = mapped_column(Boolean, default=False)
     episode_block_size: Mapped[int] = mapped_column(Integer, default=0)
-    auto_monitor_next_season: Mapped[bool] = mapped_column(Boolean, default=False)
     
     # Notification link
     notification_channel_id: Mapped[int | None] = mapped_column(
@@ -281,6 +280,8 @@ class MediaItem(Base):
 
     # --- Release date (movies: digital release; shows: first air date) ---
     release_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    
+    auto_monitor_next_season: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="0")
 
     # --- Sync tracking ---
     simkl_synced_at: Mapped[datetime | None] = mapped_column(

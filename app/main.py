@@ -303,6 +303,21 @@ async def toggle_anime_type(item_id: int):
     return HTMLResponse(content="Error", status_code=400)
 
 
+@app.post("/items/{item_id}/toggle_auto_monitor")
+async def toggle_auto_monitor(item_id: int):
+    """Toggle whether to automatically monitor the next season when current is completed."""
+    from app.db.database import async_session_factory
+    from app.db.models import MediaItem
+
+    async with async_session_factory() as session:
+        item = await session.get(MediaItem, item_id)
+        if item:
+            item.auto_monitor_next_season = not item.auto_monitor_next_season
+            await session.commit()
+            return HTMLResponse(content='<script>window.location.reload();</script>')
+    return HTMLResponse(content="Error", status_code=400)
+
+
 @app.delete("/items/{item_id}")
 async def delete_item(item_id: int):
     """Delete an item entirely from the database."""
@@ -535,7 +550,6 @@ async def save_provider(
     series_reject: str = Form(""),
     series_prefer_seasons: bool = Form(False),
     series_block_size: int = Form(5),
-    series_auto_monitor: bool = Form(False),
     series_notification: int = Form(None),
     
     enable_anime: bool = Form(False),
@@ -548,7 +562,6 @@ async def save_provider(
     anime_reject: str = Form(""),
     anime_prefer_seasons: bool = Form(False),
     anime_block_size: int = Form(5),
-    anime_auto_monitor: bool = Form(False),
     anime_notification: int = Form(None)
 ):
     from sqlalchemy.orm import selectinload
@@ -607,7 +620,6 @@ async def save_provider(
                 reject_words_csv=series_reject,
                 prefer_complete_seasons=series_prefer_seasons,
                 episode_block_size=series_block_size,
-                auto_monitor_next_season=series_auto_monitor,
                 notification_channel_id=series_notification if series_notification else None
             )
             session.add(ps)
@@ -625,7 +637,6 @@ async def save_provider(
                 reject_words_csv=anime_reject,
                 prefer_complete_seasons=anime_prefer_seasons,
                 episode_block_size=anime_block_size,
-                auto_monitor_next_season=anime_auto_monitor,
                 notification_channel_id=anime_notification if anime_notification else None
             )
             session.add(pa)

@@ -189,8 +189,12 @@ async def init_db(database_url: str) -> None:
                 await session.execute(
                     __import__("sqlalchemy").text("ALTER TABLE provider_profiles ADD COLUMN current_cycle_count INTEGER NOT NULL DEFAULT 0;")
                 )
+            except Exception:
+                pass
+                
+            try:
                 await session.execute(
-                    __import__("sqlalchemy").text("ALTER TABLE provider_profiles ADD COLUMN auto_monitor_next_season BOOLEAN NOT NULL DEFAULT 0;")
+                    __import__("sqlalchemy").text("ALTER TABLE media_items ADD COLUMN auto_monitor_next_season BOOLEAN NOT NULL DEFAULT 0;")
                 )
             except Exception:
                 pass
