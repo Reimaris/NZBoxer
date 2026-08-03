@@ -621,6 +621,7 @@ async def _evaluate_and_download(
             expected_season=expected_season,
             expected_episode=expected_episode,
             required_language=required_language,
+            api_language=item.get("api_language")
         )
 
         if score_res.is_rejected:

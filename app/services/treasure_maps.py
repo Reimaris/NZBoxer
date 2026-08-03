@@ -145,6 +145,10 @@ async def _execute_search(url: str, params: dict[str, Any]) -> list[dict[str, An
                 if "guid" not in flat or flat["guid"].startswith("http"):
                     # The 'guid' in attr is the hash, the top-level 'guid' is a URL
                     flat["guid"] = attr_map.get("guid", flat.get("guid", ""))
+                
+                # Extract language attribute if provided by indexer
+                if "language" in attr_map:
+                    flat["api_language"] = attr_map["language"]
 
                 # Fallback: size from enclosure length
                 if not flat["size"]:

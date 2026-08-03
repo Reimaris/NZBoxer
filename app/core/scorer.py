@@ -38,7 +38,7 @@ def calculate_bitrate_mbps(size_bytes: int, runtime_minutes: int | None) -> floa
 def score_release(
     parsed: ParsedRelease,
     size_bytes: int,
-    runtime_minutes: int | None,
+    runtime_minutes: int | None = None,
     age_days: int = 0,
     expected_title: str | None = None,
     expected_year: int | None = None,
@@ -46,6 +46,7 @@ def score_release(
     expected_season: int | None = None,
     expected_episode: int | None = None,
     required_language: str | None = None,
+    api_language: str | None = None
 ) -> ScoreResult:
     """Calculate the score for a parsed release."""
     # 1. Apply hard filters (size, age, blacklist)
@@ -106,7 +107,13 @@ def score_release(
                 return ScoreResult(0, True, f"Rejected single episode {parsed.episode} for season pack search", None)
 
     # Language check — normalize common variants then hard-reject if language not present
-    if required_language and parsed.languages:
+    # We check both the parsed languages from the title and the api_language provided by the indexer.
+    # If neither is present, we assume it's standard (usually English) and we don't reject unless
+    # the user specifically wants a non-English release, OR we just let it pass if no language could be identified.
+    # Wait, the user requirement: "Nur Releases mit dieser Sprache werden akzeptiert. Releases ohne erkennbare Sprache werden nicht abgelehnt."
+    has_any_language_identified = bool(parsed.languages) or bool(api_language)
+    
+    if required_language and has_any_language_identified:
         _LANG_MAP = {
             # English
             "english": "en", "eng": "en",
@@ -127,9 +134,16 @@ def score_release(
         }
         req_lang = required_language.strip().lower()
         req_lang = _LANG_MAP.get(req_lang, req_lang)  # normalize
-        release_langs = {_LANG_MAP.get(l.lower(), l.lower()) for l in parsed.languages}
+        
+        release_langs = {_LANG_MAP.get(l.lower(), l.lower()) for l in parsed.languages} if parsed.languages else set()
+        if api_language:
+            # Newznab languages are often strings like "English", "German", "English / German"
+            api_langs = [l.strip().lower() for l in api_language.replace("/", ",").split(",")]
+            for al in api_langs:
+                release_langs.add(_LANG_MAP.get(al, al))
+                
         if req_lang not in release_langs:
-            return ScoreResult(0, True, f"Language mismatch: release has {list(parsed.languages)} but required '{required_language}'", None)
+            return ScoreResult(0, True, f"Language mismatch: release has {release_langs} but required '{req_lang}'", None)
 
     groups_cfg = scoring_config.get("release_groups", {})
     blacklist = [g.lower() for g in groups_cfg.get("blacklist", [])]
