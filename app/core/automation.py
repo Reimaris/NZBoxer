@@ -687,6 +687,18 @@ async def _evaluate_and_download(
         target.fail_count += 1
         target.last_error = "Keine passenden (oder ausreichend bewerteten) Releases gefunden."
         logger.info("    ❌ %s", target.last_error)
+        
+        # If this item was previously downloaded, revert its status so it doesn't get stuck in SEARCHING
+        if target.best_score is not None:
+            from app.db.models import MediaStatus, SeasonStatus, EpisodeStatus
+            is_completed = (target.best_score >= target_score)
+            if movie:
+                target.status = MediaStatus.COMPLETED if is_completed else MediaStatus.DOWNLOADED
+            elif season:
+                target.status = SeasonStatus.COMPLETED if is_completed else SeasonStatus.DOWNLOADED
+            elif episode:
+                target.status = EpisodeStatus.COMPLETED if is_completed else EpisodeStatus.DOWNLOADED
+                
         await session.commit()
         return False
 
@@ -743,6 +755,18 @@ async def _evaluate_and_download(
         target.fail_count += 1
         target.last_error = f"Bestes Release (Score {best_candidate['score']}) liegt unter dem Upgrade-Schwellenwert."
         logger.info("    ❌ %s", target.last_error)
+        
+        # If we don't upgrade, revert its status so it doesn't get stuck in SEARCHING
+        if target.best_score is not None:
+            from app.db.models import MediaStatus, SeasonStatus, EpisodeStatus
+            is_completed = (target.best_score >= target_score)
+            if movie:
+                target.status = MediaStatus.COMPLETED if is_completed else MediaStatus.DOWNLOADED
+            elif season:
+                target.status = SeasonStatus.COMPLETED if is_completed else SeasonStatus.DOWNLOADED
+            elif episode:
+                target.status = EpisodeStatus.COMPLETED if is_completed else EpisodeStatus.DOWNLOADED
+
         await session.commit()
         return False
 
