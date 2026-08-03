@@ -6,7 +6,7 @@ NZBoxer is a lightweight, autonomous service that connects Simkl, TMDB, Newznab 
 
 - **Automated Sync**: Seamlessly syncs your "Plan to Watch" lists from Simkl for Movies and Shows.
 - **Smart Orchestration**: Leverages TMDB for exact digital release dates to know exactly when to start searching.
-- **Configurable Scoring Engine**: Uses a highly customizable `config.yaml` matrix to evaluate NZB releases based on resolution, codecs, release groups, and bitrate.
+- **Configurable Scoring Engine**: Uses a highly customizable scoring matrix (configurable via UI) to evaluate NZB releases based on resolution, codecs, release groups, and bitrate.
 - **Upgrade Logic**: Continuously monitors for better releases and upgrades existing downloads if they exceed your configured threshold.
 - **Modern UI**: A lightweight, fast HTMX & TailwindCSS dashboard for monitoring status and managing season tracking.
 - **Zero Dependencies (Almost)**: Uses SQLite with WAL-mode for high concurrency, meaning no heavy database setups (like PostgreSQL) are required.
@@ -36,46 +36,23 @@ pip install -r requirements.txt
 
 ### 2. Configuration
 
-Copy the example environment file and fill in your API keys:
-
-```bash
-cp .env.example .env
-nano .env
-```
-
-Review the scoring logic and thresholds in `config.yaml`. The defaults are optimized for high-quality HEVC/x265 releases:
-
-```bash
-nano config.yaml
-```
+All configuration (API Keys, Scoring, Notification Channels) is done directly via the Web UI in the Settings tab. There are no configuration files to manually edit.
 
 ### 3. Running the Service
 
-#### Option A: Production Deployment (Recommended, via GHCR)
+#### Option A: Docker Deployment (Recommended)
 
 The easiest and most robust way to run NZBoxer is using the pre-built Docker image from the GitHub Container Registry.
 
-1. **Log into GHCR:** (You need a GitHub Personal Access Token with `read:packages` permission)
+1. **Start the application:**
    ```bash
-   echo $PAT | docker login ghcr.io -u Reimaris --password-stdin
+   docker compose up -d
    ```
 
-2. **Set up environment:** (Ensure `.env` and `config.yaml` are created as described above)
+2. **Access the Dashboard:**
+   Visit [http://localhost:8000/](http://localhost:8000/) and navigate to the **Einstellungen** tab to configure your API keys and scoring preferences.
 
-3. **Start the application:**
-   ```bash
-   docker compose -f docker-compose.prod.yml up -d
-   ```
-
-#### Option B: Local Docker Build (Development)
-
-If you want to modify the code and build locally:
-
-```bash
-docker compose up -d --build
-```
-
-#### Option C: Local Python Environment
+#### Option B: Local Python Environment
 
 Start the FastAPI application natively. The background scheduler will automatically start syncing and searching.
 

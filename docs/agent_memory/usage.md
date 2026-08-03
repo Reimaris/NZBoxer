@@ -24,9 +24,7 @@ This file provides comprehensive instructions on how to use NZBoxer.
 ## Configuration
 
 1. **Environment Variables:**
-   Copy `.env.example` to `.env` and provide your credentials.
    ```bash
-   cp .env.example .env
    ```
    Required keys include:
    - `SIMKL_CLIENT_ID`
@@ -36,7 +34,6 @@ This file provides comprehensive instructions on how to use NZBoxer.
    - `TORBOX_API_KEY`
 
 2. **Scoring Rules:**
-   Edit `config.yaml` to adjust the scoring engine (resolution points, codecs, release groups, and target/upgrade thresholds).
 
 ## Running the Application
 
@@ -50,9 +47,7 @@ Run the application using the pre-built Docker image from the GitHub Container R
    ```
 
 2. **Start the application:**
-   Ensure your `.env` and `config.yaml` are present, then run:
    ```bash
-   docker compose -f docker-compose.prod.yml up -d
    ```
 
 ### Option B: Local Docker Build (Development)

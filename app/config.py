@@ -1,9 +1,8 @@
 """
 NZBoxer Application Configuration
 ====================================
-Loads settings from environment variables (.env) and the scoring/automation
-config from config.yaml. Provides a single validated settings object to the
-rest of the application.
+Loads settings from environment variables and the database.
+Provides a single validated settings object to the rest of the application.
 
 Usage::
 
@@ -17,20 +16,12 @@ from __future__ import annotations
 import logging
 import os
 from functools import lru_cache
-from pathlib import Path
-
-# We need a forward reference for typing if needed, but we'll import locally in the function
 from typing import TYPE_CHECKING, Any
 
-import yaml
-from dotenv import load_dotenv
+from app.core.default_scoring import DEFAULT_SCORING_CONFIG
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
-
-# Load .env file from the project root (one level up from app/)
-_ROOT = Path(__file__).parent.parent
-load_dotenv(_ROOT / ".env")
 
 logger = logging.getLogger(__name__)
 
@@ -43,15 +34,13 @@ class Settings:
     """
 
     # --- Database ---
-    database_url: str = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./nzboxer.db")
+    # Default to a local SQLite database in the config volume mapping
+    database_url: str = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./config/nzboxer.db")
 
-    # --- TMDB ---
-    tmdb_api_key: str = os.getenv("TMDB_API_KEY", "")
-
-    treasure_maps_api_key: str = os.getenv("TREASURE_MAPS_API_KEY", "")
-
-    # --- TorBox ---
-    torbox_api_key: str = os.getenv("TORBOX_API_KEY", "")
+    # --- API Keys (Now populated entirely from the DB on startup) ---
+    tmdb_api_key: str = ""
+    treasure_maps_api_key: str = ""
+    torbox_api_key: str = ""
 
     # Self-Healing & Automation
     scan_interval_multiplier: int = int(os.getenv("SCAN_INTERVAL_MULTIPLIER", "1"))
@@ -77,25 +66,14 @@ def get_settings() -> Settings:
 
 @lru_cache(maxsize=1)
 def get_scoring_config() -> dict[str, Any]:
-    """Load and cache the config.yaml scoring/automation configuration.
+    """Load and cache the default scoring configuration.
 
     Returns:
-        dict: The parsed YAML content.
-
-    Raises:
-        FileNotFoundError: If config.yaml does not exist at the project root.
-        yaml.YAMLError: If config.yaml contains invalid YAML syntax.
+        dict: The default configuration dict.
     """
-    config_path = _ROOT / "config.yaml"
-    if not config_path.exists():
-        raise FileNotFoundError(
-            f"config.yaml not found at {config_path}. "
-            "Please ensure it exists in the project root."
-        )
-    with config_path.open("r", encoding="utf-8") as f:
-        data: dict[str, Any] = yaml.safe_load(f)
-    logger.info("Loaded config.yaml from %s", config_path)
-    return data
+    # Create a fresh copy to prevent mutating the default imported dict
+    import copy
+    return copy.deepcopy(DEFAULT_SCORING_CONFIG)
 
 
 # Convenience module-level singletons
@@ -107,7 +85,7 @@ async def reload_settings_from_db(session: AsyncSession) -> None:
     """Load settings from the SQLite database and update the global cache.
     
     If the SystemSettings row does not exist, it will be created using the
-    current in-memory defaults (which were loaded from .env/config.yaml).
+    current in-memory defaults.
     """
     from sqlalchemy import select
 
@@ -118,7 +96,7 @@ async def reload_settings_from_db(session: AsyncSession) -> None:
     db_settings = result.scalar_one_or_none()
 
     if not db_settings:
-        # Create default from current environment/yaml if not in DB
+        # Create default from current environment/defaults if not in DB
         db_settings = SystemSettings(
             id=1,
             tmdb_api_key=settings.tmdb_api_key,
@@ -151,4 +129,3 @@ async def reload_settings_from_db(session: AsyncSession) -> None:
     if db_settings.scoring_settings:
         scoring_config.clear()
         scoring_config.update(db_settings.scoring_settings)
-

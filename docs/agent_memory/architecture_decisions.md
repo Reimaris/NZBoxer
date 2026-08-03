@@ -72,7 +72,6 @@ Use the `guessit` library, the industry standard for media metadata extraction f
 
 ---
 
-## ADR-005: config.yaml for Scoring Matrix and User Configuration
 
 **Status:** Accepted  
 **Date:** 2026-08-02
@@ -81,7 +80,6 @@ Use the `guessit` library, the industry standard for media metadata extraction f
 The scoring rules (codec weights, resolution weights, group whitelist/blacklist, cutoff scores) must be user-editable without code changes.
 
 ### Decision
-Store all scoring parameters and automation settings in `config.yaml`. Load at startup into a Pydantic settings model. Watch for changes or reload on demand.
 
 ### Consequences
 - **Pros:** Human-readable, Git-diffable, no DB round-trip for config.

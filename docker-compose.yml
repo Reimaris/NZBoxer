@@ -1,18 +1,13 @@
 services:
   nzboxer:
-    build: .
+    image: ghcr.io/reimaris/nzboxer:latest
     container_name: nzboxer
     ports:
       - "8000:8000"
     environment:
-      - DATABASE_URL=sqlite+aiosqlite:////app/data/nzboxer.db
-    env_file:
-      - .env
+      - PUID=1000
+      - PGID=1000
+      - TZ=Europe/Berlin
     volumes:
-      - nzboxer_data:/app/data
-      - ./config.yaml:/app/config.yaml:ro
-      - .:/app
+      - ./config:/app/config
     restart: unless-stopped
-
-volumes:
-  nzboxer_data:

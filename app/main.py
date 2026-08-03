@@ -25,10 +25,10 @@ from app.config import reload_settings_from_db, scoring_config, settings
 from app.db.database import async_session_factory, close_db, init_db
 
 # Configure logging
-data_dir = Path("/app/data")
-if not data_dir.exists():
-    data_dir = Path("data")  # Fallback for local testing
-log_dir = data_dir / "logs"
+config_dir = Path("/app/config")
+if not config_dir.exists():
+    config_dir = Path("config")  # Fallback for local testing
+log_dir = config_dir / "logs"
 log_dir.mkdir(parents=True, exist_ok=True)
 log_file = log_dir / "nzboxer.log"
 

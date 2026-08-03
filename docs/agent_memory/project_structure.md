@@ -13,9 +13,6 @@ NZBoxer/
 ├── README.md                      # (TODO) Human-facing project overview
 ├── usage.md                       # How to install, run, test (symlinked from docs)
 ├── requirements.txt               # Python dependencies (pinned)
-├── config.yaml                    # Scoring matrix, API keys, automation filters
-├── .env                           # Secrets — NEVER committed
-├── .env.example                   # Template for .env
 ├── .gitignore
 │
 ├── app/
@@ -37,7 +34,6 @@ NZBoxer/
 │   └── core/
 │       ├── __init__.py
 │       ├── parser.py              # guessit-based NZB title parser
-│       ├── scorer.py              # Score engine (config.yaml-driven)
 │       └── automation.py          # Orchestration: search, score, upgrade, send
 │
 ├── templates/
@@ -78,7 +74,6 @@ main.py
   ├── services/torbox.py
   └── core/automation.py
         ├── core/parser.py (→ guessit)
-        ├── core/scorer.py (→ config.yaml)
         ├── services/treasure_maps.py
         ├── services/torbox.py
         └── db/models.py
@@ -97,8 +92,6 @@ main.py
 | httpx          | Async HTTP client             | >=0.27         |
 | apscheduler    | Task scheduling               | >=3.10         |
 | guessit        | Media metadata parsing        | >=3.8          |
-| pyyaml         | config.yaml parsing           | >=6.0          |
-| python-dotenv  | .env loading                  | >=1.0          |
 | jinja2         | HTML templating               | >=3.1          |
 | python-multipart | Form data support           | >=0.0.9        |
 | pytest         | Testing framework             | >=8.0          |
