@@ -419,9 +419,9 @@ async def _process_season(session: AsyncSession, season: Season) -> None:
         logger.info("    📦 Suche Season Pack für S%02d...", season.season_number)
         results = await treasure_maps.search_show(tvdb_id=tvdb_id, tmdb_id=tmdb_id, title=season.media_item.title, season=season.season_number, category=cat_id)
         if results:
-            await _evaluate_and_download(session, results, season=season, target_episodes=missing_episodes, reject_words=reject_words)
+            grabbed = await _evaluate_and_download(session, results, season=season, target_episodes=missing_episodes, reject_words=reject_words)
             await session.refresh(season)
-            if season.status in [SeasonStatus.DOWNLOADED, SeasonStatus.COMPLETED]:
+            if grabbed or season.status in [SeasonStatus.DOWNLOADING, SeasonStatus.DOWNLOADED, SeasonStatus.COMPLETED]:
                 # Season Pack was successful, check auto-monitor for next season
                 if season.media_item.auto_monitor_next_season:
                     next_s_stmt = select(Season).where(Season.media_item_id == season.media_item_id, Season.season_number == season.season_number + 1)
@@ -433,30 +433,25 @@ async def _process_season(session: AsyncSession, season: Season) -> None:
                         await session.commit()
                 return
 
-    if block_size > 0:
-        ep_numbers = [ep.episode_number for ep in missing_episodes]
-        chunks = [ep_numbers[i:i + block_size] for i in range(0, len(ep_numbers), block_size)]
+    # Process up to 5 individual episodes per cycle
+    for ep in missing_episodes[:5]:
+        logger.info("    📺 Suche Episode: S%02dE%02d", season.season_number, ep.episode_number)
+        ep_results = await treasure_maps.search_show(
+            tvdb_id=tvdb_id, 
+            tmdb_id=tmdb_id, 
+            title=season.media_item.title, 
+            season=season.season_number, 
+            ep=str(ep.episode_number), 
+            category=cat_id
+        )
 
-        if chunks:
-            # ONLY process the first chunk in this cycle as requested
-            chunk = chunks[0]
-            ep_str = ",".join(map(str, chunk))
-            logger.info("    📺 Suche Episode(n): S%02dE[%s]", season.season_number, ep_str)
-            chunk_results = await treasure_maps.search_show(tvdb_id=tvdb_id, tmdb_id=tmdb_id, title=season.media_item.title, season=season.season_number, ep=ep_str, category=cat_id)
+        # Fallback for Anime Absolute Episode Numbering if TVDB/TMDB fails
+        if not ep_results and season.media_item.media_type == MediaType.ANIME:
+            ep_title_search = f"{season.media_item.title} {ep.episode_number:02d}"
+            abs_res = await treasure_maps.search_show(title=ep_title_search, category=cat_id)
+            ep_results.extend(abs_res)
 
-            # Fallback for Anime Absolute Episode Numbering if TVDB/TMDB fails
-            if not chunk_results and season.media_item.media_type == MediaType.ANIME:
-                # Try absolute episode if it's episode 1 of season 1, or try title search
-                # Just a simple title + ep search
-                for abs_ep in chunk:
-                    # In a real absolute system, we'd need to calculate it, but let's just do title search
-                    ep_title_search = f"{season.media_item.title} {abs_ep:02d}"
-                    abs_res = await treasure_maps.search_show(title=ep_title_search, category=cat_id)
-                    chunk_results.extend(abs_res)
-
-            chunk_eps = [ep for ep in missing_episodes if ep.episode_number in chunk]
-            for ep in chunk_eps:
-                await _evaluate_and_download(session, chunk_results, episode=ep, reject_words=reject_words)
+        await _evaluate_and_download(session, ep_results, episode=ep, reject_words=reject_words)
 
     # Check if all monitored episodes are finished
     stmt_check = select(Episode).where(
@@ -542,6 +537,8 @@ async def _evaluate_and_download(
         expected_title = None
         expected_year = None
         expected_alt_title = None
+        expected_season = None
+        expected_episode = None
         if movie:
             expected_title = movie.title
             expected_year = movie.year
@@ -549,14 +546,19 @@ async def _evaluate_and_download(
         elif season:
             expected_title = season.media_item.title
             expected_alt_title = season.media_item.alt_title
+            expected_season = season.season_number
         elif episode:
             expected_title = episode.season.media_item.title
             expected_alt_title = episode.season.media_item.alt_title
+            expected_season = episode.season.season_number
+            expected_episode = episode.episode_number
 
         score_res = score_release(
             parsed, size_bytes, runtime, 
             expected_title=expected_title, expected_year=expected_year,
-            expected_alt_title=expected_alt_title
+            expected_alt_title=expected_alt_title,
+            expected_season=expected_season,
+            expected_episode=expected_episode
         )
 
         if score_res.is_rejected:
@@ -578,7 +580,7 @@ async def _evaluate_and_download(
         target.last_error = "Keine passenden (oder ausreichend bewerteten) Releases gefunden."
         logger.info("    ❌ %s", target.last_error)
         await session.commit()
-        return
+        return False
 
     log_title = ""
     if episode and episode.season and episode.season.media_item:
@@ -595,7 +597,7 @@ async def _evaluate_and_download(
     best_candidate = candidates[0]
 
     if not best_candidate:
-        return
+        return False
 
     # Check if we should download
     should_download = False
@@ -608,7 +610,7 @@ async def _evaluate_and_download(
         target.last_error = f"Bestes Release (Score {best_candidate['score']}) liegt unter dem Upgrade-Schwellenwert."
         logger.info("    ❌ %s", target.last_error)
         await session.commit()
-        return
+        return False
 
     from app.config import settings
     if should_download and scoring_config.get("automation", {}).get("auto_send_to_torbox", True):
@@ -618,11 +620,11 @@ async def _evaluate_and_download(
             target.last_error = "⚠️ Tages-Grab-Limit von 400 NZB-Downloads bereits erreicht. Grab übersprungen."
             logger.warning("    ⚠️ Tages-Grab-Limit von 400 Grabs erreicht. Überspringe Grab von '%s'.", best_candidate["title"])
             await session.commit()
-            return
+            return False
 
         if settings.dry_run:
             logger.info("    🧪 [DRY RUN] Würde Datei '%s' (Score: %s) an TorBox senden.", best_candidate["title"], best_candidate["score"])
-            return
+            return True
 
         logger.info("    📥 Sende an TorBox: %s (Score: %s)", best_candidate["title"], best_candidate["score"])
 
@@ -634,7 +636,7 @@ async def _evaluate_and_download(
             target.last_error = "Fehler beim Senden an TorBox."
             logger.error("    ❌ %s", target.last_error)
             await session.commit()
-            return
+            return False
 
         if torbox_result and (torbox_result.get("hash") or torbox_result.get("id")):
             await increment_today_grab_count(session)
@@ -689,6 +691,8 @@ async def _evaluate_and_download(
                 if channel.type == "telegram" and channel.bot_token and channel.chat_id:
                     msg = f"✅ <b>Started Download</b>\n\n<b>{log_title}</b>\n<code>{best_candidate['title']}</code>\n\nScore: {best_candidate['score']}"
                     await telegram.send_notification(msg, token=channel.bot_token, chat_id=channel.chat_id)
+            
+            return True
 
 async def manual_search_episode(session: AsyncSession, episode_id: int) -> bool:
     """Manually search and download a single episode synchronously."""

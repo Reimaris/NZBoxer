@@ -43,6 +43,8 @@ def score_release(
     expected_title: str | None = None,
     expected_year: int | None = None,
     expected_alt_title: str | None = None,
+    expected_season: int | None = None,
+    expected_episode: int | None = None,
 ) -> ScoreResult:
     """Calculate the score for a parsed release."""
     # 1. Apply hard filters (size, age, blacklist)
@@ -84,6 +86,23 @@ def score_release(
     if expected_year and parsed.year:
         if abs(parsed.year - expected_year) > 1:
             return ScoreResult(0, True, f"Year mismatch: {parsed.year} != {expected_year}", None)
+
+    # Season and Episode matching
+    if expected_season is not None:
+        if parsed.season and parsed.season != expected_season:
+            return ScoreResult(0, True, f"Season mismatch: {parsed.season} != {expected_season}", None)
+        
+        if expected_episode is not None:
+            # We are looking for a specific episode
+            if parsed.episode and parsed.episode != expected_episode:
+                return ScoreResult(0, True, f"Episode mismatch: {parsed.episode} != {expected_episode}", None)
+            if not parsed.episode:
+                # If we expect an episode but none is found, it might be a season pack or misparsed
+                return ScoreResult(0, True, f"Missing episode in release name, expected {expected_episode}", None)
+        else:
+            # We are looking for a season pack. Reject if it's a single episode!
+            if parsed.episode is not None:
+                return ScoreResult(0, True, f"Rejected single episode {parsed.episode} for season pack search", None)
 
     groups_cfg = scoring_config.get("release_groups", {})
     blacklist = [g.lower() for g in groups_cfg.get("blacklist", [])]

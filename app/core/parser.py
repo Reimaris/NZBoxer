@@ -27,6 +27,8 @@ class ParsedRelease:
     release_group: str | None
     hdr: str | None
     languages: list[str]
+    season: int | None
+    episode: int | None
 
 
 def parse_release_name(release_name: str) -> ParsedRelease:
@@ -64,6 +66,20 @@ def parse_release_name(release_name: str) -> ParsedRelease:
     else:
         year = int(raw_year) if raw_year else None
 
+    def _get_int(key: str) -> int | None:
+        val = guess.get(key)
+        if isinstance(val, list) and val:
+            try:
+                return int(val[0])
+            except (ValueError, TypeError):
+                return None
+        if val is not None:
+            try:
+                return int(val)
+            except (ValueError, TypeError):
+                return None
+        return None
+
     return ParsedRelease(
         original_title=release_name,
         title=guess.get("title"),
@@ -75,5 +91,7 @@ def parse_release_name(release_name: str) -> ParsedRelease:
         source=_get_str("source"),
         release_group=_get_str("release_group"),
         hdr=_get_str("color_depth") or _get_str("other"), # Guessit sometimes puts HDR in 'other'
-        languages=languages
+        languages=languages,
+        season=_get_int("season"),
+        episode=_get_int("episode")
     )
