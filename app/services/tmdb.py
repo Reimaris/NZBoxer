@@ -54,23 +54,27 @@ async def get_digital_release_date(tmdb_id: int) -> datetime | None:
             response.raise_for_status()
             data = response.json()
 
-            # We are looking for release date type 4 (Digital)
-            earliest_date = None
+            best_date = None
+            fallback_date = None
 
             for country_release in data.get("results", []):
                 for release in country_release.get("release_dates", []):
-                    if release.get("type") == 4:
-                        date_str = release.get("release_date")
-                        if date_str:
-                            # Format: '2023-10-18T00:00:00.000Z'
-                            try:
-                                dt = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
-                                if earliest_date is None or dt < earliest_date:
-                                    earliest_date = dt
-                            except ValueError:
-                                pass
+                    rtype = release.get("type")
+                    date_str = release.get("release_date")
+                    if date_str:
+                        # Format: '2023-10-18T00:00:00.000Z'
+                        try:
+                            dt = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
+                            if rtype in (4, 5):
+                                if best_date is None or dt < best_date:
+                                    best_date = dt
+                            else:
+                                if fallback_date is None or dt < fallback_date:
+                                    fallback_date = dt
+                        except ValueError:
+                            pass
 
-            return earliest_date
+            return best_date or fallback_date
         except httpx.HTTPError as e:
             logger.error("TMDB release_dates error for %d: %s", tmdb_id, e)
             return None

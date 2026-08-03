@@ -128,8 +128,14 @@ async def _sync_items(session: AsyncSession, simkl_items: list[dict[str, Any]], 
                         elif details.get("original_title") and details.get("original_title") != details.get("title"):
                             item.alt_title = details.get("original_title")
 
-                    # get_digital_release_date still used to find type 4 dates
+                    # get_digital_release_date now finds type 4/5 or falls back to any release type
                     release_date = await tmdb.get_digital_release_date(tmdb_id)
+                    if not release_date and details.get("release_date"):
+                        try:
+                            release_date = datetime.strptime(details["release_date"], "%Y-%m-%d").replace(tzinfo=timezone.utc)
+                        except ValueError:
+                            pass
+                    
                     item.release_date = release_date
                     if not release_date or release_date <= datetime.now(timezone.utc):
                         item.status = MediaStatus.SEARCHING
@@ -243,17 +249,30 @@ async def run_automation_cycle(force: bool = False) -> None:
             for season in seasons_result.scalars():
                 if season.media_item and season.media_item.tmdb_id:
                     await _sync_season_episodes(session, season)
-            await session.commit()
-
+            
             # Update pending movies that have reached their release date
             stmt_m = select(MediaItem).where(
                 MediaItem.status == MediaStatus.PENDING,
-                MediaItem.media_type == MediaType.MOVIE,
+                MediaItem.release_date != None,
                 MediaItem.release_date <= datetime.now(timezone.utc)
             )
-            result_m = await session.execute(stmt_m)
-            for pending_item in result_m.scalars():
-                pending_item.status = MediaStatus.SEARCHING
+            movies_result = await session.execute(stmt_m)
+            for m in movies_result.scalars():
+                m.status = MediaStatus.SEARCHING
+                logger.info("🔄 Film %s hat sein Release-Datum erreicht und wird nun gesucht.", m.title)
+
+            # Revert searching movies that have a future release date
+            stmt_m_rev = select(MediaItem).where(
+                MediaItem.status == MediaStatus.SEARCHING,
+                MediaItem.release_date != None,
+                MediaItem.release_date > datetime.now(timezone.utc)
+            )
+            movies_rev_result = await session.execute(stmt_m_rev)
+            for m in movies_rev_result.scalars():
+                m.status = MediaStatus.PENDING
+                logger.info("⏸️ Film %s hat ein zukünftiges Release-Datum (%s) und wird auf PENDING gesetzt.", m.title, m.release_date.strftime("%Y-%m-%d"))
+
+            await session.commit()
 
             # Update pending episodes that have reached their air date
             from app.db.models import Episode, EpisodeStatus
