@@ -34,13 +34,17 @@
   - Parsed `mal` and `anilist` IDs from Simkl API during watchlist sync.
   - Added fallback search logic in `automation.py` (`_process_movie`, `_process_season`) and `treasure_maps.py` to search by IMDB, TMDB, and Title.
   - Anime primarily uses indexer category 5070 and Anime absolute episode title search fallback.
+- [x] TorBox Rate-Limiting & SQLAlchemy Eager Load Bugfix:
+  - `RollingWindowRateLimiter` implementiert (60 Requests/Stunde) für `/usenet/createusenetdownload`.
+  - `selectinload(Episode.download_history)` hinzugefügt, um `greenlet_spawn`-Fehler zu beheben.
+  - Typ-Fixes in `automation.py`, `parser.py` und `torbox.py` für `mypy`.
 - [x] Git Push Rule enforced in instructions.
 
 ---
 
 ## 🔄 In Progress
 
-- Wait for DB recreation and test passing to push changes to Git.
+- Keine offenen Aufgaben. Bereit für nächste Feature-Entwicklung.
 
 ---
 

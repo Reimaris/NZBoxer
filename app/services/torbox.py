@@ -6,16 +6,17 @@ NZBs for downloading.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
 import httpx
 
 from app.config import settings
-from app.core.rate_limiter import RateLimiter
+from app.core.rate_limiter import RateLimiter, RollingWindowRateLimiter
 
 logger = logging.getLogger(__name__)
-_send_limiter = RateLimiter(1.0)
+_send_limiter = RollingWindowRateLimiter(60, 3600.0) # 60/hour rolling window limit
 _poll_limiter = RateLimiter(10.0)
 
 TORBOX_BASE_URL = "https://api.torbox.app/v1"
@@ -38,6 +39,7 @@ async def send_nzb_link(nzb_url: str) -> dict[str, str | int | None]:
     if not settings.torbox_api_key:
         logger.warning("TorBox API key missing.")
         return {}
+        return {}
 
     url = f"{TORBOX_BASE_URL}/api/usenet/createusenetdownload"
 
@@ -49,26 +51,45 @@ async def send_nzb_link(nzb_url: str) -> dict[str, str | int | None]:
         "link": nzb_url
     }
 
-    await _send_limiter.wait()
-    async with httpx.AsyncClient(timeout=60.0) as client:
-        try:
-            response = await client.post(url, headers=headers, data=data)
-            response.raise_for_status()
+    max_retries = 3
+    for attempt in range(max_retries):
+        await _send_limiter.wait()
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            try:
+                response = await client.post(url, headers=headers, data=data)
+                response.raise_for_status()
 
-            result = response.json()
-            if result.get("success"):
-                data = result.get("data", {})
-                return {
-                    "hash": data.get("hash"),
-                    "id": data.get("usenet_id") or data.get("id")
-                }
-            else:
-                logger.error("TorBox API returned error: %s", result.get("detail"))
-                return {}
+                result = response.json()
+                if result.get("success"):
+                    resp_data = result.get("data", {})
+                    return {
+                        "hash": resp_data.get("hash"),
+                        "id": resp_data.get("usenet_id") or resp_data.get("id")
+                    }
+                else:
+                    logger.error("TorBox API returned error: %s", result.get("detail"))
+                    return {}
 
-        except httpx.HTTPError as e:
-            logger.error("Failed to send NZB to TorBox: [%s] %s", type(e).__name__, e)
-            return {}
+            except httpx.HTTPError as e:
+                is_retriable = True
+                if isinstance(e, httpx.HTTPStatusError):
+                    # Nur bei 500, 502, 503, 504 oder 429 einen Retry versuchen
+                    if e.response.status_code not in (429, 500, 502, 503, 504):
+                        is_retriable = False
+                
+                if not is_retriable:
+                    logger.error("Failed to send NZB to TorBox (non-retriable): [%s] %s", type(e).__name__, e)
+                    return {}
+                
+                if attempt < max_retries - 1:
+                    wait_time = (attempt + 1) * 3
+                    logger.warning("Failed to send NZB to TorBox: [%s] %s. Retrying in %ss...", type(e).__name__, e, wait_time)
+                    await asyncio.sleep(wait_time)
+                else:
+                    logger.error("Failed to send NZB to TorBox after %d attempts: [%s] %s", max_retries, type(e).__name__, e)
+                    return {}
+
+    return {}
 
 
 async def check_download_status(download_id: str | int) -> dict[str, Any]:

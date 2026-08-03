@@ -120,7 +120,7 @@ async def _sync_items(session: AsyncSession, simkl_items: list[dict[str, Any]], 
             is_new = False
 
         # Fetch metadata from TMDB if available (for new items, or items missing release date)
-        if (tmdb_id or imdb_id) and (is_new or not item.release_date):
+        if (tmdb_id or item.imdb_id) and (is_new or not item.release_date):
             details = None
             if tmdb_id:
                 if media_type in (MediaType.SHOW, MediaType.ANIME):
@@ -138,9 +138,9 @@ async def _sync_items(session: AsyncSession, simkl_items: list[dict[str, Any]], 
                     details = await tmdb.get_movie_details(tmdb_id)
             
             # IMDB Fallback if TMDB ID failed or was missing
-            if not details and imdb_id:
-                logger.info("    🔍 TMDB Suche per ID fehlgeschlagen/fehlt. Nutze IMDB Fallback für '%s' (%s)...", item.title, imdb_id)
-                fallback_res = await tmdb.find_by_external_id(imdb_id)
+            if not details and item.imdb_id:
+                logger.info("    🔍 TMDB Suche per ID fehlgeschlagen/fehlt. Nutze IMDB Fallback für '%s' (%s)...", item.title, item.imdb_id)
+                fallback_res = await tmdb.find_by_external_id(item.imdb_id)
                 if fallback_res:
                     tmdb_id = fallback_res["id"]
                     item.tmdb_id = tmdb_id
@@ -164,7 +164,7 @@ async def _sync_items(session: AsyncSession, simkl_items: list[dict[str, Any]], 
                     if details.get("title") and details.get("title") != item.title:
                         if not item.alt_title:
                             item.alt_title = item.title  # Backup romaji title
-                        item.title = details.get("title")
+                        item.title = str(details.get("title"))
 
                     # Extract German alt_title
                     translations = details.get("translations", {}).get("translations", [])
@@ -174,7 +174,7 @@ async def _sync_items(session: AsyncSession, simkl_items: list[dict[str, Any]], 
                     elif not item.alt_title and details.get("original_title") and details.get("original_title") != item.title:
                         item.alt_title = details.get("original_title")
 
-                release_date = await tmdb.get_digital_release_date(tmdb_id)
+                release_date = await tmdb.get_digital_release_date(tmdb_id) if tmdb_id else None
                 if not release_date and details and details.get("release_date"):
                     try:
                         release_date = datetime.strptime(details["release_date"], "%Y-%m-%d").replace(tzinfo=timezone.utc)
@@ -199,7 +199,7 @@ async def _sync_items(session: AsyncSession, simkl_items: list[dict[str, Any]], 
                     if details.get("name") and details.get("name") != item.title:
                         if not item.alt_title:
                             item.alt_title = item.title
-                        item.title = details.get("name")
+                        item.title = str(details.get("name"))
 
                     translations = details.get("translations", {}).get("translations", [])
                     de_trans = next((t for t in translations if t.get("iso_3166_1") == "DE"), None)
@@ -421,7 +421,7 @@ async def run_automation_cycle(force: bool = False) -> None:
 
 
 async def _process_movie(session: AsyncSession, movie: MediaItem) -> None:
-    from app.db.models import ProviderProfile, MediaType
+    from app.db.models import MediaType, ProviderProfile
     logger.info("🎬 Lade Film: %s", movie.title)
     if not movie.imdb_id and not movie.tmdb_id:
         logger.warning("⚠️ Film %s hat keine IDs, versuche Titel-Suche.", movie.title)
@@ -460,7 +460,13 @@ async def _process_movie(session: AsyncSession, movie: MediaItem) -> None:
 
 
 async def _process_season(session: AsyncSession, season: Season) -> None:
-    from app.db.models import Episode, EpisodeStatus, ProviderProfile, SeasonStatus, MediaType
+    from app.db.models import (
+        Episode,
+        EpisodeStatus,
+        MediaType,
+        ProviderProfile,
+        SeasonStatus,
+    )
     logger.info("📺 Lade Episodendaten für Serie: %s S%02d", season.media_item.title, season.season_number)
     tvdb_id = season.media_item.tvdb_id
     tmdb_id = season.media_item.tmdb_id
@@ -484,7 +490,8 @@ async def _process_season(session: AsyncSession, season: Season) -> None:
         Episode.status == EpisodeStatus.SEARCHING,
         Episode.monitored == True
     ).order_by(Episode.episode_number).options(
-        selectinload(Episode.season).selectinload(Season.media_item)
+        selectinload(Episode.season).selectinload(Season.media_item),
+        selectinload(Episode.download_history)
     )
     episodes_res = await session.execute(stmt)
     missing_episodes = episodes_res.scalars().all()
@@ -596,10 +603,14 @@ async def _evaluate_and_download(
     )
     from app.services import telegram
 
+    if movie is None and season is None and episode is None:
+        raise ValueError("Must provide either a movie, a season, or an episode")
+
+    target: Any = episode if episode else (season if season else movie)
+
     if not search_results:
-        target = episode if episode else (season if season else movie)
         if target.best_score is not None:
-            from app.db.models import MediaStatus, SeasonStatus, EpisodeStatus
+            from app.db.models import EpisodeStatus, MediaStatus, SeasonStatus
             target.fail_count = 0
             if movie:
                 target.status = MediaStatus.COMPLETED
@@ -615,12 +626,8 @@ async def _evaluate_and_download(
             logger.info("    ❌ %s", target.last_error)
             
         await session.commit()
-        return
+        return False
 
-    if movie is None and season is None and episode is None:
-        raise ValueError("Must provide either a movie, a season, or an episode")
-
-    target: Any = episode if episode else (season if season else movie)
     current_best_score = target.best_score or 0.0
 
     cutoffs = scoring_config.get("cutoffs", {})
@@ -673,7 +680,7 @@ async def _evaluate_and_download(
             expected_episode = episode.episode_number
 
         score_res = score_release(
-            parsed, size_bytes, runtime, 
+            parsed, size_bytes, runtime,
             expected_title=expected_title, expected_year=expected_year,
             expected_alt_title=expected_alt_title,
             expected_season=expected_season,
@@ -700,7 +707,7 @@ async def _evaluate_and_download(
         if target.best_score is not None:
             # We already have a downloaded release, but no upgrades (or even valid candidates) were found this time.
             # Revert to COMPLETE so we don't loop in SEARCHING forever.
-            from app.db.models import MediaStatus, SeasonStatus, EpisodeStatus
+            from app.db.models import EpisodeStatus, MediaStatus, SeasonStatus
             target.fail_count = 0
             if movie:
                 target.status = MediaStatus.COMPLETED
@@ -738,7 +745,7 @@ async def _evaluate_and_download(
     # If this was a title-search fallback, don't auto-send to TorBox.
     # Instead store the best candidate for manual approval.
     if is_title_fallback:
-        from app.db.models import MediaStatus, SeasonStatus, EpisodeStatus
+        from app.db.models import EpisodeStatus, MediaStatus, SeasonStatus
         logger.warning("    ⚠️ Ergebnis aus Titelsuche — kein automatischer Download. Bester Kandidat muss manuell bestätigt werden.")
         pending = {
             "title": best_candidate["title"],
@@ -774,7 +781,7 @@ async def _evaluate_and_download(
         
         # If we didn't find an upgrade, but we already have a download (since should_download is False),
         # we must set the status back to COMPLETE so it doesn't stay in SEARCHING forever.
-        from app.db.models import MediaStatus, SeasonStatus, EpisodeStatus
+        from app.db.models import EpisodeStatus, MediaStatus, SeasonStatus
         if movie:
             target.status = MediaStatus.COMPLETED
         elif season:
@@ -867,10 +874,13 @@ async def _evaluate_and_download(
             
             return True
 
+    return False
+
 async def manual_search_episode(session: AsyncSession, episode_id: int) -> bool:
     """Manually search and download a single episode synchronously."""
     from sqlalchemy.orm import selectinload
-    from app.db.models import Episode, EpisodeStatus, ProviderProfile, MediaType
+
+    from app.db.models import Episode, EpisodeStatus, MediaType, ProviderProfile
 
     stmt = select(Episode).where(Episode.id == episode_id).options(
         selectinload(Episode.season).selectinload(Season.media_item).selectinload(MediaItem.provider)
@@ -932,7 +942,8 @@ async def manual_search_episode(session: AsyncSession, episode_id: int) -> bool:
 async def manual_search_movie(session: AsyncSession, item_id: int) -> bool:
     """Manually search and download a single movie synchronously."""
     from sqlalchemy.orm import selectinload
-    from app.db.models import MediaItem, MediaStatus, ProviderProfile, MediaType
+
+    from app.db.models import MediaItem, MediaStatus, MediaType, ProviderProfile
 
     stmt = select(MediaItem).where(MediaItem.id == item_id).options(selectinload(MediaItem.provider))
     media_item = (await session.execute(stmt)).scalar_one_or_none()

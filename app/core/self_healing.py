@@ -30,7 +30,6 @@ from app.db.models import (
     ProviderProfile,
     Season,
     SeasonStatus,
-    SystemSettings,
 )
 from app.services import telegram, torbox
 

@@ -75,7 +75,7 @@ def parse_release_name(release_name: str) -> ParsedRelease:
                 return None
         if val is not None:
             try:
-                return int(val)
+                return int(str(val))
             except (ValueError, TypeError):
                 return None
         return None

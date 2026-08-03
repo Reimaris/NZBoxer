@@ -272,8 +272,8 @@ async def toggle_season(item_id: int, season_number: int):
 @app.post("/episodes/{episode_id}/search")
 async def manual_search_episode_route(episode_id: int):
     """Manually search and download a single episode synchronously."""
-    from app.db.database import async_session_factory
     from app.core.automation import manual_search_episode
+    from app.db.database import async_session_factory
     
     async with async_session_factory() as session:
         success = await manual_search_episode(session, episode_id)
@@ -284,8 +284,8 @@ async def manual_search_episode_route(episode_id: int):
 @app.post("/items/{item_id}/search")
 async def manual_search_movie_route(item_id: int):
     """Manually search and download a single movie synchronously."""
-    from app.db.database import async_session_factory
     from app.core.automation import manual_search_movie
+    from app.db.database import async_session_factory
     
     async with async_session_factory() as session:
         success = await manual_search_movie(session, item_id)
