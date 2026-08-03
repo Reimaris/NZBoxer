@@ -740,7 +740,7 @@ async def manual_search_movie(session: AsyncSession, item_id: int) -> bool:
     profile = (await session.execute(profile_stmt)).scalar_one_or_none()
     reject_words = [w.strip().lower() for w in profile.reject_words_csv.split(",") if w.strip()] if profile and profile.reject_words_csv else []
 
-    results = await treasure_maps.search_movie(imdb_id=imdb_id, tmdb_id=tmdb_id, title=media_item.title, year=media_item.year, category=cat_id)
+    results = await treasure_maps.search_movie(imdb_id=imdb_id, tmdb_id=tmdb_id, title=media_item.title, category=cat_id)
 
     if not results:
         media_item.fail_count += 1
