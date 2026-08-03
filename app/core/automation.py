@@ -731,7 +731,7 @@ async def manual_search_movie(session: AsyncSession, item_id: int) -> bool:
 
     imdb_id = media_item.imdb_id
     tmdb_id = media_item.tmdb_id
-    cat_id = media_item.provider.movies_category_id if media_item.provider else None
+    cat_id = media_item.provider.movie_category_id if media_item.provider else None
 
     profile_stmt = select(ProviderProfile).where(
         ProviderProfile.provider_id == media_item.provider_id,
