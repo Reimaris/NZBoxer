@@ -96,8 +96,6 @@ async def _execute_search(url: str, params: dict[str, Any]) -> list[dict[str, An
             response = await client.get(url, params=params)
             response.raise_for_status()
             
-            # Note: Depending on the Newznab implementation, the JSON format can vary slightly.
-            # Typical format: {"channel": {"item": [...]}}
             data = response.json()
             channel = data.get("channel", {})
             items = channel.get("item", [])
@@ -105,8 +103,49 @@ async def _execute_search(url: str, params: dict[str, Any]) -> list[dict[str, An
             if isinstance(items, dict):
                 # Sometimes a single result is returned as a dict rather than a list
                 items = [items]
+            
+            # Flatten the nested attr/@attributes structure into direct fields.
+            # Treasure Maps (Newznab JSON) puts size/guid/category inside:
+            # "attr": [{"@attributes": {"name": "size", "value": "12345"}}, ...]
+            normalized = []
+            for item in items:
+                flat = dict(item)
                 
-            return items
+                # Parse attr list
+                attrs = item.get("attr", [])
+                if isinstance(attrs, dict):
+                    attrs = [attrs]
+                attr_map: dict[str, str] = {}
+                for a in attrs:
+                    a_attrs = a.get("@attributes", {})
+                    name = a_attrs.get("name")
+                    value = a_attrs.get("value")
+                    if name and value is not None:
+                        attr_map[name] = value
+                
+                # Map known attr fields to flat keys
+                if "size" not in flat or not flat["size"]:
+                    flat["size"] = attr_map.get("size", 0)
+                if "guid" not in flat or flat["guid"].startswith("http"):
+                    # The 'guid' in attr is the hash, the top-level 'guid' is a URL
+                    flat["guid"] = attr_map.get("guid", flat.get("guid", ""))
+                    
+                # Fallback: size from enclosure length
+                if not flat["size"]:
+                    enc = item.get("enclosure", {})
+                    enc_attrs = enc.get("@attributes", {}) if isinstance(enc, dict) else {}
+                    flat["size"] = enc_attrs.get("length", 0)
+                    
+                # Use direct link for download URL
+                if not flat.get("link"):
+                    enc = item.get("enclosure", {})
+                    enc_attrs = enc.get("@attributes", {}) if isinstance(enc, dict) else {}
+                    flat["link"] = enc_attrs.get("url", "")
+                    
+                flat["size"] = int(flat["size"]) if flat["size"] else 0
+                normalized.append(flat)
+                
+            return normalized
         except httpx.HTTPError as e:
             logger.error("Indexer search failed: %s", e)
             return []
