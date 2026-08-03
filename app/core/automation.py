@@ -114,55 +114,65 @@ async def _sync_items(session: AsyncSession, simkl_items: list[dict[str, Any]], 
             session.add(item)
             # Need to flush to get item.id for seasons
             await session.flush()
+            is_new = True
+        else:
+            is_new = False
 
-            # Fetch metadata from TMDB if available
-            if tmdb_id:
-                if media_type == MediaType.MOVIE:
-                    details = await tmdb.get_movie_details(tmdb_id)
-                    if details:
-                        # Extract alt_title (German or original)
-                        translations = details.get("translations", {}).get("translations", [])
-                        de_trans = next((t for t in translations if t.get("iso_3166_1") == "DE"), None)
-                        if de_trans and de_trans.get("data", {}).get("title"):
-                            item.alt_title = de_trans["data"]["title"]
-                        elif details.get("original_title") and details.get("original_title") != details.get("title"):
-                            item.alt_title = details.get("original_title")
+        # Fetch metadata from TMDB if available (for new items, or items missing release date)
+        if tmdb_id and (is_new or not item.release_date):
+            if media_type == MediaType.MOVIE:
+                details = await tmdb.get_movie_details(tmdb_id)
+                if details:
+                    # Extract alt_title (German or original)
+                    translations = details.get("translations", {}).get("translations", [])
+                    de_trans = next((t for t in translations if t.get("iso_3166_1") == "DE"), None)
+                    if de_trans and de_trans.get("data", {}).get("title"):
+                        item.alt_title = de_trans["data"]["title"]
+                    elif details.get("original_title") and details.get("original_title") != details.get("title"):
+                        item.alt_title = details.get("original_title")
 
-                    # get_digital_release_date now finds type 4/5 or falls back to any release type
-                    release_date = await tmdb.get_digital_release_date(tmdb_id)
-                    if not release_date and details.get("release_date"):
-                        try:
-                            release_date = datetime.strptime(details["release_date"], "%Y-%m-%d").replace(tzinfo=timezone.utc)
-                        except ValueError:
-                            pass
-                    
-                    item.release_date = release_date
-                    if not release_date or release_date <= datetime.now(timezone.utc):
-                        item.status = MediaStatus.SEARCHING
+                # get_digital_release_date now finds type 4/5 or falls back to any release type
+                release_date = await tmdb.get_digital_release_date(tmdb_id)
+                if not release_date and details and details.get("release_date"):
+                    try:
+                        release_date = datetime.strptime(details["release_date"], "%Y-%m-%d").replace(tzinfo=timezone.utc)
+                    except ValueError:
+                        pass
+                
+                item.release_date = release_date
+                
+                # Determine status
+                if release_date and release_date > datetime.now(timezone.utc):
+                    item.status = MediaStatus.PENDING
+                elif item.year and item.year > datetime.now().year:
+                    # Fallback if no release date but year is in the future
+                    item.status = MediaStatus.PENDING
+                else:
+                    item.status = MediaStatus.SEARCHING
 
-                elif media_type in (MediaType.SHOW, MediaType.ANIME):
-                    details = await tmdb.get_show_details(tmdb_id)
-                    if details:
-                        item.overview = details.get("overview")
+            elif media_type in (MediaType.SHOW, MediaType.ANIME):
+                details = await tmdb.get_show_details(tmdb_id)
+                if details:
+                    item.overview = details.get("overview")
 
-                        translations = details.get("translations", {}).get("translations", [])
-                        de_trans = next((t for t in translations if t.get("iso_3166_1") == "DE"), None)
-                        if de_trans and de_trans.get("data", {}).get("name"):
-                            item.alt_title = de_trans["data"]["name"]
-                        elif details.get("original_name") and details.get("original_name") != details.get("name"):
-                            item.alt_title = details.get("original_name")
+                    translations = details.get("translations", {}).get("translations", [])
+                    de_trans = next((t for t in translations if t.get("iso_3166_1") == "DE"), None)
+                    if de_trans and de_trans.get("data", {}).get("name"):
+                        item.alt_title = de_trans["data"]["name"]
+                    elif details.get("original_name") and details.get("original_name") != details.get("name"):
+                        item.alt_title = details.get("original_name")
 
-                        for s in details.get("seasons", []):
-                            s_num = s.get("season_number")
-                            if s_num is not None and s_num > 0:
-                                season_obj = Season(
-                                    media_item_id=item.id,
-                                    season_number=s_num,
-                                    monitored=(s_num == 1),
-                                    episode_count=s.get("episode_count"),
-                                    status=SeasonStatus.SEARCHING if (s_num == 1) else SeasonStatus.PENDING
-                                )
-                                session.add(season_obj)
+                    for s in details.get("seasons", []):
+                        s_num = s.get("season_number")
+                        if s_num is not None and s_num > 0:
+                            season_obj = Season(
+                                media_item_id=item.id,
+                                season_number=s_num,
+                                monitored=(s_num == 1),
+                                episode_count=s.get("episode_count"),
+                                status=SeasonStatus.SEARCHING if (s_num == 1) else SeasonStatus.PENDING
+                            )
+                            session.add(season_obj)
 
         else:
             # Update existing
@@ -264,13 +274,18 @@ async def run_automation_cycle(force: bool = False) -> None:
             # Revert searching movies that have a future release date
             stmt_m_rev = select(MediaItem).where(
                 MediaItem.status == MediaStatus.SEARCHING,
-                MediaItem.release_date != None,
-                MediaItem.release_date > datetime.now(timezone.utc)
+                MediaItem.media_type == MediaType.MOVIE
             )
-            movies_rev_result = await session.execute(stmt_m_rev)
-            for m in movies_rev_result.scalars():
-                m.status = MediaStatus.PENDING
-                logger.info("⏸️ Film %s hat ein zukünftiges Release-Datum (%s) und wird auf PENDING gesetzt.", m.title, m.release_date.strftime("%Y-%m-%d"))
+            movies_to_check = (await session.execute(stmt_m_rev)).scalars().all()
+            for m in movies_to_check:
+                if m.release_date and m.release_date > datetime.now(timezone.utc):
+                    m.status = MediaStatus.PENDING
+                    m.fail_count = 0
+                    logger.info("    🔄 Film '%s' auf PENDING gesetzt (Release Date: %s liegt in der Zukunft)", m.title, m.release_date.strftime("%Y-%m-%d"))
+                elif not m.release_date and m.year and m.year > datetime.now().year:
+                    m.status = MediaStatus.PENDING
+                    m.fail_count = 0
+                    logger.info("    🔄 Film '%s' auf PENDING gesetzt (Jahr %s liegt in der Zukunft)", m.title, m.year)
 
             await session.commit()
 
