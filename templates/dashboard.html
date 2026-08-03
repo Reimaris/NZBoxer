@@ -2,7 +2,7 @@
 
 {% block content %}
 <!-- Stat Cards -->
-<div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+<div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
     <!-- Movies Card -->
     <div class="bg-[#d40060] rounded-lg shadow-lg p-6 flex flex-col justify-between text-white border border-[#a3004a]">
         <div class="flex items-center gap-2 mb-4">
@@ -10,8 +10,12 @@
             <h2 class="text-xl font-bold">Movies</h2>
         </div>
         <div>
-            <div class="text-5xl font-light">{{ movies_wanted }}</div>
-            <div class="text-pink-100 text-sm mt-2 font-medium tracking-wide">Wanted</div>
+            <div class="text-4xl font-light mb-2">{{ movie_stats.total }} <span class="text-sm font-normal text-pink-200">Gesamt</span></div>
+            <div class="flex flex-wrap gap-2 text-xs font-medium text-pink-100 border-t border-pink-400/30 pt-3">
+                <span class="bg-pink-900/40 px-2 py-1 rounded">Gesucht: {{ movie_stats.wanted }}</span>
+                <span class="bg-pink-900/40 px-2 py-1 rounded">Fertig: {{ movie_stats.completed }}</span>
+                <span class="bg-pink-900/40 px-2 py-1 rounded">Ignoriert: {{ movie_stats.ignored }}</span>
+            </div>
         </div>
     </div>
     
@@ -22,8 +26,12 @@
             <h2 class="text-xl font-bold">Series</h2>
         </div>
         <div>
-            <div class="text-5xl font-light">{{ series_wanted }}</div>
-            <div class="text-purple-100 text-sm mt-2 font-medium tracking-wide">Wanted</div>
+            <div class="text-4xl font-light mb-2">{{ series_stats.total }} <span class="text-sm font-normal text-purple-200">Gesamt</span></div>
+            <div class="flex flex-wrap gap-2 text-xs font-medium text-purple-100 border-t border-purple-400/30 pt-3">
+                <span class="bg-purple-900/40 px-2 py-1 rounded">Gesucht: {{ series_stats.wanted }}</span>
+                <span class="bg-purple-900/40 px-2 py-1 rounded">Fertig: {{ series_stats.completed }}</span>
+                <span class="bg-purple-900/40 px-2 py-1 rounded">Ignoriert: {{ series_stats.ignored }}</span>
+            </div>
         </div>
     </div>
     
@@ -34,20 +42,12 @@
             <h2 class="text-xl font-bold">Anime</h2>
         </div>
         <div>
-            <div class="text-5xl font-light">{{ anime_wanted }}</div>
-            <div class="text-amber-100 text-sm mt-2 font-medium tracking-wide">Wanted</div>
-        </div>
-    </div>
-    
-    <!-- History Card -->
-    <div class="bg-sky-600 rounded-lg shadow-lg p-6 flex flex-col justify-between text-white border border-sky-500">
-        <div class="flex items-center gap-2 mb-4">
-            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-            <h2 class="text-xl font-bold">History</h2>
-        </div>
-        <div>
-            <div class="text-5xl font-light">{{ history_count }}</div>
-            <div class="text-sky-100 text-sm mt-2 font-medium tracking-wide">All Time</div>
+            <div class="text-4xl font-light mb-2">{{ anime_stats.total }} <span class="text-sm font-normal text-amber-200">Gesamt</span></div>
+            <div class="flex flex-wrap gap-2 text-xs font-medium text-amber-100 border-t border-amber-400/30 pt-3">
+                <span class="bg-amber-900/40 px-2 py-1 rounded">Gesucht: {{ anime_stats.wanted }}</span>
+                <span class="bg-amber-900/40 px-2 py-1 rounded">Fertig: {{ anime_stats.completed }}</span>
+                <span class="bg-amber-900/40 px-2 py-1 rounded">Ignoriert: {{ anime_stats.ignored }}</span>
+            </div>
         </div>
     </div>
 </div>
@@ -61,8 +61,7 @@
         <div class="flex gap-2 bg-[#1e1e24] p-1 rounded-lg border border-[#3f3f46]">
             <button @click="tab = 'movie'; search = ''" :class="{'bg-[#d40060] text-white': tab === 'movie', 'text-[#a1a1aa] hover:text-white': tab !== 'movie'}" class="px-4 py-1.5 rounded-md text-sm font-medium transition-colors">Filme</button>
             <button @click="tab = 'show'; search = ''" :class="{'bg-[#d40060] text-white': tab === 'show', 'text-[#a1a1aa] hover:text-white': tab !== 'show'}" class="px-4 py-1.5 rounded-md text-sm font-medium transition-colors">Serien</button>
-            <button @click="tab = 'anime_movie'; search = ''" :class="{'bg-[#d40060] text-white': tab === 'anime_movie', 'text-[#a1a1aa] hover:text-white': tab !== 'anime_movie'}" class="px-4 py-1.5 rounded-md text-sm font-medium transition-colors">Anime Filme</button>
-            <button @click="tab = 'anime_show'; search = ''" :class="{'bg-[#d40060] text-white': tab === 'anime_show', 'text-[#a1a1aa] hover:text-white': tab !== 'anime_show'}" class="px-4 py-1.5 rounded-md text-sm font-medium transition-colors">Anime Serien</button>
+            <button @click="tab = 'anime'; search = ''" :class="{'bg-[#d40060] text-white': tab === 'anime', 'text-[#a1a1aa] hover:text-white': tab !== 'anime'}" class="px-4 py-1.5 rounded-md text-sm font-medium transition-colors">Anime</button>
         </div>
 
         <!-- Search & Status -->
@@ -115,7 +114,7 @@
             </thead>
             <tbody class="divide-y divide-[#3f3f46] text-sm">
                 {% for item in items %}
-                {% set display_category = 'anime_movie' if (item.media_type.value == 'anime' and item.is_anime_movie) else ('anime_show' if item.media_type.value == 'anime' else item.media_type.value) %}
+                {% set display_category = item.media_type.value %}
                 <tr class="hover:bg-[#2a2a32] transition-colors group" 
                     x-show="tab === '{{ display_category }}' && ('{{ item.title|replace('\'', '\\\'') }}'.toLowerCase().includes(search.toLowerCase()) || ('{{ item.alt_title|replace('\'', '\\\'') if item.alt_title else '' }}'.toLowerCase().includes(search.toLowerCase())))" 
                     style="display: none;">
@@ -173,11 +172,7 @@
                     </td>
                     <td class="px-6 py-4 text-right">
                         <div class="flex justify-end gap-2">
-                            {% if item.media_type.value == 'anime' %}
-                            <button hx-post="/items/{{ item.id }}/toggle_anime_type" title="Anime Typ (Film/Serie) umschalten" class="bg-transparent border border-blue-600 text-blue-500 hover:bg-blue-600 hover:text-white transition-colors p-1.5 rounded">
-                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"></path></svg>
-                            </button>
-                            {% endif %}
+
                             <button hx-post="/items/{{ item.id }}/ignore" title="Ignorieren" class="bg-transparent border border-gray-600 text-gray-500 hover:bg-gray-600 hover:text-white transition-colors p-1.5 rounded">
                                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"></path></svg>
                             </button>

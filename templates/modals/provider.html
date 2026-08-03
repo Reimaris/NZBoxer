@@ -21,36 +21,38 @@
                 
                 <!-- General Info -->
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div class="relative group">
-                        <label class="block text-[#d1d5db] font-medium mb-1">Anzeigename <span class="text-red-500">*</span></label>
-                        <input type="text" name="name" value="{{ provider.name if provider else '' }}" required class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors" placeholder="z.B. Mein Simkl Profil">
+                    <div class="flex flex-col">
+                        <label class="h-6 text-[#d1d5db] font-medium mb-1 flex items-center">Anzeigename <span class="text-red-500 ml-1">*</span></label>
+                        <input type="text" name="name" value="{{ provider.name if provider else '' }}" required class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors" placeholder="z.B. Mein Simkl Profil">
                     </div>
                     
-                    <div class="relative group">
-                        <label class="block text-[#d1d5db] font-medium mb-1 flex items-center gap-2">
+                    <div class="flex flex-col">
+                        <label class="h-6 text-[#d1d5db] font-medium mb-1 flex items-center gap-1.5">
                             Simkl Username
                             <span class="text-[#d40060] cursor-help" title="Dein Benutzername bei Simkl.">ℹ</span>
                         </label>
-                        <input type="text" name="simkl_username" value="{{ provider.username if provider else '' }}" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors" placeholder="username">
+                        <input type="text" name="simkl_username" value="{{ provider.username if provider else '' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors" placeholder="username">
                     </div>
                     
-                    <div class="relative group">
-                        <label class="block text-[#d1d5db] font-medium mb-1 flex items-center gap-2">
-                            Simkl Client ID
-                            <span class="text-[#d40060] cursor-help" title="Die Client ID Ihrer Simkl API App.">ℹ</span>
-                            <a href="https://simkl.com/settings/developer/" target="_blank" class="ml-auto text-xs text-blue-400 hover:underline">Klick hier</a>
+                    <div class="flex flex-col">
+                        <label class="h-6 text-[#d1d5db] font-medium mb-1 flex items-center justify-between">
+                            <span class="flex items-center gap-1.5">
+                                Simkl Client ID
+                                <span class="text-[#d40060] cursor-help" title="Die Client ID Ihrer Simkl API App.">ℹ</span>
+                            </span>
+                            <a href="https://simkl.com/settings/developer/" target="_blank" class="text-xs text-blue-400 hover:underline">Klick hier</a>
                         </label>
-                        <input type="password" name="client_id" value="{{ '' if provider and provider.client_id == 'your_simkl_client_id_here' else (provider.client_id if provider and provider.client_id else '') }}" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors font-mono">
+                        <input type="password" name="client_id" value="{{ '' if provider and provider.client_id == 'your_simkl_client_id_here' else (provider.client_id if provider and provider.client_id else '') }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors font-mono">
                     </div>
 
-                    <div class="relative group">
-                        <label class="block text-[#d1d5db] font-medium mb-1 flex items-center gap-2">
+                    <div class="flex flex-col">
+                        <label class="h-6 text-[#d1d5db] font-medium mb-1 flex items-center gap-1.5">
                             Simkl Access Token
                             <span class="text-[#d40060] cursor-help" title="Der geheime Access Token.">ℹ</span>
                         </label>
-                        <div class="flex gap-2">
-                            <input type="password" id="access_token" name="access_token" value="{{ '' if provider and provider.access_token == 'your_simkl_access_token_here' else (provider.access_token if provider and provider.access_token else '') }}" class="flex-1 w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors font-mono">
-                            <button type="button" hx-post="/simkl/auth/start" hx-include="[name='client_id']" hx-target="#simkl-auth-container-modal" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition-colors text-sm whitespace-nowrap shadow-lg shadow-blue-900/20">
+                        <div class="flex gap-2 w-full">
+                            <input type="password" id="access_token" name="access_token" value="{{ '' if provider and provider.access_token == 'your_simkl_access_token_here' else (provider.access_token if provider and provider.access_token else '') }}" class="flex-1 min-w-0 h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors font-mono">
+                            <button type="button" hx-post="/simkl/auth/start" hx-include="[name='client_id']" hx-target="#simkl-auth-container-modal" class="h-11 bg-blue-600 hover:bg-blue-700 text-white px-4 rounded-lg font-medium transition-colors text-sm whitespace-nowrap shadow-lg shadow-blue-900/20 shrink-0">
                                 Connect via PIN
                             </button>
                         </div>
@@ -71,43 +73,42 @@
                     </div>
                     
                     <div x-show="enable_movies" x-collapse>
-                        <div class="p-6 bg-[#1e1e24] space-y-6">
+                        <div class="p-6 bg-[#1e1e24]">
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                <div>
-                                    <label class="block text-[#d1d5db] text-xs uppercase tracking-wider mb-1 flex items-center gap-1">
+                                <div class="flex flex-col">
+                                    <label class="h-6 text-[#d1d5db] text-xs uppercase tracking-wider mb-1 flex items-center gap-1">
                                         TreasureMaps Kategorie ID
                                         <span class="text-[#d40060] cursor-help" title="Die Kategorie-ID für Filme auf TreasureMaps. (z.B. 2000 für alle Filme)">ℹ</span>
                                     </label>
-                                    <input type="number" name="movie_category_id" value="{{ provider.movie_category_id if provider and provider.movie_category_id else '2000' }}" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors text-sm font-mono" placeholder="2000">
+                                    <input type="number" name="movie_category_id" value="{{ provider.movie_category_id if provider and provider.movie_category_id else '2000' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors text-sm font-mono" placeholder="2000">
                                 </div>
-                                <div>
-                                    <label class="block text-[#d1d5db] text-xs uppercase tracking-wider mb-1">Blacklist (CSV)</label>
-                                    <input type="text" name="movies_reject" value="{{ m_prof.reject_words_csv if m_prof and m_prof.reject_words_csv is not none else 'cam,ts,subbed' }}" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors text-sm" placeholder="z.B. cam,ts,subbed">
+                                <div class="flex flex-col">
+                                    <label class="h-6 text-[#d1d5db] text-xs uppercase tracking-wider mb-1 flex items-center">Blacklist (CSV)</label>
+                                    <input type="text" name="movies_reject" value="{{ m_prof.reject_words_csv if m_prof and m_prof.reject_words_csv is not none else 'cam,ts,subbed' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors text-sm" placeholder="z.B. cam,ts,subbed">
                                 </div>
-                                <div>
-                                    <label class="block text-[#d1d5db] text-xs uppercase tracking-wider mb-1">Benachrichtigungs-Kanal</label>
-                                    <select name="movies_notification" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors text-sm">
+                                <div class="flex flex-col">
+                                    <label class="h-6 text-[#d1d5db] text-xs uppercase tracking-wider mb-1 flex items-center">Benachrichtigungs-Kanal</label>
+                                    <select name="movies_notification" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors text-sm">
                                         <option value="">Keiner</option>
                                         {% for n in notifications %}
                                         <option value="{{ n.id }}" {% if m_prof and m_prof.notification_channel_id == n.id %}selected{% endif %}>{{ n.name }}</option>
                                         {% endfor %}
                                     </select>
-                                    <label class="block text-[#d1d5db] text-xs uppercase tracking-wider mb-1">Suchlauf Intervall-Multiplikator</label>
-                                    <input type="number" name="movies_cycle_skip" value="{{ m_prof.search_cycle_skip if m_prof and m_prof.search_cycle_skip else '1' }}" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors text-sm font-mono" placeholder="1 = Jeder Lauf, 4 = Jeder 4. Lauf">
                                 </div>
-                                <div class="grid grid-cols-2 gap-4">
-                                    <div>
-                                        <label class="block text-[#d1d5db] text-xs uppercase tracking-wider mb-1">Min Größe (MB)</label>
-                                        <input type="number" name="movies_min_mb" value="{{ m_prof.min_mb if m_prof and m_prof.min_mb else '500' }}" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors text-sm font-mono">
-                                    </div>
-                                    <div>
-                                        <label class="block text-[#d1d5db] text-xs uppercase tracking-wider mb-1">Max Größe (MB)</label>
-                                        <input type="number" name="movies_max_mb" value="{{ m_prof.max_mb if m_prof and m_prof.max_mb else '25000' }}" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors text-sm font-mono">
+                                <div class="flex flex-col">
+                                    <label class="h-6 text-[#d1d5db] text-xs uppercase tracking-wider mb-1 flex items-center">Suchlauf Intervall-Multiplikator</label>
+                                    <input type="number" name="movies_cycle_skip" value="{{ m_prof.search_cycle_skip if m_prof and m_prof.search_cycle_skip else '1' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors text-sm font-mono" placeholder="1 = Jeder Lauf, 4 = Jeder 4. Lauf">
+                                </div>
+                                <div class="flex flex-col">
+                                    <label class="h-6 text-[#d1d5db] text-xs uppercase tracking-wider mb-1 flex items-center">Min / Max Größe (MB)</label>
+                                    <div class="grid grid-cols-2 gap-3">
+                                        <input type="number" name="movies_min_mb" value="{{ m_prof.min_mb if m_prof and m_prof.min_mb else '500' }}" placeholder="Min" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors text-sm font-mono">
+                                        <input type="number" name="movies_max_mb" value="{{ m_prof.max_mb if m_prof and m_prof.max_mb else '25000' }}" placeholder="Max" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors text-sm font-mono">
                                     </div>
                                 </div>
-                                <div>
-                                    <label class="block text-[#d1d5db] text-xs uppercase tracking-wider mb-1">Max. Auflösung</label>
-                                    <select name="movies_resolution" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors text-sm">
+                                <div class="flex flex-col">
+                                    <label class="h-6 text-[#d1d5db] text-xs uppercase tracking-wider mb-1 flex items-center">Max. Auflösung</label>
+                                    <select name="movies_resolution" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors text-sm">
                                         <option value="Automatisch / beste" {% if not m_prof or m_prof.resolution == 'Automatisch / beste' %}selected{% endif %}>Automatisch / beste</option>
                                         <option value="2160p" {% if m_prof and m_prof.resolution == '2160p' %}selected{% endif %}>2160p (4K)</option>
                                         <option value="1080p" {% if m_prof and m_prof.resolution == '1080p' %}selected{% endif %}>1080p</option>
@@ -132,61 +133,61 @@
                     </div>
                     
                     <div x-show="enable_series" x-collapse>
-                        <div class="p-6 bg-[#1e1e24] space-y-6">
+                        <div class="p-6 bg-[#1e1e24]">
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                <div>
-                                    <label class="block text-[#d1d5db] text-xs uppercase tracking-wider mb-1 flex items-center gap-1">
+                                <div class="flex flex-col">
+                                    <label class="h-6 text-[#d1d5db] text-xs uppercase tracking-wider mb-1 flex items-center gap-1">
                                         TreasureMaps Kategorie ID
                                         <span class="text-[#d40060] cursor-help" title="Die Kategorie-ID für Serien auf TreasureMaps. (z.B. 5000 für alle Serien, 5100 für deutsche Serien)">ℹ</span>
                                     </label>
-                                    <input type="number" name="series_category_id" value="{{ provider.series_category_id if provider and provider.series_category_id else '5000' }}" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors text-sm font-mono" placeholder="5000">
+                                    <input type="number" name="series_category_id" value="{{ provider.series_category_id if provider and provider.series_category_id else '5000' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors text-sm font-mono" placeholder="5000">
                                 </div>
-                                <div>
-                                    <label class="block text-[#d1d5db] text-xs uppercase tracking-wider mb-1">Blacklist (CSV)</label>
-                                    <input type="text" name="series_reject" value="{{ s_prof.reject_words_csv if s_prof and s_prof.reject_words_csv is not none else 'subbed,omU' }}" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors text-sm" placeholder="z.B. subbed,omU">
+                                <div class="flex flex-col">
+                                    <label class="h-6 text-[#d1d5db] text-xs uppercase tracking-wider mb-1 flex items-center">Blacklist (CSV)</label>
+                                    <input type="text" name="series_reject" value="{{ s_prof.reject_words_csv if s_prof and s_prof.reject_words_csv is not none else 'subbed,omU' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors text-sm" placeholder="z.B. subbed,omU">
                                 </div>
-                                <div>
-                                    <label class="block text-[#d1d5db] text-xs uppercase tracking-wider mb-1">Episoden Such-Blockgröße</label>
-                                    <input type="number" name="series_block_size" value="{{ s_prof.episode_block_size if s_prof and s_prof.episode_block_size else '5' }}" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors text-sm font-mono" placeholder="5">
+                                <div class="flex flex-col">
+                                    <label class="h-6 text-[#d1d5db] text-xs uppercase tracking-wider mb-1 flex items-center">Episoden Such-Blockgröße</label>
+                                    <input type="number" name="series_block_size" value="{{ s_prof.episode_block_size if s_prof and s_prof.episode_block_size else '5' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors text-sm font-mono" placeholder="5">
                                 </div>
-                                <div>
-                                    <label class="block text-[#d1d5db] text-xs uppercase tracking-wider mb-1">Benachrichtigungs-Kanal</label>
-                                    <select name="series_notification" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors text-sm">
+                                <div class="flex flex-col">
+                                    <label class="h-6 text-[#d1d5db] text-xs uppercase tracking-wider mb-1 flex items-center">Benachrichtigungs-Kanal</label>
+                                    <select name="series_notification" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors text-sm">
                                         <option value="">Keiner</option>
                                         {% for n in notifications %}
                                         <option value="{{ n.id }}" {% if s_prof and s_prof.notification_channel_id == n.id %}selected{% endif %}>{{ n.name }}</option>
                                         {% endfor %}
                                     </select>
-                                    <label class="block text-[#d1d5db] text-xs uppercase tracking-wider mb-1 mt-4">Suchlauf Intervall-Multiplikator</label>
-                                    <input type="number" name="series_cycle_skip" value="{{ s_prof.search_cycle_skip if s_prof and s_prof.search_cycle_skip else '1' }}" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors text-sm font-mono" placeholder="1 = Jeder Lauf, 4 = Jeder 4. Lauf">
                                 </div>
-                                <div class="grid grid-cols-2 gap-4">
-                                    <div>
-                                        <label class="block text-[#d1d5db] text-xs uppercase tracking-wider mb-1">Min Größe (MB)</label>
-                                        <input type="number" name="series_min_mb" value="{{ s_prof.min_mb if s_prof and s_prof.min_mb else '200' }}" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors text-sm font-mono">
-                                    </div>
-                                    <div>
-                                        <label class="block text-[#d1d5db] text-xs uppercase tracking-wider mb-1">Max Größe (MB)</label>
-                                        <input type="number" name="series_max_mb" value="{{ s_prof.max_mb if s_prof and s_prof.max_mb else '8000' }}" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors text-sm font-mono">
+                                <div class="flex flex-col">
+                                    <label class="h-6 text-[#d1d5db] text-xs uppercase tracking-wider mb-1 flex items-center">Suchlauf Intervall-Multiplikator</label>
+                                    <input type="number" name="series_cycle_skip" value="{{ s_prof.search_cycle_skip if s_prof and s_prof.search_cycle_skip else '1' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors text-sm font-mono" placeholder="1 = Jeder Lauf, 4 = Jeder 4. Lauf">
+                                </div>
+                                <div class="flex flex-col">
+                                    <label class="h-6 text-[#d1d5db] text-xs uppercase tracking-wider mb-1 flex items-center">Min / Max Größe (MB)</label>
+                                    <div class="grid grid-cols-2 gap-3">
+                                        <input type="number" name="series_min_mb" value="{{ s_prof.min_mb if s_prof and s_prof.min_mb else '200' }}" placeholder="Min" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors text-sm font-mono">
+                                        <input type="number" name="series_max_mb" value="{{ s_prof.max_mb if s_prof and s_prof.max_mb else '8000' }}" placeholder="Max" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors text-sm font-mono">
                                     </div>
                                 </div>
-                                <div>
-                                    <label class="block text-[#d1d5db] text-xs uppercase tracking-wider mb-1">Max. Auflösung</label>
-                                    <select name="series_resolution" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors text-sm">
+                                <div class="flex flex-col md:col-span-2">
+                                    <label class="h-6 text-[#d1d5db] text-xs uppercase tracking-wider mb-1 flex items-center">Max. Auflösung</label>
+                                    <select name="series_resolution" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors text-sm">
                                         <option value="Automatisch / beste" {% if not s_prof or s_prof.resolution == 'Automatisch / beste' %}selected{% endif %}>Automatisch / beste</option>
                                         <option value="2160p" {% if s_prof and s_prof.resolution == '2160p' %}selected{% endif %}>2160p (4K)</option>
                                         <option value="1080p" {% if s_prof and s_prof.resolution == '1080p' %}selected{% endif %}>1080p</option>
                                         <option value="720p" {% if s_prof and s_prof.resolution == '720p' %}selected{% endif %}>720p</option>
                                     </select>
                                 </div>
-                                <div class="md:col-span-2">
-                                    <label class="flex items-center gap-2 text-[#d1d5db] text-sm cursor-pointer mt-2">
+                                <div class="md:col-span-2 pt-2">
+                                    <label class="flex items-center gap-2 text-[#d1d5db] text-sm cursor-pointer">
                                         <input type="checkbox" name="series_prefer_seasons" value="True" {% if s_prof and s_prof.prefer_complete_seasons %}checked{% endif %} class="w-4 h-4 accent-[#d40060]">
                                         <span>Komplette Staffeln bevorzugen (Sucht zuerst nach SXX, bei Misserfolg nach einzelnen Episoden)</span>
                                     </label>
                                 </div>
                             </div>
                         </div>
+                    </div>
                 </div>
                 
                 <!-- Anime Profile -->
@@ -202,55 +203,54 @@
                     </div>
                     
                     <div x-show="enable_anime" x-collapse>
-                        <div class="p-6 bg-[#1e1e24] space-y-6">
+                        <div class="p-6 bg-[#1e1e24]">
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                <div>
-                                    <label class="block text-[#d1d5db] text-xs uppercase tracking-wider mb-1 flex items-center gap-1">
+                                <div class="flex flex-col">
+                                    <label class="h-6 text-[#d1d5db] text-xs uppercase tracking-wider mb-1 flex items-center gap-1">
                                         TreasureMaps Kategorie ID
                                         <span class="text-[#d40060] cursor-help" title="Die Kategorie-ID für Anime auf TreasureMaps. (z.B. 5070)">ℹ</span>
                                     </label>
-                                    <input type="number" name="anime_category_id" value="{{ provider.anime_category_id if provider and provider.anime_category_id else '5070' }}" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors text-sm font-mono" placeholder="5070">
+                                    <input type="number" name="anime_category_id" value="{{ provider.anime_category_id if provider and provider.anime_category_id else '5070' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors text-sm font-mono" placeholder="5070">
                                 </div>
-                                <div>
-                                    <label class="block text-[#d1d5db] text-xs uppercase tracking-wider mb-1">Blacklist (CSV)</label>
-                                    <input type="text" name="anime_reject" value="{{ a_prof.reject_words_csv if a_prof and a_prof.reject_words_csv is not none else 'subbed,omU' }}" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors text-sm" placeholder="z.B. subbed,omU">
+                                <div class="flex flex-col">
+                                    <label class="h-6 text-[#d1d5db] text-xs uppercase tracking-wider mb-1 flex items-center">Blacklist (CSV)</label>
+                                    <input type="text" name="anime_reject" value="{{ a_prof.reject_words_csv if a_prof and a_prof.reject_words_csv is not none else 'subbed,omU' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors text-sm" placeholder="z.B. subbed,omU">
                                 </div>
-                                <div>
-                                    <label class="block text-[#d1d5db] text-xs uppercase tracking-wider mb-1">Episoden Such-Blockgröße</label>
-                                    <input type="number" name="anime_block_size" value="{{ a_prof.episode_block_size if a_prof and a_prof.episode_block_size else '5' }}" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors text-sm font-mono" placeholder="5">
+                                <div class="flex flex-col">
+                                    <label class="h-6 text-[#d1d5db] text-xs uppercase tracking-wider mb-1 flex items-center">Episoden Such-Blockgröße</label>
+                                    <input type="number" name="anime_block_size" value="{{ a_prof.episode_block_size if a_prof and a_prof.episode_block_size else '5' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors text-sm font-mono" placeholder="5">
                                 </div>
-                                <div>
-                                    <label class="block text-[#d1d5db] text-xs uppercase tracking-wider mb-1">Benachrichtigungs-Kanal</label>
-                                    <select name="anime_notification" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors text-sm">
+                                <div class="flex flex-col">
+                                    <label class="h-6 text-[#d1d5db] text-xs uppercase tracking-wider mb-1 flex items-center">Benachrichtigungs-Kanal</label>
+                                    <select name="anime_notification" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors text-sm">
                                         <option value="">Keiner</option>
                                         {% for n in notifications %}
                                         <option value="{{ n.id }}" {% if a_prof and a_prof.notification_channel_id == n.id %}selected{% endif %}>{{ n.name }}</option>
                                         {% endfor %}
                                     </select>
-                                    <label class="block text-[#d1d5db] text-xs uppercase tracking-wider mb-1 mt-4">Suchlauf Intervall-Multiplikator</label>
-                                    <input type="number" name="anime_cycle_skip" value="{{ a_prof.search_cycle_skip if a_prof and a_prof.search_cycle_skip else '1' }}" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors text-sm font-mono" placeholder="1 = Jeder Lauf, 4 = Jeder 4. Lauf">
                                 </div>
-                                <div class="grid grid-cols-2 gap-4">
-                                    <div>
-                                        <label class="block text-[#d1d5db] text-xs uppercase tracking-wider mb-1">Min Größe (MB)</label>
-                                        <input type="number" name="anime_min_mb" value="{{ a_prof.min_mb if a_prof and a_prof.min_mb else '200' }}" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors text-sm font-mono">
-                                    </div>
-                                    <div>
-                                        <label class="block text-[#d1d5db] text-xs uppercase tracking-wider mb-1">Max Größe (MB)</label>
-                                        <input type="number" name="anime_max_mb" value="{{ a_prof.max_mb if a_prof and a_prof.max_mb else '8000' }}" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors text-sm font-mono">
+                                <div class="flex flex-col">
+                                    <label class="h-6 text-[#d1d5db] text-xs uppercase tracking-wider mb-1 flex items-center">Suchlauf Intervall-Multiplikator</label>
+                                    <input type="number" name="anime_cycle_skip" value="{{ a_prof.search_cycle_skip if a_prof and a_prof.search_cycle_skip else '1' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors text-sm font-mono" placeholder="1 = Jeder Lauf, 4 = Jeder 4. Lauf">
+                                </div>
+                                <div class="flex flex-col">
+                                    <label class="h-6 text-[#d1d5db] text-xs uppercase tracking-wider mb-1 flex items-center">Min / Max Größe (MB)</label>
+                                    <div class="grid grid-cols-2 gap-3">
+                                        <input type="number" name="anime_min_mb" value="{{ a_prof.min_mb if a_prof and a_prof.min_mb else '200' }}" placeholder="Min" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors text-sm font-mono">
+                                        <input type="number" name="anime_max_mb" value="{{ a_prof.max_mb if a_prof and a_prof.max_mb else '8000' }}" placeholder="Max" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors text-sm font-mono">
                                     </div>
                                 </div>
-                                <div>
-                                    <label class="block text-[#d1d5db] text-xs uppercase tracking-wider mb-1">Max. Auflösung</label>
-                                    <select name="anime_resolution" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors text-sm">
+                                <div class="flex flex-col md:col-span-2">
+                                    <label class="h-6 text-[#d1d5db] text-xs uppercase tracking-wider mb-1 flex items-center">Max. Auflösung</label>
+                                    <select name="anime_resolution" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors text-sm">
                                         <option value="Automatisch / beste" {% if not a_prof or a_prof.resolution == 'Automatisch / beste' %}selected{% endif %}>Automatisch / beste</option>
                                         <option value="2160p" {% if a_prof and a_prof.resolution == '2160p' %}selected{% endif %}>2160p (4K)</option>
                                         <option value="1080p" {% if a_prof and a_prof.resolution == '1080p' %}selected{% endif %}>1080p</option>
                                         <option value="720p" {% if a_prof and a_prof.resolution == '720p' %}selected{% endif %}>720p</option>
                                     </select>
                                 </div>
-                                <div class="md:col-span-2">
-                                    <label class="flex items-center gap-2 text-[#d1d5db] text-sm cursor-pointer mt-2">
+                                <div class="md:col-span-2 pt-2">
+                                    <label class="flex items-center gap-2 text-[#d1d5db] text-sm cursor-pointer">
                                         <input type="checkbox" name="anime_prefer_seasons" value="True" {% if a_prof and a_prof.prefer_complete_seasons %}checked{% endif %} class="w-4 h-4 accent-[#d40060]">
                                         <span>Komplette Staffeln bevorzugen (Sucht zuerst nach SXX, bei Misserfolg nach einzelnen Episoden)</span>
                                     </label>

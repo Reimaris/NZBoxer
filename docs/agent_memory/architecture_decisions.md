@@ -1,6 +1,6 @@
 # Architecture Decision Records — NZBoxer
 
-**Last Updated:** 2026-08-02
+**Last Updated:** 2026-08-03
 
 ---
 
@@ -72,6 +72,7 @@ Use the `guessit` library, the industry standard for media metadata extraction f
 
 ---
 
+## ADR-005: DB-backed Config & Scoring System
 
 **Status:** Accepted  
 **Date:** 2026-08-02
@@ -80,10 +81,11 @@ Use the `guessit` library, the industry standard for media metadata extraction f
 The scoring rules (codec weights, resolution weights, group whitelist/blacklist, cutoff scores) must be user-editable without code changes.
 
 ### Decision
+Store global system settings and scoring profiles in the `SystemSettings` table in SQLite, loaded into memory at startup and updated via the settings endpoints.
 
 ### Consequences
-- **Pros:** Human-readable, Git-diffable, no DB round-trip for config.
-- **Cons:** Requires app restart (or explicit reload endpoint) to apply changes. Acceptable for this use case.
+- **Pros:** Dynamic settings adjustments directly via UI without application restart.
+- **Cons:** Requires reloading cache upon update.
 
 ---
 
@@ -101,3 +103,36 @@ Sync the Simkl watchlist to `MediaItem` rows in SQLite during startup and via sc
 ### Consequences
 - **Pros:** Dashboard loads instantly. No rate-limit risk. Enables status tracking independent of Simkl.
 - **Cons:** Watchlist can be stale by up to one scheduler interval. Acceptable tradeoff.
+
+---
+
+## ADR-007: Central Async Rate Limiting & Daily NZB Grab Limit
+
+**Status:** Accepted  
+**Date:** 2026-08-03
+
+### Context
+External APIs enforce distinct rate limits (Newznab politeness limits, TMDB rate limits, Simkl query limits, TorBox polling limits). Treasure Maps imposes a strict 400 NZB downloads/day limit.
+
+### Decision
+Implement a central `RateLimiter` class using `asyncio.Lock` to guarantee minimum delays between HTTP requests per client service. Track daily NZB downloads in a `DailyGrabCounter` DB model (`YYYY-MM-DD` key). Check `can_grab_today(session, limit=400)` before sending any download request.
+
+### Consequences
+- **Pros:** Prevents API bans, respects provider terms, prevents quota overflow.
+- **Cons:** Requires small delay overhead per request cycle (0.1s - 1.0s).
+
+---
+
+## ADR-008: Daily Rotating File Logging & Process Block Formatters
+
+**Status:** Accepted  
+**Date:** 2026-08-03
+
+### Context
+Logs must be easily inspectable per day and visually distinguishable during automated background runs.
+
+### Decision
+Configure `TimedRotatingFileHandler` writing to `logs/nzboxer_YYYY-MM-DD.log`. Implement `log_process_start` and `log_process_end` block formatters with 80-character line separators for automation and self-healing cycles.
+
+### Consequences
+- **Pros:** Clean log inspection, automatic log rotation, clear visual boundaries between background runs.

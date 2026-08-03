@@ -70,21 +70,60 @@
                 <svg class="w-5 h-5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 002-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
                 Season Management
             </h2>
-            <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 mb-8">
+            
+            <div class="space-y-3 mb-8">
                 {% for season in item.seasons|sort(attribute='season_number') %}
-                <div class="flex justify-between items-center p-3 bg-slate-900/50 rounded-lg border border-slate-700 hover:border-slate-600 transition-colors">
-                        <div class="font-medium text-slate-300 flex items-center gap-2">
-                            Season {{ season.season_number }}
+                <div class="bg-slate-900/80 border border-slate-700 rounded-lg overflow-hidden transition-all" x-data="{ open: false }">
+                    <!-- Season Header Row -->
+                    <div @click="open = !open" class="p-4 flex items-center justify-between cursor-pointer hover:bg-slate-800/60 transition-colors">
+                        <div class="flex items-center gap-3">
+                            <svg class="w-5 h-5 text-indigo-400 transform transition-transform duration-200" :class="{'rotate-90': open}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+                            <span class="font-bold text-slate-100 text-lg">Staffel {{ season.season_number }}</span>
+                            <span class="text-xs text-slate-400 bg-slate-800 px-2 py-0.5 rounded border border-slate-700 capitalize">{{ season.status }}</span>
                             {% if season.fail_count > 0 %}
-                            <span class="bg-red-900 text-white text-[10px] font-bold px-1.5 py-0.5 rounded border border-red-700 cursor-help" title="{{ season.last_error }}">❌ {{ season.fail_count }}</span>
+                            <span class="bg-red-900 text-white text-[10px] font-bold px-1.5 py-0.5 rounded border border-red-700 cursor-help" title="{{ season.last_error }}">❌ {{ season.fail_count }} Fails</span>
                             {% endif %}
                         </div>
-                        <div class="text-xs text-slate-500 capitalize">{{ season.status }}</div>
+
+                        <div class="flex items-center gap-4">
+                            <span class="text-xs text-slate-400 font-mono">{{ season.episodes|length if season.episodes else (season.episode_count or 0) }} Episoden</span>
+                            <button hx-post="/items/{{ item.id }}/seasons/{{ season.season_number }}/toggle" hx-swap="outerHTML" @click.stop
+                                    class="{% if season.monitored %}bg-emerald-600 hover:bg-emerald-700{% else %}bg-slate-700 hover:bg-slate-600{% endif %} text-white px-3 py-1.5 rounded-md text-xs font-semibold uppercase tracking-wider transition-colors shadow-sm">
+                                {% if season.monitored %}Monitored{% else %}Ignored{% endif %}
+                            </button>
+                        </div>
                     </div>
-                    <button hx-post="/items/{{ item.id }}/seasons/{{ season.season_number }}/toggle" hx-swap="outerHTML" 
-                            class="{% if season.monitored %}bg-emerald-600 hover:bg-emerald-700{% else %}bg-slate-700 hover:bg-slate-600{% endif %} text-white px-3 py-1.5 rounded-md text-xs font-semibold uppercase tracking-wider transition-colors shadow-sm">
-                        {% if season.monitored %}Monitored{% else %}Ignored{% endif %}
-                    </button>
+
+                    <!-- Accordion Episodes Body -->
+                    <div x-show="open" x-collapse class="border-t border-slate-800 bg-slate-950/60 p-4">
+                        {% if season.episodes %}
+                        <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                            {% for ep in season.episodes|sort(attribute='episode_number') %}
+                            <div class="p-3 bg-slate-900/90 rounded border border-slate-800 flex justify-between items-center text-xs">
+                                <div>
+                                    <span class="font-bold text-indigo-300 font-mono">E{{ "%02d"|format(ep.episode_number) }}</span>
+                                    {% if ep.air_date %}
+                                    <span class="text-slate-500 text-[11px] block mt-0.5">{{ ep.air_date.strftime('%Y-%m-%d') }}</span>
+                                    {% endif %}
+                                </div>
+                                <div class="flex items-center gap-1.5">
+                                    <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider
+                                        {% if ep.status == 'completed' or ep.status == 'downloaded' %}bg-emerald-900/60 text-emerald-300 border border-emerald-700
+                                        {% elif ep.status == 'searching' %}bg-blue-900/60 text-blue-300 border border-blue-700
+                                        {% else %}bg-slate-800 text-slate-400 border border-slate-700{% endif %}">
+                                        {{ ep.status }}
+                                    </span>
+                                    {% if ep.fail_count > 0 %}
+                                    <span class="text-red-400 font-bold" title="{{ ep.last_error }}">❌</span>
+                                    {% endif %}
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                        {% else %}
+                        <div class="text-xs text-slate-500 italic p-2">Keine Episodendaten vorhanden.</div>
+                        {% endif %}
+                    </div>
                 </div>
                 {% endfor %}
             </div>

@@ -1,10 +1,10 @@
 import pytest
-from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi.testclient import TestClient
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.main import app
-from app.db.models import SystemSettings, Provider, NotificationChannel
 from app.config import settings
+from app.db.models import SystemSettings
+from app.main import app
 
 client = TestClient(app)
 

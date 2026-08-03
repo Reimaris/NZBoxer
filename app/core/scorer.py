@@ -36,8 +36,8 @@ def calculate_bitrate_mbps(size_bytes: int, runtime_minutes: int | None) -> floa
 
 
 def score_release(
-    parsed: ParsedRelease, 
-    size_bytes: int, 
+    parsed: ParsedRelease,
+    size_bytes: int,
     runtime_minutes: int | None,
     age_days: int = 0
 ) -> ScoreResult:
@@ -76,18 +76,18 @@ def score_release(
         if not key:
             score += cat_scores.get("default", 0)
             return
-        
+
         # Exact match
         if key in cat_scores:
             score += cat_scores[key]
             return
-            
+
         # Substring match (e.g. 'dts-hd' in 'dts-hd ma')
         for k, v in cat_scores.items():
             if k != "default" and k in key:
                 score += v
                 return
-                
+
         score += cat_scores.get("default", 0)
 
     add_score("resolution", parsed.resolution)
@@ -95,7 +95,7 @@ def score_release(
     add_score("audio_codec", parsed.audio_codec)
     add_score("audio_channels", parsed.audio_channels)
     add_score("source", parsed.source)
-    
+
     # HDR matching (guessit 'other' or 'color_depth' can contain multiple tokens)
     if parsed.hdr:
         add_score("hdr", parsed.hdr)
@@ -113,7 +113,7 @@ def score_release(
 
     # 3. Bitrate Scoring with Codec Efficiency Multipliers
     bitrate_mbps = calculate_bitrate_mbps(size_bytes, runtime_minutes)
-    
+
     # Determine codec multiplier for bitrate compensation
     codec_mult = 1.0
     if parsed.video_codec:
@@ -124,7 +124,7 @@ def score_release(
             codec_mult = 1.5  # HEVC is ~50% more efficient than H.264
         elif "h264" in vc or "avc" in vc or "h.264" in vc:
             codec_mult = 1.0
-            
+
     if bitrate_mbps is not None:
         effective_bitrate = bitrate_mbps * codec_mult
         bitrate_brackets = cfg.get("bitrate_brackets", [])
@@ -132,7 +132,7 @@ def score_release(
             if effective_bitrate >= bracket["min_mbps"]:
                 score += bracket["score"]
                 break
-                
+
     # 4. Final Multipliers (Whitelist)
     if group and group in whitelist:
         whitelist_mult = groups_cfg.get("whitelist_multiplier", 1.2)

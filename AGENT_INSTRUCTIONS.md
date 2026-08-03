@@ -24,9 +24,21 @@
 ## 2. ADVANCED TOOLING & QUALITY CONTROL (STRICT)
 
 - **TDD & Testing:** Write Unit/Integration tests for EVERY feature. Target >85% coverage.
-- **Static Analysis:** Always run available Linters/Type-Checkers before declaring a task finished. Zero warnings/errors allowed.
+- **Static Analysis:** Always run available Linters/Type-Checkers (`pytest`, `ruff check .`, `mypy app`) before declaring a task finished. Zero warnings/errors allowed.
 - **Git Hygiene:** Use Git for version control. Every logical change must be a separate commit using **Conventional Commits**.
-- **External Documentation:** Check for the latest stable version and API changes via search tool to avoid deprecated code.
+- **Rate Limit & Quota Safety:**
+  - Newznab: 0.6s politeness cooldown
+  - TMDB: 0.1s rate limit
+  - Simkl: 1.0s query cooldown
+  - TorBox: 1.0s send spacing, 10.0s status polling interval
+  - Hard Limit: 400 NZB downloads/day (tracked via `DailyGrabCounter`).
+- **Logging Layout:**
+  - Rotate log files daily with date (`logs/nzboxer_YYYY-MM-DD.log`).
+  - Use `log_process_start` and `log_process_end` 80-char process block line separators for background jobs.
+- **UI Design Guidelines:**
+  - Use symmetrical grid layouts (`grid-cols-1 md:grid-cols-2 gap-6`) for forms & modals.
+  - Collapsible wide horizontal Accordion UI for Season/Episode Management.
+  - Unified "Anime" category grouping for all anime items.
 
 ---
 
@@ -72,34 +84,34 @@ A modular, database-backed web application for automated Usenet NZB search, scor
 | Backend       | Python 3.11+, FastAPI, Uvicorn, HTTPX (async) |
 | Database      | SQLite + SQLAlchemy 2.0                     |
 | Scheduling    | APScheduler                                 |
-| Frontend      | HTML5, TailwindCSS (CDN), HTMX              |
+| Frontend      | HTML5, TailwindCSS (CDN), HTMX, AlpineJS    |
 | Parsing       | guessit                                     |
 
 ### Module Layout
 ```
 NZBoxer/
 ├── app/
-│   ├── main.py              # FastAPI app, routes, APScheduler setup
+│   ├── main.py              # FastAPI app, routes, APScheduler setup, settings endpoints
 │   ├── db/
-│   │   └── models.py        # SQLite schemas (SQLAlchemy 2.0)
+│   │   ├── models.py        # SQLite schemas (SQLAlchemy 2.0, DailyGrabCounter)
+│   │   └── grab_tracker.py  # Daily NZB grab limit tracker
 │   ├── services/
-│   │   ├── treasure_maps.py # Newznab API client
-│   │   ├── torbox.py        # TorBox API client
-│   │   ├── simkl.py         # Simkl API client
-│   │   └── tmdb.py          # TMDB API client
+│   │   ├── treasure_maps.py # Newznab API client (0.6s cooldown)
+│   │   ├── torbox.py        # TorBox API client (1.0s send, 10s poll)
+│   │   ├── simkl.py         # Simkl API client (1.0s cooldown)
+│   │   ├── tmdb.py          # TMDB API client (0.1s cooldown)
+│   │   └── telegram.py      # Telegram notification client
 │   └── core/
+│       ├── rate_limiter.py  # Thread/task-safe async RateLimiter class
+│       ├── logging_config.py# Daily rotating file logger & block formatters
 │       ├── parser.py        # guessit-based release parser
-│       ├── scorer.py        # Scoring engine
+│       ├── scorer.py        # Release scoring engine
+│       ├── self_healing.py  # Self-healing download manager
 │       └── automation.py   # Search/download orchestration
 ├── templates/               # Jinja2 HTML templates
 ├── static/                  # Static assets
 ├── tests/                   # Unit & integration tests
-├── docs/agent_memory/       # Agent memory files
-├── config.yaml              # Scoring matrix, API keys, filters
-├── .env                     # Secrets (gitignored)
-├── .env.example             # Template for secrets
-├── requirements.txt         # Python dependencies
-└── usage.md                 # Root-level usage guide
+└── docs/agent_memory/       # Agent memory files
 ```
 
 ---

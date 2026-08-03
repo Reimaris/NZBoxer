@@ -8,20 +8,20 @@ and API endpoints for HTMX interactions.
 from __future__ import annotations
 
 import logging
-from logging.handlers import TimedRotatingFileHandler
-import json
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from pathlib import Path
 from datetime import datetime
+from logging.handlers import TimedRotatingFileHandler
+from pathlib import Path
+from typing import Any
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from fastapi import FastAPI, Request, Form, BackgroundTasks
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import BackgroundTasks, FastAPI, Form, Request
+from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from app.config import reload_settings_from_db, scoring_config, settings
+from app.config import reload_settings_from_db, settings
 from app.db.database import async_session_factory, close_db, init_db
 
 # Configure logging
@@ -114,18 +114,18 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     async def _orchestrator_job():
         # Always run self-healing first
         await run_self_healing_cycle()
-        
+
         # Check if we should run the full scan
         if state["cycle_count"] % settings.scan_interval_multiplier == 0:
             logger.info("Running full automation cycle (Interval multiplier: %d)", settings.scan_interval_multiplier)
             await run_automation_cycle()
         else:
             logger.info("Skipping full automation cycle (Interval multiplier: %d, Current cycle: %d)", settings.scan_interval_multiplier, state["cycle_count"])
-            
+
         state["cycle_count"] += 1
 
     interval_minutes = 15  # Base interval is always 15 minutes as requested
-    
+
     scheduler.add_job(
         _orchestrator_job,
         "interval",
@@ -164,41 +164,58 @@ app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 @app.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request):
     """Main dashboard displaying the watchlist."""
-    from sqlalchemy import select, func
+    from sqlalchemy import select
     from sqlalchemy.orm import selectinload
 
     from app.db.database import async_session_factory
-    from app.db.models import MediaItem, MediaType, DownloadHistory, Provider
-    
+    from app.db.models import MediaItem, MediaType
+
     async with async_session_factory() as session:
         # Fetch items
         stmt = select(MediaItem).order_by(MediaItem.created_at.desc()).options(
-            selectinload(MediaItem.seasons), 
+            selectinload(MediaItem.seasons),
             selectinload(MediaItem.download_history),
             selectinload(MediaItem.provider)
         )
         result = await session.execute(stmt)
         items = result.scalars().all()
-        
-        # Calculate stats
-        movies_wanted = sum(1 for i in items if i.media_type == MediaType.MOVIE and i.status != "completed")
-        series_wanted = sum(1 for i in items if i.media_type == MediaType.SHOW and i.status != "completed")
-        anime_wanted = sum(1 for i in items if i.media_type == MediaType.ANIME and i.status != "completed")
-        
-        # Total history items
-        hist_stmt = select(func.count(DownloadHistory.id))
-        hist_result = await session.execute(hist_stmt)
-        history_count = hist_result.scalar() or 0
+
+        # Detailed stats calculations
+        movie_items = [i for i in items if i.media_type == MediaType.MOVIE]
+        series_items = [i for i in items if i.media_type == MediaType.SHOW]
+        anime_items = [i for i in items if i.media_type == MediaType.ANIME]
+
+        movie_stats = {
+            "total": len(movie_items),
+            "wanted": sum(1 for i in movie_items if i.status in ("searching", "pending")),
+            "completed": sum(1 for i in movie_items if i.status in ("completed", "downloaded")),
+            "ignored": sum(1 for i in movie_items if i.status in ("ignored", "canceled")),
+        }
+        series_stats = {
+            "total": len(series_items),
+            "wanted": sum(1 for i in series_items if i.status in ("searching", "pending")),
+            "completed": sum(1 for i in series_items if i.status in ("completed", "downloaded")),
+            "ignored": sum(1 for i in series_items if i.status in ("ignored", "canceled")),
+        }
+        anime_stats = {
+            "total": len(anime_items),
+            "wanted": sum(1 for i in anime_items if i.status in ("searching", "pending")),
+            "completed": sum(1 for i in anime_items if i.status in ("completed", "downloaded")),
+            "ignored": sum(1 for i in anime_items if i.status in ("ignored", "canceled")),
+        }
 
     return templates.TemplateResponse(
         request=request, name="dashboard.html", context={
             "items": items,
-            "movies_wanted": movies_wanted,
-            "series_wanted": series_wanted,
-            "anime_wanted": anime_wanted,
-            "history_count": history_count
+            "movie_stats": movie_stats,
+            "series_stats": series_stats,
+            "anime_stats": anime_stats,
+            "movies_wanted": movie_stats["wanted"],
+            "series_wanted": series_stats["wanted"],
+            "anime_wanted": anime_stats["wanted"],
         }
     )
+
 
 @app.get("/items/{item_id}", response_class=HTMLResponse)
 async def item_detail(request: Request, item_id: int):
@@ -206,11 +223,19 @@ async def item_detail(request: Request, item_id: int):
     from sqlalchemy.orm import selectinload
 
     from app.db.database import async_session_factory
-    from app.db.models import MediaItem
-    
+    from app.db.models import MediaItem, Season
+
     async with async_session_factory() as session:
-        item = await session.get(MediaItem, item_id, options=[selectinload(MediaItem.seasons), selectinload(MediaItem.download_history)])
-        
+        item = await session.get(
+            MediaItem,
+            item_id,
+            options=[
+                selectinload(MediaItem.seasons).selectinload(Season.episodes),
+                selectinload(MediaItem.download_history),
+            ],
+        )
+
+
     if not item:
         return HTMLResponse(content="Item not found", status_code=404)
 
@@ -225,22 +250,22 @@ async def toggle_season(item_id: int, season_number: int):
 
     from app.db.database import async_session_factory
     from app.db.models import Season
-    
+
     async with async_session_factory() as session:
         stmt = select(Season).where(Season.media_item_id == item_id, Season.season_number == season_number)
         result = await session.execute(stmt)
         season = result.scalar_one_or_none()
-        
+
         if season:
             season.monitored = not season.monitored
             # Return updated button html
             is_monitored = season.monitored
             await session.commit()
-            
+
             color = "bg-[#d40060]" if is_monitored else "bg-gray-600"
             text = "Monitored" if is_monitored else "Ignored"
             return HTMLResponse(content=f'<button hx-post="/items/{item_id}/seasons/{season_number}/toggle" hx-swap="outerHTML" class="{color} text-white px-3 py-1 rounded text-sm">{text}</button>')
-            
+
     return HTMLResponse(content="Error", status_code=400)
 
 
@@ -248,20 +273,27 @@ async def toggle_season(item_id: int, season_number: int):
 async def retry_item(item_id: int):
     """Reset item and season status to pending and delete blacklisted releases for this item."""
     from sqlalchemy import select
+
     from app.db.database import async_session_factory
-    from app.db.models import MediaItem, Season, MediaStatus, SeasonStatus, BlacklistedRelease
+    from app.db.models import (
+        BlacklistedRelease,
+        MediaItem,
+        MediaStatus,
+        Season,
+        SeasonStatus,
+    )
 
     async with async_session_factory() as session:
         item = await session.get(MediaItem, item_id)
         if item:
             item.status = MediaStatus.PENDING
-            
+
             # Reset seasons
             stmt = select(Season).where(Season.media_item_id == item_id)
             result = await session.execute(stmt)
             for season in result.scalars():
                 season.status = SeasonStatus.PENDING
-                
+
             # Clear blacklisted releases for this item
             stmt_bl = select(BlacklistedRelease).where(BlacklistedRelease.media_item_id == item_id)
             bl_result = await session.execute(stmt_bl)
@@ -330,7 +362,9 @@ async def delete_item(item_id: int):
             await session.delete(item)
             await session.commit()
             return HTMLResponse(content='') # Empty response means success (HTMX can remove element)
-    return HTMLResponse(content="Error", status_code=400)@app.post("/sync")
+    return HTMLResponse(content="Error", status_code=400)
+
+@app.post("/sync")
 async def sync_watchlist():
     """Trigger manual Simkl sync."""
     from app.core.automation import sync_simkl_watchlist
@@ -355,18 +389,19 @@ async def get_settings_page(request: Request):
     """Render the settings form."""
     from sqlalchemy import select
     from sqlalchemy.orm import selectinload
-    from app.db.models import SystemSettings, Provider, NotificationChannel
-    
+
+    from app.db.models import NotificationChannel, Provider, SystemSettings
+
     async with async_session_factory() as session:
         stmt = select(SystemSettings).where(SystemSettings.id == 1)
         db_settings = (await session.execute(stmt)).scalar_one_or_none()
-        
+
         providers = (await session.execute(select(Provider).options(selectinload(Provider.profiles)))).scalars().all()
         notifications = (await session.execute(select(NotificationChannel))).scalars().all()
-        
+
         # Flatten scoring logic for the UI if needed
         scoring = db_settings.scoring_settings if db_settings and db_settings.scoring_settings else {}
-        
+
     return templates.TemplateResponse(
         request=request, name="settings.html", context={
             "db_settings": db_settings,
@@ -379,11 +414,12 @@ async def get_settings_page(request: Request):
 @app.get("/settings/export")
 async def export_settings():
     """Export all settings as a JSON file."""
+    from fastapi.responses import JSONResponse
     from sqlalchemy import select
     from sqlalchemy.orm import selectinload
-    from fastapi.responses import JSONResponse
-    from app.db.models import SystemSettings, Provider, NotificationChannel
-    
+
+    from app.db.models import NotificationChannel, Provider, SystemSettings
+
     async with async_session_factory() as session:
         # Get SystemSettings
         stmt = select(SystemSettings).where(SystemSettings.id == 1)
@@ -401,7 +437,7 @@ async def export_settings():
                 "sh_retry_wait_hours": db_settings.sh_retry_wait_hours,
                 "scoring_settings": db_settings.scoring_settings
             }
-            
+
         # Get Providers
         providers_list = []
         providers = (await session.execute(select(Provider).options(selectinload(Provider.profiles)))).scalars().all()
@@ -433,7 +469,7 @@ async def export_settings():
                 "bandwidth_mbit": p.bandwidth_mbit,
                 "profiles": profiles
             })
-            
+
         # Get Notifications
         notif_list = []
         notifications = (await session.execute(select(NotificationChannel))).scalars().all()
@@ -444,14 +480,14 @@ async def export_settings():
                 "bot_token": n.bot_token,
                 "chat_id": n.chat_id
             })
-            
+
         export_data = {
             "version": 1,
             "system_settings": settings_dict,
             "providers": providers_list,
             "notifications": notif_list
         }
-        
+
     return JSONResponse(
         content=export_data,
         headers={"Content-Disposition": 'attachment; filename="nzboxer_backup.json"'}
@@ -470,13 +506,19 @@ async def save_global_settings(
     sh_retry_wait_hours: float = Form(24.0),
     dry_run: bool = Form(False)
 ):
+    import copy
+
     from sqlalchemy import select
+
+    from app.core.default_scoring import DEFAULT_SCORING_CONFIG
     from app.db.models import SystemSettings
-    
+
+    form_data = await request.form()
+
     async with async_session_factory() as session:
         stmt = select(SystemSettings).where(SystemSettings.id == 1)
         db_settings = (await session.execute(stmt)).scalar_one_or_none()
-        
+
         if db_settings:
             db_settings.tmdb_api_key = tmdb_api_key
             db_settings.treasure_maps_api_key = treasure_maps_api_key
@@ -487,11 +529,61 @@ async def save_global_settings(
             db_settings.sh_auto_retry = sh_auto_retry
             db_settings.sh_retry_wait_hours = sh_retry_wait_hours
             db_settings.dry_run = dry_run
+
+            sc: dict[str, Any] = copy.deepcopy(db_settings.scoring_settings or DEFAULT_SCORING_CONFIG)
             
+            def _get_int(key: str) -> int | None:
+                val = form_data.get(key)
+                if val is not None and isinstance(val, (str, int)):
+                    try:
+                        return int(val)
+                    except ValueError:
+                        pass
+                return None
+
+            scoring_res = sc.setdefault("scoring", {})
+            if isinstance(scoring_res, dict):
+                res_map = scoring_res.setdefault("resolution", {})
+                if isinstance(res_map, dict):
+                    v1080 = _get_int("res_1080p")
+                    if v1080 is not None: res_map["1080p"] = v1080
+                    v2160 = _get_int("res_2160p")
+                    if v2160 is not None: res_map["2160p"] = v2160
+                    v720 = _get_int("res_720p")
+                    if v720 is not None: res_map["720p"] = v720
+
+                vc_map = scoring_res.setdefault("video_codec", {})
+                if isinstance(vc_map, dict):
+                    vh265 = _get_int("codec_h265")
+                    if vh265 is not None: vc_map["h265"] = vh265
+                    vh264 = _get_int("codec_h264")
+                    if vh264 is not None: vc_map["h264"] = vh264
+
+                src_map = scoring_res.setdefault("source", {})
+                if isinstance(src_map, dict):
+                    vremux = _get_int("source_remux")
+                    if vremux is not None: src_map["remux"] = vremux
+                    vbluray = _get_int("source_bluray")
+                    if vbluray is not None: src_map["bluray"] = vbluray
+                    vwebdl = _get_int("source_webdl")
+                    if vwebdl is not None: src_map["web-dl"] = vwebdl
+                    vwebrip = _get_int("source_webrip")
+                    if vwebrip is not None: src_map["webrip"] = vwebrip
+
+            cutoffs = sc.setdefault("cutoffs", {})
+            if isinstance(cutoffs, dict):
+                vtarget = _get_int("cutoffs_target")
+                if vtarget is not None: cutoffs["target_score"] = vtarget
+                vupg = _get_int("cutoffs_upgrade")
+                if vupg is not None: cutoffs["upgrade_threshold"] = vupg
+
+            db_settings.scoring_settings = sc
+
             await session.commit()
             await reload_settings_from_db(session)
-            
+
     return HTMLResponse(content='<div class="p-4 mb-4 bg-[#d40060] text-white rounded">Settings saved successfully!</div>')
+
 
 
 @app.get("/settings/provider/new", response_class=HTMLResponse)
@@ -499,15 +591,16 @@ async def save_global_settings(
 async def provider_modal(request: Request, provider_id: int | None = None):
     from sqlalchemy import select
     from sqlalchemy.orm import selectinload
-    from app.db.models import Provider, NotificationChannel
-    
+
+    from app.db.models import NotificationChannel, Provider
+
     async with async_session_factory() as session:
         provider = None
         if provider_id:
             provider = await session.get(Provider, provider_id, options=[selectinload(Provider.profiles)])
-            
+
         notifications = (await session.execute(select(NotificationChannel))).scalars().all()
-        
+
     return templates.TemplateResponse(
         request=request, name="modals/provider.html", context={
             "provider": provider,
@@ -528,7 +621,7 @@ async def save_provider(
     series_category_id: int = Form(5000),
     anime_category_id: int = Form(5070),
     bandwidth_mbit: int = Form(None),
-    
+
     # Profile settings
     enable_movies: bool = Form(False),
     movies_mode: str = Form(""),
@@ -539,7 +632,7 @@ async def save_provider(
     movies_max_mb: int = Form(None),
     movies_reject: str = Form(""),
     movies_notification: int = Form(None),
-    
+
     enable_series: bool = Form(False),
     series_mode: str = Form(""),
     series_cycle_skip: int = Form(1),
@@ -551,7 +644,7 @@ async def save_provider(
     series_prefer_seasons: bool = Form(False),
     series_block_size: int = Form(5),
     series_notification: int = Form(None),
-    
+
     enable_anime: bool = Form(False),
     anime_mode: str = Form(""),
     anime_cycle_skip: int = Form(1),
@@ -565,15 +658,19 @@ async def save_provider(
     anime_notification: int = Form(None)
 ):
     from sqlalchemy.orm import selectinload
+
     from app.db.models import Provider, ProviderProfile
-    
+
     async with async_session_factory() as session:
         if provider_id:
             provider = await session.get(Provider, provider_id, options=[selectinload(Provider.profiles)])
+            if not provider:
+                provider = Provider(type="simkl")
+                session.add(provider)
         else:
             provider = Provider(type="simkl")
             session.add(provider)
-            
+
         provider.name = name
         provider.username = simkl_username
         provider.access_token = access_token
@@ -581,17 +678,17 @@ async def save_provider(
         provider.movie_category_id = movie_category_id
         provider.series_category_id = series_category_id
         provider.anime_category_id = anime_category_id
-        
+
         provider.bandwidth_mbit = bandwidth_mbit
-        
+
         await session.flush() # get ID
-        
+
         # clear old profiles and recreate
         if provider_id:
             for p in list(provider.profiles):
                 await session.delete(p)
             provider.profiles.clear()
-        
+
         if enable_movies:
             pm = ProviderProfile(
                 provider_id=provider.id,
@@ -606,7 +703,7 @@ async def save_provider(
                 notification_channel_id=movies_notification if movies_notification else None
             )
             session.add(pm)
-            
+
         if enable_series:
             ps = ProviderProfile(
                 provider_id=provider.id,
@@ -623,7 +720,7 @@ async def save_provider(
                 notification_channel_id=series_notification if series_notification else None
             )
             session.add(ps)
-            
+
         if enable_anime:
             pa = ProviderProfile(
                 provider_id=provider.id,
@@ -640,9 +737,9 @@ async def save_provider(
                 notification_channel_id=anime_notification if anime_notification else None
             )
             session.add(pa)
-            
+
         await session.commit()
-    
+
     # Reload page
     return HTMLResponse(content='<script>window.location.reload();</script>')
 
@@ -665,7 +762,7 @@ async def notification_modal(request: Request, notification_id: int | None = Non
         notification = None
         if notification_id:
             notification = await session.get(NotificationChannel, notification_id)
-            
+
     return templates.TemplateResponse(
         request=request, name="modals/notification.html", context={
             "notification": notification
@@ -682,19 +779,22 @@ async def save_notification(
     chat_id: str = Form("")
 ):
     from app.db.models import NotificationChannel
-    
+
     async with async_session_factory() as session:
         if notification_id:
             notification = await session.get(NotificationChannel, notification_id)
+            if not notification:
+                notification = NotificationChannel(type="telegram")
+                session.add(notification)
         else:
             notification = NotificationChannel(type="telegram")
             session.add(notification)
-            
+
         notification.name = name
         notification.bot_token = bot_token
         notification.chat_id = chat_id
         await session.commit()
-    
+
     return HTMLResponse(content='<script>window.location.reload();</script>')
 
 @app.delete("/settings/notification/{notification_id}")
@@ -716,13 +816,13 @@ async def start_simkl_auth(client_id: str = Form(...)):
         data = await simkl.request_pin(client_id)
     except Exception as e:
         return HTMLResponse(content=f'<div class="text-red-500">Error requesting PIN: {e}</div>')
-        
+
     if "user_code" not in data:
         return HTMLResponse(content='<div class="text-red-500">Invalid response from Simkl</div>')
-        
+
     user_code = data["user_code"]
     verification_uri = data.get("verification_uri", "https://simkl.com/pin")
-    
+
     html = f'''
     <div class="bg-[#1e1e24] border border-[#d40060] rounded p-4 text-center mt-4">
         <h4 class="text-white font-bold mb-2">Simkl Device Authorization</h4>
@@ -740,12 +840,12 @@ async def start_simkl_auth(client_id: str = Form(...)):
 async def poll_simkl_auth(client_id: str, user_code: str):
     """Poll Simkl for the access token."""
     from app.services import simkl
-    
+
     try:
         data = await simkl.check_pin(client_id, user_code)
     except Exception as e:
         return HTMLResponse(content=f'<div class="text-red-500">Error polling status: {e}</div>')
-        
+
     if data.get("result") == "OK" and "access_token" in data:
         # Success! Fill the access token field via JS
         access_token = data["access_token"]
@@ -756,7 +856,7 @@ async def poll_simkl_auth(client_id: str, user_code: str):
                 document.getElementById('simkl-auth-container-modal').innerHTML = '';
             </script>
         ''')
-        
+
     # Still pending
     return HTMLResponse(content=f'''
         <div id="simkl-poll-status" hx-get="/simkl/auth/poll?client_id={client_id}&user_code={user_code}" hx-trigger="every 5s" hx-swap="outerHTML" class="text-sm text-yellow-500 animate-pulse">
@@ -772,16 +872,17 @@ async def system_check_modal(request: Request):
 @app.get("/system/check/run", response_class=HTMLResponse)
 async def run_system_check(request: Request):
     """Run tests for all configured APIs and return the results HTML."""
-    from sqlalchemy import select
-    from app.db.models import SystemSettings, Provider, NotificationChannel
     import httpx
-    
+    from sqlalchemy import select
+
+    from app.db.models import NotificationChannel, Provider, SystemSettings
+
     results = {}
     async with async_session_factory() as session:
         db_settings = (await session.execute(select(SystemSettings).where(SystemSettings.id == 1))).scalar_one_or_none()
         providers = (await session.execute(select(Provider))).scalars().all()
         notifications = (await session.execute(select(NotificationChannel))).scalars().all()
-        
+
         async with httpx.AsyncClient(timeout=10.0) as client:
             # 1. TMDB
             if db_settings and db_settings.tmdb_api_key:
@@ -802,7 +903,7 @@ async def run_system_check(request: Request):
                     results["tmdb"] = {"ok": False, "msg": str(e)}
             else:
                 results["tmdb"] = {"ok": False, "msg": "API Key fehlt"}
-                
+
             # 2. Treasure Maps
             if db_settings and db_settings.treasure_maps_api_key:
                 try:
@@ -815,7 +916,7 @@ async def run_system_check(request: Request):
                     results["treasure_maps"] = {"ok": False, "msg": str(e)}
             else:
                 results["treasure_maps"] = {"ok": False, "msg": "API Key fehlt"}
-                
+
             # 3. TorBox
             if db_settings and db_settings.torbox_api_key:
                 try:
@@ -828,7 +929,7 @@ async def run_system_check(request: Request):
                     results["torbox"] = {"ok": False, "msg": str(e)}
             else:
                 results["torbox"] = {"ok": False, "msg": "API Key fehlt"}
-                
+
             # 4. Simkl (check first provider)
             if providers and providers[0].access_token and providers[0].client_id:
                 try:
@@ -844,7 +945,7 @@ async def run_system_check(request: Request):
                     results["simkl"] = {"ok": False, "msg": str(e)}
             else:
                 results["simkl"] = {"ok": False, "msg": "Kein konfigurierter Provider"}
-                
+
             # 5. Telegram
             if notifications and notifications[0].bot_token:
                 try:
@@ -854,7 +955,7 @@ async def run_system_check(request: Request):
                     results["telegram"] = {"ok": False, "msg": str(e)}
             else:
                 results["telegram"] = {"ok": False, "msg": "Kein konfigurierter Bot"}
-                
+
     # Return HTML list of results
     html = '<div class="space-y-4">'
     for key, data in results.items():
@@ -874,7 +975,7 @@ async def run_system_check(request: Request):
             <span class="{color} flex items-center gap-2 text-sm">{data["msg"]} {icon}</span>
         </div>
         '''
-    
+
     html += '</div>'
     return HTMLResponse(content=html)
 
@@ -903,7 +1004,7 @@ async def manual_search(background_tasks: BackgroundTasks):
     """Trigger manual full automation cycle."""
     from app.core.automation import run_automation_cycle
     background_tasks.add_task(run_automation_cycle, force=True)
-    
+
     return HTMLResponse(content='''
         <div class="bg-[#d40060] text-white px-4 py-3 rounded-md shadow-lg border border-[#a3004a] flex items-center justify-between animate-fade-in-down mb-4">
             <div class="flex items-center gap-3">

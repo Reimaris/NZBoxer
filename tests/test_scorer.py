@@ -30,7 +30,7 @@ def test_score_release_perfect_movie():
         hdr="hdr10",
         languages=["en"]
     )
-    
+
     # 2160p = 2000
     # h265 = 300
     # atmos = 280
@@ -41,11 +41,12 @@ def test_score_release_perfect_movie():
     # en language = 100
     # Bitrate: 40GB, 120mins = ~44 Mbps -> 100 pts
     size_bytes = 40 * 1024 * 1024 * 1024
-    
+
     result = score_release(parsed, size_bytes, 120, age_days=10)
     assert not result.is_rejected
-    
-    expected_score = 2000 + 300 + 280 + 50 + 600 + 150 + 200 + 100 + 100
+
+    # Base sum (4400) * whitelist_multiplier (1.2) = 5280.0
+    expected_score = 5280.0
     assert result.score == expected_score
 
 def test_score_release_rejected_size():

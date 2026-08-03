@@ -18,3 +18,7 @@ coverage.xml
 dist/
 build/
 *.egg-info/
+file:testdb*
+*.log
+config/logs/*.log
+logs/*.log

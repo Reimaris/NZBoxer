@@ -86,7 +86,7 @@ async def init_db(database_url: str) -> None:
         "future": True,
         "connect_args": {"check_same_thread": False},
     }
-    
+
     if ":memory:" in database_url:
         kwargs["poolclass"] = StaticPool
 
@@ -132,28 +132,28 @@ async def init_db(database_url: str) -> None:
                 )
             except Exception:
                 pass
-                
+
             try:
                 await session.execute(
                     __import__("sqlalchemy").text("ALTER TABLE download_history ADD COLUMN torbox_id VARCHAR(200);")
                 )
             except Exception:
                 pass
-                
+
             try:
                 await session.execute(
                     __import__("sqlalchemy").text("ALTER TABLE providers ADD COLUMN anime_category_id INTEGER;")
                 )
             except Exception:
                 pass
-                
+
             try:
                 await session.execute(
                     __import__("sqlalchemy").text("ALTER TABLE media_items ADD COLUMN tvdb_id INTEGER;")
                 )
             except Exception:
                 pass
-                
+
             try:
                 await session.execute(
                     __import__("sqlalchemy").text("ALTER TABLE media_items ADD COLUMN alt_title VARCHAR(500);")
@@ -191,14 +191,14 @@ async def init_db(database_url: str) -> None:
                 )
             except Exception:
                 pass
-                
+
             try:
                 await session.execute(
                     __import__("sqlalchemy").text("ALTER TABLE media_items ADD COLUMN auto_monitor_next_season BOOLEAN NOT NULL DEFAULT 0;")
                 )
             except Exception:
                 pass
-                
+
             # Ensure provider_profiles.auto_monitor_next_season exists (model compat col, value unused)
             try:
                 await session.execute(

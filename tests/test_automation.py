@@ -9,8 +9,8 @@ from app.db.models import MediaItem, MediaStatus, MediaType
 
 @pytest.mark.asyncio
 async def test_evaluate_and_download_new_movie(db_session):
-    from app.db.models import Provider, ProviderProfile
-    
+    from app.db.models import Provider
+
     provider = Provider(type="simkl", name="Test")
     db_session.add(provider)
     await db_session.flush()
@@ -37,7 +37,7 @@ async def test_evaluate_and_download_new_movie(db_session):
 
     async def mock_send_nzb(*args, **kwargs):
         return {"hash": "torbox-hash-123", "id": 12345}
-        
+
     async def mock_get_url(*args, **kwargs):
         return "http://dl.com/guid-123"
 
@@ -47,7 +47,7 @@ async def test_evaluate_and_download_new_movie(db_session):
 
     assert mock_send.call_count == 1
     assert mock_send.call_args[0][0] == "http://dl.com/guid-123"
-            
+
     # Check DB history
     await db_session.refresh(movie, ["download_history"])
     assert len(movie.download_history) == 1
@@ -57,14 +57,12 @@ async def test_evaluate_and_download_new_movie(db_session):
 @pytest.mark.asyncio
 async def test_evaluate_and_download_upgrade(db_session):
     # Tests that a release is only downloaded if it exceeds the upgrade threshold
-    from app.db.models import DownloadHistory
-    
-    from app.db.models import DownloadHistory, Provider, ProviderProfile
-    
+    from app.db.models import DownloadHistory, Provider
+
     provider = Provider(type="simkl", name="Test")
     db_session.add(provider)
     await db_session.flush()
-    
+
     movie = MediaItem(
         simkl_id=456,
         title="Upgrade Movie",
@@ -74,7 +72,7 @@ async def test_evaluate_and_download_upgrade(db_session):
     )
     db_session.add(movie)
     await db_session.flush()
-    
+
     # Existing download with 1000 score
     hist = DownloadHistory(
         media_item_id=movie.id,
@@ -102,17 +100,17 @@ async def test_evaluate_and_download_upgrade(db_session):
         with patch('app.core.automation.score_release') as mock_scorer:
             from app.core.scorer import ScoreResult
             mock_scorer.return_value = ScoreResult(score=1200.0, is_rejected=False, reject_reason=None, bitrate_mbps=5.0)
-            
+
             await _evaluate_and_download(db_session, search_results, movie=movie)
-            
+
             # Should NOT have downloaded because 1200 < 1000 + 300
             mock_send.assert_not_called()
 
         # Mock scorer to return exactly 1500 (meets 300 threshold)
         with patch('app.core.automation.score_release') as mock_scorer:
             mock_scorer.return_value = ScoreResult(score=1500.0, is_rejected=False, reject_reason=None, bitrate_mbps=5.0)
-            
+
             await _evaluate_and_download(db_session, search_results, movie=movie)
-            
+
             # SHOULD download
             mock_send.assert_called_once()

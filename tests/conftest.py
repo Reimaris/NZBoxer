@@ -3,16 +3,14 @@ Shared Test Fixtures
 ====================
 Provides an in-memory SQLite database and mocked HTTPX clients.
 """
+from collections.abc import AsyncGenerator
+
 import pytest
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
+from app.db.database import close_db, get_engine, get_session_factory, init_db
 from app.db.models import Base
-
-from sqlalchemy.pool import StaticPool
-
-from sqlalchemy.pool import StaticPool
-from app.db.database import init_db, get_engine, get_session_factory, close_db
 
 # Override DB URL for tests
 settings.database_url = "sqlite+aiosqlite:///file:testdb?mode=memory&cache=shared"
@@ -33,7 +31,6 @@ async def setup_db():
         await conn.run_sync(Base.metadata.drop_all)
     await close_db()
 
-from collections.abc import AsyncGenerator
 
 @pytest.fixture
 async def db_session() -> AsyncGenerator[AsyncSession, None]:
