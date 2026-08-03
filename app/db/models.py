@@ -260,6 +260,8 @@ class MediaItem(Base):
     imdb_id: Mapped[str | None] = mapped_column(String(20), nullable=True, index=True)
     tmdb_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     tvdb_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    mal_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    anilist_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
 
     # --- Metadata ---
     title: Mapped[str] = mapped_column(String(500), nullable=False)

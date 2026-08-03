@@ -90,6 +90,12 @@ async def _sync_items(session: AsyncSession, simkl_items: list[dict[str, Any]], 
         tvdb_id_str = ids.get("tvdb")
         tvdb_id = int(tvdb_id_str) if tvdb_id_str else None
 
+        mal_id_str = ids.get("mal")
+        mal_id = int(mal_id_str) if mal_id_str else None
+
+        anilist_id_str = ids.get("anilist")
+        anilist_id = int(anilist_id_str) if anilist_id_str else None
+
         if not item:
             item = MediaItem(
                 provider_id=provider_id,
@@ -97,6 +103,8 @@ async def _sync_items(session: AsyncSession, simkl_items: list[dict[str, Any]], 
                 imdb_id=ids.get("imdb"),
                 tmdb_id=tmdb_id,
                 tvdb_id=tvdb_id,
+                mal_id=mal_id,
+                anilist_id=anilist_id,
                 title=movie_data.get("title"),
                 year=movie_data.get("year"),
                 media_type=media_type,
@@ -155,6 +163,10 @@ async def _sync_items(session: AsyncSession, simkl_items: list[dict[str, Any]], 
             item.title = movie_data.get("title", item.title)
             if not item.tvdb_id:
                 item.tvdb_id = tvdb_id
+            if not item.mal_id:
+                item.mal_id = mal_id
+            if not item.anilist_id:
+                item.anilist_id = anilist_id
             # Ensure provider matches
             item.provider_id = provider_id
 
@@ -317,15 +329,16 @@ async def run_automation_cycle(force: bool = False) -> None:
 
 
 async def _process_movie(session: AsyncSession, movie: MediaItem) -> None:
-    from app.db.models import ProviderProfile
+    from app.db.models import ProviderProfile, MediaType
     logger.info("🎬 Lade Film: %s", movie.title)
-    if not movie.imdb_id:
-        logger.warning("⚠️ Film %s hat keine IMDb ID, überspringe Suche.", movie.title)
-        return
+    if not movie.imdb_id and not movie.tmdb_id:
+        logger.warning("⚠️ Film %s hat keine IDs, versuche Titel-Suche.", movie.title)
 
     # Load provider to get category ID
     await session.refresh(movie, ["provider"])
     cat_id = movie.provider.movie_category_id if movie.provider else None
+    if movie.media_type == MediaType.ANIME and movie.provider and movie.provider.anime_category_id:
+        cat_id = movie.provider.anime_category_id
 
     # Load profile to get reject words
     profile_stmt = select(ProviderProfile).where(
@@ -335,15 +348,26 @@ async def _process_movie(session: AsyncSession, movie: MediaItem) -> None:
     profile = (await session.execute(profile_stmt)).scalar_one_or_none()
     reject_words = [w.strip().lower() for w in profile.reject_words_csv.split(",") if w.strip()] if profile and profile.reject_words_csv else []
 
-    results = await treasure_maps.search_movie(movie.imdb_id, category=cat_id)
+    results = []
+    if movie.imdb_id:
+        results = await treasure_maps.search_movie(imdb_id=movie.imdb_id, category=cat_id)
+    if not results and movie.tmdb_id:
+        results = await treasure_maps.search_movie(tmdb_id=movie.tmdb_id, category=cat_id)
+    if not results:
+        results = await treasure_maps.search_movie(title=movie.title, category=cat_id)
+
     await _evaluate_and_download(session, results, movie=movie, reject_words=reject_words)
 
 
 async def _process_season(session: AsyncSession, season: Season) -> None:
-    from app.db.models import Episode, EpisodeStatus, ProviderProfile, SeasonStatus
+    from app.db.models import Episode, EpisodeStatus, ProviderProfile, SeasonStatus, MediaType
     logger.info("📺 Lade Episodendaten für Serie: %s S%02d", season.media_item.title, season.season_number)
     tvdb_id = season.media_item.tvdb_id
+    tmdb_id = season.media_item.tmdb_id
     cat_id = season.media_item.provider.series_category_id if season.media_item.provider else None
+    
+    if season.media_item.media_type == MediaType.ANIME and season.media_item.provider and season.media_item.provider.anime_category_id:
+        cat_id = season.media_item.provider.anime_category_id
 
     profile_stmt = select(ProviderProfile).where(
         ProviderProfile.provider_id == season.media_item.provider_id,
@@ -373,7 +397,7 @@ async def _process_season(session: AsyncSession, season: Season) -> None:
 
     if prefer_seasons:
         logger.info("    📦 Suche Season Pack für S%02d...", season.season_number)
-        results = await treasure_maps.search_show(tvdb_id, season.media_item.title, season.season_number, category=cat_id)
+        results = await treasure_maps.search_show(tvdb_id=tvdb_id, tmdb_id=tmdb_id, title=season.media_item.title, season=season.season_number, category=cat_id)
         if results:
             await _evaluate_and_download(session, results, season=season, target_episodes=missing_episodes, reject_words=reject_words)
             await session.refresh(season)
@@ -398,7 +422,17 @@ async def _process_season(session: AsyncSession, season: Season) -> None:
             chunk = chunks[0]
             ep_str = ",".join(map(str, chunk))
             logger.info("    📺 Suche Episode(n): S%02dE[%s]", season.season_number, ep_str)
-            chunk_results = await treasure_maps.search_show(tvdb_id, season.media_item.title, season.season_number, ep=ep_str, category=cat_id)
+            chunk_results = await treasure_maps.search_show(tvdb_id=tvdb_id, tmdb_id=tmdb_id, title=season.media_item.title, season=season.season_number, ep=ep_str, category=cat_id)
+
+            # Fallback for Anime Absolute Episode Numbering if TVDB/TMDB fails
+            if not chunk_results and season.media_item.media_type == MediaType.ANIME:
+                # Try absolute episode if it's episode 1 of season 1, or try title search
+                # Just a simple title + ep search
+                for abs_ep in chunk:
+                    # In a real absolute system, we'd need to calculate it, but let's just do title search
+                    ep_title_search = f"{season.media_item.title} {abs_ep:02d}"
+                    abs_res = await treasure_maps.search_show(title=ep_title_search, category=cat_id)
+                    chunk_results.extend(abs_res)
 
             chunk_eps = [ep for ep in missing_episodes if ep.episode_number in chunk]
             for ep in chunk_eps:

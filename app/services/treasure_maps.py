@@ -22,11 +22,13 @@ class IndexerError(Exception):
     pass
 
 
-async def search_movie(imdb_id: str, category: int | None = None) -> list[dict[str, Any]]:
+async def search_movie(imdb_id: str | None = None, tmdb_id: int | None = None, title: str | None = None, category: int | None = None) -> list[dict[str, Any]]:
     """Search for a movie on the Newznab indexer.
 
     Args:
         imdb_id: The IMDb ID, e.g., 'tt1234567' or '1234567'.
+        tmdb_id: The TMDB ID.
+        title: Movie title for fallback search.
         category: Optional TreasureMaps category ID (e.g. 2000).
 
     Returns:
@@ -36,16 +38,19 @@ async def search_movie(imdb_id: str, category: int | None = None) -> list[dict[s
         logger.warning("Indexer API key missing.")
         return []
 
-    # Newznab usually expects the IMDB ID without the 'tt' prefix
-    imdb_id = imdb_id.removeprefix("tt")
-
     url = "https://treasure-maps.com/api"
     params: dict[str, Any] = {
         "apikey": settings.treasure_maps_api_key,
         "t": "movie",
-        "imdbid": imdb_id,
         "o": "json"
     }
+
+    if imdb_id:
+        params["imdbid"] = imdb_id.removeprefix("tt")
+    elif tmdb_id:
+        params["tmdbid"] = tmdb_id
+    elif title:
+        params["q"] = title
 
     if category:
         params["cat"] = category
@@ -53,15 +58,16 @@ async def search_movie(imdb_id: str, category: int | None = None) -> list[dict[s
     return await _execute_search(url, params)
 
 
-async def search_show(tvdb_id: str | int | None, title: str, season: int, ep: int | str | None = None, category: int | None = None) -> list[dict[str, Any]]:
+async def search_show(tvdb_id: str | int | None = None, tmdb_id: int | None = None, title: str | None = None, season: int | None = None, ep: int | str | None = None, category: int | None = None) -> list[dict[str, Any]]:
     """Search for a TV show season or episode on the Newznab indexer.
 
     Args:
         tvdb_id: Optional TVDB ID.
+        tmdb_id: Optional TMDB ID.
         title: Show title (used if tvdb_id is not available or for general search).
         season: Season number to search.
         ep: Optional episode number or string (e.g. '1,2,3' or '1').
-        category: Optional TreasureMaps category ID (e.g. 5000).
+        category: Optional TreasureMaps category ID (e.g. 5000 or 5070 for Anime).
 
     Returns:
         List of search result items.
@@ -74,19 +80,21 @@ async def search_show(tvdb_id: str | int | None, title: str, season: int, ep: in
     params: dict[str, Any] = {
         "apikey": settings.treasure_maps_api_key,
         "t": "tvsearch",
-        "season": season,
         "o": "json"
     }
 
+    if season is not None:
+        params["season"] = season
     if ep:
         params["ep"] = ep
-
     if category:
         params["cat"] = category
 
     if tvdb_id:
         params["tvdbid"] = tvdb_id
-    else:
+    elif tmdb_id:
+        params["tmdbid"] = tmdb_id
+    elif title:
         params["q"] = title
 
     return await _execute_search(url, params)

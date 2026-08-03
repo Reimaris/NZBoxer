@@ -136,3 +136,23 @@ Configure `TimedRotatingFileHandler` writing to `logs/nzboxer_YYYY-MM-DD.log`. I
 
 ### Consequences
 - **Pros:** Clean log inspection, automatic log rotation, clear visual boundaries between background runs.
+
+---
+
+## ADR-009: ID-Mapping and Search Fallbacks for Anime
+
+**Status:** Accepted  
+**Date:** 2026-08-03
+
+### Context
+Anime and non-standard media often lack comprehensive IDs across all trackers (e.g., missing IMDB ID). Relying solely on a single ID for indexer searches results in missed downloads. Furthermore, Simkl provides multiple IDs including MyAnimeList (MAL) and AniList IDs.
+
+### Decision
+Store `mal_id` and `anilist_id` in the `MediaItem` database table primarily for UI mapping. Implement a cascading search fallback mechanism in `automation.py`: 
+1. Primary ID Search (e.g., IMDB, TMDB)
+2. Fallback to Title/Free-Text Search (especially necessary for Anime "Absolute Episode" numbering).
+Anime will primarily target the configured Anime category (e.g., 5070) over the generic show category.
+
+### Consequences
+- **Pros:** Significantly higher success rate when scraping indexers for Anime. Better metadata representation.
+- **Cons:** More search requests may be fired if initial ID searches fail, slightly increasing search cycle time.

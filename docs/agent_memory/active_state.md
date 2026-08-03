@@ -29,12 +29,18 @@
   - Added `tests/test_rate_limits.py`.
   - 14/14 tests passing on `pytest`.
   - Zero errors on `ruff check .` and `mypy app`.
+- [x] ID-Mapping & Anime Fallbacks:
+  - Added `mal_id` and `anilist_id` to `MediaItem` DB model.
+  - Parsed `mal` and `anilist` IDs from Simkl API during watchlist sync.
+  - Added fallback search logic in `automation.py` (`_process_movie`, `_process_season`) and `treasure_maps.py` to search by IMDB, TMDB, and Title.
+  - Anime primarily uses indexer category 5070 and Anime absolute episode title search fallback.
+- [x] Git Push Rule enforced in instructions.
 
 ---
 
 ## 🔄 In Progress
 
-- None. All tasks completed successfully.
+- Wait for DB recreation and test passing to push changes to Git.
 
 ---
 

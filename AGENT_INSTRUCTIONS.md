@@ -26,6 +26,7 @@
 - **TDD & Testing:** Write Unit/Integration tests for EVERY feature. Target >85% coverage.
 - **Static Analysis:** Always run available Linters/Type-Checkers (`pytest`, `ruff check .`, `mypy app`) before declaring a task finished. Zero warnings/errors allowed.
 - **Git Hygiene:** Use Git for version control. Every logical change must be a separate commit using **Conventional Commits**.
+- **Git Push Rule (MANDATORY):** Am Ende jeder Entwicklungsphase, nach erfolgreichem Testdurchlauf oder vor dem finalen Handoff MUSS nach dem lokalen `git commit` IMMER automatisch ein `git push` an das Remote-Repository ausgeführt werden.
 - **Rate Limit & Quota Safety:**
   - Newznab: 0.6s politeness cooldown
   - TMDB: 0.1s rate limit
