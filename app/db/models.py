@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import enum
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import (
     Boolean,
@@ -22,6 +23,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    JSON,
     UniqueConstraint,
     func,
 )
@@ -33,27 +35,22 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
 class MediaType(str, enum.Enum):
-    """Distinguishes movies from series."""
+    """Distinguishes movies from series and anime."""
 
     MOVIE = "movie"
     SHOW = "show"
+    ANIME = "anime"
 
 
 class MediaStatus(str, enum.Enum):
-    """Lifecycle status of a MediaItem within NZBoxer.
-
-    pending    — release date has not yet passed; search not started.
-    searching  — actively searched by the automation engine.
-    downloaded — at least one NZB has been sent to TorBox.
-    completed  — cutoff score reached; no further searching needed.
-    canceled   — manually canceled by the user; automation skips this item.
-    """
+    """Lifecycle status of a MediaItem within NZBoxer."""
 
     PENDING = "pending"
     SEARCHING = "searching"
     DOWNLOADED = "downloaded"
     COMPLETED = "completed"
     CANCELED = "canceled"
+    IGNORED = "ignored"
 
 
 class SeasonStatus(str, enum.Enum):
@@ -64,6 +61,18 @@ class SeasonStatus(str, enum.Enum):
     DOWNLOADED = "downloaded"
     COMPLETED = "completed"
     CANCELED = "canceled"
+    IGNORED = "ignored"
+
+
+class EpisodeStatus(str, enum.Enum):
+    """Lifecycle status of an individual episode."""
+
+    PENDING = "pending"
+    SEARCHING = "searching"
+    DOWNLOADED = "downloaded"
+    COMPLETED = "completed"
+    CANCELED = "canceled"
+    IGNORED = "ignored"
 
 
 # ---------------------------------------------------------------------------
@@ -83,28 +92,120 @@ class Base(DeclarativeBase):
 class SystemSettings(Base):
     """Stores the global application configuration in the database.
     
-    This is designed as a single-row table (id=1) so users can edit API keys
-    and the scoring matrix dynamically via the UI without editing text files.
+    This is designed as a single-row table (id=1).
     """
     
     __tablename__ = "system_settings"
     
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    
-    simkl_client_id: Mapped[str] = mapped_column(String(200), default="")
-    simkl_access_token: Mapped[str] = mapped_column(String(200), default="")
-    tmdb_api_key: Mapped[str] = mapped_column(String(200), default="")
-    treasure_maps_url: Mapped[str] = mapped_column(String(500), default="")
     treasure_maps_api_key: Mapped[str] = mapped_column(String(200), default="")
     torbox_api_key: Mapped[str] = mapped_column(String(200), default="")
+    tmdb_api_key: Mapped[str] = mapped_column(String(200), default="")
     
-    scoring_config_yaml: Mapped[str] = mapped_column(Text, default="")
+    # Self-Healing & Automation (Defaults)
+    scan_interval_multiplier: Mapped[int] = mapped_column(Integer, default=1)
+    sh_max_retries: Mapped[int] = mapped_column(Integer, default=3)
+    sh_max_time_hours: Mapped[float] = mapped_column(Float, nullable=False, default=12.0)
+    sh_auto_retry: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    sh_retry_wait_hours: Mapped[float] = mapped_column(Float, nullable=False, default=24.0)
+    dry_run: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="0")
+    
+    # Structured Scoring Settings
+    scoring_settings: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=True)
     
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
         server_default=func.now(),
         onupdate=func.now(),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Provider & Notification Models
+# ---------------------------------------------------------------------------
+
+class NotificationChannel(Base):
+    """Represents a notification target, e.g., a Telegram bot."""
+    __tablename__ = "notification_channels"
+    
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    type: Mapped[str] = mapped_column(String(50), nullable=False) # e.g., 'telegram'
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    
+    # Provider specific fields (could be JSON, but let's keep them explicit for Telegram)
+    bot_token: Mapped[str] = mapped_column(String(500), nullable=True)
+    chat_id: Mapped[str] = mapped_column(String(200), nullable=True)
+    
+    provider_profiles: Mapped[list[ProviderProfile]] = relationship(
+        "ProviderProfile",
+        back_populates="notification_channel"
+    )
+
+class Provider(Base):
+    """Represents a metadata provider, e.g., a Simkl account."""
+    __tablename__ = "providers"
+    
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    type: Mapped[str] = mapped_column(String(50), nullable=False) # e.g., 'simkl'
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    
+    # Simkl specific fields
+    username: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    client_id: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    access_token: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    
+    movie_category_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    series_category_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    anime_category_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    bandwidth_mbit: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    
+    profiles: Mapped[list[ProviderProfile]] = relationship(
+        "ProviderProfile",
+        back_populates="provider",
+        cascade="all, delete-orphan",
+        lazy="selectin"
+    )
+    media_items: Mapped[list[MediaItem]] = relationship(
+        "MediaItem",
+        back_populates="provider",
+        cascade="all, delete-orphan"
+    )
+
+
+class ProviderProfile(Base):
+    """Specific configuration for a provider's media type (Movies or Series)."""
+    __tablename__ = "provider_profiles"
+    
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    provider_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("providers.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    
+    media_type: Mapped[str] = mapped_column(String(50), nullable=False) # 'movies' or 'shows'
+    
+    # Download & Automation Settings
+    path: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    mode: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    interval_min: Mapped[int | None] = mapped_column(Integer, default=30)
+    resolution: Mapped[str | None] = mapped_column(String(100), default="Automatisch / beste")
+    languages_csv: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    min_mb: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    max_mb: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    reject_words_csv: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    
+    # Series specific
+    prefer_complete_seasons: Mapped[bool] = mapped_column(Boolean, default=False)
+    episode_block_size: Mapped[int] = mapped_column(Integer, default=0)
+    
+    # Notification link
+    notification_channel_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("notification_channels.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    
+    provider: Mapped[Provider] = relationship("Provider", back_populates="profiles")
+    notification_channel: Mapped[NotificationChannel | None] = relationship(
+        "NotificationChannel", back_populates="provider_profiles"
     )
 
 
@@ -145,18 +246,26 @@ class MediaItem(Base):
 
     # --- Primary key ---
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    
+    # --- Foreign key ---
+    provider_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("providers.id", ondelete="CASCADE"), nullable=False, index=True
+    )
 
     # --- External identifiers ---
-    simkl_id: Mapped[int] = mapped_column(Integer, unique=True, nullable=False, index=True)
+    simkl_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
     imdb_id: Mapped[str | None] = mapped_column(String(20), nullable=True, index=True)
     tmdb_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    tvdb_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
 
     # --- Metadata ---
     title: Mapped[str] = mapped_column(String(500), nullable=False)
+    alt_title: Mapped[str | None] = mapped_column(String(500), nullable=True)
     year: Mapped[int | None] = mapped_column(Integer, nullable=True)
     media_type: Mapped[MediaType] = mapped_column(
         Enum(MediaType, name="media_type_enum"), nullable=False
     )
+    is_anime_movie: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="0")
     status: Mapped[MediaStatus] = mapped_column(
         Enum(MediaStatus, name="media_status_enum"),
         nullable=False,
@@ -188,6 +297,7 @@ class MediaItem(Base):
     )
 
     # --- Relationships ---
+    provider: Mapped[Provider] = relationship("Provider", back_populates="media_items")
     seasons: Mapped[list[Season]] = relationship(
         "Season",
         back_populates="media_item",
@@ -286,6 +396,12 @@ class Season(Base):
 
     # --- Relationships ---
     media_item: Mapped[MediaItem] = relationship("MediaItem", back_populates="seasons")
+    episodes: Mapped[list[Episode]] = relationship(
+        "Episode",
+        back_populates="season",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
     download_history: Mapped[list[DownloadHistory]] = relationship(
         "DownloadHistory",
         back_populates="season",
@@ -305,6 +421,85 @@ class Season(Base):
         if not self.download_history:
             return None
         return max(h.score for h in self.download_history if h.score is not None)
+
+
+# ---------------------------------------------------------------------------
+# Episode Model
+# ---------------------------------------------------------------------------
+
+class Episode(Base):
+    """Represents a single episode of a season.
+
+    Attributes:
+        id:             Auto-incremented primary key.
+        season_id:      FK → Season.id.
+        episode_number: 1-based episode index.
+        monitored:      Whether the automation engine should search this episode.
+        status:         Current automation lifecycle status.
+        air_date:       Original air date.
+        created_at:     Row creation timestamp.
+        updated_at:     Row last-modified timestamp.
+        
+        season:           Back-reference to the parent Season.
+        download_history: One-to-many to DownloadHistory rows for this episode.
+    """
+
+    __tablename__ = "episodes"
+    __table_args__ = (
+        UniqueConstraint("season_id", "episode_number", name="uq_episode_season_number"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    season_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("seasons.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    episode_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    monitored: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    status: Mapped[EpisodeStatus] = mapped_column(
+        Enum(EpisodeStatus, name="episode_status_enum"),
+        nullable=False,
+        default=EpisodeStatus.PENDING,
+        server_default=EpisodeStatus.PENDING.value,
+    )
+    air_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    season: Mapped[Season] = relationship("Season", back_populates="episodes")
+    download_history: Mapped[list[DownloadHistory]] = relationship(
+        "DownloadHistory",
+        back_populates="episode",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<Episode id={self.id} season_id={self.season_id} "
+            f"E{self.episode_number:02d} monitored={self.monitored} status={self.status}>"
+        )
+
+    @property
+    def best_score(self) -> float | None:
+        """Returns the highest score from all download history entries for this episode."""
+        if not self.download_history:
+            return None
+        return max(h.score for h in self.download_history if h.score is not None)
+
+    @property
+    def is_released(self) -> bool:
+        """True if the air date is in the past (or not set)."""
+        if self.air_date is None:
+            return True
+        return datetime.now(tz=self.air_date.tzinfo) >= self.air_date
 
 
 # ---------------------------------------------------------------------------
@@ -352,6 +547,9 @@ class DownloadHistory(Base):
     season_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("seasons.id", ondelete="CASCADE"), nullable=True, index=True
     )
+    episode_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("episodes.id", ondelete="CASCADE"), nullable=True, index=True
+    )
 
     # --- NZB metadata ---
     nzb_title: Mapped[str] = mapped_column(String(1000), nullable=False)
@@ -371,6 +569,7 @@ class DownloadHistory(Base):
 
     # --- TorBox tracking ---
     torbox_hash: Mapped[str | None] = mapped_column(String(200), nullable=True, index=True)
+    torbox_id: Mapped[str | None] = mapped_column(String(200), nullable=True, index=True)
     torbox_sent_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
@@ -387,9 +586,37 @@ class DownloadHistory(Base):
     season: Mapped[Season | None] = relationship(
         "Season", back_populates="download_history"
     )
+    episode: Mapped[Episode | None] = relationship(
+        "Episode", back_populates="download_history"
+    )
 
     def __repr__(self) -> str:
         return (
             f"<DownloadHistory id={self.id} item_id={self.media_item_id} "
             f"score={self.score} title={self.nzb_title!r:.40}>"
         )
+
+
+# ---------------------------------------------------------------------------
+# BlacklistedRelease Model
+# ---------------------------------------------------------------------------
+
+class BlacklistedRelease(Base):
+    """Tracks failed NZBs (e.g. removed by TorBox or invalid) so they are
+    skipped during the next search cycle (Self-Healing).
+    """
+
+    __tablename__ = "blacklisted_releases"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    media_item_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("media_items.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    
+    nzb_guid: Mapped[str | None] = mapped_column(String(500), nullable=True, index=True)
+    nzb_title: Mapped[str] = mapped_column(String(1000), nullable=False)
+    reason: Mapped[str] = mapped_column(String(500), nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )

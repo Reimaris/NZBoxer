@@ -9,12 +9,18 @@ from app.db.models import MediaItem, MediaStatus, MediaType
 
 @pytest.mark.asyncio
 async def test_evaluate_and_download_new_movie(db_session):
-    # Setup mock movie
+    from app.db.models import Provider, ProviderProfile
+    
+    provider = Provider(type="simkl", name="Test")
+    db_session.add(provider)
+    await db_session.flush()
+
     movie = MediaItem(
         simkl_id=123,
         title="Test Movie",
         media_type=MediaType.MOVIE,
-        status=MediaStatus.SEARCHING
+        status=MediaStatus.SEARCHING,
+        provider_id=provider.id
     )
     movie.download_history = []
     db_session.add(movie)
@@ -30,7 +36,7 @@ async def test_evaluate_and_download_new_movie(db_session):
     ]
 
     async def mock_send_nzb(*args, **kwargs):
-        return "torbox-hash-123"
+        return {"hash": "torbox-hash-123", "id": 12345}
         
     async def mock_get_url(*args, **kwargs):
         return "http://dl.com/guid-123"
@@ -53,11 +59,18 @@ async def test_evaluate_and_download_upgrade(db_session):
     # Tests that a release is only downloaded if it exceeds the upgrade threshold
     from app.db.models import DownloadHistory
     
+    from app.db.models import DownloadHistory, Provider, ProviderProfile
+    
+    provider = Provider(type="simkl", name="Test")
+    db_session.add(provider)
+    await db_session.flush()
+    
     movie = MediaItem(
         simkl_id=456,
         title="Upgrade Movie",
         media_type=MediaType.MOVIE,
-        status=MediaStatus.DOWNLOADED
+        status=MediaStatus.DOWNLOADED,
+        provider_id=provider.id
     )
     db_session.add(movie)
     await db_session.flush()
@@ -82,7 +95,7 @@ async def test_evaluate_and_download_upgrade(db_session):
     ]
 
     async def mock_send_nzb(*args, **kwargs):
-        return "torbox-hash-123"
+        return {"hash": "torbox-hash-123", "id": 12345}
 
     with patch('app.core.automation.torbox.send_nzb_link', side_effect=mock_send_nzb) as mock_send:
         # Mock scorer to return exactly 1200

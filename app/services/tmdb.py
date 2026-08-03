@@ -37,11 +37,16 @@ async def get_digital_release_date(tmdb_id: int) -> datetime | None:
         return None
 
     url = f"{TMDB_BASE_URL}/movie/{tmdb_id}/release_dates"
-    params = {"api_key": settings.tmdb_api_key}
+    params = {}
+    headers = {}
+    if settings.tmdb_api_key.startswith("ey"):
+        headers["Authorization"] = f"Bearer {settings.tmdb_api_key}"
+    else:
+        params["api_key"] = settings.tmdb_api_key
 
     async with httpx.AsyncClient(timeout=10.0) as client:
         try:
-            response = await client.get(url, params=params)
+            response = await client.get(url, params=params, headers=headers)
             response.raise_for_status()
             data = response.json()
             
@@ -67,20 +72,73 @@ async def get_digital_release_date(tmdb_id: int) -> datetime | None:
             return None
 
 
+async def get_movie_details(tmdb_id: int) -> dict[str, Any] | None:
+    """Fetch details for a movie (including alternative titles)."""
+    if not settings.tmdb_api_key:
+        logger.warning("TMDB API key missing.")
+        return None
+
+    url = f"{TMDB_BASE_URL}/movie/{tmdb_id}"
+    params = {"append_to_response": "alternative_titles,translations"}
+    headers = {}
+    if settings.tmdb_api_key.startswith("ey"):
+        headers["Authorization"] = f"Bearer {settings.tmdb_api_key}"
+    else:
+        params["api_key"] = settings.tmdb_api_key
+
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        try:
+            response = await client.get(url, params=params, headers=headers)
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPError as e:
+            logger.error("TMDB movie details error for %d: %s", tmdb_id, e)
+            return None
+
+
 async def get_show_details(tmdb_id: int) -> dict[str, Any] | None:
-    """Fetch details for a TV show (number of seasons, etc.)."""
+    """Fetch details for a TV show (number of seasons, alternative titles, etc.)."""
     if not settings.tmdb_api_key:
         logger.warning("TMDB API key missing.")
         return None
 
     url = f"{TMDB_BASE_URL}/tv/{tmdb_id}"
-    params = {"api_key": settings.tmdb_api_key}
+    params = {"append_to_response": "alternative_titles,translations"}
+    headers = {}
+    if settings.tmdb_api_key.startswith("ey"):
+        headers["Authorization"] = f"Bearer {settings.tmdb_api_key}"
+    else:
+        params["api_key"] = settings.tmdb_api_key
 
     async with httpx.AsyncClient(timeout=10.0) as client:
         try:
-            response = await client.get(url, params=params)
+            response = await client.get(url, params=params, headers=headers)
             response.raise_for_status()
             return response.json()
         except httpx.HTTPError as e:
             logger.error("TMDB tv details error for %d: %s", tmdb_id, e)
+            return None
+
+
+async def get_season_details(tmdb_id: int, season_number: int) -> dict[str, Any] | None:
+    """Fetch details for a specific season to get episodes and air dates."""
+    if not settings.tmdb_api_key:
+        logger.warning("TMDB API key missing.")
+        return None
+
+    url = f"{TMDB_BASE_URL}/tv/{tmdb_id}/season/{season_number}"
+    params = {}
+    headers = {}
+    if settings.tmdb_api_key.startswith("ey"):
+        headers["Authorization"] = f"Bearer {settings.tmdb_api_key}"
+    else:
+        params["api_key"] = settings.tmdb_api_key
+
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        try:
+            response = await client.get(url, params=params, headers=headers)
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPError as e:
+            logger.error("TMDB season details error for %d S%d: %s", tmdb_id, season_number, e)
             return None

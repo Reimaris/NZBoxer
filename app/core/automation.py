@@ -34,13 +34,25 @@ logger = logging.getLogger(__name__)
 async def sync_simkl_watchlist() -> None:
     """Sync the Simkl 'plan to watch' list to the local SQLite database."""
     logger.info("Starting Simkl watchlist sync...")
+    from app.db.models import Provider
     async with async_session_factory() as session:
         try:
-            movies = await simkl.get_watchlist("movies")
-            shows = await simkl.get_watchlist("shows")
+            stmt = select(Provider).where(Provider.type == "simkl").options(selectinload(Provider.profiles))
+            providers_res = await session.execute(stmt)
+            providers = providers_res.scalars().unique().all()
             
-            await _sync_items(session, movies, MediaType.MOVIE)
-            await _sync_items(session, shows, MediaType.SHOW)
+            for provider in providers:
+                if not provider.client_id or not provider.access_token:
+                    logger.warning("Provider %s lacks Simkl credentials, skipping.", provider.name)
+                    continue
+                    
+                movies = await simkl.get_watchlist("movies", provider.client_id, provider.access_token)
+                shows = await simkl.get_watchlist("shows", provider.client_id, provider.access_token)
+                anime = await simkl.get_watchlist("anime", provider.client_id, provider.access_token)
+                
+                await _sync_items(session, movies, MediaType.MOVIE, provider.id)
+                await _sync_items(session, shows, MediaType.SHOW, provider.id)
+                await _sync_items(session, anime, MediaType.ANIME, provider.id)
             
             await session.commit()
             logger.info("Simkl watchlist sync completed successfully.")
@@ -49,9 +61,9 @@ async def sync_simkl_watchlist() -> None:
             await session.rollback()
 
 
-async def _sync_items(session: AsyncSession, simkl_items: list[dict[str, Any]], media_type: MediaType) -> None:
+async def _sync_items(session: AsyncSession, simkl_items: list[dict[str, Any]], media_type: MediaType, provider_id: int) -> None:
     for item_data in simkl_items:
-        movie_data = item_data.get("movie") or item_data.get("show")
+        movie_data = item_data.get("movie") or item_data.get("show") or item_data.get("anime")
         if not movie_data:
             continue
 
@@ -67,12 +79,17 @@ async def _sync_items(session: AsyncSession, simkl_items: list[dict[str, Any]], 
         ids = movie_data.get("ids", {})
         tmdb_id_str = ids.get("tmdb")
         tmdb_id = int(tmdb_id_str) if tmdb_id_str else None
+        
+        tvdb_id_str = ids.get("tvdb")
+        tvdb_id = int(tvdb_id_str) if tvdb_id_str else None
 
         if not item:
             item = MediaItem(
+                provider_id=provider_id,
                 simkl_id=simkl_id,
                 imdb_id=ids.get("imdb"),
                 tmdb_id=tmdb_id,
+                tvdb_id=tvdb_id,
                 title=movie_data.get("title"),
                 year=movie_data.get("year"),
                 media_type=media_type,
@@ -80,28 +97,47 @@ async def _sync_items(session: AsyncSession, simkl_items: list[dict[str, Any]], 
                 status=MediaStatus.PENDING,
             )
             session.add(item)
-            # Need to flush to get item.id for seasons, though sqlalchemy 2.0 does it automatically on commit/flush
+            # Need to flush to get item.id for seasons
             await session.flush()
             
             # Fetch metadata from TMDB if available
             if tmdb_id:
                 if media_type == MediaType.MOVIE:
+                    details = await tmdb.get_movie_details(tmdb_id)
+                    if details:
+                        # Extract alt_title (German or original)
+                        translations = details.get("translations", {}).get("translations", [])
+                        de_trans = next((t for t in translations if t.get("iso_3166_1") == "DE"), None)
+                        if de_trans and de_trans.get("data", {}).get("title"):
+                            item.alt_title = de_trans["data"]["title"]
+                        elif details.get("original_title") and details.get("original_title") != details.get("title"):
+                            item.alt_title = details.get("original_title")
+
+                    # get_digital_release_date still used to find type 4 dates
                     release_date = await tmdb.get_digital_release_date(tmdb_id)
                     item.release_date = release_date
                     if not release_date or release_date <= datetime.now(timezone.utc):
                         item.status = MediaStatus.SEARCHING
                 
-                elif media_type == MediaType.SHOW:
+                elif media_type in (MediaType.SHOW, MediaType.ANIME):
                     details = await tmdb.get_show_details(tmdb_id)
                     if details:
                         item.overview = details.get("overview")
+                        
+                        translations = details.get("translations", {}).get("translations", [])
+                        de_trans = next((t for t in translations if t.get("iso_3166_1") == "DE"), None)
+                        if de_trans and de_trans.get("data", {}).get("name"):
+                            item.alt_title = de_trans["data"]["name"]
+                        elif details.get("original_name") and details.get("original_name") != details.get("name"):
+                            item.alt_title = details.get("original_name")
+
                         for s in details.get("seasons", []):
                             s_num = s.get("season_number")
-                            if s_num is not None and s_num > 0: # Skip specials (season 0) by default
+                            if s_num is not None and s_num > 0:
                                 season_obj = Season(
                                     media_item_id=item.id,
                                     season_number=s_num,
-                                    monitored=(s_num == 1), # Default: monitor only season 1
+                                    monitored=(s_num == 1),
                                     episode_count=s.get("episode_count"),
                                     status=SeasonStatus.SEARCHING if (s_num == 1) else SeasonStatus.PENDING
                                 )
@@ -110,9 +146,50 @@ async def _sync_items(session: AsyncSession, simkl_items: list[dict[str, Any]], 
         else:
             # Update existing
             item.title = movie_data.get("title", item.title)
-            # We don't overwrite user-modified statuses here
+            if not item.tvdb_id:
+                item.tvdb_id = tvdb_id
+            # Ensure provider matches
+            item.provider_id = provider_id
         
         item.simkl_synced_at = datetime.now(timezone.utc)
+
+
+async def _sync_season_episodes(session: AsyncSession, season: Season) -> None:
+    from app.db.models import Episode, EpisodeStatus
+    
+    season_details = await tmdb.get_season_details(season.media_item.tmdb_id, season.season_number)
+    if not season_details:
+        return
+        
+    episodes_data = season_details.get("episodes", [])
+    
+    # Check existing episodes
+    await session.refresh(season, ["episodes"])
+    existing_eps = {ep.episode_number: ep for ep in season.episodes}
+    
+    for ep_data in episodes_data:
+        ep_num = ep_data.get("episode_number")
+        if not ep_num:
+            continue
+            
+        air_date_str = ep_data.get("air_date")
+        air_date = None
+        if air_date_str:
+            try:
+                air_date = datetime.strptime(air_date_str, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+            except ValueError:
+                pass
+                
+        if ep_num in existing_eps:
+            existing_eps[ep_num].air_date = air_date
+        else:
+            new_ep = Episode(
+                season_id=season.id,
+                episode_number=ep_num,
+                air_date=air_date,
+                status=EpisodeStatus.PENDING
+            )
+            session.add(new_ep)
 
 
 async def run_automation_cycle() -> None:
@@ -123,6 +200,17 @@ async def run_automation_cycle() -> None:
     await sync_simkl_watchlist()
 
     async with async_session_factory() as session:
+        # 1.5 Sync episodes for monitored seasons
+        stmt = select(Season).where(
+            Season.monitored == True,
+            Season.status.in_([SeasonStatus.SEARCHING, SeasonStatus.PENDING])
+        ).options(selectinload(Season.media_item))
+        seasons_result = await session.execute(stmt)
+        for season in seasons_result.scalars():
+            if season.media_item.tmdb_id:
+                await _sync_season_episodes(session, season)
+        await session.commit()
+
         # Update pending movies that have reached their release date
         stmt = select(MediaItem).where(
             MediaItem.status == MediaStatus.PENDING,
@@ -132,6 +220,16 @@ async def run_automation_cycle() -> None:
         result = await session.execute(stmt)
         for pending_item in result.scalars():
             pending_item.status = MediaStatus.SEARCHING
+            
+        # Update pending episodes that have reached their air date
+        from app.db.models import Episode, EpisodeStatus
+        stmt = select(Episode).where(
+            Episode.status == EpisodeStatus.PENDING,
+            Episode.air_date <= datetime.now(timezone.utc)
+        )
+        result = await session.execute(stmt)
+        for pending_ep in result.scalars():
+            pending_ep.status = EpisodeStatus.SEARCHING
         
         await session.commit()
 
@@ -148,8 +246,9 @@ async def run_automation_cycle() -> None:
         # 3. Process Shows (Seasons)
         season_stmt = select(Season).join(MediaItem).where(
             Season.monitored == True,
-            Season.status.in_([SeasonStatus.SEARCHING, SeasonStatus.PENDING])
-        ).options(selectinload(Season.media_item), selectinload(Season.download_history))
+            Season.status.in_([SeasonStatus.SEARCHING, SeasonStatus.PENDING]),
+            MediaItem.status != MediaStatus.IGNORED
+        ).options(selectinload(Season.media_item).selectinload(MediaItem.provider), selectinload(Season.download_history))
         
         seasons_result = await session.execute(season_stmt)
         for season in seasons_result.scalars():
@@ -157,46 +256,136 @@ async def run_automation_cycle() -> None:
 
 
 async def _process_movie(session: AsyncSession, movie: MediaItem) -> None:
+    from app.db.models import ProviderProfile
     logger.info("Processing movie: %s", movie.title)
     if not movie.imdb_id:
         logger.warning("Movie %s lacks IMDb ID, skipping search.", movie.title)
         return
 
-    results = await treasure_maps.search_movie(movie.imdb_id)
-    await _evaluate_and_download(session, results, movie=movie)
+    # Load provider to get category ID
+    await session.refresh(movie, ["provider"])
+    cat_id = movie.provider.movie_category_id if movie.provider else None
+    
+    # Load profile to get reject words
+    profile_stmt = select(ProviderProfile).where(
+        ProviderProfile.provider_id == movie.provider_id,
+        ProviderProfile.media_type == "movies"
+    )
+    profile = (await session.execute(profile_stmt)).scalar_one_or_none()
+    reject_words = [w.strip().lower() for w in profile.reject_words_csv.split(",") if w.strip()] if profile and profile.reject_words_csv else []
+
+    results = await treasure_maps.search_movie(movie.imdb_id, category=cat_id)
+    await _evaluate_and_download(session, results, movie=movie, reject_words=reject_words)
 
 
 async def _process_season(session: AsyncSession, season: Season) -> None:
+    from app.db.models import Episode, EpisodeStatus, ProviderProfile, SeasonStatus
     logger.info("Processing season: %s S%02d", season.media_item.title, season.season_number)
-    tvdb_id = None # We rely on q=Title + season if tvdb_id is absent.
-    # Newznab indexers usually have good matching for title + season
-    results = await treasure_maps.search_show(tvdb_id, season.media_item.title, season.season_number)
-    await _evaluate_and_download(session, results, season=season)
+    tvdb_id = season.media_item.tvdb_id
+    cat_id = season.media_item.provider.series_category_id if season.media_item.provider else None
+    
+    profile_stmt = select(ProviderProfile).where(
+        ProviderProfile.provider_id == season.media_item.provider_id,
+        ProviderProfile.media_type == "shows"
+    )
+    profile = (await session.execute(profile_stmt)).scalar_one_or_none()
+    
+    reject_words = [w.strip().lower() for w in profile.reject_words_csv.split(",") if w.strip()] if profile and profile.reject_words_csv else []
+    prefer_seasons = profile.prefer_complete_seasons if profile else False
+    block_size = profile.episode_block_size if profile and profile.episode_block_size else 1
+    
+    stmt = select(Episode).where(
+        Episode.season_id == season.id,
+        Episode.status == EpisodeStatus.SEARCHING,
+        Episode.monitored == True
+    ).order_by(Episode.episode_number)
+    episodes_res = await session.execute(stmt)
+    missing_episodes = episodes_res.scalars().all()
+    
+    if not missing_episodes:
+        logger.info("    ✅ Keine ausstehenden Episoden für S%02d.", season.season_number)
+        return
+        
+    logger.info("    📺 Suche %d ausstehende Episoden.", len(missing_episodes))
+    
+    results = []
+    
+    if prefer_seasons:
+        logger.info("    📦 Suche Season Pack für S%02d...", season.season_number)
+        results = await treasure_maps.search_show(tvdb_id, season.media_item.title, season.season_number, category=cat_id)
+        if results:
+            await _evaluate_and_download(session, results, season=season, target_episodes=missing_episodes, reject_words=reject_words)
+            await session.refresh(season)
+            if season.status in [SeasonStatus.DOWNLOADED, SeasonStatus.COMPLETED]:
+                return
+
+    if block_size > 0:
+        ep_numbers = [ep.episode_number for ep in missing_episodes]
+        chunks = [ep_numbers[i:i + block_size] for i in range(0, len(ep_numbers), block_size)]
+        
+        for chunk in chunks:
+            ep_str = ",".join(map(str, chunk))
+            logger.info("    📺 Suche Episode(n): S%02dE[%s]", season.season_number, ep_str)
+            chunk_results = await treasure_maps.search_show(tvdb_id, season.media_item.title, season.season_number, ep=ep_str, category=cat_id)
+            
+            chunk_eps = [ep for ep in missing_episodes if ep.episode_number in chunk]
+            for ep in chunk_eps:
+                await _evaluate_and_download(session, chunk_results, episode=ep, reject_words=reject_words)
 
 
-async def _evaluate_and_download(session: AsyncSession, search_results: list[dict[str, Any]], movie: MediaItem | None = None, season: Season | None = None) -> None:
-    best_candidate = None
-    highest_score: float = -9999.0
-
+async def _evaluate_and_download(
+    session: AsyncSession, 
+    search_results: list[dict[str, Any]], 
+    movie: MediaItem | None = None, 
+    season: Season | None = None,
+    episode: Any = None,
+    target_episodes: list[Any] | None = None,
+    reject_words: list[str] | None = None
+) -> None:
+    from app.db.models import (
+        BlacklistedRelease,
+        EpisodeStatus,
+        MediaStatus,
+        ProviderProfile,
+        SeasonStatus,
+    )
+    from app.services import telegram
+    
     if not search_results:
         return
 
-    if movie is None and season is None:
-        raise ValueError("Must provide either a movie or a season")
+    if movie is None and season is None and episode is None:
+        raise ValueError("Must provide either a movie, a season, or an episode")
     
-    target: Any = movie if movie else season
+    target: Any = episode if episode else (season if season else movie)
     current_best_score = target.best_score or 0.0
     
     cutoffs = scoring_config.get("cutoffs", {})
     target_score = cutoffs.get("target_score", 2500)
     upgrade_threshold = cutoffs.get("upgrade_threshold", 300)
 
+    # Fetch blacklisted guids and titles
+    media_item_id = movie.id if movie else (season.media_item_id if season else episode.season.media_item_id)
+    stmt = select(BlacklistedRelease).where(BlacklistedRelease.media_item_id == media_item_id)
+    blacklist_res = await session.execute(stmt)
+    blacklisted_items = blacklist_res.scalars().all()
+    blacklisted_guids = {b.nzb_guid for b in blacklisted_items if b.nzb_guid}
+    blacklisted_titles = {b.nzb_title for b in blacklisted_items if b.nzb_title}
+
+    candidates = []
+
     for item in search_results:
         title = item.get("title", "")
         size_bytes = int(item.get("size", 0))
         guid = item.get("guid", "")
         
-        # Calculate age if pubDate is available. Skipping for brevity, assuming 0.
+        # Skip blacklisted items
+        if guid in blacklisted_guids or title in blacklisted_titles:
+            continue
+            
+        # Reject if title contains any reject word
+        if reject_words and any(rw in title.lower() for rw in reject_words):
+            continue
         
         parsed = parse_release_name(title)
         runtime = movie.runtime_minutes if movie else None
@@ -206,15 +395,31 @@ async def _evaluate_and_download(session: AsyncSession, search_results: list[dic
         if score_res.is_rejected:
             continue
             
-        if score_res.score > highest_score:
-            highest_score = score_res.score
-            best_candidate = {
-                "title": title,
-                "guid": guid,
-                "size_bytes": size_bytes,
-                "parsed": parsed,
-                "score_res": score_res
-            }
+        candidates.append({
+            "title": title,
+            "guid": guid,
+            "size_bytes": size_bytes,
+            "parsed": parsed,
+            "score_res": score_res,
+            "score": score_res.score
+        })
+
+    candidates.sort(key=lambda x: x["score"], reverse=True)
+    
+    if candidates:
+        log_title = ""
+        if episode:
+            log_title = f"{episode.season.media_item.title} S{episode.season.season_number:02d}E{episode.episode_number:02d}"
+        elif season:
+            log_title = f"{season.media_item.title} S{season.season_number:02d}"
+        else:
+            log_title = movie.title
+        
+        logger.info("    🏆 Top %d Releases für %s:", min(5, len(candidates)), log_title)
+        for i, c in enumerate(candidates[:5]):
+            logger.info("       %d. [%.1f] %s", i+1, c["score"], c["title"])
+            
+    best_candidate = candidates[0] if candidates else None
 
     if not best_candidate:
         return
@@ -222,24 +427,28 @@ async def _evaluate_and_download(session: AsyncSession, search_results: list[dic
     # Check if we should download
     should_download = False
 
-    if target.best_score is None or highest_score >= (current_best_score + upgrade_threshold):
+    if target.best_score is None or best_candidate["score"] >= (current_best_score + upgrade_threshold):
         should_download = True
 
+    from app.config import settings
     if should_download and scoring_config.get("automation", {}).get("auto_send_to_torbox", True):
-        title_for_log = target.media_item.title if isinstance(target, Season) else target.title
-        logger.info("Downloading %s (Score: %s) for %s", 
-                    best_candidate["title"], highest_score, title_for_log)
+        if settings.dry_run:
+            logger.info("    🧪 [DRY RUN] Würde Datei '%s' (Score: %s) an TorBox senden.", best_candidate["title"], best_candidate["score"])
+            return
+            
+        logger.info("    📥 Downloading %s (Score: %s)", best_candidate["title"], best_candidate["score"])
         
         download_url = await treasure_maps.get_download_url(best_candidate["guid"])
-        torbox_hash = await torbox.send_nzb_link(download_url)
+        torbox_result = await torbox.send_nzb_link(download_url)
         
-        if torbox_hash:
+        if torbox_result and (torbox_result.get("hash") or torbox_result.get("id")):
             history = DownloadHistory(
-                media_item_id=movie.id if movie else target.media_item_id,
-                season_id=season.id if season else None,
+                media_item_id=media_item_id,
+                season_id=season.id if season else (episode.season_id if episode else None),
+                episode_id=episode.id if episode else None,
                 nzb_title=best_candidate["title"],
                 nzb_guid=best_candidate["guid"],
-                score=highest_score,
+                score=best_candidate["score"],
                 size_bytes=best_candidate["size_bytes"],
                 resolution=best_candidate["parsed"].resolution,
                 video_codec=best_candidate["parsed"].video_codec,
@@ -247,14 +456,39 @@ async def _evaluate_and_download(session: AsyncSession, search_results: list[dic
                 source=best_candidate["parsed"].source,
                 release_group=best_candidate["parsed"].release_group,
                 bitrate_mbps=best_candidate["score_res"].bitrate_mbps,
-                torbox_hash=torbox_hash,
+                torbox_hash=str(torbox_result.get("hash")) if torbox_result.get("hash") else None,
+                torbox_id=str(torbox_result.get("id")) if torbox_result.get("id") else None,
                 torbox_sent_at=datetime.now(timezone.utc)
             )
             session.add(history)
             
-            target.status = MediaStatus.DOWNLOADED if isinstance(target, MediaItem) else SeasonStatus.DOWNLOADED
-            if highest_score >= target_score:
-                target.status = MediaStatus.COMPLETED if isinstance(target, MediaItem) else SeasonStatus.COMPLETED
-                logger.info("Target score reached for %s. Automation complete.", title_for_log)
+            new_status = None
+            if best_candidate["score"] >= target_score:
+                new_status = MediaStatus.COMPLETED if movie else (SeasonStatus.COMPLETED if season else EpisodeStatus.COMPLETED)
+                logger.info("    ✅ Target score reached. Automation complete.")
+            else:
+                new_status = MediaStatus.DOWNLOADED if movie else (SeasonStatus.DOWNLOADED if season else EpisodeStatus.DOWNLOADED)
+                
+            target.status = new_status
+            
+            # If target_episodes is passed (e.g. season pack downloaded), update all of them
+            if target_episodes:
+                for ep in target_episodes:
+                    ep.status = new_status
                 
             await session.commit()
+            
+            # Send Telegram notification
+            media_item = movie if movie else (season.media_item if season else episode.season.media_item)
+            profile_stmt = select(ProviderProfile).where(
+                ProviderProfile.provider_id == media_item.provider_id,
+                ProviderProfile.media_type == ("movies" if media_item.media_type == "movie" else "shows")
+            ).options(selectinload(ProviderProfile.notification_channel))
+            profile_res = await session.execute(profile_stmt)
+            profile = profile_res.scalar_one_or_none()
+            
+            if profile and profile.notification_channel:
+                channel = profile.notification_channel
+                if channel.type == "telegram" and channel.bot_token and channel.chat_id:
+                    msg = f"✅ <b>Started Download</b>\n\n<b>{log_title}</b>\n<code>{best_candidate['title']}</code>\n\nScore: {best_candidate['score']}"
+                    await telegram.send_notification(msg, token=channel.bot_token, chat_id=channel.chat_id)

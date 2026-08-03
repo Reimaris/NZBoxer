@@ -1,96 +1,71 @@
-from contextlib import asynccontextmanager
-from unittest.mock import patch
-
 import pytest
-from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi.testclient import TestClient
 
-from app.config import scoring_config, settings
-from app.db.models import SystemSettings
 from app.main import app
+from app.db.models import SystemSettings, Provider, NotificationChannel
+from app.config import settings
 
-# Create a synchronous test client
 client = TestClient(app)
 
-@pytest.fixture
-def mock_session_factory(db_session: AsyncSession):
-    @asynccontextmanager
-    async def _mock_factory():
-        yield db_session
-    
-    with patch("app.main.async_session_factory", side_effect=_mock_factory):
-        yield
-
 @pytest.mark.asyncio
-async def test_get_settings_page(db_session: AsyncSession, mock_session_factory):
+async def test_get_settings_page(db_session: AsyncSession):
     """Test that the settings page renders successfully."""
     # First, let's create a dummy settings row
     db_settings = SystemSettings(
         id=1,
-        simkl_client_id="test_client_id",
-        scoring_config_yaml="scoring:\n  resolution:\n    1080p: 50"
+        scoring_settings={"scoring": {"resolution": {"1080p": 50}}}
     )
     db_session.add(db_settings)
     await db_session.commit()
-    
+
     response = client.get("/settings")
     assert response.status_code == 200
-    assert "test_client_id" in response.text
-    assert "1080p: 50" in response.text
+    assert "text/html" in response.headers["content-type"]
+    assert "Settings" in response.text
 
 @pytest.mark.asyncio
-async def test_post_settings_valid(db_session: AsyncSession, mock_session_factory):
-    """Test saving valid settings."""
+async def test_post_global_settings_valid(db_session: AsyncSession):
+    """Test saving valid global settings."""
     db_settings = SystemSettings(id=1)
     db_session.add(db_settings)
     await db_session.commit()
 
-    yaml_payload = "scoring:\n  resolution:\n    4k: 100\n"
-
     response = client.post(
-        "/settings",
+        "/settings/global",
         data={
-            "simkl_client_id": "new_client_id",
-            "simkl_access_token": "new_token",
             "tmdb_api_key": "tmdb123",
             "treasure_maps_url": "https://example.com",
             "treasure_maps_api_key": "map123",
             "torbox_api_key": "torbox123",
-            "scoring_config_yaml": yaml_payload
+            "scan_interval_multiplier": 2,
+            "sh_max_retries": 5,
+            "sh_max_time_hours": 24.0,
+            "sh_auto_retry": False,
+            "sh_retry_wait_hours": 12.0,
+            # Scoring
+            "res_2160p": 100,
+            "res_1080p": 50,
+            "res_720p": 10,
+            "codec_h265": 30,
+            "codec_h264": 20,
+            "source_remux": 100,
+            "source_bluray": 80,
+            "source_webdl": 60,
+            "source_webrip": 50,
+            "cutoffs_target": 250,
+            "cutoffs_upgrade": 30
         }
     )
-    
+
     assert response.status_code == 200
     assert "Settings saved successfully" in response.text
 
     # Verify DB was updated
     await db_session.refresh(db_settings)
-    assert db_settings.simkl_client_id == "new_client_id"
     assert db_settings.torbox_api_key == "torbox123"
-    assert db_settings.scoring_config_yaml == yaml_payload
+    assert db_settings.scan_interval_multiplier == 2
+    assert db_settings.scoring_settings["scoring"]["resolution"]["1080p"] == 50
 
     # Verify global cache was updated
-    assert settings.simkl_client_id == "new_client_id"
-    assert scoring_config["scoring"]["resolution"]["4k"] == 100
-
-@pytest.mark.asyncio
-async def test_post_settings_invalid_yaml(db_session: AsyncSession, mock_session_factory):
-    """Test saving invalid YAML rejects the update."""
-    db_settings = SystemSettings(id=1, simkl_client_id="old_id")
-    db_session.add(db_settings)
-    await db_session.commit()
-
-    response = client.post(
-        "/settings",
-        data={
-            "simkl_client_id": "new_id",
-            "scoring_config_yaml": "scoring:\n  - this is invalid yaml\n    bad_indentation: true"
-        }
-    )
-    
-    assert response.status_code == 200
-    assert "Invalid YAML" in response.text
-
-    # Verify DB was NOT updated
-    await db_session.refresh(db_settings)
-    assert db_settings.simkl_client_id == "old_id"
+    assert settings.torbox_api_key == "torbox123"

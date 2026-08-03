@@ -21,29 +21,63 @@ class SimklError(Exception):
     """Base exception for Simkl API errors."""
 
 
-async def get_watchlist(media_type: str = "movies") -> list[dict[str, Any]]:
+async def request_pin(client_id: str) -> dict[str, Any]:
+    """Request a PIN code from Simkl for device authorization."""
+    url = f"{SIMKL_BASE_URL}/oauth/pin"
+    params = {
+        "client_id": client_id,
+        "app-name": "nzboxer",
+        "app-version": "0.1.0"
+    }
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        response = await client.get(url, params=params)
+        response.raise_for_status()
+        return response.json()
+
+
+async def check_pin(client_id: str, user_code: str) -> dict[str, Any]:
+    """Poll Simkl to see if the user has entered the PIN."""
+    url = f"{SIMKL_BASE_URL}/oauth/pin/{user_code}"
+    params = {
+        "client_id": client_id,
+        "app-name": "nzboxer",
+        "app-version": "0.1.0"
+    }
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        response = await client.get(url, params=params)
+        response.raise_for_status()
+        return response.json()
+
+
+async def get_watchlist(media_type: str, client_id: str, access_token: str) -> list[dict[str, Any]]:
     """Fetch the 'plantowatch' list for movies or shows.
 
     Args:
         media_type: 'movies' or 'shows'.
+        client_id: Simkl Client ID
+        access_token: Simkl Access Token
 
     Returns:
         List of dictionaries containing item metadata from Simkl.
     """
-    if not settings.simkl_client_id or not settings.simkl_access_token:
+    if not client_id or not access_token:
         logger.warning("Simkl API keys missing; returning empty watchlist.")
         return []
 
     url = f"{SIMKL_BASE_URL}/sync/all-items/{media_type}/plantowatch"
+    params = {
+        "client_id": client_id,
+        "app-name": "nzboxer",
+        "app-version": "0.1.0"
+    }
     headers = {
-        "simkl-api-key": settings.simkl_client_id,
-        "Authorization": f"Bearer {settings.simkl_access_token}",
+        "Authorization": f"Bearer {access_token}",
         "Content-Type": "application/json"
     }
 
     async with httpx.AsyncClient(timeout=10.0) as client:
         try:
-            response = await client.get(url, headers=headers)
+            response = await client.get(url, params=params, headers=headers)
             response.raise_for_status()
             data = response.json()
             

@@ -45,19 +45,21 @@ class Settings:
     # --- Database ---
     database_url: str = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./nzboxer.db")
 
-    # --- Simkl ---
-    simkl_client_id: str = os.getenv("SIMKL_CLIENT_ID", "")
-    simkl_access_token: str = os.getenv("SIMKL_ACCESS_TOKEN", "")
-
     # --- TMDB ---
     tmdb_api_key: str = os.getenv("TMDB_API_KEY", "")
 
-    # --- Treasure Maps / Newznab ---
-    treasure_maps_url: str = os.getenv("TREASURE_MAPS_URL", "")
     treasure_maps_api_key: str = os.getenv("TREASURE_MAPS_API_KEY", "")
 
     # --- TorBox ---
     torbox_api_key: str = os.getenv("TORBOX_API_KEY", "")
+
+    # Self-Healing & Automation
+    scan_interval_multiplier: int = int(os.getenv("SCAN_INTERVAL_MULTIPLIER", "1"))
+    sh_max_retries: int = int(os.getenv("SH_MAX_RETRIES", "3"))
+    sh_max_time_hours: float = float(os.getenv("SH_MAX_TIME_HOURS", "12.0"))
+    sh_auto_retry: bool = os.getenv("SH_AUTO_RETRY", "True").lower() == "true"
+    sh_retry_wait_hours: float = float(os.getenv("SH_RETRY_WAIT_HOURS", "24.0"))
+    dry_run: bool = os.getenv("DRY_RUN", "False").lower() == "true"
 
     # --- App ---
     app_env: str = os.getenv("APP_ENV", "development")
@@ -117,37 +119,36 @@ async def reload_settings_from_db(session: AsyncSession) -> None:
 
     if not db_settings:
         # Create default from current environment/yaml if not in DB
-        with (_ROOT / "config.yaml").open("r", encoding="utf-8") as f:
-            raw_yaml = f.read()
-
         db_settings = SystemSettings(
             id=1,
-            simkl_client_id=settings.simkl_client_id,
-            simkl_access_token=settings.simkl_access_token,
             tmdb_api_key=settings.tmdb_api_key,
-            treasure_maps_url=settings.treasure_maps_url,
             treasure_maps_api_key=settings.treasure_maps_api_key,
             torbox_api_key=settings.torbox_api_key,
-            scoring_config_yaml=raw_yaml
+            scan_interval_multiplier=settings.scan_interval_multiplier,
+            sh_max_retries=settings.sh_max_retries,
+            sh_max_time_hours=settings.sh_max_time_hours,
+            sh_auto_retry=settings.sh_auto_retry,
+            sh_retry_wait_hours=settings.sh_retry_wait_hours,
+            dry_run=settings.dry_run,
+            scoring_settings=scoring_config
         )
         session.add(db_settings)
         await session.commit()
         await session.refresh(db_settings)
 
     # Overwrite global settings cache
-    settings.simkl_client_id = db_settings.simkl_client_id
-    settings.simkl_access_token = db_settings.simkl_access_token
     settings.tmdb_api_key = db_settings.tmdb_api_key
-    settings.treasure_maps_url = db_settings.treasure_maps_url
     settings.treasure_maps_api_key = db_settings.treasure_maps_api_key
     settings.torbox_api_key = db_settings.torbox_api_key
+    settings.scan_interval_multiplier = db_settings.scan_interval_multiplier
+    settings.sh_max_retries = db_settings.sh_max_retries
+    settings.sh_max_time_hours = db_settings.sh_max_time_hours
+    settings.sh_auto_retry = db_settings.sh_auto_retry
+    settings.sh_retry_wait_hours = db_settings.sh_retry_wait_hours
+    settings.dry_run = db_settings.dry_run
 
     # Overwrite scoring config cache
-    try:
-        new_scoring_config = yaml.safe_load(db_settings.scoring_config_yaml)
+    if db_settings.scoring_settings:
         scoring_config.clear()
-        if new_scoring_config:
-            scoring_config.update(new_scoring_config)
-    except yaml.YAMLError as e:
-        logger.error("Failed to parse scoring_config_yaml from DB: %s", e)
+        scoring_config.update(db_settings.scoring_settings)
 

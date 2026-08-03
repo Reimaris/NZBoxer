@@ -40,15 +40,30 @@ This file provides comprehensive instructions on how to use NZBoxer.
 
 ## Running the Application
 
-### Option A: Docker (Recommended)
+### Option A: Production Deployment (Recommended, via GHCR)
 
-Run the application using Docker Compose. The database will be stored persistently in a volume map to `/app/data`.
+Run the application using the pre-built Docker image from the GitHub Container Registry. The database will be stored persistently in a volume.
+
+1. **Log into GHCR:** (You need a GitHub Personal Access Token)
+   ```bash
+   echo $PAT | docker login ghcr.io -u Reimaris --password-stdin
+   ```
+
+2. **Start the application:**
+   Ensure your `.env` and `config.yaml` are present, then run:
+   ```bash
+   docker compose -f docker-compose.prod.yml up -d
+   ```
+
+### Option B: Local Docker Build (Development)
+
+If you want to modify the code and build locally:
 
 ```bash
-docker-compose up -d
+docker compose up -d --build
 ```
 
-### Option B: Local Python Environment
+### Option C: Local Python Environment
 
 The application is run via `uvicorn`. The APScheduler is integrated into the FastAPI lifespan and will automatically trigger the automation cycles.
 

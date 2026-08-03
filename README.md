@@ -51,15 +51,31 @@ nano config.yaml
 
 ### 3. Running the Service
 
-#### Option A: Docker (Recommended)
+#### Option A: Production Deployment (Recommended, via GHCR)
 
-The easiest way to run NZBoxer is via Docker Compose, which automatically manages dependencies and mounts a persistent SQLite database volume.
+The easiest and most robust way to run NZBoxer is using the pre-built Docker image from the GitHub Container Registry.
+
+1. **Log into GHCR:** (You need a GitHub Personal Access Token with `read:packages` permission)
+   ```bash
+   echo $PAT | docker login ghcr.io -u Reimaris --password-stdin
+   ```
+
+2. **Set up environment:** (Ensure `.env` and `config.yaml` are created as described above)
+
+3. **Start the application:**
+   ```bash
+   docker compose -f docker-compose.prod.yml up -d
+   ```
+
+#### Option B: Local Docker Build (Development)
+
+If you want to modify the code and build locally:
 
 ```bash
-docker-compose up -d
+docker compose up -d --build
 ```
 
-#### Option B: Local Python Environment
+#### Option C: Local Python Environment
 
 Start the FastAPI application natively. The background scheduler will automatically start syncing and searching.
 

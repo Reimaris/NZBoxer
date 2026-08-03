@@ -1,98 +1,346 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div class="max-w-4xl mx-auto">
-    <div class="md:flex md:items-center md:justify-between mb-8">
-        <div class="min-w-0 flex-1">
-            <h2 class="text-2xl font-bold leading-7 text-white sm:truncate sm:text-3xl sm:tracking-tight">
-                System Settings
-            </h2>
+<div class="max-w-7xl mx-auto space-y-8 text-sm" x-data="{ activeTab: 'global' }">
+    <div class="flex items-center justify-between mb-8">
+        <h1 class="text-3xl font-bold text-white flex items-center gap-3">
+            <svg class="w-8 h-8 text-[#d40060]" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clip-rule="evenodd"></path></svg>
+            Einstellungen
+        </h1>
+        <div class="flex items-center gap-3">
+            <a href="/settings/export" class="bg-[#3f3f46] hover:bg-[#52525b] text-white px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                Backup Export
+            </a>
+            <button hx-get="/system/check/modal" hx-target="#modal-container" class="bg-[#1e1e24] hover:bg-[#3f3f46] border border-[#3f3f46] text-white px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2">
+                <svg class="w-4 h-4 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                System Check
+            </button>
         </div>
     </div>
 
-    <div id="settings-result"></div>
+    <!-- Navigation Tabs -->
+    <div class="border-b border-[#3f3f46]">
+        <nav class="-mb-px flex space-x-8">
+            <button @click="activeTab = 'global'" :class="activeTab === 'global' ? 'border-[#d40060] text-[#d40060]' : 'border-transparent text-[#a1a1aa] hover:text-white hover:border-[#3f3f46]'" class="whitespace-nowrap pb-4 px-1 border-b-2 font-medium transition-colors">
+                Globale Einstellungen & Scoring
+            </button>
+            <button @click="activeTab = 'providers'" :class="activeTab === 'providers' ? 'border-[#d40060] text-[#d40060]' : 'border-transparent text-[#a1a1aa] hover:text-white hover:border-[#3f3f46]'" class="whitespace-nowrap pb-4 px-1 border-b-2 font-medium transition-colors">
+                Provider & Profile
+            </button>
+            <button @click="activeTab = 'notifications'" :class="activeTab === 'notifications' ? 'border-[#d40060] text-[#d40060]' : 'border-transparent text-[#a1a1aa] hover:text-white hover:border-[#3f3f46]'" class="whitespace-nowrap pb-4 px-1 border-b-2 font-medium transition-colors">
+                Benachrichtigungen
+            </button>
+        </nav>
+    </div>
 
-    <form hx-post="/settings" hx-target="#settings-result" class="space-y-8 divide-y divide-slate-700">
+    <div id="settings-result" class="empty:hidden mb-4"></div>
+
+    <!-- Tab 1: Global Settings -->
+    <div x-show="activeTab === 'global'" class="space-y-8 animate-fade-in">
+        <form hx-post="/settings/global" hx-target="#settings-result" class="space-y-8">
+            
+            <!-- Group: API Keys -->
+            <div class="bg-[#1e1e24] border border-[#3f3f46] rounded-xl overflow-hidden shadow-lg">
+                <div class="bg-[#2a2a32] border-b border-[#3f3f46] px-6 py-4 flex items-center gap-2">
+                    <h2 class="text-lg font-semibold text-white">API Schlüssel & Integrationen</h2>
+                </div>
+                <div class="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
+                    
+                    <div class="relative group">
+                        <label class="block text-[#d1d5db] font-medium mb-1 flex items-center gap-2">
+                            TMDB API Key 
+                            <div class="relative inline-block" x-data="{ show: false }" @click.away="show = false">
+                                <span class="text-[#d40060] cursor-pointer" @click="show = !show">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                                </span>
+                                <div x-show="show" style="display: none;" class="absolute z-10 w-64 p-3 mt-2 text-xs font-normal text-white bg-[#2a2a32] border border-[#3f3f46] rounded shadow-xl left-1/2 transform -translate-x-1/2">
+                                    Wird verwendet, um Metadaten wie Poster, Beschreibungen und Releasedaten abzurufen.
+                                </div>
+                            </div>
+                            <a href="https://www.themoviedb.org/settings/api" target="_blank" class="ml-auto text-xs text-blue-400 hover:underline">Klick hier</a>
+                        </label>
+                        <input type="password" name="tmdb_api_key" value="{{ db_settings.tmdb_api_key if db_settings and db_settings.tmdb_api_key else '' }}" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-3 text-white focus:outline-none transition-colors font-mono">
+                    </div>
+                    
+                    <div class="relative group">
+                        <label class="block text-[#d1d5db] font-medium mb-1 flex items-center gap-2">
+                            TorBox API Key 
+                            <div class="relative inline-block" x-data="{ show: false }" @click.away="show = false">
+                                <span class="text-[#d40060] cursor-pointer" @click="show = !show">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                                </span>
+                                <div x-show="show" style="display: none;" class="absolute z-10 w-64 p-3 mt-2 text-xs font-normal text-white bg-[#2a2a32] border border-[#3f3f46] rounded shadow-xl left-1/2 transform -translate-x-1/2">
+                                    TorBox Account API Key, um NZB-Dateien zum Download zu senden.
+                                </div>
+                            </div>
+                            <a href="https://torbox.app/settings" target="_blank" class="ml-auto text-xs text-blue-400 hover:underline">Klick hier</a>
+                        </label>
+                        <input type="password" name="torbox_api_key" value="{{ db_settings.torbox_api_key if db_settings and db_settings.torbox_api_key else '' }}" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-3 text-white focus:outline-none transition-colors font-mono">
+                    </div>
+                    <div class="relative group">
+                        <label class="block text-[#d1d5db] font-medium mb-1 flex items-center gap-2">
+                            Treasure Maps API Key 
+                            <div class="relative inline-block" x-data="{ show: false }" @click.away="show = false">
+                                <span class="text-[#d40060] cursor-pointer" @click="show = !show">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                                </span>
+                                <div x-show="show" style="display: none;" class="absolute z-10 w-64 p-3 mt-2 text-xs font-normal text-white bg-[#2a2a32] border border-[#3f3f46] rounded shadow-xl left-1/2 transform -translate-x-1/2">
+                                    API Key aus den Treasure Maps (Prowlarr) Einstellungen unter General > Security.
+                                </div>
+                            </div>
+                            <a href="https://treasure-maps.com/" target="_blank" class="ml-auto text-xs text-blue-400 hover:underline">Klick hier</a>
+                        </label>
+                        <input type="password" name="treasure_maps_api_key" value="{{ db_settings.treasure_maps_api_key if db_settings and db_settings.treasure_maps_api_key else '' }}" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-3 text-white focus:outline-none transition-colors font-mono">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Group: Self Healing -->
+            <div class="bg-[#1e1e24] border border-[#3f3f46] rounded-xl overflow-hidden shadow-lg" x-data="{ expanded: true }">
+                <div class="bg-[#2a2a32] border-b border-[#3f3f46] px-6 py-4 flex items-center justify-between cursor-pointer hover:bg-[#32323c] transition-colors" @click="expanded = !expanded">
+                    <h2 class="text-lg font-semibold text-white flex items-center gap-2">
+                        <svg class="w-5 h-5 text-yellow-500" fill="currentColor" viewBox="0 0 20 20"><path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z"></path></svg>
+                        Self-Healing & Automation
+                    </h2>
+                    <svg class="w-5 h-5 text-[#a1a1aa] transform transition-transform" :class="{'rotate-180': expanded}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                </div>
+                <div x-show="expanded" x-collapse>
+                    <div class="p-6 space-y-6">
+                        <div class="bg-[#2a2a32] border-l-4 border-yellow-500 rounded p-4 text-[#a1a1aa] text-sm">
+                            Fehlgeschlagene Downloads bei TorBox werden automatisch abgebrochen, auf eine Blacklist gesetzt und durch das nächstbeste Release ersetzt. Keine endlosen Loops!
+                        </div>
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                            <div>
+                                <label class="block text-[#d1d5db] font-medium mb-1 text-xs uppercase tracking-wider flex items-center gap-1">
+                                    Max. Retries 
+                                    <div class="relative inline-block" x-data="{ show: false }" @click.away="show = false">
+                                        <span class="text-[#d40060] cursor-pointer" @click="show = !show">
+                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                                        </span>
+                                        <div x-show="show" style="display: none;" class="absolute z-10 w-48 p-2 mt-1 text-xs font-normal text-white bg-[#2a2a32] border border-[#3f3f46] rounded shadow-xl left-1/2 transform -translate-x-1/2">
+                                            Maximale Anzahl an Fehlversuchen pro MediaItem
+                                        </div>
+                                    </div>
+                                </label>
+                                <input type="number" name="sh_max_retries" value="{{ db_settings.sh_max_retries if db_settings else '5' }}" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors font-mono text-center">
+                            </div>
+                            <div>
+                                <label class="block text-[#d1d5db] font-medium mb-1 text-xs uppercase tracking-wider flex items-center gap-1">
+                                    Max. Wait (Hours) 
+                                    <div class="relative inline-block" x-data="{ show: false }" @click.away="show = false">
+                                        <span class="text-[#d40060] cursor-pointer" @click="show = !show">
+                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                                        </span>
+                                        <div x-show="show" style="display: none;" class="absolute z-10 w-48 p-2 mt-1 text-xs font-normal text-white bg-[#2a2a32] border border-[#3f3f46] rounded shadow-xl left-1/2 transform -translate-x-1/2">
+                                            Wie lange TorBox Zeit hat, einen Download abzuschließen, bevor er als Fehler gewertet wird.
+                                        </div>
+                                    </div>
+                                </label>
+                                <input type="number" step="0.1" name="sh_max_time_hours" value="{{ db_settings.sh_max_time_hours if db_settings else '24.0' }}" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors font-mono text-center">
+                            </div>
+                            <div>
+                                <label class="block text-[#d1d5db] font-medium mb-1 text-xs uppercase tracking-wider flex items-center gap-1">
+                                    Scan Multiplier 
+                                    <div class="relative inline-block" x-data="{ show: false }" @click.away="show = false">
+                                        <span class="text-[#d40060] cursor-pointer" @click="show = !show">
+                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                                        </span>
+                                        <div x-show="show" style="display: none;" class="absolute z-10 w-48 p-2 mt-1 text-xs font-normal text-white bg-[#2a2a32] border border-[#3f3f46] rounded shadow-xl left-1/2 transform -translate-x-1/2">
+                                            Multiplikator für den 15-Minuten Zyklus. 2 bedeutet alle 30 Min.
+                                        </div>
+                                    </div>
+                                </label>
+                                <input type="number" name="scan_interval_multiplier" value="{{ db_settings.scan_interval_multiplier if db_settings else '2' }}" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors font-mono text-center">
+                            </div>
+                            <div>
+                                <label class="block text-[#d1d5db] font-medium mb-1 text-xs uppercase tracking-wider flex items-center gap-1">
+                                    Auto Retry 
+                                    <div class="relative inline-block" x-data="{ show: false }" @click.away="show = false">
+                                        <span class="text-[#d40060] cursor-pointer" @click="show = !show">
+                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                                        </span>
+                                        <div x-show="show" style="display: none;" class="absolute z-10 w-48 p-2 mt-1 text-xs font-normal text-white bg-[#2a2a32] border border-[#3f3f46] rounded shadow-xl left-1/2 transform -translate-x-1/2">
+                                            Soll nach längerer Zeit erneut nach Releases gesucht werden, wenn bisher nichts gefunden wurde?
+                                        </div>
+                                    </div>
+                                </label>
+                                <select name="sh_auto_retry" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors">
+                                    <option value="True" {% if db_settings and db_settings.sh_auto_retry %}selected{% endif %}>Aktiviert</option>
+                                    <option value="False" {% if db_settings and not db_settings.sh_auto_retry %}selected{% endif %}>Deaktiviert</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-[#d1d5db] font-medium mb-1 text-xs uppercase tracking-wider flex items-center gap-1">
+                                    Retry Delay (Hrs) 
+                                    <div class="relative inline-block" x-data="{ show: false }" @click.away="show = false">
+                                        <span class="text-[#d40060] cursor-pointer" @click="show = !show">
+                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                                        </span>
+                                        <div x-show="show" style="display: none;" class="absolute z-10 w-48 p-2 mt-1 text-xs font-normal text-white bg-[#2a2a32] border border-[#3f3f46] rounded shadow-xl left-1/2 transform -translate-x-1/2">
+                                            Zeit in Stunden zwischen erfolglosen Suchen.
+                                        </div>
+                                    </div>
+                                </label>
+                                <input type="number" step="0.1" name="sh_retry_wait_hours" value="{{ db_settings.sh_retry_wait_hours if db_settings else '12.0' }}" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors font-mono text-center">
+                            </div>
+                        </div>
+                        <div class="mt-6 flex items-center gap-3">
+                            <label class="relative inline-flex items-center cursor-pointer">
+                                <input type="checkbox" name="dry_run" value="true" class="sr-only peer" {% if db_settings and db_settings.dry_run %}checked{% endif %}>
+                                <div class="w-11 h-6 bg-[#3f3f46] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#d40060]"></div>
+                                <span class="ml-3 text-sm font-medium text-white flex items-center gap-2">
+                                    🧪 Dry Run Mode
+                                    <div class="relative inline-block" x-data="{ show: false }" @click.away="show = false">
+                                        <span class="text-[#a1a1aa] cursor-pointer" @click.prevent="show = !show">
+                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                                        </span>
+                                        <div x-show="show" style="display: none;" class="absolute z-10 w-64 p-2 mt-1 text-xs font-normal text-white bg-[#2a2a32] border border-[#3f3f46] rounded shadow-xl left-1/2 transform -translate-x-1/2">
+                                            Führt die Suche und Punktevergabe durch, sendet aber KEINE Downloads an TorBox. Ideal zum Testen der Scoring-Werte.
+                                        </div>
+                                    </div>
+                                </span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+
+            <!-- Submit Button -->
+            <div class="flex justify-end pt-4">
+                <button type="submit" class="bg-[#d40060] hover:bg-[#a3004a] text-white px-8 py-3 rounded-lg flex items-center gap-2 font-bold transition-transform hover:scale-105 shadow-[0_0_15px_rgba(212,0,96,0.4)]">
+                    <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M8 16.5a1.5 1.5 0 01-1.06-.44l-4-4a1.5 1.5 0 012.12-2.12l2.94 2.94 7.44-7.44a1.5 1.5 0 112.12 2.12l-8.5 8.5a1.5 1.5 0 01-1.06.44z"></path></svg>
+                    Globale Einstellungen Speichern
+                </button>
+            </div>
+            
+        </form>
+    </div>
+
+    <!-- Tab 2: Providers -->
+    <div x-show="activeTab === 'providers'" class="space-y-6 animate-fade-in" style="display: none;">
+        <div class="flex items-center justify-between mb-4">
+            <h2 class="text-xl font-bold text-white">Angebundene Provider (Simkl)</h2>
+            <button hx-get="/settings/provider/new" hx-target="#modal-container" class="bg-[#3f3f46] hover:bg-[#52525b] text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+                Neuen Provider hinzufügen
+            </button>
+        </div>
         
-        <!-- API Keys Section -->
-        <div class="grid grid-cols-1 gap-x-8 gap-y-10 md:grid-cols-3">
-            <div>
-                <h2 class="text-base font-semibold leading-7 text-white">API Keys</h2>
-                <p class="mt-1 text-sm leading-6 text-slate-400">Configure your connections to Simkl, TMDB, Treasure Maps, and TorBox.</p>
-            </div>
-
-            <div class="grid max-w-2xl grid-cols-1 gap-x-6 gap-y-8 sm:grid-cols-6 md:col-span-2">
-                
-                <!-- Simkl -->
-                <div class="sm:col-span-3">
-                    <label for="simkl_client_id" class="block text-sm font-medium leading-6 text-white">Simkl Client ID</label>
-                    <div class="mt-2">
-                        <input type="text" name="simkl_client_id" id="simkl_client_id" value="{{ db_settings.simkl_client_id if db_settings else '' }}" class="block w-full rounded-md border-0 bg-slate-800 py-1.5 text-white shadow-sm ring-1 ring-inset ring-slate-700 focus:ring-2 focus:ring-inset focus:ring-indigo-500 sm:text-sm sm:leading-6">
+        <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+            {% for provider in providers %}
+            <div class="bg-[#1e1e24] border border-[#3f3f46] hover:border-[#d40060] rounded-xl overflow-hidden transition-all group shadow-lg">
+                <div class="p-6 relative">
+                    <div class="absolute top-4 right-4 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button hx-get="/settings/provider/{{ provider.id }}/edit" hx-target="#modal-container" class="p-1.5 bg-[#2a2a32] hover:bg-[#3f3f46] rounded text-[#a1a1aa] hover:text-white transition-colors" title="Bearbeiten">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg>
+                        </button>
+                        <button hx-delete="/settings/provider/{{ provider.id }}" hx-confirm="Provider wirklich löschen?" class="p-1.5 bg-[#2a2a32] hover:bg-red-900 rounded text-[#a1a1aa] hover:text-red-400 transition-colors" title="Löschen">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                        </button>
                     </div>
-                </div>
-
-                <div class="sm:col-span-3">
-                    <label for="simkl_access_token" class="block text-sm font-medium leading-6 text-white">Simkl Access Token</label>
-                    <div class="mt-2">
-                        <input type="text" name="simkl_access_token" id="simkl_access_token" value="{{ db_settings.simkl_access_token if db_settings else '' }}" class="block w-full rounded-md border-0 bg-slate-800 py-1.5 text-white shadow-sm ring-1 ring-inset ring-slate-700 focus:ring-2 focus:ring-inset focus:ring-indigo-500 sm:text-sm sm:leading-6">
+                    
+                    <div class="flex items-center gap-3 mb-4">
+                        <div class="w-10 h-10 rounded-full bg-[#d40060] bg-opacity-20 flex items-center justify-center text-[#d40060]">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg>
+                        </div>
+                        <div>
+                            <h3 class="text-lg font-bold text-white">{{ provider.name }}</h3>
+                            <p class="text-xs text-[#a1a1aa]">Simkl Account: @{{ provider.username or 'Nicht verknüpft' }}</p>
+                        </div>
                     </div>
-                </div>
-
-                <!-- TMDB -->
-                <div class="sm:col-span-6">
-                    <label for="tmdb_api_key" class="block text-sm font-medium leading-6 text-white">TMDB API Key (v3 auth)</label>
-                    <div class="mt-2">
-                        <input type="text" name="tmdb_api_key" id="tmdb_api_key" value="{{ db_settings.tmdb_api_key if db_settings else '' }}" class="block w-full rounded-md border-0 bg-slate-800 py-1.5 text-white shadow-sm ring-1 ring-inset ring-slate-700 focus:ring-2 focus:ring-inset focus:ring-indigo-500 sm:text-sm sm:leading-6">
-                    </div>
-                </div>
-
-                <!-- Treasure Maps -->
-                <div class="sm:col-span-4">
-                    <label for="treasure_maps_url" class="block text-sm font-medium leading-6 text-white">Treasure Maps URL (Newznab)</label>
-                    <div class="mt-2">
-                        <input type="url" name="treasure_maps_url" id="treasure_maps_url" value="{{ db_settings.treasure_maps_url if db_settings else '' }}" class="block w-full rounded-md border-0 bg-slate-800 py-1.5 text-white shadow-sm ring-1 ring-inset ring-slate-700 focus:ring-2 focus:ring-inset focus:ring-indigo-500 sm:text-sm sm:leading-6" placeholder="https://api.treasure-maps.com">
-                    </div>
-                </div>
-
-                <div class="sm:col-span-4">
-                    <label for="treasure_maps_api_key" class="block text-sm font-medium leading-6 text-white">Treasure Maps API Key</label>
-                    <div class="mt-2">
-                        <input type="text" name="treasure_maps_api_key" id="treasure_maps_api_key" value="{{ db_settings.treasure_maps_api_key if db_settings else '' }}" class="block w-full rounded-md border-0 bg-slate-800 py-1.5 text-white shadow-sm ring-1 ring-inset ring-slate-700 focus:ring-2 focus:ring-inset focus:ring-indigo-500 sm:text-sm sm:leading-6">
-                    </div>
-                </div>
-
-                <!-- TorBox -->
-                <div class="sm:col-span-4">
-                    <label for="torbox_api_key" class="block text-sm font-medium leading-6 text-white">TorBox API Key</label>
-                    <div class="mt-2">
-                        <input type="text" name="torbox_api_key" id="torbox_api_key" value="{{ db_settings.torbox_api_key if db_settings else '' }}" class="block w-full rounded-md border-0 bg-slate-800 py-1.5 text-white shadow-sm ring-1 ring-inset ring-slate-700 focus:ring-2 focus:ring-inset focus:ring-indigo-500 sm:text-sm sm:leading-6">
+                    
+                    <div class="space-y-3 mt-6">
+                        {% set movies_profile = provider.profiles | selectattr("media_type", "equalto", "movies") | list %}
+                        <div class="flex items-center justify-between text-sm bg-[#111115] rounded p-2 border border-[#3f3f46]">
+                            <span class="text-[#a1a1aa] font-medium">Filme</span>
+                            {% if movies_profile %}
+                                <span class="bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded text-xs font-bold">Aktiv</span>
+                            {% else %}
+                                <span class="bg-[#3f3f46] text-[#a1a1aa] px-2 py-0.5 rounded text-xs font-bold">Inaktiv</span>
+                            {% endif %}
+                        </div>
+                        
+                        {% set series_profile = provider.profiles | selectattr("media_type", "equalto", "shows") | list %}
+                        <div class="flex items-center justify-between text-sm bg-[#111115] rounded p-2 border border-[#3f3f46]">
+                            <span class="text-[#a1a1aa] font-medium">Serien</span>
+                            {% if series_profile %}
+                                <span class="bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded text-xs font-bold">Aktiv</span>
+                            {% else %}
+                                <span class="bg-[#3f3f46] text-[#a1a1aa] px-2 py-0.5 rounded text-xs font-bold">Inaktiv</span>
+                            {% endif %}
+                        </div>
                     </div>
                 </div>
             </div>
+            {% else %}
+            <div class="col-span-full bg-[#111115] border border-dashed border-[#3f3f46] rounded-xl p-12 text-center text-[#a1a1aa]">
+                Keine Provider eingerichtet. Klicken Sie auf "Neuen Provider hinzufügen", um zu beginnen.
+            </div>
+            {% endfor %}
         </div>
+    </div>
 
-        <!-- Scoring Matrix Section -->
-        <div class="grid grid-cols-1 gap-x-8 gap-y-10 md:grid-cols-3 pt-8">
-            <div>
-                <h2 class="text-base font-semibold leading-7 text-white">Scoring Configuration</h2>
-                <p class="mt-1 text-sm leading-6 text-slate-400">Edit the raw YAML matrix to adjust the scoring engine and automation intervals.</p>
-            </div>
-
-            <div class="grid max-w-2xl grid-cols-1 gap-x-6 gap-y-8 sm:grid-cols-6 md:col-span-2">
-                <div class="col-span-full">
-                    <label for="scoring_config_yaml" class="block text-sm font-medium leading-6 text-white">config.yaml content</label>
-                    <div class="mt-2">
-                        <textarea id="scoring_config_yaml" name="scoring_config_yaml" rows="20" class="block w-full rounded-md border-0 bg-slate-800 py-1.5 text-white shadow-sm ring-1 ring-inset ring-slate-700 focus:ring-2 focus:ring-inset focus:ring-indigo-500 sm:text-sm sm:leading-6 font-mono">{{ db_settings.scoring_config_yaml if db_settings else '' }}</textarea>
+    <!-- Tab 3: Notifications -->
+    <div x-show="activeTab === 'notifications'" class="space-y-6 animate-fade-in" style="display: none;">
+        <div class="flex items-center justify-between mb-4">
+            <h2 class="text-xl font-bold text-white">Benachrichtigungs-Kanäle</h2>
+            <button hx-get="/settings/notification/new" hx-target="#modal-container" class="bg-[#3f3f46] hover:bg-[#52525b] text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+                Neuen Kanal hinzufügen
+            </button>
+        </div>
+        
+        <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+            {% for notif in notifications %}
+            <div class="bg-[#1e1e24] border border-[#3f3f46] hover:border-[#3b82f6] rounded-xl overflow-hidden transition-all group shadow-lg">
+                <div class="p-6 relative">
+                    <div class="absolute top-4 right-4 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button hx-get="/settings/notification/{{ notif.id }}/edit" hx-target="#modal-container" class="p-1.5 bg-[#2a2a32] hover:bg-[#3f3f46] rounded text-[#a1a1aa] hover:text-white transition-colors" title="Bearbeiten">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg>
+                        </button>
+                        <button hx-delete="/settings/notification/{{ notif.id }}" hx-confirm="Kanal wirklich löschen?" class="p-1.5 bg-[#2a2a32] hover:bg-red-900 rounded text-[#a1a1aa] hover:text-red-400 transition-colors" title="Löschen">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                        </button>
                     </div>
-                    <p class="mt-3 text-sm leading-6 text-slate-400">Ensure the YAML remains valid. Invalid YAML will be rejected.</p>
+                    
+                    <div class="flex items-center gap-3 mb-4">
+                        <div class="w-10 h-10 rounded-full bg-blue-500 bg-opacity-20 flex items-center justify-center text-blue-400">
+                            <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/></svg>
+                        </div>
+                        <div>
+                            <h3 class="text-lg font-bold text-white">{{ notif.name }}</h3>
+                            <p class="text-xs text-[#a1a1aa]">Telegram Bot</p>
+                        </div>
+                    </div>
+                    
+                    <div class="bg-[#111115] rounded p-3 border border-[#3f3f46] mt-4">
+                        <div class="text-xs text-[#a1a1aa] mb-1">Chat ID</div>
+                        <div class="font-mono text-sm text-white">{{ notif.chat_id or 'Nicht konfiguriert' }}</div>
+                    </div>
                 </div>
             </div>
+            {% else %}
+            <div class="col-span-full bg-[#111115] border border-dashed border-[#3f3f46] rounded-xl p-12 text-center text-[#a1a1aa]">
+                Keine Benachrichtigungs-Kanäle eingerichtet.
+            </div>
+            {% endfor %}
         </div>
+    </div>
 
-        <div class="mt-6 flex items-center justify-end gap-x-6 pt-8">
-            <a href="/" class="text-sm font-semibold leading-6 text-white">Cancel</a>
-            <button type="submit" class="rounded-md bg-indigo-500 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500">Save Settings</button>
-        </div>
-    </form>
 </div>
+
+<!-- Modal Container for HTMX targets -->
+<div id="modal-container"></div>
+
+<style>
+    .animate-fade-in {
+        animation: fadeIn 0.3s ease-out;
+    }
+    @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(5px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+</style>
 {% endblock %}

@@ -1,6 +1,6 @@
 services:
   nzboxer:
-    build: .
+    image: ghcr.io/reimaris/nzboxer:latest
     container_name: nzboxer
     ports:
       - "8000:8000"
@@ -11,7 +11,6 @@ services:
     volumes:
       - nzboxer_data:/app/data
       - ./config.yaml:/app/config.yaml:ro
-      - .:/app
     restart: unless-stopped
 
 volumes:

@@ -40,16 +40,18 @@ scoring:
   # --- Resolution ---
   resolution:
     "2160p":  2000
+    "1440p":  1500
     "1080p":  1000
     "720p":    500
-    "576p":    200
+    "576p":    100
     "480p":    100
     default:     0
 
   # --- Video Codec ---
   video_codec:
-    "h265":   300
-    "hevc":   300
+    "av1":    500
+    "hevc":   400
+    "h265":   400
     "h264":   200
     "avc":    200
     "xvid":    50
@@ -58,37 +60,42 @@ scoring:
 
   # --- Source / Origin ---
   source:
-    "blu-ray":     500
-    "bluray":      500
-    "uhd bluray":  600
-    "uhd-bluray":  600
-    "web":         350
-    "web-dl":      400
-    "webrip":      250
-    "hdtv":        150
-    "pdtv":        100
-    "dvd":          80
-    default:          0
+    "blu-ray remux": 1000
+    "bluray remux":  1000
+    "remux":         1000
+    "blu-ray":        800
+    "bluray":         800
+    "uhd bluray":     800
+    "uhd-bluray":     800
+    "web":            600
+    "web-dl":         600
+    "webrip":         400
+    "hdtv":           200
+    "pdtv":           200
+    "dvd":             80
+    default:            0
 
   # --- Audio Codec ---
   audio_codec:
-    "truehd atmos":  300
-    "atmos":         280
-    "dts-hd ma":     250
-    "dts-hd":        220
-    "dts":           150
-    "dolby digital plus": 180
-    "eac3":          180
-    "aac":           100
-    "mp3":            50
-    default:           0
+    "truehd atmos":       500
+    "dts-hd ma":          400
+    "dolby digital plus": 300
+    "eac3":               300
+    "atmos":              300
+    "dts-hd":             400
+    "dts":                200
+    "ac3":                150
+    "dolby digital":      150
+    "aac":                100
+    "mp3":                 50
+    default:                0
 
   # --- Audio Channels ---
   audio_channels:
-    "7.1":  50
-    "5.1":  30
-    "2.0":  10
-    default: 0
+    "7.1":  300
+    "5.1":  200
+    "2.0":   50
+    default:  0
 
   # --- Bitrate Scoring (Mbit/s) ---
   # Calculated from file size / runtime. Scored in brackets.
@@ -106,12 +113,13 @@ scoring:
 
   # --- HDR Flags ---
   hdr:
-    "hdr10plus":  200
-    "hdr10":      150
-    "hdr":        120
-    "dovi":       200
-    "dolby vision": 200
-    default:         0
+    "dovi":         400
+    "dolby vision": 400
+    "hdr10plus":    300
+    "hdr10":        300
+    "hdr":          300
+    "10bit":        150
+    default:          0
 
 # ---------------------------------------------------------------------------
 # QUALITY CUTOFFS
@@ -141,7 +149,8 @@ release_groups:
     - "playBD"
     - "DON"
     - "EVO"
-  whitelist_bonus: 200
+  whitelist_multiplier: 1.2
+  whitelist_bonus: 0
 
   # Groups always rejected — NZB is discarded regardless of score.
   blacklist:

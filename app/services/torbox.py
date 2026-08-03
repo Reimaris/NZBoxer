@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 
 import httpx
+from typing import Any
 
 from app.config import settings
 
@@ -21,22 +22,19 @@ class TorBoxError(Exception):
     pass
 
 
-async def send_nzb_link(nzb_url: str) -> str | None:
+async def send_nzb_link(nzb_url: str) -> dict[str, str | int | None]:
     """Send an NZB URL to TorBox to initiate a Usenet download.
 
     Args:
         nzb_url: The URL to the NZB file (from Treasure Maps).
 
     Returns:
-        The TorBox download ID or hash if successful, else None.
+        A dictionary with "hash" and "id" if successful, else empty dict.
     """
     if not settings.torbox_api_key:
         logger.warning("TorBox API key missing.")
-        return None
+        return {}
 
-    # V1 API endpoint for Usenet download creation
-    # For file URLs, you often pass `link` to the create API.
-    # Note: The exact TorBox Usenet API endpoint might differ; we assume /api/usenet/createusenetdownload
     url = f"{TORBOX_BASE_URL}/api/usenet/createusenetdownload"
     
     headers = {
@@ -49,18 +47,66 @@ async def send_nzb_link(nzb_url: str) -> str | None:
 
     async with httpx.AsyncClient(timeout=15.0) as client:
         try:
-            # First, check if Torbox has a cache check for Usenet.
-            # TorBox primarily caches torrents. We will just send it.
             response = await client.post(url, headers=headers, data=data)
             response.raise_for_status()
             
             result = response.json()
             if result.get("success"):
-                return result.get("data", {}).get("hash", "success_no_hash")
+                data = result.get("data", {})
+                return {
+                    "hash": data.get("hash"),
+                    "id": data.get("usenet_id") or data.get("id")
+                }
             else:
                 logger.error("TorBox API returned error: %s", result.get("detail"))
-                return None
+                return {}
                 
         except httpx.HTTPError as e:
             logger.error("Failed to send NZB to TorBox: %s", e)
-            return None
+            return {}
+
+
+async def check_download_status(download_id: str | int) -> dict[str, Any]:
+    """Check the status of a specific TorBox download.
+    
+    Args:
+        download_id: The TorBox ID for the download.
+        
+    Returns:
+        A dictionary containing "status" and "detail". Status can be:
+        "completed", "downloading", "failed", "error", etc.
+    """
+    if not settings.torbox_api_key:
+        return {"status": "error", "detail": "Missing API key"}
+        
+    url = f"{TORBOX_BASE_URL}/api/usenet/mylist"
+    headers = {
+        "Authorization": f"Bearer {settings.torbox_api_key}"
+    }
+    
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        try:
+            # We fetch the list and find the specific ID
+            # In a real app we might want to paginate, but let's assume it's in the first page
+            # TorBox usually returns the whole list or we can filter by id (if their API supports it)
+            # We'll just fetch all and find it.
+            response = await client.get(url, headers=headers)
+            response.raise_for_status()
+            
+            result = response.json()
+            if result.get("success"):
+                downloads = result.get("data", [])
+                for d in downloads:
+                    if str(d.get("id")) == str(download_id):
+                        # download_state is usually what TorBox returns (e.g. downloading, completed, error, paused)
+                        return {
+                            "status": d.get("download_state", "unknown"),
+                            "progress": d.get("progress", 0),
+                            "detail": d.get("name", "")
+                        }
+                return {"status": "not_found", "detail": "Download ID not found in TorBox"}
+            else:
+                return {"status": "error", "detail": result.get("detail")}
+                
+        except httpx.HTTPError as e:
+            return {"status": "error", "detail": str(e)}

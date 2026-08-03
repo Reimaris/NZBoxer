@@ -79,13 +79,18 @@ async def init_db(database_url: str) -> None:
 
     logger.info("Initializing database: %s", database_url)
 
-    _engine = create_async_engine(
-        database_url,
-        echo=False,              # Set True for SQL query logging in dev
-        future=True,
-        # SQLite-specific: enable WAL mode for improved concurrent read access.
-        connect_args={"check_same_thread": False},
-    )
+    from sqlalchemy.pool import StaticPool
+
+    kwargs = {
+        "echo": False,
+        "future": True,
+        "connect_args": {"check_same_thread": False},
+    }
+    
+    if ":memory:" in database_url:
+        kwargs["poolclass"] = StaticPool
+
+    _engine = create_async_engine(database_url, **kwargs)
 
     _session_factory = async_sessionmaker(
         bind=_engine,
@@ -102,6 +107,81 @@ async def init_db(database_url: str) -> None:
     # Enable SQLite WAL mode for better concurrent access
     if database_url.startswith("sqlite"):
         async with _session_factory() as session:
+            # Perform a crude migration if the table exists but column is missing
+            try:
+                await session.execute(
+                    __import__("sqlalchemy").text("ALTER TABLE system_settings ADD COLUMN scoring_settings JSON;")
+                )
+            except Exception:
+                pass
+
+            try:
+                await session.execute(
+                    __import__("sqlalchemy").text("ALTER TABLE system_settings ADD COLUMN tmdb_api_key VARCHAR(200) DEFAULT '';")
+                )
+            except Exception:
+                pass
+
+            try:
+                await session.execute(
+                    __import__("sqlalchemy").text("ALTER TABLE media_items ADD COLUMN provider_id INTEGER DEFAULT 1;")
+                )
+                # Create a default provider if we just added the column, so foreign keys don't break
+                await session.execute(
+                    __import__("sqlalchemy").text("INSERT OR IGNORE INTO providers (id, type, name) VALUES (1, 'simkl', 'Default Simkl');")
+                )
+            except Exception:
+                pass
+                
+            try:
+                await session.execute(
+                    __import__("sqlalchemy").text("ALTER TABLE download_history ADD COLUMN torbox_id VARCHAR(200);")
+                )
+            except Exception:
+                pass
+                
+            try:
+                await session.execute(
+                    __import__("sqlalchemy").text("ALTER TABLE providers ADD COLUMN anime_category_id INTEGER;")
+                )
+            except Exception:
+                pass
+                
+            try:
+                await session.execute(
+                    __import__("sqlalchemy").text("ALTER TABLE media_items ADD COLUMN tvdb_id INTEGER;")
+                )
+            except Exception:
+                pass
+                
+            try:
+                await session.execute(
+                    __import__("sqlalchemy").text("ALTER TABLE media_items ADD COLUMN alt_title VARCHAR(500);")
+                )
+            except Exception:
+                pass
+
+            try:
+                await session.execute(
+                    __import__("sqlalchemy").text("ALTER TABLE media_items ADD COLUMN is_anime_movie BOOLEAN NOT NULL DEFAULT 0;")
+                )
+            except Exception:
+                pass
+
+            try:
+                await session.execute(
+                    __import__("sqlalchemy").text("ALTER TABLE download_history ADD COLUMN episode_id INTEGER;")
+                )
+            except Exception:
+                pass
+
+            try:
+                await session.execute(
+                    __import__("sqlalchemy").text("ALTER TABLE system_settings ADD COLUMN dry_run BOOLEAN NOT NULL DEFAULT 0;")
+                )
+            except Exception:
+                pass
+
             await session.execute(
                 __import__("sqlalchemy").text("PRAGMA journal_mode=WAL;")
             )

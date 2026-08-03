@@ -1,58 +1,211 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div class="flex justify-between items-end mb-8">
-    <h1 class="text-3xl font-bold text-slate-100">Watchlist</h1>
+<!-- Stat Cards -->
+<div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+    <!-- Movies Card -->
+    <div class="bg-[#d40060] rounded-lg shadow-lg p-6 flex flex-col justify-between text-white border border-[#a3004a]">
+        <div class="flex items-center gap-2 mb-4">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 4v16M17 4v16M3 8h4m10 0h4M3 12h18M3 16h4m10 0h4M4 20h16a1 1 0 001-1V5a1 1 0 00-1-1H4a1 1 0 00-1 1v14a1 1 0 001 1z"></path></svg>
+            <h2 class="text-xl font-bold">Movies</h2>
+        </div>
+        <div>
+            <div class="text-5xl font-light">{{ movies_wanted }}</div>
+            <div class="text-pink-100 text-sm mt-2 font-medium tracking-wide">Wanted</div>
+        </div>
+    </div>
+    
+    <!-- Series Card -->
+    <div class="bg-purple-600 rounded-lg shadow-lg p-6 flex flex-col justify-between text-white border border-purple-500">
+        <div class="flex items-center gap-2 mb-4">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path></svg>
+            <h2 class="text-xl font-bold">Series</h2>
+        </div>
+        <div>
+            <div class="text-5xl font-light">{{ series_wanted }}</div>
+            <div class="text-purple-100 text-sm mt-2 font-medium tracking-wide">Wanted</div>
+        </div>
+    </div>
+    
+    <!-- Anime Card -->
+    <div class="bg-amber-500 rounded-lg shadow-lg p-6 flex flex-col justify-between text-white border border-amber-400">
+        <div class="flex items-center gap-2 mb-4">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+            <h2 class="text-xl font-bold">Anime</h2>
+        </div>
+        <div>
+            <div class="text-5xl font-light">{{ anime_wanted }}</div>
+            <div class="text-amber-100 text-sm mt-2 font-medium tracking-wide">Wanted</div>
+        </div>
+    </div>
+    
+    <!-- History Card -->
+    <div class="bg-sky-600 rounded-lg shadow-lg p-6 flex flex-col justify-between text-white border border-sky-500">
+        <div class="flex items-center gap-2 mb-4">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+            <h2 class="text-xl font-bold">History</h2>
+        </div>
+        <div>
+            <div class="text-5xl font-light">{{ history_count }}</div>
+            <div class="text-sky-100 text-sm mt-2 font-medium tracking-wide">All Time</div>
+        </div>
+    </div>
 </div>
 
-<div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
-    {% for item in items %}
-    <a href="/items/{{ item.id }}" class="bg-slate-800 rounded-lg overflow-hidden shadow-lg border border-slate-700 hover:border-indigo-500 transition-colors flex flex-col h-full group relative">
-        <div class="relative pb-[150%] overflow-hidden">
-            {% if item.poster_url %}
-            <img src="{{ item.poster_url }}" alt="{{ item.title }}" class="absolute inset-0 w-full h-full object-cover transition-transform duration-300 group-hover:scale-105">
-            {% else %}
-            <div class="absolute inset-0 w-full h-full bg-slate-700 flex flex-col items-center justify-center text-slate-400 p-4 text-center">
-                <svg class="w-12 h-12 mb-2 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
-                <span>No Poster</span>
+<!-- Main Table Area -->
+<div class="bg-[#24242b] border border-[#3f3f46] rounded-lg shadow overflow-hidden" x-data="{ tab: 'movie', search: '', showStatus: false }">
+    
+    <!-- Table Toolbar: Tabs & Search -->
+    <div class="p-4 border-b border-[#3f3f46] flex flex-col md:flex-row justify-between items-center gap-4">
+        <!-- Tabs -->
+        <div class="flex gap-2 bg-[#1e1e24] p-1 rounded-lg border border-[#3f3f46]">
+            <button @click="tab = 'movie'; search = ''" :class="{'bg-[#d40060] text-white': tab === 'movie', 'text-[#a1a1aa] hover:text-white': tab !== 'movie'}" class="px-4 py-1.5 rounded-md text-sm font-medium transition-colors">Filme</button>
+            <button @click="tab = 'show'; search = ''" :class="{'bg-[#d40060] text-white': tab === 'show', 'text-[#a1a1aa] hover:text-white': tab !== 'show'}" class="px-4 py-1.5 rounded-md text-sm font-medium transition-colors">Serien</button>
+            <button @click="tab = 'anime_movie'; search = ''" :class="{'bg-[#d40060] text-white': tab === 'anime_movie', 'text-[#a1a1aa] hover:text-white': tab !== 'anime_movie'}" class="px-4 py-1.5 rounded-md text-sm font-medium transition-colors">Anime Filme</button>
+            <button @click="tab = 'anime_show'; search = ''" :class="{'bg-[#d40060] text-white': tab === 'anime_show', 'text-[#a1a1aa] hover:text-white': tab !== 'anime_show'}" class="px-4 py-1.5 rounded-md text-sm font-medium transition-colors">Anime Serien</button>
+        </div>
+
+        <!-- Search & Status -->
+        <div class="flex items-center gap-4 w-full md:w-auto">
+            <div class="relative w-full md:w-64">
+                <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-[#a1a1aa]">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                </div>
+                <input type="text" x-model="search" placeholder="Suche..." class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg pl-9 pr-4 py-2 text-white focus:outline-none transition-colors text-sm">
             </div>
-            {% endif %}
-            
-            <div class="absolute top-2 right-2 flex flex-col gap-1">
-                {% if item.status == 'downloaded' %}
-                <span class="bg-emerald-500 text-white px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider shadow-sm">Downloaded</span>
-                {% elif item.status == 'completed' %}
-                <span class="bg-purple-500 text-white px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider shadow-sm">Completed</span>
-                {% elif item.status == 'searching' %}
-                <span class="bg-blue-500 text-white px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider shadow-sm">Searching</span>
-                {% elif item.status == 'pending' %}
-                <span class="bg-slate-600 text-white px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider shadow-sm">Pending</span>
-                {% else %}
-                <span class="bg-slate-700 text-white px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider shadow-sm">{{ item.status }}</span>
-                {% endif %}
-            </div>
-            
-            <!-- Gradient overlay for text readability -->
-            <div class="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-slate-900 to-transparent pointer-events-none"></div>
-            
-            <div class="absolute inset-x-0 bottom-0 p-3">
-                <h3 class="font-bold text-white text-sm leading-tight drop-shadow-md">{{ item.title }}</h3>
-                <div class="flex items-center text-xs text-slate-300 mt-1 drop-shadow-md">
-                    <span>{{ item.year or 'N/A' }}</span>
-                    <span class="mx-1">•</span>
-                    <span class="capitalize">{{ item.media_type }}</span>
+
+            <div class="relative hidden md:block">
+                <button @click="showStatus = !showStatus" class="flex items-center gap-2 hover:text-white transition-colors cursor-pointer text-[#a1a1aa] text-sm focus:outline-none shrink-0 whitespace-nowrap">
+                    <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"></path></svg>
+                    <span>Status-Legende</span>
+                </button>
+                <div x-show="showStatus" @click.away="showStatus = false" style="display: none;" x-transition class="absolute top-full right-0 mt-2 w-80 bg-[#2a2a32] border border-[#3f3f46] rounded-lg shadow-xl p-4 z-10 text-xs text-gray-300">
+                    <div class="space-y-3">
+                        <div class="flex items-start gap-3">
+                            <span class="bg-[#d40060] text-white text-[10px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider shrink-0 w-16 text-center">WANTED</span>
+                            <span>Film oder Serie wird gesucht. Entweder noch nicht gefunden oder das Release liegt in der Zukunft.</span>
+                        </div>
+                        <div class="flex items-start gap-3">
+                            <span class="bg-emerald-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider shrink-0 w-16 text-center">DONE</span>
+                            <span>Erfolgreich gefunden und an den Downloader (TorBox) gesendet.</span>
+                        </div>
+                        <div class="flex items-start gap-3">
+                            <span class="bg-slate-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider shrink-0 w-16 text-center">IGNORED</span>
+                            <span>Wird übersprungen (z.B. weil es nicht mehr gesucht wird).</span>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
-    </a>
-    {% else %}
-    <div class="col-span-full bg-slate-800/50 rounded-lg border border-slate-700/50 p-12 text-center text-slate-400">
-        <svg class="mx-auto h-12 w-12 text-slate-500 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 4v16M17 4v16M3 8h4m10 0h4M3 12h18M3 16h4m10 0h4M4 20h16a1 1 0 001-1V5a1 1 0 00-1-1H4a1 1 0 00-1 1v14a1 1 0 001 1z" />
-        </svg>
-        <h3 class="text-lg font-medium text-slate-300 mb-1">Watchlist Empty</h3>
-        <p class="max-w-sm mx-auto">Click "Sync Simkl" in the top right to fetch your Plan to Watch items.</p>
     </div>
-    {% endfor %}
+
+    <!-- Watchlist Table -->
+    <div class="overflow-x-auto min-h-[400px]">
+        <table class="w-full text-left border-collapse whitespace-nowrap">
+            <thead class="bg-[#2a2a32] text-[#d1d5db] font-semibold text-sm border-b border-[#3f3f46]">
+                <tr>
+                    <th class="px-6 py-4">Title</th>
+                    <th class="px-6 py-4">Profil</th>
+                    <th class="px-6 py-4">Year</th>
+                    <th class="px-6 py-4">Release Date</th>
+                    <th class="px-6 py-4">Status</th>
+                    <th class="px-6 py-4">Last Checked</th>
+                    <th class="px-6 py-4 text-right">Actions</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-[#3f3f46] text-sm">
+                {% for item in items %}
+                {% set display_category = 'anime_movie' if (item.media_type.value == 'anime' and item.is_anime_movie) else ('anime_show' if item.media_type.value == 'anime' else item.media_type.value) %}
+                <tr class="hover:bg-[#2a2a32] transition-colors group" 
+                    x-show="tab === '{{ display_category }}' && ('{{ item.title|replace('\'', '\\\'') }}'.toLowerCase().includes(search.toLowerCase()) || ('{{ item.alt_title|replace('\'', '\\\'') if item.alt_title else '' }}'.toLowerCase().includes(search.toLowerCase())))" 
+                    style="display: none;">
+                    
+                    <td class="px-6 py-4">
+                        <div class="block">
+                            <a href="/items/{{ item.id }}" class="font-bold text-white hover:text-indigo-400 transition-colors">{{ item.title }}</a>
+                            {% if item.alt_title %}
+                            <div class="text-xs text-[#a1a1aa] mt-0.5">{{ item.alt_title }}</div>
+                            {% endif %}
+                            <div class="flex gap-2 mt-2 text-[10px] font-bold">
+                                {% if item.simkl_id %}
+                                <a href="https://simkl.com/{{ 'movies' if item.media_type.value == 'movie' else ('anime' if item.media_type.value == 'anime' else 'shows') }}/{{ item.simkl_id }}" target="_blank" class="bg-[#2a2a32] text-gray-400 hover:text-white px-2 py-0.5 rounded border border-[#3f3f46] transition-colors">SIMKL</a>
+                                {% endif %}
+                                {% if item.tmdb_id %}
+                                <a href="https://themoviedb.org/{{ 'movie' if item.media_type.value == 'movie' else 'tv' }}/{{ item.tmdb_id }}" target="_blank" class="bg-[#2a2a32] text-blue-400 hover:text-white px-2 py-0.5 rounded border border-[#3f3f46] transition-colors">TMDB</a>
+                                {% endif %}
+                                {% if item.imdb_id %}
+                                <a href="https://imdb.com/title/{{ item.imdb_id }}" target="_blank" class="bg-[#2a2a32] text-yellow-500 hover:text-white px-2 py-0.5 rounded border border-[#3f3f46] transition-colors">IMDB</a>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </td>
+                    <td class="px-6 py-4">
+                        <span class="bg-[#3f3f46] text-gray-200 text-xs font-bold px-2 py-1 rounded">SIMKL</span>
+                    </td>
+                    <td class="px-6 py-4 text-gray-300">
+                        {{ item.year or '-' }}
+                    </td>
+                    <td class="px-6 py-4 text-gray-300">
+                        {% if item.release_date %}
+                            <div>{{ item.release_date.strftime('%Y-%m-%d') }}</div>
+                            {% if item.status == 'pending' %}
+                            <div class="text-yellow-500 text-xs mt-1">in future</div>
+                            {% endif %}
+                        {% else %}
+                            -
+                        {% endif %}
+                    </td>
+                    <td class="px-6 py-4">
+                        <div class="flex flex-col gap-1 items-start">
+                            {% if item.status == 'downloaded' or item.status == 'completed' %}
+                                <span class="bg-emerald-600 text-white text-[11px] font-bold px-2 py-1 rounded uppercase tracking-wider shadow-sm">DONE</span>
+                            {% elif item.status == 'searching' or item.status == 'pending' %}
+                                <span class="bg-[#d40060] text-white text-[11px] font-bold px-2 py-1 rounded uppercase tracking-wider shadow-sm">WANTED</span>
+                            {% else %}
+                                <span class="bg-slate-600 text-white text-[11px] font-bold px-2 py-1 rounded uppercase tracking-wider shadow-sm">{{ item.status }}</span>
+                            {% endif %}
+                            
+                            <!-- Display fail badge if there are blacklisted items -->
+                            {% set fail_count = item.download_history | length %} <!-- Replace with actual fails if passed down, or we just rely on visual design -->
+                            <!-- NOTE: We don't have fail_count exposed on item easily unless we query it. Just leaving it out unless requested. -->
+                        </div>
+                    </td>
+                    <td class="px-6 py-4 text-gray-400 text-xs font-mono">
+                        {{ item.updated_at.strftime('%Y-%m-%d %H:%M:%S') }}
+                    </td>
+                    <td class="px-6 py-4 text-right">
+                        <div class="flex justify-end gap-2">
+                            {% if item.media_type.value == 'anime' %}
+                            <button hx-post="/items/{{ item.id }}/toggle_anime_type" title="Anime Typ (Film/Serie) umschalten" class="bg-transparent border border-blue-600 text-blue-500 hover:bg-blue-600 hover:text-white transition-colors p-1.5 rounded">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"></path></svg>
+                            </button>
+                            {% endif %}
+                            <button hx-post="/items/{{ item.id }}/ignore" title="Ignorieren" class="bg-transparent border border-gray-600 text-gray-500 hover:bg-gray-600 hover:text-white transition-colors p-1.5 rounded">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"></path></svg>
+                            </button>
+                            <button hx-post="/items/{{ item.id }}/retry" title="Retry (Status zurücksetzen)" class="bg-transparent border border-yellow-600 text-yellow-500 hover:bg-yellow-600 hover:text-white transition-colors p-1.5 rounded">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                            </button>
+                            <button hx-delete="/items/{{ item.id }}" hx-target="closest tr" hx-swap="outerHTML" hx-confirm="Bist du sicher, dass du diesen Eintrag löschen möchtest?" title="Eintrag löschen" class="bg-transparent border border-red-800 text-red-500 hover:bg-red-600 hover:text-white transition-colors p-1.5 rounded">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        
+        <!-- Empty State (Shows when no items match the filter) -->
+        <div class="px-6 py-12 text-center text-[#a1a1aa]" 
+             x-show="!Array.from(document.querySelectorAll('tbody tr')).some(el => el.style.display !== 'none')" 
+             style="display: none;">
+            <svg class="mx-auto h-12 w-12 text-[#52525b] mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 4v16M17 4v16M3 8h4m10 0h4M3 12h18M3 16h4m10 0h4M4 20h16a1 1 0 001-1V5a1 1 0 00-1-1H4a1 1 0 00-1 1v14a1 1 0 001 1z" />
+            </svg>
+            <h3 class="text-lg font-medium text-gray-300 mb-1">Keine Einträge gefunden</h3>
+            <p class="max-w-sm mx-auto text-sm">In dieser Kategorie gibt es keine Einträge, die deiner Suche entsprechen.</p>
+        </div>
+    </div>
 </div>
 {% endblock %}

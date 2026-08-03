@@ -101,10 +101,6 @@ def score_release(
         add_score("hdr", parsed.hdr)
 
     # Whitelist bonus
-    if group and group in whitelist:
-        score += groups_cfg.get("whitelist_bonus", 0)
-
-    # Language preferences
     lang_cfg = scoring_config.get("language_preferences", {})
     pref_langs = [l.lower() for l in lang_cfg.get("preferred", [])]
     if pref_langs and parsed.languages:
@@ -115,13 +111,33 @@ def score_release(
     elif pref_langs: # No languages parsed, apply penalty just in case? Usually we don't.
         pass
 
-    # 3. Bitrate Scoring
+    # 3. Bitrate Scoring with Codec Efficiency Multipliers
     bitrate_mbps = calculate_bitrate_mbps(size_bytes, runtime_minutes)
+    
+    # Determine codec multiplier for bitrate compensation
+    codec_mult = 1.0
+    if parsed.video_codec:
+        vc = parsed.video_codec.lower()
+        if "av1" in vc:
+            codec_mult = 2.0  # AV1 is highly efficient
+        elif "hevc" in vc or "h265" in vc or "h.265" in vc:
+            codec_mult = 1.5  # HEVC is ~50% more efficient than H.264
+        elif "h264" in vc or "avc" in vc or "h.264" in vc:
+            codec_mult = 1.0
+            
     if bitrate_mbps is not None:
+        effective_bitrate = bitrate_mbps * codec_mult
         bitrate_brackets = cfg.get("bitrate_brackets", [])
         for bracket in sorted(bitrate_brackets, key=lambda x: x["min_mbps"], reverse=True):
-            if bitrate_mbps >= bracket["min_mbps"]:
+            if effective_bitrate >= bracket["min_mbps"]:
                 score += bracket["score"]
                 break
+                
+    # 4. Final Multipliers (Whitelist)
+    if group and group in whitelist:
+        whitelist_mult = groups_cfg.get("whitelist_multiplier", 1.2)
+        score *= whitelist_mult
+        # Fallback for older configs that only had additive bonus
+        score += groups_cfg.get("whitelist_bonus", 0)
 
     return ScoreResult(score, False, None, bitrate_mbps)

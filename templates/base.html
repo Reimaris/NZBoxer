@@ -6,40 +6,74 @@
     <title>NZBoxer</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <!-- AlpineJS for basic interactions like modals/tabs if needed -->
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
     <style>
-        body { background-color: #0f172a; color: #f8fafc; }
+        body {
+            background-color: #1e1e24;
+            color: #d1d5db;
+        }
+        .nav-link {
+            transition: all 0.2s;
+        }
+        .nav-link:hover {
+            color: #ffffff;
+            text-shadow: 0 0 8px rgba(255,255,255,0.3);
+        }
     </style>
 </head>
-<body class="min-h-screen font-sans antialiased">
-    <nav class="bg-slate-800 border-b border-slate-700 shadow-sm">
-        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div class="flex items-center justify-between h-16">
-                <div class="flex items-center">
-                    <a href="/" class="text-2xl font-bold text-indigo-400 tracking-tight">NZBoxer</a>
+<body class="min-h-screen font-sans antialiased flex flex-col">
+    <!-- Top Navigation Bar -->
+    <nav class="bg-[#2a2a32] border-b border-[#3f3f46] shadow-md sticky top-0 z-50">
+        <div class="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex items-center justify-between h-14">
+                
+                <!-- Left side: Brand -->
+                <div class="flex items-center gap-3">
+                    <!-- Cloud Icon -->
+                    <svg class="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 20 20">
+                        <path d="M5.5 16a3.5 3.5 0 01-.369-6.98 4 4 0 117.759-1.549V8a3.5 3.5 0 116.71 1.694A4.002 4.002 0 0115 16H5.5z" />
+                    </svg>
+                    <a href="/" class="text-lg font-semibold text-white tracking-wide">NZBoxer</a>
+                    <span class="bg-[#3f3f46] text-[#a1a1aa] text-[10px] px-2 py-0.5 rounded-full font-mono ml-2 mt-0.5">
+                        v0.2.0-beta
+                    </span>
                 </div>
-                <div class="flex items-center gap-4">
-                    <a href="/settings" class="text-slate-300 hover:text-white px-3 py-2 rounded-md text-sm font-medium transition-colors">
+
+                <!-- Right side: Navigation Links -->
+                <div class="flex items-center gap-6 text-sm text-[#a1a1aa] font-medium">
+                    <div class="flex items-center gap-2 mr-4">
+                        <button hx-post="/sync" hx-target="#sync-result" class="nav-link flex items-center gap-1.5 px-3 py-1.5 bg-[#3f3f46] hover:bg-[#52525b] text-white rounded-md transition-colors text-xs font-medium">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                            Simkl Sync
+                        </button>
+                        <button hx-post="/search" hx-target="#sync-result" class="nav-link flex items-center gap-1.5 px-3 py-1.5 bg-[#d40060] hover:bg-[#a3004a] text-white rounded-md transition-colors text-xs font-medium shadow-md shadow-pink-900/20">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                            Suchlauf starten
+                        </button>
+                    </div>
+                    
+                    <a href="/" class="nav-link flex items-center gap-2">
+                        <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z"></path></svg>
+                        Dashboard
+                    </a>
+                    
+                    <a href="/settings" class="nav-link flex items-center gap-2">
+                        <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clip-rule="evenodd"></path></svg>
                         Settings
                     </a>
-                    <button hx-post="/sync" hx-target="#sync-result" hx-indicator="#sync-spinner" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded text-sm transition-colors flex items-center gap-2">
-                        <svg id="sync-spinner" class="animate-spin h-4 w-4 htmx-indicator hidden" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                        </svg>
-                        <span>Sync Simkl</span>
-                    </button>
                 </div>
             </div>
         </div>
     </nav>
-    <div id="sync-result" class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-4"></div>
-    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+
+    <!-- Global Alerts (Sync results etc) -->
+    <div id="sync-result" class="max-w-[1600px] w-full mx-auto px-4 sm:px-6 lg:px-8 mt-4 empty:hidden"></div>
+
+    <!-- Main Content -->
+    <main class="flex-1 w-full max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {% block content %}{% endblock %}
     </main>
-    <style>
-        .htmx-indicator.hidden { display: none; }
-        .htmx-request .htmx-indicator { display: inline-block; }
-        .htmx-request.htmx-indicator { display: inline-block; }
-    </style>
+
 </body>
 </html>

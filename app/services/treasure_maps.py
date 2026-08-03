@@ -19,55 +19,67 @@ class IndexerError(Exception):
     pass
 
 
-async def search_movie(imdb_id: str) -> list[dict[str, Any]]:
+async def search_movie(imdb_id: str, category: int | None = None) -> list[dict[str, Any]]:
     """Search for a movie on the Newznab indexer.
 
     Args:
         imdb_id: The IMDb ID, e.g., 'tt1234567' or '1234567'.
+        category: Optional TreasureMaps category ID (e.g. 2000).
 
     Returns:
         A list of search result items (dict).
     """
-    if not settings.treasure_maps_url or not settings.treasure_maps_api_key:
-        logger.warning("Indexer URL or API key missing.")
+    if not settings.treasure_maps_api_key:
+        logger.warning("Indexer API key missing.")
         return []
 
     # Newznab usually expects the IMDB ID without the 'tt' prefix
     imdb_id = imdb_id.removeprefix("tt")
 
-    url = f"{settings.treasure_maps_url}/api"
+    url = "https://treasure-maps.com/api"
     params = {
         "apikey": settings.treasure_maps_api_key,
         "t": "movie",
         "imdbid": imdb_id,
         "o": "json"
     }
+    
+    if category:
+        params["cat"] = category
 
     return await _execute_search(url, params)
 
 
-async def search_show(tvdb_id: str | int | None, title: str, season: int) -> list[dict[str, Any]]:
-    """Search for a TV show season on the Newznab indexer.
+async def search_show(tvdb_id: str | int | None, title: str, season: int, ep: int | str | None = None, category: int | None = None) -> list[dict[str, Any]]:
+    """Search for a TV show season or episode on the Newznab indexer.
 
     Args:
         tvdb_id: Optional TVDB ID.
         title: Show title (used if tvdb_id is not available or for general search).
         season: Season number to search.
+        ep: Optional episode number or string (e.g. '1,2,3' or '1').
+        category: Optional TreasureMaps category ID (e.g. 5000).
 
     Returns:
         List of search result items.
     """
-    if not settings.treasure_maps_url or not settings.treasure_maps_api_key:
-        logger.warning("Indexer URL or API key missing.")
+    if not settings.treasure_maps_api_key:
+        logger.warning("Indexer API key missing.")
         return []
 
-    url = f"{settings.treasure_maps_url}/api"
+    url = "https://treasure-maps.com/api"
     params = {
         "apikey": settings.treasure_maps_api_key,
         "t": "tvsearch",
         "season": season,
         "o": "json"
     }
+
+    if ep:
+        params["ep"] = ep
+        
+    if category:
+        params["cat"] = category
 
     if tvdb_id:
         params["tvdbid"] = tvdb_id
@@ -105,7 +117,7 @@ async def _execute_search(url: str, params: dict[str, Any]) -> list[dict[str, An
 
 async def get_download_url(guid: str) -> str:
     """Generate the download URL for a specific NZB given its GUID/ID."""
-    url = f"{settings.treasure_maps_url}/api"
+    url = "https://treasure-maps.com/api"
     params = {
         "t": "get",
         "id": guid,
