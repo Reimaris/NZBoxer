@@ -281,6 +281,17 @@ async def manual_search_episode_route(episode_id: int):
         return HTMLResponse(content='<script>window.location.reload();</script>')
 
 
+@app.post("/items/{item_id}/search")
+async def manual_search_movie_route(item_id: int):
+    """Manually search and download a single movie synchronously."""
+    from app.db.database import async_session_factory
+    from app.core.automation import manual_search_movie
+    
+    async with async_session_factory() as session:
+        success = await manual_search_movie(session, item_id)
+        return HTMLResponse(content='<script>window.location.reload();</script>')
+
+
 @app.post("/items/{item_id}/retry")
 async def retry_item(item_id: int):
     """Reset item and season status to pending and delete blacklisted releases for this item."""

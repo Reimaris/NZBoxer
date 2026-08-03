@@ -56,13 +56,41 @@
                         <div class="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">TMDB ID</div>
                         <div class="text-slate-300 text-sm">{{ item.tmdb_id or 'N/A' }}</div>
                     </div>
+                    <div>
+                        <div class="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">IMDB ID</div>
+                        <div class="text-slate-300 text-sm">{{ item.imdb_id or 'N/A' }}</div>
+                    </div>
+                    <div>
+                        <div class="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">TVDB ID</div>
+                        <div class="text-slate-300 text-sm">{{ item.tvdb_id or 'N/A' }}</div>
+                    </div>
+                    <div>
+                        <div class="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">MAL ID</div>
+                        <div class="text-slate-300 text-sm">{{ item.mal_id or 'N/A' }}</div>
+                    </div>
+                    <div>
+                        <div class="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">AniList ID</div>
+                        <div class="text-slate-300 text-sm">{{ item.anilist_id or 'N/A' }}</div>
+                    </div>
                 </div>
             </div>
         </div>
         
         <!-- Details Column -->
         <div class="p-6 md:p-8 flex-1">
-            <h1 class="text-3xl font-bold text-slate-100 mb-2">{{ item.title }}</h1>
+            <div class="flex items-center gap-3 mb-2">
+                <h1 class="text-3xl font-bold text-slate-100">{{ item.title }}</h1>
+                {% if item.media_type.value == 'movie' or item.media_type.value == 'anime' and not item.seasons %}
+                <button hx-post="/items/{{ item.id }}/search"
+                        class="ml-2 text-slate-400 hover:text-indigo-400 transition-colors focus:outline-none"
+                        title="Film manuell suchen"
+                        onclick="this.classList.add('animate-pulse', 'text-indigo-500')">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                    </svg>
+                </button>
+                {% endif %}
+            </div>
             <p class="text-slate-400 text-sm mb-8 leading-relaxed max-w-3xl">{{ item.overview or "No overview available for this item." }}</p>
 
             {% if item.media_type == 'show' and item.seasons %}

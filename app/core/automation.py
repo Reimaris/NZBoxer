@@ -711,3 +711,46 @@ async def manual_search_episode(session: AsyncSession, episode_id: int) -> bool:
     await session.refresh(episode)
     return episode.status in [EpisodeStatus.DOWNLOADED, EpisodeStatus.COMPLETED]
 
+
+async def manual_search_movie(session: AsyncSession, item_id: int) -> bool:
+    """Manually search and download a single movie synchronously."""
+    from sqlalchemy.orm import selectinload
+    from app.db.models import MediaItem, MediaStatus, ProviderProfile, MediaType
+
+    stmt = select(MediaItem).where(MediaItem.id == item_id).options(selectinload(MediaItem.provider))
+    media_item = (await session.execute(stmt)).scalar_one_or_none()
+    
+    if not media_item or media_item.media_type != MediaType.MOVIE:
+        logger.error("❌ Movie %s nicht gefunden oder kein Film.", item_id)
+        return False
+
+    logger.info("🔍 Manuelle Suche für Film: %s gestartet", media_item.title)
+
+    media_item.status = MediaStatus.SEARCHING
+    await session.commit()
+
+    imdb_id = media_item.imdb_id
+    tmdb_id = media_item.tmdb_id
+    cat_id = media_item.provider.movies_category_id if media_item.provider else None
+
+    profile_stmt = select(ProviderProfile).where(
+        ProviderProfile.provider_id == media_item.provider_id,
+        ProviderProfile.media_type == "movies"
+    )
+    profile = (await session.execute(profile_stmt)).scalar_one_or_none()
+    reject_words = [w.strip().lower() for w in profile.reject_words_csv.split(",") if w.strip()] if profile and profile.reject_words_csv else []
+
+    results = await treasure_maps.search_movie(imdb_id=imdb_id, tmdb_id=tmdb_id, title=media_item.title, year=media_item.year, category=cat_id)
+
+    if not results:
+        media_item.fail_count += 1
+        media_item.last_error = "Keine passenden Releases für diesen Film gefunden."
+        media_item.status = MediaStatus.PENDING # Revert back
+        logger.warning("❌ %s", media_item.last_error)
+        await session.commit()
+        return False
+
+    await _evaluate_and_download(session, results, movie=media_item, reject_words=reject_words)
+    
+    await session.refresh(media_item)
+    return media_item.status in [MediaStatus.DOWNLOADED, MediaStatus.COMPLETED]
