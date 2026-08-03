@@ -598,9 +598,22 @@ async def _evaluate_and_download(
 
     if not search_results:
         target = episode if episode else (season if season else movie)
-        target.fail_count += 1
-        target.last_error = "Keine Suchergebnisse auf dem Indexer gefunden."
-        logger.info("    ❌ %s", target.last_error)
+        if target.best_score is not None:
+            from app.db.models import MediaStatus, SeasonStatus, EpisodeStatus
+            target.fail_count = 0
+            if movie:
+                target.status = MediaStatus.COMPLETED
+            elif season:
+                target.status = SeasonStatus.COMPLETED
+            elif episode:
+                target.status = EpisodeStatus.COMPLETED
+            target.last_error = "Keine Suchergebnisse auf dem Indexer gefunden, behalte existierendes Release (Status: COMPLETED)."
+            logger.info("    ❌ %s", target.last_error)
+        else:
+            target.fail_count += 1
+            target.last_error = "Keine Suchergebnisse auf dem Indexer gefunden."
+            logger.info("    ❌ %s", target.last_error)
+            
         await session.commit()
         return
 
@@ -684,21 +697,24 @@ async def _evaluate_and_download(
     candidates.sort(key=lambda x: x["score"], reverse=True)
 
     if not candidates:
-        target.fail_count += 1
-        target.last_error = "Keine passenden (oder ausreichend bewerteten) Releases gefunden."
-        logger.info("    ❌ %s", target.last_error)
-        
-        # If this item was previously downloaded, revert its status so it doesn't get stuck in SEARCHING
         if target.best_score is not None:
+            # We already have a downloaded release, but no upgrades (or even valid candidates) were found this time.
+            # Revert to COMPLETE so we don't loop in SEARCHING forever.
             from app.db.models import MediaStatus, SeasonStatus, EpisodeStatus
-            is_completed = (target.best_score >= target_score)
+            target.fail_count = 0
             if movie:
-                target.status = MediaStatus.COMPLETED if is_completed else MediaStatus.DOWNLOADED
+                target.status = MediaStatus.COMPLETED
             elif season:
-                target.status = SeasonStatus.COMPLETED if is_completed else SeasonStatus.DOWNLOADED
+                target.status = SeasonStatus.COMPLETED
             elif episode:
-                target.status = EpisodeStatus.COMPLETED if is_completed else EpisodeStatus.DOWNLOADED
-                
+                target.status = EpisodeStatus.COMPLETED
+            target.last_error = "Suche ergab keine Treffer, behalte existierendes Release (Status: COMPLETED)."
+            logger.info("    ❌ %s", target.last_error)
+        else:
+            target.fail_count += 1
+            target.last_error = "Keine passenden (oder ausreichend bewerteten) Releases gefunden."
+            logger.info("    ❌ %s", target.last_error)
+            
         await session.commit()
         return False
 
@@ -752,21 +768,20 @@ async def _evaluate_and_download(
         should_download = True
 
     if not should_download:
-        target.fail_count += 1
+        target.fail_count = 0
         target.last_error = f"Bestes Release (Score {best_candidate['score']}) liegt unter dem Upgrade-Schwellenwert."
         logger.info("    ❌ %s", target.last_error)
         
-        # If we don't upgrade, revert its status so it doesn't get stuck in SEARCHING
-        if target.best_score is not None:
-            from app.db.models import MediaStatus, SeasonStatus, EpisodeStatus
-            is_completed = (target.best_score >= target_score)
-            if movie:
-                target.status = MediaStatus.COMPLETED if is_completed else MediaStatus.DOWNLOADED
-            elif season:
-                target.status = SeasonStatus.COMPLETED if is_completed else SeasonStatus.DOWNLOADED
-            elif episode:
-                target.status = EpisodeStatus.COMPLETED if is_completed else EpisodeStatus.DOWNLOADED
-
+        # If we didn't find an upgrade, but we already have a download (since should_download is False),
+        # we must set the status back to COMPLETE so it doesn't stay in SEARCHING forever.
+        from app.db.models import MediaStatus, SeasonStatus, EpisodeStatus
+        if movie:
+            target.status = MediaStatus.COMPLETED
+        elif season:
+            target.status = SeasonStatus.COMPLETED
+        elif episode:
+            target.status = EpisodeStatus.COMPLETED
+            
         await session.commit()
         return False
 
