@@ -164,9 +164,9 @@ async def run_download_check_cycle() -> None:
             tb_items[str(item.get("id", ""))] = item
 
         async with async_session_factory() as session:
-            sys_stmt = select(SystemSettings).where(SystemSettings.id == 1)
-            sys_settings = (await session.execute(sys_stmt)).scalar_one_or_none()
-            target_score = sys_settings.target_score if sys_settings else 1000
+            from app.config import scoring_config
+            cutoffs = scoring_config.get("cutoffs", {})
+            target_score = cutoffs.get("target_score", 2500)
 
             stmt = select(MediaItem).where(
                 MediaItem.status == MediaStatus.DOWNLOADING
