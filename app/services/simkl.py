@@ -54,7 +54,7 @@ async def check_pin(client_id: str, user_code: str) -> dict[str, Any]:
 
 
 async def get_watchlist(media_type: str, client_id: str, access_token: str) -> list[dict[str, Any]]:
-    """Fetch the 'plantowatch' list for movies or shows.
+    """Fetch the 'plantowatch' and 'watching' list for movies or shows.
 
     Args:
         media_type: 'movies' or 'shows'.
@@ -68,7 +68,6 @@ async def get_watchlist(media_type: str, client_id: str, access_token: str) -> l
         logger.warning("Simkl API keys missing; returning empty watchlist.")
         return []
 
-    url = f"{SIMKL_BASE_URL}/sync/all-items/{media_type}/plantowatch"
     params = {
         "client_id": client_id,
         "app-name": "nzboxer",
@@ -79,16 +78,22 @@ async def get_watchlist(media_type: str, client_id: str, access_token: str) -> l
         "Content-Type": "application/json"
     }
 
-    await _limiter.wait()
+    statuses = ["plantowatch", "watching"]
+    all_items = []
+
     async with httpx.AsyncClient(timeout=10.0) as client:
-        try:
-            response = await client.get(url, params=params, headers=headers)
-            response.raise_for_status()
-            data = response.json()
+        for status in statuses:
+            url = f"{SIMKL_BASE_URL}/sync/all-items/{media_type}/{status}"
+            await _limiter.wait()
+            try:
+                response = await client.get(url, params=params, headers=headers)
+                response.raise_for_status()
+                data = response.json()
+                items = data.get(media_type, [])
+                all_items.extend(items)
+            except httpx.HTTPError as e:
+                logger.error("Simkl API error for %s %s: %s", media_type, status, e)
+                if status == statuses[-1] and not all_items:
+                    raise SimklError(f"Simkl sync failed: {e}") from e
 
-            # The API returns {"movies": [...]} or {"shows": [...]}
-            return data.get(media_type, [])
-
-        except httpx.HTTPError as e:
-            logger.error("Simkl API error: %s", e)
-            raise SimklError(f"Simkl sync failed: {e}") from e
+    return all_items
