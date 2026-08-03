@@ -477,6 +477,11 @@ async def _evaluate_and_download(
     from app.services import telegram
 
     if not search_results:
+        target = episode if episode else (season if season else movie)
+        target.fail_count += 1
+        target.last_error = "Keine Suchergebnisse auf dem Indexer gefunden."
+        logger.info("    ❌ %s", target.last_error)
+        await session.commit()
         return
 
     if movie is None and season is None and episode is None:
