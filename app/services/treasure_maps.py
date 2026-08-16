@@ -178,6 +178,14 @@ async def _execute_search(url: str, params: dict[str, Any]) -> list[dict[str, An
             response.raise_for_status()
 
             data = response.json()
+            
+            # Check for API error
+            if "@attributes" in data and "code" in data["@attributes"]:
+                code = data["@attributes"].get("code")
+                desc = data["@attributes"].get("description", "Unknown error")
+                logger.error("Indexer returned API error %s: %s", code, desc)
+                raise IndexerError(f"API Error {code}: {desc}")
+                
             channel = data.get("channel", {})
             items = channel.get("item", [])
 

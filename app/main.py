@@ -332,14 +332,21 @@ async def manual_search(
     imdb_val = imdb_id if imdb_id else None
 
     # Call the right function based on inputs
-    if category == "movie":
-        raw_results = await treasure_maps.search_movie(title=query, category=cat_id, tmdb_id=tmdb_val, imdb_id=imdb_val)
-    elif category == "series":
-        raw_results = await treasure_maps.search_show(title=query, category=cat_id, season=season_val, ep=ep_val, tvdb_id=tvdb_val, tmdb_id=tmdb_val, imdb_id=imdb_val)
-    else:
-        raw_results = await treasure_maps.search_raw(
-            query=query, category=cat_id, season=season_val, ep=ep_val, 
-            imdb_id=imdb_val, tmdb_id=tmdb_val, tvdb_id=tvdb_val
+    try:
+        if category == "movie":
+            raw_results = await treasure_maps.search_movie(title=query, category=cat_id, tmdb_id=tmdb_val, imdb_id=imdb_val)
+        elif category == "series":
+            raw_results = await treasure_maps.search_show(title=query, category=cat_id, season=season_val, ep=ep_val, tvdb_id=tvdb_val, tmdb_id=tmdb_val, imdb_id=imdb_val)
+        else:
+            raw_results = await treasure_maps.search_raw(
+                query=query, category=cat_id, season=season_val, ep=ep_val, 
+                imdb_id=imdb_val, tmdb_id=tmdb_val, tvdb_id=tvdb_val
+            )
+    except treasure_maps.IndexerError as e:
+        return templates.TemplateResponse(
+            request=request, 
+            name="partials/search_results.html", 
+            context={"results": [], "error_message": str(e)}
         )
 
     valid_results = []

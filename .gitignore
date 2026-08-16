@@ -25,3 +25,8 @@ logs/*.log
 AGENT_INSTRUCTIONS.md
 docs/agent_memory/
 tests/
+
+# Agent Configuration and Memory
+AGENT_INSTRUCTIONS.md
+.agents/
+docs/agent_memory/
