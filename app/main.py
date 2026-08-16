@@ -158,7 +158,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 app = FastAPI(
     title="NZBoxer",
     description="The definitive self-hosted automation solution for German-language NZB releases.",
-    version="0.2.2-beta",
+    version="1.0.0",
     lifespan=lifespan,
 )
 
@@ -226,7 +226,16 @@ async def dashboard(request: Request):
     )
 
 @app.get("/manual-search", response_class=HTMLResponse)
-async def manual_search_page(request: Request):
+async def manual_search_page(
+    request: Request,
+    query: str = "",
+    imdb_id: str = "",
+    tmdb_id: str = "",
+    tvdb_id: str = "",
+    category: str = "",
+    season: str = "",
+    episode: str = ""
+):
     """Dedicated dashboard for manual searching with advanced filters."""
     from app.db.database import async_session_factory
     from app.db.models import SystemSettings
@@ -239,6 +248,15 @@ async def manual_search_page(request: Request):
         defaults = {}
         if db_settings and db_settings.scoring_settings:
             defaults = db_settings.scoring_settings.get("manual_search_defaults", {})
+
+        # Override with query parameters if present
+        if query: defaults["query"] = query
+        if imdb_id: defaults["imdb_id"] = imdb_id
+        if tmdb_id: defaults["tmdb_id"] = tmdb_id
+        if tvdb_id: defaults["tvdb_id"] = tvdb_id
+        if category: defaults["category"] = category
+        if season: defaults["season"] = season
+        if episode: defaults["episode"] = episode
 
     return templates.TemplateResponse(
         request=request, name="manual_search.html", context={
@@ -543,6 +561,39 @@ async def confirm_grab_item(item_id: int):
         item.last_error = None
         await session.commit()
         return HTMLResponse(content='<script>window.location.reload();</script>')
+
+
+@app.post("/api/torbox/add", response_class=HTMLResponse)
+async def manual_push_to_torbox(magnet: str = Form(...)):
+    """Push a search result directly to TorBox."""
+    from app.services import torbox, treasure_maps
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    try:
+        # Some indexers return GUID as link (e.g. treasure_maps usually uses GUID for download).
+        # Or it might be a direct link or magnet.
+        if magnet.startswith("magnet:"):
+            result = await torbox.send_magnet_link(magnet)
+        elif magnet.startswith("http") and "api.treasure" not in magnet.lower() and "nzb" in magnet.lower():
+            result = await torbox.send_nzb_link(magnet)
+        else:
+            # If it's a GUID or a generic HTTP link (like Newznab download URL), use send_nzb_link
+            # Some indexers require an API key to download, but TreasureMaps handles that internally via `get_download_url` if it's a GUID.
+            if not magnet.startswith("http"):
+                download_url = await treasure_maps.get_download_url(magnet)
+            else:
+                download_url = magnet
+                
+            result = await torbox.send_nzb_link(download_url)
+            
+        if result and (result.get("hash") or result.get("id")):
+            return HTMLResponse(content='<span class="text-emerald-400 font-medium text-xs px-2 py-1.5 bg-emerald-500/10 border border-emerald-500/20 rounded-md">Sent to TorBox!</span>')
+        else:
+            return HTMLResponse(content='<span class="text-red-400 font-medium text-xs px-2 py-1.5 bg-red-500/10 border border-red-500/20 rounded-md">Failed to send</span>', status_code=500)
+    except Exception as e:
+        logger.error(f"Error in manual_push_to_torbox: {e}")
+        return HTMLResponse(content='<span class="text-red-400 font-medium text-xs px-2 py-1.5 bg-red-500/10 border border-red-500/20 rounded-md">Error</span>', status_code=500)
 
 
 @app.post("/items/{item_id}/ignore")
@@ -902,34 +953,48 @@ async def save_provider(
     # Profile settings
     enable_movies: bool = Form(False),
     movies_mode: str = Form(""),
-    movies_resolution: str = Form(""),
+    movies_resolution: str = Form("any"),
+    movies_source: str = Form("any"),
+    movies_video_codec: str = Form("any"),
+    movies_hdr: str = Form("any"),
+    movies_audio_tier: str = Form("any"),
+    movies_audio_channels: str = Form("any"),
     movies_langs: str = Form(""),
     movies_min_mb: int = Form(None),
     movies_max_mb: int = Form(None),
     movies_reject: str = Form(""),
-    movies_notification: int = Form(None),
 
     enable_series: bool = Form(False),
     series_mode: str = Form(""),
-    series_resolution: str = Form(""),
+    series_resolution: str = Form("any"),
+    series_source: str = Form("any"),
+    series_video_codec: str = Form("any"),
+    series_hdr: str = Form("any"),
+    series_audio_tier: str = Form("any"),
+    series_audio_channels: str = Form("any"),
     series_langs: str = Form(""),
     series_min_mb: int = Form(None),
     series_max_mb: int = Form(None),
     series_reject: str = Form(""),
     series_prefer_seasons: bool = Form(False),
     series_block_size: int = Form(5),
-    series_notification: int = Form(None),
+
+    global_notification: int = Form(None),
 
     enable_anime: bool = Form(False),
     anime_mode: str = Form(""),
-    anime_resolution: str = Form(""),
+    anime_resolution: str = Form("any"),
+    anime_source: str = Form("any"),
+    anime_video_codec: str = Form("any"),
+    anime_hdr: str = Form("any"),
+    anime_audio_tier: str = Form("any"),
+    anime_audio_channels: str = Form("any"),
     anime_langs: str = Form(""),
     anime_min_mb: int = Form(None),
     anime_max_mb: int = Form(None),
     anime_reject: str = Form(""),
     anime_prefer_seasons: bool = Form(False),
-    anime_block_size: int = Form(5),
-    anime_notification: int = Form(None)
+    anime_block_size: int = Form(5)
 ):
     from sqlalchemy.orm import selectinload
 
@@ -970,11 +1035,16 @@ async def save_provider(
                 mode=movies_mode,
                 search_cycle_skip=search_cycle_skip,
                 resolution=movies_resolution,
+                source=movies_source,
+                video_codec=movies_video_codec,
+                hdr=movies_hdr,
+                audio_tier=movies_audio_tier,
+                audio_channels=movies_audio_channels,
                 languages_csv=movies_langs,
                 min_mb=movies_min_mb,
                 max_mb=movies_max_mb,
                 reject_words_csv=movies_reject,
-                notification_channel_id=movies_notification if movies_notification else None
+                notification_channel_id=global_notification if global_notification else None
             )
             session.add(pm)
 
@@ -985,13 +1055,18 @@ async def save_provider(
                 mode=series_mode,
                 search_cycle_skip=search_cycle_skip,
                 resolution=series_resolution,
+                source=series_source,
+                video_codec=series_video_codec,
+                hdr=series_hdr,
+                audio_tier=series_audio_tier,
+                audio_channels=series_audio_channels,
                 languages_csv=series_langs,
                 min_mb=series_min_mb,
                 max_mb=series_max_mb,
                 reject_words_csv=series_reject,
                 prefer_complete_seasons=series_prefer_seasons,
                 episode_block_size=series_block_size,
-                notification_channel_id=series_notification if series_notification else None
+                notification_channel_id=global_notification if global_notification else None
             )
             session.add(ps)
 
@@ -1002,13 +1077,18 @@ async def save_provider(
                 mode=anime_mode,
                 search_cycle_skip=search_cycle_skip,
                 resolution=anime_resolution,
+                source=anime_source,
+                video_codec=anime_video_codec,
+                hdr=anime_hdr,
+                audio_tier=anime_audio_tier,
+                audio_channels=anime_audio_channels,
                 languages_csv=anime_langs,
                 min_mb=anime_min_mb,
                 max_mb=anime_max_mb,
                 reject_words_csv=anime_reject,
                 prefer_complete_seasons=anime_prefer_seasons,
                 episode_block_size=anime_block_size,
-                notification_channel_id=anime_notification if anime_notification else None
+                notification_channel_id=global_notification if global_notification else None
             )
             session.add(pa)
 

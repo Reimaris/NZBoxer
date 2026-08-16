@@ -216,6 +216,25 @@ async def init_db(database_url: str) -> None:
 
             try:
                 await session.execute(
+                    __import__("sqlalchemy").text("ALTER TABLE provider_profiles ADD COLUMN source VARCHAR(100) DEFAULT 'any';")
+                )
+                await session.execute(
+                    __import__("sqlalchemy").text("ALTER TABLE provider_profiles ADD COLUMN video_codec VARCHAR(100) DEFAULT 'any';")
+                )
+                await session.execute(
+                    __import__("sqlalchemy").text("ALTER TABLE provider_profiles ADD COLUMN hdr VARCHAR(100) DEFAULT 'any';")
+                )
+                await session.execute(
+                    __import__("sqlalchemy").text("ALTER TABLE provider_profiles ADD COLUMN audio_tier VARCHAR(100) DEFAULT 'any';")
+                )
+                await session.execute(
+                    __import__("sqlalchemy").text("ALTER TABLE provider_profiles ADD COLUMN audio_channels VARCHAR(100) DEFAULT 'any';")
+                )
+            except Exception:
+                pass
+
+            try:
+                await session.execute(
                     __import__("sqlalchemy").text("ALTER TABLE media_items ADD COLUMN auto_monitor_next_season BOOLEAN NOT NULL DEFAULT 0;")
                 )
             except Exception:

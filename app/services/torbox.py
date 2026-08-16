@@ -39,7 +39,6 @@ async def send_nzb_link(nzb_url: str) -> dict[str, str | int | None]:
     if not settings.torbox_api_key:
         logger.warning("TorBox API key missing.")
         return {}
-        return {}
 
     url = f"{TORBOX_BASE_URL}/api/usenet/createusenetdownload"
 
@@ -87,6 +86,69 @@ async def send_nzb_link(nzb_url: str) -> dict[str, str | int | None]:
                     await asyncio.sleep(wait_time)
                 else:
                     logger.error("Failed to send NZB to TorBox after %d attempts: [%s] %s", max_retries, type(e).__name__, e)
+                    return {}
+
+    return {}
+
+
+async def send_magnet_link(magnet_url: str) -> dict[str, str | int | None]:
+    """Send a Magnet/Torrent URL to TorBox.
+
+    Args:
+        magnet_url: The magnet URI or torrent URL.
+
+    Returns:
+        A dictionary with "hash" and "id" if successful, else empty dict.
+    """
+    if not settings.torbox_api_key:
+        logger.warning("TorBox API key missing.")
+        return {}
+
+    url = f"{TORBOX_BASE_URL}/api/torrents/createtorrent"
+
+    headers = {
+        "Authorization": f"Bearer {settings.torbox_api_key}"
+    }
+
+    data = {
+        "magnet": magnet_url
+    }
+
+    max_retries = 3
+    for attempt in range(max_retries):
+        await _send_limiter.wait()
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            try:
+                response = await client.post(url, headers=headers, data=data)
+                response.raise_for_status()
+
+                result = response.json()
+                if result.get("success"):
+                    resp_data = result.get("data", {})
+                    return {
+                        "hash": resp_data.get("hash"),
+                        "id": resp_data.get("torrent_id") or resp_data.get("id")
+                    }
+                else:
+                    logger.error("TorBox API returned error: %s", result.get("detail"))
+                    return {}
+
+            except httpx.HTTPError as e:
+                is_retriable = True
+                if isinstance(e, httpx.HTTPStatusError):
+                    if e.response.status_code not in (429, 500, 502, 503, 504):
+                        is_retriable = False
+                
+                if not is_retriable:
+                    logger.error("Failed to send Magnet to TorBox (non-retriable): [%s] %s", type(e).__name__, e)
+                    return {}
+                
+                if attempt < max_retries - 1:
+                    wait_time = (attempt + 1) * 3
+                    logger.warning("Failed to send Magnet to TorBox: [%s] %s. Retrying in %ss...", type(e).__name__, e, wait_time)
+                    await asyncio.sleep(wait_time)
+                else:
+                    logger.error("Failed to send Magnet to TorBox after %d attempts: [%s] %s", max_retries, type(e).__name__, e)
                     return {}
 
     return {}

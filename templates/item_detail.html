@@ -1,8 +1,8 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div class="mb-4">
-    <a href="/" class="text-indigo-400 hover:text-indigo-300 text-sm flex items-center gap-1 transition-colors w-max">
+<div class="mb-6">
+    <a href="/" class="inline-flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-sm font-medium rounded-lg border border-slate-600 transition-colors shadow-sm w-max">
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
         Back to Dashboard
     </a>
@@ -86,13 +86,20 @@
                 {% if item.media_type.value == 'movie' or item.media_type.value == 'anime' and not item.seasons %}
                 <button hx-post="/items/{{ item.id }}/search"
                         class="ml-2 text-slate-400 hover:text-indigo-400 transition-colors focus:outline-none"
-                        title="Film manuell suchen"
+                        title="Trigger Automated Search"
                         onclick="this.classList.add('animate-pulse', 'text-indigo-500')">
                     <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
                     </svg>
                 </button>
                 {% endif %}
+                <a href="/manual-search?query={{ item.title|urlencode }}&imdb_id={{ item.imdb_id or '' }}&tmdb_id={{ item.tmdb_id or '' }}&tvdb_id={{ item.tvdb_id or '' }}&category={{ 'movie' if item.media_type.value == 'movie' else 'series' if item.media_type.value == 'show' else 'anime' if item.media_type.value == 'anime' else 'any' }}"
+                   class="ml-2 text-slate-400 hover:text-[#d40060] transition-colors focus:outline-none"
+                   title="Switch to Advanced Manual Search">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"></path>
+                    </svg>
+                </a>
             </div>
             <p class="text-slate-400 text-sm mb-8 leading-relaxed max-w-3xl">{{ item.overview or "No overview available for this item." }}</p>
 

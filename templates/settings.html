@@ -271,6 +271,16 @@
                                 <span class="bg-[#3f3f46] text-[#a1a1aa] px-2 py-0.5 rounded text-xs font-bold">Inactive</span>
                             {% endif %}
                         </div>
+
+                        {% set anime_profile = provider.profiles | selectattr("media_type", "equalto", "anime") | list %}
+                        <div class="flex items-center justify-between text-sm bg-[#111115] rounded p-2 border border-[#3f3f46]">
+                            <span class="text-[#a1a1aa] font-medium">Anime</span>
+                            {% if anime_profile %}
+                                <span class="bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded text-xs font-bold">Active</span>
+                            {% else %}
+                                <span class="bg-[#3f3f46] text-[#a1a1aa] px-2 py-0.5 rounded text-xs font-bold">Inactive</span>
+                            {% endif %}
+                        </div>
                     </div>
                 </div>
             </div>

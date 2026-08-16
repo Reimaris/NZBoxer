@@ -452,10 +452,22 @@ async def _process_movie(session: AsyncSession, movie: MediaItem) -> None:
         results = await treasure_maps.search_movie(title=movie.title, category=cat_id)
         is_title_fallback = True
 
+    filters = {}
+    if profile:
+        filters = {
+            "resolution": profile.resolution or "any",
+            "source": profile.source or "any",
+            "video_codec": profile.video_codec or "any",
+            "hdr": profile.hdr or "any",
+            "audio_tier": profile.audio_tier or "any",
+            "audio_channels": profile.audio_channels or "any"
+        }
+
     await _evaluate_and_download(
         session, results, movie=movie,
         reject_words=reject_words, required_language=required_language,
-        is_title_fallback=is_title_fallback
+        is_title_fallback=is_title_fallback,
+        filters=filters
     )
 
 
@@ -484,6 +496,17 @@ async def _process_season(session: AsyncSession, season: Season) -> None:
     reject_words = [w.strip().lower() for w in profile.reject_words_csv.split(",") if w.strip()] if profile and profile.reject_words_csv else []
     required_language = profile.languages_csv.strip() if profile and profile.languages_csv and profile.languages_csv.strip() else None
     prefer_seasons = profile.prefer_complete_seasons if profile else False
+    
+    filters = {}
+    if profile:
+        filters = {
+            "resolution": profile.resolution or "any",
+            "source": profile.source or "any",
+            "video_codec": profile.video_codec or "any",
+            "hdr": profile.hdr or "any",
+            "audio_tier": profile.audio_tier or "any",
+            "audio_channels": profile.audio_channels or "any"
+        }
 
     stmt = select(Episode).where(
         Episode.season_id == season.id,
@@ -524,7 +547,8 @@ async def _process_season(session: AsyncSession, season: Season) -> None:
             grabbed = await _evaluate_and_download(
                 session, results, season=season, target_episodes=missing_episodes,
                 reject_words=reject_words, required_language=required_language,
-                is_title_fallback=is_fallback
+                is_title_fallback=is_fallback,
+                filters=filters
             )
             await session.refresh(season)
             if grabbed or season.status in [SeasonStatus.DOWNLOADING, SeasonStatus.DOWNLOADED, SeasonStatus.COMPLETED, SeasonStatus.MANUAL_GRAB]:
@@ -556,7 +580,8 @@ async def _process_season(session: AsyncSession, season: Season) -> None:
             await _evaluate_and_download(
                 session, ep_results, episode=ep,
                 reject_words=reject_words, required_language=required_language,
-                is_title_fallback=is_fallback
+                is_title_fallback=is_fallback,
+                filters=filters
             )
         except Exception as ep_err:  # noqa: BLE001
             logger.error("    ❌ Fehler beim Suchen von S%02dE%02d: %s", season.season_number, ep.episode_number, ep_err)
@@ -593,6 +618,7 @@ async def _evaluate_and_download(
     reject_words: list[str] | None = None,
     required_language: str | None = None,
     is_title_fallback: bool = False,
+    filters: dict[str, Any] | None = None,
 ) -> bool:
     from app.db.models import (
         BlacklistedRelease,
@@ -658,6 +684,31 @@ async def _evaluate_and_download(
             continue
 
         parsed = parse_release_name(title)
+        
+        if filters:
+            def is_match(filter_val: str, parsed_val: str | None) -> bool:
+                if filter_val == "any": return True
+                if not parsed_val: return False
+                return filter_val.lower() in parsed_val.lower()
+                
+            def check_audio_tier(filter_val: str, parsed_codec: str | None) -> bool:
+                if filter_val == "any": return True
+                if not parsed_codec: return False
+                pc = parsed_codec.lower()
+                if filter_val == "tier1" and any(x in pc for x in ["truehd", "dts:x", "auro"]): return True
+                if filter_val == "tier2" and any(x in pc for x in ["dts-hd", "lpcm", "flac"]): return True
+                if filter_val == "tier3" and "atmos" in pc and ("eac3" in pc or "dd+" in pc): return True
+                if filter_val == "tier4" and any(x in pc for x in ["eac3", "dts", "ac3", "dolby digital"]): return True
+                if filter_val == "tier5" and any(x in pc for x in ["aac", "opus", "mp3"]): return True
+                return filter_val == "tier1" and "truehd atmos" in pc
+
+            if not is_match(filters.get("resolution", "any"), parsed.resolution): continue
+            if not is_match(filters.get("source", "any"), parsed.source): continue
+            if not is_match(filters.get("hdr", "any"), parsed.hdr): continue
+            if not is_match(filters.get("video_codec", "any"), parsed.video_codec): continue
+            if not is_match(filters.get("audio_channels", "any"), parsed.audio_channels): continue
+            if not check_audio_tier(filters.get("audio_tier", "any"), parsed.audio_codec): continue
+
         runtime = movie.runtime_minutes if movie else None
 
         expected_title = None
