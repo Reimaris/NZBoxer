@@ -22,3 +22,6 @@ file:testdb*
 *.log
 config/logs/*.log
 logs/*.log
+AGENT_INSTRUCTIONS.md
+docs/agent_memory/
+tests/

@@ -20,6 +20,13 @@
             color: #ffffff;
             text-shadow: 0 0 8px rgba(255,255,255,0.3);
         }
+        [x-cloak] { display: none !important; }
+        .htmx-indicator {
+            display: none !important;
+        }
+        .htmx-request .htmx-indicator, .htmx-request.htmx-indicator {
+            display: flex !important;
+        }
     </style>
 </head>
 <body class="min-h-screen font-sans antialiased flex flex-col">
@@ -29,19 +36,59 @@
             <div class="flex items-center justify-between h-14">
                 
                 <!-- Left side: Brand -->
-                <div class="flex items-center gap-3">
-                    <!-- Cloud Icon -->
-                    <svg class="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 20 20">
-                        <path d="M5.5 16a3.5 3.5 0 01-.369-6.98 4 4 0 117.759-1.549V8a3.5 3.5 0 116.71 1.694A4.002 4.002 0 0115 16H5.5z" />
-                    </svg>
-                    <a href="/" class="text-lg font-semibold text-white tracking-wide">NZBoxer</a>
-                    <span class="bg-[#3f3f46] text-[#a1a1aa] text-[10px] px-2 py-0.5 rounded-full font-mono ml-2 mt-0.5">
-                        v0.2.1-beta
-                    </span>
+                <div class="flex items-center gap-4">
+                    <div class="flex items-center gap-2">
+                        <!-- Cloud Icon -->
+                        <svg class="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 20 20">
+                            <path d="M5.5 16a3.5 3.5 0 01-.369-6.98 4 4 0 117.759-1.549V8a3.5 3.5 0 116.71 1.694A4.002 4.002 0 0115 16H5.5z" />
+                        </svg>
+                        <a href="/" class="text-lg font-semibold text-white tracking-wide">NZBoxer</a>
+                        <span class="bg-[#3f3f46] text-[#a1a1aa] text-[10px] px-2 py-0.5 rounded-full font-mono mt-0.5">
+                            v0.2.1-beta
+                        </span>
+                    </div>
+
+                    <!-- Dual Navigation Switcher -->
+                    <div class="flex bg-[#1e1e24] p-1 rounded-lg ml-2">
+                        <a href="/" class="{% if request.url.path == '/' %}bg-[#3f3f46] text-white shadow-sm{% else %}text-[#a1a1aa] hover:text-white hover:bg-[#2a2a32]{% endif %} px-3 py-1.5 rounded-md text-sm font-medium transition-all">Watchlist</a>
+                        <a href="/manual-search" class="{% if request.url.path == '/manual-search' %}bg-[#3f3f46] text-white shadow-sm{% else %}text-[#a1a1aa] hover:text-white hover:bg-[#2a2a32]{% endif %} px-3 py-1.5 rounded-md text-sm font-medium transition-all">Manual Search</a>
+                    </div>
                 </div>
 
                 <!-- Right side: Navigation Links -->
                 <div class="flex items-center gap-6 text-sm text-[#a1a1aa] font-medium">
+                    <!-- Automation State -->
+                    <div class="relative" x-data="{ open: false }">
+                        <button @click="open = !open" @click.outside="open = false" class="flex items-center gap-2 px-3 py-1.5 bg-[#1e1e24] hover:bg-[#3f3f46] border border-[#3f3f46] rounded-md transition-colors text-xs font-medium">
+                            <span class="flex h-2 w-2 relative">
+                                {% if settings.automation_state == 'active' %}
+                                <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                                <span class="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+                                {% elif settings.automation_state == 'paused' %}
+                                <span class="relative inline-flex rounded-full h-2 w-2 bg-yellow-500"></span>
+                                {% else %}
+                                <span class="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
+                                {% endif %}
+                            </span>
+                            {{ settings.automation_state | title }}
+                            <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                        </button>
+                        
+                        <div x-show="open" x-cloak class="absolute right-0 mt-2 w-48 bg-[#2a2a32] border border-[#3f3f46] rounded-md shadow-lg z-50 overflow-hidden">
+                            <form hx-post="/api/automation/state" class="m-0 flex flex-col">
+                                <button type="submit" name="state" value="active" class="text-left px-4 py-2 text-sm text-gray-300 hover:bg-[#3f3f46] hover:text-white flex items-center gap-2">
+                                    <span class="inline-flex rounded-full h-2 w-2 bg-green-500"></span> Active
+                                </button>
+                                <button type="submit" name="state" value="paused" class="text-left px-4 py-2 text-sm text-gray-300 hover:bg-[#3f3f46] hover:text-white flex items-center gap-2">
+                                    <span class="inline-flex rounded-full h-2 w-2 bg-yellow-500"></span> Paused
+                                </button>
+                                <button type="submit" name="state" value="disabled" class="text-left px-4 py-2 text-sm text-gray-300 hover:bg-[#3f3f46] hover:text-white flex items-center gap-2">
+                                    <span class="inline-flex rounded-full h-2 w-2 bg-red-500"></span> Disabled
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+
                     <div class="flex items-center gap-2 mr-4">
                         <button hx-post="/sync" hx-target="#sync-result" class="nav-link flex items-center gap-1.5 px-3 py-1.5 bg-[#3f3f46] hover:bg-[#52525b] text-white rounded-md transition-colors text-xs font-medium">
                             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
@@ -49,7 +96,7 @@
                         </button>
                         <button hx-post="/search" hx-target="#sync-result" class="nav-link flex items-center gap-1.5 px-3 py-1.5 bg-[#d40060] hover:bg-[#a3004a] text-white rounded-md transition-colors text-xs font-medium shadow-md shadow-pink-900/20">
                             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
-                            Suchlauf starten
+                            Start Search
                         </button>
                     </div>
                     
@@ -71,7 +118,7 @@
     <div id="sync-result" class="max-w-[1600px] w-full mx-auto px-4 sm:px-6 lg:px-8 mt-4 empty:hidden"></div>
 
     <!-- Main Content -->
-    <main class="flex-1 w-full max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <main class="flex-1 w-full max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-4">
         {% block content %}{% endblock %}
     </main>
 

@@ -43,6 +43,7 @@ class Settings:
     torbox_api_key: str = ""
 
     # Self-Healing & Automation
+    automation_state: str = "active"
     scan_interval_multiplier: int = int(os.getenv("SCAN_INTERVAL_MULTIPLIER", "1"))
     sh_max_retries: int = int(os.getenv("SH_MAX_RETRIES", "3"))
     sh_max_time_hours: float = float(os.getenv("SH_MAX_TIME_HOURS", "12.0"))
@@ -108,6 +109,7 @@ async def reload_settings_from_db(session: AsyncSession) -> None:
             sh_auto_retry=settings.sh_auto_retry,
             sh_retry_wait_hours=settings.sh_retry_wait_hours,
             dry_run=settings.dry_run,
+            automation_state=settings.automation_state,
             scoring_settings=scoring_config
         )
         session.add(db_settings)
@@ -124,6 +126,7 @@ async def reload_settings_from_db(session: AsyncSession) -> None:
     settings.sh_auto_retry = db_settings.sh_auto_retry
     settings.sh_retry_wait_hours = db_settings.sh_retry_wait_hours
     settings.dry_run = db_settings.dry_run
+    settings.automation_state = db_settings.automation_state.value if hasattr(db_settings.automation_state, 'value') else db_settings.automation_state
 
     # Overwrite scoring config cache
     if db_settings.scoring_settings:

@@ -109,7 +109,7 @@
                     <div @click="open = !open" class="p-4 flex items-center justify-between cursor-pointer hover:bg-slate-800/60 transition-colors">
                         <div class="flex items-center gap-3">
                             <svg class="w-5 h-5 text-indigo-400 transform transition-transform duration-200" :class="{'rotate-90': open}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
-                            <span class="font-bold text-slate-100 text-lg">Staffel {{ season.season_number }}</span>
+                            <span class="font-bold text-slate-100 text-lg">Season {{ season.season_number }}</span>
                             <span class="text-xs text-slate-400 bg-slate-800 px-2 py-0.5 rounded border border-slate-700 capitalize">{{ season.status.value }}</span>
                             {% if season.fail_count > 0 %}
                             <span class="bg-red-900 text-white text-[10px] font-bold px-1.5 py-0.5 rounded border border-red-700 cursor-help" title="{{ season.last_error }}">❌ {{ season.fail_count }} Fails</span>
@@ -173,7 +173,7 @@
                            hx-post="/items/{{ item.id }}/toggle_auto_monitor" 
                            class="w-4 h-4 accent-indigo-500 rounded border-slate-600 bg-slate-800"
                            {% if item.auto_monitor_next_season %}checked{% endif %}>
-                    <span>Automatisch nächste Staffel aktivieren, wenn die aktuelle abgeschlossen ist</span>
+                    <span>Automatically activate the next season when the current one is completed</span>
                 </label>
             </div>
             {% endif %}

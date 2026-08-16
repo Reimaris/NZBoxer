@@ -42,6 +42,14 @@ class MediaType(str, enum.Enum):
     ANIME = "anime"
 
 
+class AutomationState(str, enum.Enum):
+    """Global state of background automation runner."""
+
+    ACTIVE = "active"
+    PAUSED = "paused"
+    DISABLED = "disabled"
+
+
 class MediaStatus(str, enum.Enum):
     """Lifecycle status of a MediaItem within NZBoxer."""
 
@@ -109,6 +117,9 @@ class SystemSettings(Base):
     tmdb_api_key: Mapped[str] = mapped_column(String(200), default="")
 
     # Self-Healing & Automation (Defaults)
+    automation_state: Mapped[AutomationState] = mapped_column(
+        Enum(AutomationState), nullable=False, default=AutomationState.ACTIVE, server_default="ACTIVE"
+    )
     scan_interval_multiplier: Mapped[int] = mapped_column(Integer, default=1)
     sh_max_retries: Mapped[int] = mapped_column(Integer, default=3)
     sh_max_time_hours: Mapped[float] = mapped_column(Float, nullable=False, default=12.0)

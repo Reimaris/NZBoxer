@@ -1,1 +1,90 @@
-DEFAULT_SCORING_CONFIG = {'api': {'torbox_base_url': 'https://api.torbox.app/v1', 'simkl_base_url': 'https://api.simkl.com', 'tmdb_base_url': 'https://api.themoviedb.org/3'}, 'automation': {'search_interval_minutes': 30, 'min_age_days': 1, 'auto_send_to_torbox': True, 'auto_monitor_new_seasons': False}, 'scoring': {'resolution': {'2160p': 2000, '1440p': 1500, '1080p': 1000, '720p': 500, '576p': 100, '480p': 100, 'default': 0}, 'video_codec': {'av1': 500, 'hevc': 400, 'h265': 400, 'h264': 200, 'avc': 200, 'xvid': 50, 'divx': 50, 'default': 0}, 'source': {'blu-ray remux': 1000, 'bluray remux': 1000, 'remux': 1000, 'blu-ray': 800, 'bluray': 800, 'uhd bluray': 800, 'uhd-bluray': 800, 'web': 600, 'web-dl': 600, 'webrip': 400, 'hdtv': 200, 'pdtv': 200, 'dvd': 80, 'default': 0}, 'audio_codec': {'truehd atmos': 500, 'dts-hd ma': 400, 'dolby digital plus': 300, 'eac3': 300, 'atmos': 300, 'dts-hd': 400, 'dts': 200, 'ac3': 150, 'dolby digital': 150, 'aac': 100, 'mp3': 50, 'default': 0}, 'audio_channels': {'7.1': 300, '5.1': 200, '2.0': 50, 'default': 0}, 'bitrate_brackets': [{'min_mbps': 80, 'score': 300}, {'min_mbps': 50, 'score': 200}, {'min_mbps': 25, 'score': 100}, {'min_mbps': 10, 'score': 50}, {'min_mbps': 0, 'score': 0}], 'hdr': {'dovi': 400, 'dolby vision': 400, 'hdr10plus': 300, 'hdr10': 300, 'hdr': 300, '10bit': 150, 'default': 0}}, 'cutoffs': {'target_score': 2500, 'upgrade_threshold': 300}, 'release_groups': {'whitelist': ['FraMeSToR', 'SPARKS', 'YIFY', 'FLUX', 'CMRG', 'MZABI', 'BHDStudio', 'playBD', 'DON', 'EVO'], 'whitelist_multiplier': 1.2, 'whitelist_bonus': 0, 'blacklist': ['RARBG-spam', 'scene-nuke', 'ETRG', 'FUM']}, 'filters': {'min_size_mb': 100, 'max_size_gb': 80, 'min_nzb_age_days': 0}, 'language_preferences': {'preferred': ['en'], 'preferred_bonus': 100, 'missing_penalty': 0}}
+DEFAULT_SCORING_CONFIG = {
+    'api': {
+        'torbox_base_url': 'https://api.torbox.app/v1', 
+        'simkl_base_url': 'https://api.simkl.com', 
+        'tmdb_base_url': 'https://api.themoviedb.org/3'
+    }, 
+    'automation': {
+        'search_interval_minutes': 30, 
+        'min_age_days': 1, 
+        'auto_send_to_torbox': True, 
+        'auto_monitor_new_seasons': False
+    }, 
+    'scoring': {
+        'resolution': {
+            '2160p': 2500, 
+            '1440p': 1800, 
+            '1080p': 1200, 
+            '720p': 500, 
+            '480p': 100, 
+            'default': 0
+        }, 
+        'video_codec': {
+            'av1': 500, 
+            'hevc': 400, 'h265': 400, 'h.265': 400,
+            'h264': 200, 'avc': 200, 'h.264': 200,
+            'default': 0
+        }, 
+        'source': {
+            'remux': 1500, 'blu-ray remux': 1500, 'bluray remux': 1500,
+            'bluray': 1000, 'blu-ray': 1000, 'uhd bluray': 1000, 'uhd-bluray': 1000,
+            'web-dl': 800, 'web': 800, 
+            'webrip': 500, 
+            'hdtv': 200, 'pdtv': 200, 
+            'dvd': 0, 
+            'default': 0
+        }, 
+        'hdr': {
+            'dolby vision': 1000, 'dovi': 1000, 
+            'hdr10plus': 700, 'hdr10+': 700, 'hdr10': 700, 'hdr': 700, 
+            '10bit': 300, '10-bit': 300, 
+            'default': 0
+        },
+        'audio_codec': {
+            # Tier 1
+            'truehd atmos': 3800, 'dts:x': 3800, 'auro-3d': 3800, 
+            # Tier 2
+            'dts-hd ma': 3000, 'truehd': 3000, 'lpcm': 3000, 'flac': 3000, 
+            # Tier 3
+            'eac3 atmos': 2000, 'dd+ atmos': 2000, 'dolby digital plus atmos': 2000,
+            # Tier 4
+            'eac3': 1000, 'dolby digital plus': 1000, 'dts': 1000, 'ac3': 1000, 'dolby digital': 1000,
+            # Tier 5
+            'aac': 200, 'opus': 200, 'mp3': 200, 
+            'default': 0
+        }, 
+        'audio_channels': {
+            '7.1': 200, 
+            '5.1': 200, 
+            '2.0': 0, '1.0': 0,
+            'default': 0
+        }, 
+        'bitrate_brackets': [
+            {'min_mbps': 80, 'score': 500}, 
+            {'min_mbps': 50, 'score': 300}, 
+            {'min_mbps': 25, 'score': 150}, 
+            {'min_mbps': 10, 'score': 50}, 
+            {'min_mbps': 0, 'score': 0}
+        ]
+    }, 
+    'cutoffs': {
+        'target_score': 8000, 
+        'upgrade_threshold': 500
+    }, 
+    'release_groups': {
+        'whitelist': [], 
+        'whitelist_multiplier': 1.0, 
+        'whitelist_bonus': 0, 
+        'blacklist': ['rarbg-spam', 'scene-nuke', 'etrg', 'fum']
+    }, 
+    'filters': {
+        'min_size_mb': 100, 
+        'max_size_gb': 80, 
+        'min_nzb_age_days': 0
+    }, 
+    'language_preferences': {
+        'preferred': ['en'], 
+        'preferred_bonus': 0, 
+        'missing_penalty': 0
+    }
+}

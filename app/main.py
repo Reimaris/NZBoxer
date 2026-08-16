@@ -92,6 +92,7 @@ def relative_date(dt: datetime | None) -> str:
         return "Heute"
 
 templates.env.filters["relative_date"] = relative_date
+templates.env.globals["settings"] = settings
 
 
 @asynccontextmanager
@@ -112,6 +113,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     state = {"cycle_count": 0}
 
     async def _orchestrator_job():
+        if settings.automation_state == "disabled":
+            logger.info("Automation is DISABLED. Skipping orchestrator cycle.")
+            return
+
+        if settings.automation_state == "paused":
+            logger.info("Automation is PAUSED. Skipping orchestrator cycle.")
+            return
+
         # Always run self-healing first
         await run_self_healing_cycle()
 
@@ -148,8 +157,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 # FastAPI App
 app = FastAPI(
     title="NZBoxer",
-    description="Automated Usenet NZB search and scoring.",
-    version="0.2.1-beta",
+    description="The definitive self-hosted automation solution for German-language NZB releases.",
+    version="0.2.2-beta",
     lifespan=lifespan,
 )
 
@@ -215,6 +224,171 @@ async def dashboard(request: Request):
             "anime_wanted": anime_stats["wanted"],
         }
     )
+
+@app.get("/manual-search", response_class=HTMLResponse)
+async def manual_search_page(request: Request):
+    """Dedicated dashboard for manual searching with advanced filters."""
+    from app.db.database import async_session_factory
+    from app.db.models import SystemSettings
+    from sqlalchemy import select
+
+    async with async_session_factory() as session:
+        stmt = select(SystemSettings).where(SystemSettings.id == 1)
+        db_settings = (await session.execute(stmt)).scalar_one_or_none()
+        
+        defaults = {}
+        if db_settings and db_settings.scoring_settings:
+            defaults = db_settings.scoring_settings.get("manual_search_defaults", {})
+
+    return templates.TemplateResponse(
+        request=request, name="manual_search.html", context={
+            "defaults": defaults
+        }
+    )
+
+@app.post("/api/search/manual", response_class=HTMLResponse)
+async def manual_search(
+    request: Request,
+    query: str = Form(""),
+    category: str = Form("any"),
+    language: str = Form("any"),
+    resolution: str = Form("any"),
+    source: str = Form("any"),
+    hdr: str = Form("any"),
+    video_codec: str = Form("any"),
+    audio_tier: str = Form("any"),
+    audio_channels: str = Form("any"),
+    limit: int = Form(10),
+    save_defaults: bool = Form(False),
+    season: str = Form(""),
+    episode: str = Form(""),
+    imdb_id: str = Form(""),
+    tmdb_id: str = Form(""),
+    tvdb_id: str = Form("")
+):
+    from app.services import treasure_maps
+    from app.core.parser import parse_release_name
+    from app.core.scorer import score_release
+    from app.db.database import async_session_factory
+    from app.db.models import SystemSettings
+    from sqlalchemy import select
+    import copy
+
+    # Save defaults
+    if save_defaults:
+        async with async_session_factory() as session:
+            stmt = select(SystemSettings).where(SystemSettings.id == 1)
+            db_settings = (await session.execute(stmt)).scalar_one_or_none()
+            if db_settings:
+                new_defaults = {
+                    "category": category,
+                    "language": language,
+                    "resolution": resolution,
+                    "source": source,
+                    "hdr": hdr,
+                    "video_codec": video_codec,
+                    "audio_tier": audio_tier,
+                    "audio_channels": audio_channels,
+                    "limit": limit
+                }
+                current = copy.deepcopy(db_settings.scoring_settings) if db_settings.scoring_settings else {}
+                current["manual_search_defaults"] = new_defaults
+                db_settings.scoring_settings = current
+                await session.commit()
+
+    cat_id = None
+    if category == "movie":
+        cat_id = 2000
+    elif category == "series":
+        cat_id = 5000
+    elif category == "anime":
+        cat_id = 5070
+
+    # Convert numeric fields
+    season_val = int(season) if season and season.isdigit() else None
+    ep_val = None
+    if episode:
+        ep_val = int(episode) if episode.isdigit() else episode
+    tmdb_val = int(tmdb_id) if tmdb_id and tmdb_id.isdigit() else None
+    tvdb_val = int(tvdb_id) if tvdb_id and tvdb_id.isdigit() else None
+    imdb_val = imdb_id if imdb_id else None
+
+    # Call the right function based on inputs
+    if category == "movie":
+        raw_results = await treasure_maps.search_movie(title=query, category=cat_id, tmdb_id=tmdb_val, imdb_id=imdb_val)
+    elif category == "series":
+        raw_results = await treasure_maps.search_show(title=query, category=cat_id, season=season_val, ep=ep_val, tvdb_id=tvdb_val, tmdb_id=tmdb_val, imdb_id=imdb_val)
+    else:
+        raw_results = await treasure_maps.search_raw(
+            query=query, category=cat_id, season=season_val, ep=ep_val, 
+            imdb_id=imdb_val, tmdb_id=tmdb_val, tvdb_id=tvdb_val
+        )
+
+    valid_results = []
+    
+    def is_match(filter_val: str, parsed_val: str | None) -> bool:
+        if filter_val == "any":
+            return True
+        if not parsed_val:
+            return False
+        return filter_val.lower() in parsed_val.lower()
+        
+    def check_audio_tier(filter_val: str, parsed_codec: str | None) -> bool:
+        if filter_val == "any": return True
+        if not parsed_codec: return False
+        pc = parsed_codec.lower()
+        if filter_val == "tier1" and any(x in pc for x in ["truehd", "dts:x", "auro"]): return True
+        if filter_val == "tier2" and any(x in pc for x in ["dts-hd", "lpcm", "flac"]): return True
+        if filter_val == "tier3" and "atmos" in pc and ("eac3" in pc or "dd+" in pc): return True
+        if filter_val == "tier4" and any(x in pc for x in ["eac3", "dts", "ac3", "dolby digital"]): return True
+        if filter_val == "tier5" and any(x in pc for x in ["aac", "opus", "mp3"]): return True
+        return filter_val == "tier1" and "truehd atmos" in pc
+        
+    for item in raw_results:
+        title = item.get("title", "")
+        if not title: continue
+        
+        parsed = parse_release_name(title)
+        
+        # If user specified a season but NO episode, exclude individual episodes
+        if season_val is not None and ep_val is None:
+            if parsed.episode is not None:
+                continue
+
+        if not is_match(resolution, parsed.resolution): continue
+        if not is_match(source, parsed.source): continue
+        if not is_match(hdr, parsed.hdr): continue
+        if not is_match(video_codec, parsed.video_codec): continue
+        if not is_match(audio_channels, parsed.audio_channels): continue
+        if not check_audio_tier(audio_tier, parsed.audio_codec): continue
+        
+        req_lang = language if language != "any" else None
+        
+        sr = score_release(
+            parsed,
+            size_bytes=item.get("size", 0),
+            age_days=0,
+            required_language=req_lang,
+            api_language=item.get("api_language")
+        )
+        
+        if not sr.is_rejected:
+            item["score"] = sr.score
+            item["parsed"] = parsed
+            valid_results.append(item)
+            
+    valid_results.sort(key=lambda x: x["score"], reverse=True)
+    valid_results = valid_results[:limit]
+    
+    if not valid_results:
+        return HTMLResponse(content='<div class="p-6 bg-[#2a2a32] border border-[#3f3f46] rounded-xl text-center text-[#a1a1aa] shadow-lg"><div class="text-4xl mb-4">🛸</div><h3 class="text-xl text-white font-semibold mb-2">No items found</h3><p>Try loosening your search filters.</p></div>')
+        
+    return templates.TemplateResponse(
+        request=request, name="partials/search_results.html", context={
+            "results": valid_results
+        }
+    )
+
 
 
 @app.get("/items/{item_id}", response_class=HTMLResponse)
@@ -429,6 +603,29 @@ async def delete_item(item_id: int):
             await session.commit()
             return HTMLResponse(content='') # Empty response means success (HTMX can remove element)
     return HTMLResponse(content="Error", status_code=400)
+
+@app.post("/api/automation/state")
+async def set_automation_state(state: str = Form(...)):
+    """Set the global automation state."""
+    from app.db.database import async_session_factory
+    from app.db.models import SystemSettings, AutomationState
+    from app.config import reload_settings_from_db
+    from sqlalchemy import select
+
+    valid_states = {"active": AutomationState.ACTIVE, "paused": AutomationState.PAUSED, "disabled": AutomationState.DISABLED}
+    if state not in valid_states:
+        return HTMLResponse(content='<div class="text-red-500">Invalid state</div>', status_code=400)
+        
+    async with async_session_factory() as session:
+        stmt = select(SystemSettings).where(SystemSettings.id == 1)
+        db_settings = (await session.execute(stmt)).scalar_one_or_none()
+        if db_settings:
+            db_settings.automation_state = valid_states[state]
+            await session.commit()
+            await reload_settings_from_db(session)
+            
+    return HTMLResponse(content='<script>window.location.reload();</script>')
+
 
 @app.post("/sync")
 async def sync_watchlist():
@@ -698,11 +895,13 @@ async def save_provider(
     series_category_id: int = Form(5000),
     anime_category_id: int = Form(5070),
     bandwidth_mbit: int = Form(None),
+    
+    # Unified setting for all profiles
+    search_cycle_skip: int = Form(1),
 
     # Profile settings
     enable_movies: bool = Form(False),
     movies_mode: str = Form(""),
-    movies_cycle_skip: int = Form(1),
     movies_resolution: str = Form(""),
     movies_langs: str = Form(""),
     movies_min_mb: int = Form(None),
@@ -712,7 +911,6 @@ async def save_provider(
 
     enable_series: bool = Form(False),
     series_mode: str = Form(""),
-    series_cycle_skip: int = Form(1),
     series_resolution: str = Form(""),
     series_langs: str = Form(""),
     series_min_mb: int = Form(None),
@@ -724,7 +922,6 @@ async def save_provider(
 
     enable_anime: bool = Form(False),
     anime_mode: str = Form(""),
-    anime_cycle_skip: int = Form(1),
     anime_resolution: str = Form(""),
     anime_langs: str = Form(""),
     anime_min_mb: int = Form(None),
@@ -771,7 +968,7 @@ async def save_provider(
                 provider_id=provider.id,
                 media_type="movies",
                 mode=movies_mode,
-                search_cycle_skip=movies_cycle_skip,
+                search_cycle_skip=search_cycle_skip,
                 resolution=movies_resolution,
                 languages_csv=movies_langs,
                 min_mb=movies_min_mb,
@@ -786,7 +983,7 @@ async def save_provider(
                 provider_id=provider.id,
                 media_type="shows",
                 mode=series_mode,
-                search_cycle_skip=series_cycle_skip,
+                search_cycle_skip=search_cycle_skip,
                 resolution=series_resolution,
                 languages_csv=series_langs,
                 min_mb=series_min_mb,
@@ -803,7 +1000,7 @@ async def save_provider(
                 provider_id=provider.id,
                 media_type="anime",
                 mode=anime_mode,
-                search_cycle_skip=anime_cycle_skip,
+                search_cycle_skip=search_cycle_skip,
                 resolution=anime_resolution,
                 languages_csv=anime_langs,
                 min_mb=anime_min_mb,

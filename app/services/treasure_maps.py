@@ -58,12 +58,13 @@ async def search_movie(imdb_id: str | None = None, tmdb_id: int | None = None, t
     return await _execute_search(url, params)
 
 
-async def search_show(tvdb_id: str | int | None = None, tmdb_id: int | None = None, title: str | None = None, season: int | None = None, ep: int | str | None = None, category: int | None = None) -> list[dict[str, Any]]:
+async def search_show(tvdb_id: str | int | None = None, tmdb_id: int | None = None, imdb_id: str | None = None, title: str | None = None, season: int | None = None, ep: int | str | None = None, category: int | None = None) -> list[dict[str, Any]]:
     """Search for a TV show season or episode on the Newznab indexer.
 
     Args:
         tvdb_id: Optional TVDB ID.
         tmdb_id: Optional TMDB ID.
+        imdb_id: Optional IMDB ID.
         title: Show title (used if tvdb_id is not available or for general search).
         season: Season number to search.
         ep: Optional episode number or string (e.g. '1,2,3' or '1').
@@ -94,8 +95,72 @@ async def search_show(tvdb_id: str | int | None = None, tmdb_id: int | None = No
         params["tvdbid"] = tvdb_id
     elif tmdb_id:
         params["tmdbid"] = tmdb_id
-    elif title:
+    elif imdb_id:
+        # Some indexers support imdbid for tvsearch too
+        params["imdbid"] = imdb_id.replace("tt", "") if isinstance(imdb_id, str) else imdb_id
+        
+    if title:
         params["q"] = title
+
+    return await _execute_search(url, params)
+
+
+async def search_raw(
+    query: str | None = None, 
+    category: int | None = None,
+    season: int | None = None,
+    ep: int | str | None = None,
+    imdb_id: str | None = None,
+    tmdb_id: int | None = None,
+    tvdb_id: int | str | None = None
+) -> list[dict[str, Any]]:
+    """Generic search on the Newznab indexer.
+
+    Args:
+        query: Search string.
+        category: Optional TreasureMaps category ID.
+        season: Optional season number.
+        ep: Optional episode number.
+        imdb_id: Optional IMDB ID.
+        tmdb_id: Optional TMDB ID.
+        tvdb_id: Optional TVDB ID.
+
+    Returns:
+        List of search result items.
+    """
+    if not settings.treasure_maps_api_key:
+        logger.warning("Indexer API key missing.")
+        return []
+
+    url = "https://treasure-maps.com/api"
+    
+    # Dynamically determine the best 't' parameter based on what fields we have
+    search_type = "search"
+    if season is not None or ep is not None or tvdb_id is not None:
+        search_type = "tvsearch"
+    elif imdb_id is not None and category == 2000:
+        search_type = "movie"
+        
+    params: dict[str, Any] = {
+        "apikey": settings.treasure_maps_api_key,
+        "t": search_type,
+        "o": "json",
+    }
+    
+    if query:
+        params["q"] = query
+    if category:
+        params["cat"] = category
+    if season is not None:
+        params["season"] = season
+    if ep is not None:
+        params["ep"] = ep
+    if imdb_id:
+        params["imdbid"] = imdb_id.replace("tt", "") if isinstance(imdb_id, str) else imdb_id
+    if tmdb_id:
+        params["tmdbid"] = tmdb_id
+    if tvdb_id:
+        params["tvdbid"] = tvdb_id
 
     return await _execute_search(url, params)
 
