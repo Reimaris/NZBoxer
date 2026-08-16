@@ -20,49 +20,38 @@ NZBoxer is a lightweight, autonomous service that connects Simkl, TMDB, Newznab 
   - Newznab-compatible Indexer (e.g., Treasure Maps)
   - [TorBox](https://torbox.app/)
 
-## Quick Start
+### 1. Installation & Running (Docker Recommended)
 
-### 1. Installation
+The easiest and most robust way to run NZBoxer is using the pre-built Docker image from the GitHub Container Registry. You do not need to install Python or create virtual environments.
 
-Clone the repository and install the dependencies in a virtual environment:
+Simply clone the repository and start the container:
 
 ```bash
-git clone https://github.com/yourusername/NZBoxer.git
+git clone https://github.com/Reimaris/NZBoxer.git
 cd NZBoxer
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
+docker compose up -d
 ```
 
 ### 2. Configuration
 
 All configuration (API Keys, Scoring, Notification Channels) is done directly via the Web UI in the Settings tab. There are no configuration files to manually edit.
 
-### 3. Running the Service
+### 3. Access the Dashboard
 
-#### Option A: Docker Deployment (Recommended)
+Access the dashboard at: [http://localhost:8000/](http://localhost:8000/) and navigate to the **Einstellungen** tab to configure your API keys and scoring preferences.
 
-The easiest and most robust way to run NZBoxer is using the pre-built Docker image from the GitHub Container Registry.
+### Alternative: Local Python Environment
 
-1. **Start the application:**
-   ```bash
-   docker compose up -d
-   ```
-
-2. **Access the Dashboard:**
-   Visit [http://localhost:8000/](http://localhost:8000/) and navigate to the **Einstellungen** tab to configure your API keys and scoring preferences.
-
-#### Option B: Local Python Environment
-
-Start the FastAPI application natively. The background scheduler will automatically start syncing and searching.
+If you prefer to run it locally without Docker:
 
 ```bash
+git clone https://github.com/Reimaris/NZBoxer.git
+cd NZBoxer
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
 uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
-
-### 4. Access the Dashboard
-
-Access the dashboard at: [http://localhost:8000/](http://localhost:8000/)
 
 ## Development & Testing
 
