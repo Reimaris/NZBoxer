@@ -62,23 +62,25 @@ async def send_nzb_link(nzb_url: str) -> dict[str, str | int | None]:
                         "id": resp_data.get("usenet_id") or resp_data.get("id"),
                     }
                 else:
-                    logger.error("TorBox API returned error: %s", result.get("detail"))
-                    return {}
+                    err_msg = result.get("detail") or "TorBox API Error"
+                    logger.error("TorBox API returned error: %s", err_msg)
+                    return {"error": err_msg}
 
             except httpx.HTTPError as e:
                 is_retriable = True
+                err_detail = str(e)
                 if isinstance(e, httpx.HTTPStatusError):
-                    # Nur bei 500, 502, 503, 504 oder 429 einen Retry versuchen
                     if e.response.status_code not in (429, 500, 502, 503, 504):
                         is_retriable = False
+                    try:
+                        err_json = e.response.json()
+                        err_detail = err_json.get("detail") or err_json.get("error") or e.response.text
+                    except Exception:
+                        err_detail = e.response.text
 
                 if not is_retriable:
-                    logger.error(
-                        "Failed to send NZB to TorBox (non-retriable): [%s] %s",
-                        type(e).__name__,
-                        e,
-                    )
-                    return {}
+                    logger.error("TorBox API error (non-retriable): %s", err_detail)
+                    return {"error": str(err_detail)}
 
                 if attempt < max_retries - 1:
                     wait_time = (attempt + 1) * 3
@@ -136,22 +138,25 @@ async def send_magnet_link(magnet_url: str) -> dict[str, str | int | None]:
                         "id": resp_data.get("torrent_id") or resp_data.get("id"),
                     }
                 else:
-                    logger.error("TorBox API returned error: %s", result.get("detail"))
-                    return {}
+                    err_msg = result.get("detail") or "TorBox API Error"
+                    logger.error("TorBox API returned error: %s", err_msg)
+                    return {"error": err_msg}
 
             except httpx.HTTPError as e:
                 is_retriable = True
+                err_detail = str(e)
                 if isinstance(e, httpx.HTTPStatusError):
                     if e.response.status_code not in (429, 500, 502, 503, 504):
                         is_retriable = False
+                    try:
+                        err_json = e.response.json()
+                        err_detail = err_json.get("detail") or err_json.get("error") or e.response.text
+                    except Exception:
+                        err_detail = e.response.text
 
                 if not is_retriable:
-                    logger.error(
-                        "Failed to send Magnet to TorBox (non-retriable): [%s] %s",
-                        type(e).__name__,
-                        e,
-                    )
-                    return {}
+                    logger.error("TorBox API error (non-retriable): %s", err_detail)
+                    return {"error": str(err_detail)}
 
                 if attempt < max_retries - 1:
                     wait_time = (attempt + 1) * 3

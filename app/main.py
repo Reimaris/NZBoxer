@@ -709,9 +709,11 @@ async def manual_push_to_torbox(magnet: str = Form(...)):
                 content='<span class="text-emerald-400 font-medium text-xs px-2 py-1.5 bg-emerald-500/10 border border-emerald-500/20 rounded-md">Sent to TorBox!</span>'
             )
         else:
+            err_msg = result.get("error", "Failed to send") if result else "Failed to send"
+            # Return 400 so the frontend can display the error without triggering a generic 500
             return HTMLResponse(
-                content='<span class="text-red-400 font-medium text-xs px-2 py-1.5 bg-red-500/10 border border-red-500/20 rounded-md">Failed to send</span>',
-                status_code=500,
+                content=f'<span class="text-red-400 font-medium text-xs px-2 py-1.5 bg-red-500/10 border border-red-500/20 rounded-md" title="{err_msg}">{err_msg}</span>',
+                status_code=400,
             )
     except Exception as e:
         logger.error(f"Error in manual_push_to_torbox: {e}")
