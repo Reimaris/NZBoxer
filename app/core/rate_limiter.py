@@ -3,6 +3,7 @@ Async Rate Limiter
 ==================
 Enforces minimum time intervals between outgoing API requests per client.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -41,18 +42,22 @@ class RollingWindowRateLimiter:
     async def wait(self) -> None:
         async with self._lock:
             now = time.monotonic()
-            
+
             # Remove timestamps older than the window
-            self.timestamps = [t for t in self.timestamps if now - t < self.window_seconds]
-            
+            self.timestamps = [
+                t for t in self.timestamps if now - t < self.window_seconds
+            ]
+
             if len(self.timestamps) >= self.limit:
                 # Wait until the oldest timestamp falls out of the window
                 oldest = self.timestamps[0]
                 wait_time = self.window_seconds - (now - oldest)
                 if wait_time > 0:
                     await asyncio.sleep(wait_time)
-                
+
                 now = time.monotonic()
-                self.timestamps = [t for t in self.timestamps if now - t < self.window_seconds]
-                
+                self.timestamps = [
+                    t for t in self.timestamps if now - t < self.window_seconds
+                ]
+
             self.timestamps.append(time.monotonic())

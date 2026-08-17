@@ -8,6 +8,7 @@ the next automation cycle will pick the next best release.
 Also provides run_download_check_cycle() which checks the current TorBox
 download status and transitions DOWNLOADING items to DOWNLOADED/COMPLETED once done.
 """
+
 from __future__ import annotations
 
 import logging
@@ -47,29 +48,67 @@ async def run_self_healing_cycle() -> None:
         logger.info("🔧 Starte Self-Healing-Zyklus...")
 
         async with async_session_factory() as session:
-            stmt = select(MediaItem).where(MediaItem.status == MediaStatus.DOWNLOADING).options(selectinload(MediaItem.download_history))
+            stmt = (
+                select(MediaItem)
+                .where(MediaItem.status == MediaStatus.DOWNLOADING)
+                .options(selectinload(MediaItem.download_history))
+            )
             movies = (await session.execute(stmt)).scalars().all()
 
-            stmt_seasons = select(Season).where(Season.status == SeasonStatus.DOWNLOADING).options(selectinload(Season.download_history), selectinload(Season.media_item))
+            stmt_seasons = (
+                select(Season)
+                .where(Season.status == SeasonStatus.DOWNLOADING)
+                .options(
+                    selectinload(Season.download_history),
+                    selectinload(Season.media_item),
+                )
+            )
             seasons = (await session.execute(stmt_seasons)).scalars().all()
-            
-            stmt_episodes = select(Episode).where(Episode.status == EpisodeStatus.DOWNLOADING).options(selectinload(Episode.download_history), selectinload(Episode.season).selectinload(Season.media_item))
+
+            stmt_episodes = (
+                select(Episode)
+                .where(Episode.status == EpisodeStatus.DOWNLOADING)
+                .options(
+                    selectinload(Episode.download_history),
+                    selectinload(Episode.season).selectinload(Season.media_item),
+                )
+            )
             episodes = (await session.execute(stmt_episodes)).scalars().all()
 
-            items_to_check: list[tuple[MediaItem | Season | Episode, DownloadHistory]] = []
+            items_to_check: list[
+                tuple[MediaItem | Season | Episode, DownloadHistory]
+            ] = []
             for m in movies:
                 if m.download_history:
-                    latest = max(m.download_history, key=lambda h: h.torbox_sent_at or datetime.min.replace(tzinfo=timezone.utc))
+                    latest = max(
+                        m.download_history,
+                        key=lambda h: (
+                            h.torbox_sent_at
+                            or datetime.min.replace(tzinfo=timezone.utc)
+                        ),
+                    )
                     items_to_check.append((m, latest))
 
             for s in seasons:
                 if s.download_history:
-                    latest = max(s.download_history, key=lambda h: h.torbox_sent_at or datetime.min.replace(tzinfo=timezone.utc))
+                    latest = max(
+                        s.download_history,
+                        key=lambda h: (
+                            h.torbox_sent_at
+                            or datetime.min.replace(tzinfo=timezone.utc)
+                        ),
+                    )
                     items_to_check.append((s, latest))
-                    
+
             for e in episodes:
                 if e.download_history:
-                    latest = max(e.download_history, key=lambda h: h.torbox_sent_at or datetime.min.replace(tzinfo=timezone.utc))
+                    latest = max(
+                        e.download_history,
+                        key=lambda h: (
+                            h.torbox_sent_at
+                            or datetime.min.replace(tzinfo=timezone.utc)
+                        ),
+                    )
                     items_to_check.append((e, latest))
 
             for target, history in items_to_check:
@@ -82,14 +121,25 @@ async def run_self_healing_cycle() -> None:
                 logger.debug("TorBox status for %s: %s", history.nzb_title, status)
 
                 if status in ("failed", "error", "not_found"):
-                    logger.warning("⚠️ Self-Healing: Download fehlgeschlagen für %s", history.nzb_title)
+                    logger.warning(
+                        "⚠️ Self-Healing: Download fehlgeschlagen für %s",
+                        history.nzb_title,
+                    )
 
-                    media_item_id = target.id if isinstance(target, MediaItem) else (target.media_item_id if isinstance(target, Season) else target.season.media_item_id)
+                    media_item_id = (
+                        target.id
+                        if isinstance(target, MediaItem)
+                        else (
+                            target.media_item_id
+                            if isinstance(target, Season)
+                            else target.season.media_item_id
+                        )
+                    )
                     blacklist_entry = BlacklistedRelease(
                         media_item_id=media_item_id,
                         nzb_guid=history.nzb_guid,
                         nzb_title=history.nzb_title,
-                        reason=f"TorBox reported status: {status}"
+                        reason=f"TorBox reported status: {status}",
                     )
                     session.add(blacklist_entry)
 
@@ -108,18 +158,33 @@ async def run_self_healing_cycle() -> None:
                         title_for_log = f"{target.season.media_item.title} S{target.season.season_number:02d}E{target.episode_number:02d}"
                         media_item = target.season.media_item
 
-                    profile_stmt = select(ProviderProfile).where(
-                        ProviderProfile.provider_id == media_item.provider_id,
-                        ProviderProfile.media_type == ("movies" if media_item.media_type == MediaType.MOVIE else "shows")
-                    ).options(selectinload(ProviderProfile.notification_channel))
+                    profile_stmt = (
+                        select(ProviderProfile)
+                        .where(
+                            ProviderProfile.provider_id == media_item.provider_id,
+                            ProviderProfile.media_type
+                            == (
+                                "movies"
+                                if media_item.media_type == MediaType.MOVIE
+                                else "shows"
+                            ),
+                        )
+                        .options(selectinload(ProviderProfile.notification_channel))
+                    )
                     profile_res = await session.execute(profile_stmt)
                     profile = profile_res.scalar_one_or_none()
 
                     if profile and profile.notification_channel:
                         channel = profile.notification_channel
-                        if channel.type == "telegram" and channel.bot_token and channel.chat_id:
+                        if (
+                            channel.type == "telegram"
+                            and channel.bot_token
+                            and channel.chat_id
+                        ):
                             msg = f"⚠️ <b>Self-Healing Triggered</b>\n\n<b>{title_for_log}</b>\nTorBox download failed.\n<code>{history.nzb_title}</code> has been blacklisted. The next best release will be grabbed on the next cycle."
-                            await telegram.send_notification(msg, token=channel.bot_token, chat_id=channel.chat_id)
+                            await telegram.send_notification(
+                                msg, token=channel.bot_token, chat_id=channel.chat_id
+                            )
 
             await session.commit()
 
@@ -130,7 +195,7 @@ async def run_self_healing_cycle() -> None:
 
 async def run_download_check_cycle() -> None:
     """Checks TorBox for all DOWNLOADING items and updates their status.
-    
+
     - completed / cached → set to DOWNLOADED or COMPLETED (if score >= target)
     - downloading / queued → leave as DOWNLOADING (still in progress)
     - failed / error / not_found → hand off to self-healing (blacklist + revert)
@@ -145,9 +210,12 @@ async def run_download_check_cycle() -> None:
 
         try:
             import httpx
+
             headers = {"Authorization": f"Bearer {settings.torbox_api_key}"}
             async with httpx.AsyncClient(timeout=15.0) as client:
-                resp = await client.get("https://api.torbox.app/v1/api/usenet/mylist", headers=headers)
+                resp = await client.get(
+                    "https://api.torbox.app/v1/api/usenet/mylist", headers=headers
+                )
                 resp.raise_for_status()
                 tb_data = resp.json()
         except Exception as e:
@@ -164,22 +232,35 @@ async def run_download_check_cycle() -> None:
 
         async with async_session_factory() as session:
             from app.config import scoring_config
+
             cutoffs = scoring_config.get("cutoffs", {})
             target_score = cutoffs.get("target_score", 2500)
 
-            stmt = select(MediaItem).where(
-                MediaItem.status == MediaStatus.DOWNLOADING
-            ).options(selectinload(MediaItem.download_history))
+            stmt = (
+                select(MediaItem)
+                .where(MediaItem.status == MediaStatus.DOWNLOADING)
+                .options(selectinload(MediaItem.download_history))
+            )
             movies = (await session.execute(stmt)).scalars().all()
 
-            stmt_s = select(Season).where(
-                Season.status == SeasonStatus.DOWNLOADING
-            ).options(selectinload(Season.download_history), selectinload(Season.media_item))
+            stmt_s = (
+                select(Season)
+                .where(Season.status == SeasonStatus.DOWNLOADING)
+                .options(
+                    selectinload(Season.download_history),
+                    selectinload(Season.media_item),
+                )
+            )
             seasons = (await session.execute(stmt_s)).scalars().all()
-            
-            stmt_e = select(Episode).where(
-                Episode.status == EpisodeStatus.DOWNLOADING
-            ).options(selectinload(Episode.download_history), selectinload(Episode.season).selectinload(Season.media_item))
+
+            stmt_e = (
+                select(Episode)
+                .where(Episode.status == EpisodeStatus.DOWNLOADING)
+                .options(
+                    selectinload(Episode.download_history),
+                    selectinload(Episode.season).selectinload(Season.media_item),
+                )
+            )
             episodes = (await session.execute(stmt_e)).scalars().all()
 
             def _get_tb_status(history: DownloadHistory) -> tuple[str, dict]:
@@ -191,32 +272,57 @@ async def run_download_check_cycle() -> None:
                 return tb.get("download_state", "unknown"), tb
 
             changed = 0
-            
-            def _handle_status_update(target, history, status, title, media_item_id, searching_status, completed_status, downloaded_status):
+
+            def _handle_status_update(
+                target,
+                history,
+                status,
+                title,
+                media_item_id,
+                searching_status,
+                completed_status,
+                downloaded_status,
+            ):
                 nonlocal changed
                 if status in ("completed", "cached", "paused"):
-                    is_completed = (history.score is not None and history.score >= target_score)
-                    final_status = completed_status if is_completed else downloaded_status
+                    is_completed = (
+                        history.score is not None and history.score >= target_score
+                    )
+                    final_status = (
+                        completed_status if is_completed else downloaded_status
+                    )
                     status_str = "COMPLETED" if is_completed else "DOWNLOADED"
-                    logger.info("    ✅ %s → %s (TorBox: %s)", title, status_str, status)
+                    logger.info(
+                        "    ✅ %s → %s (TorBox: %s)", title, status_str, status
+                    )
                     target.status = final_status
                     changed += 1
                 elif status in ("failed", "error"):
-                    logger.warning("    ⚠️ %s → fehlgeschlagen (%s), wird erneut gesucht.", title, status)
+                    logger.warning(
+                        "    ⚠️ %s → fehlgeschlagen (%s), wird erneut gesucht.",
+                        title,
+                        status,
+                    )
                     bl = BlacklistedRelease(
                         media_item_id=media_item_id,
                         nzb_guid=history.nzb_guid,
                         nzb_title=history.nzb_title,
-                        reason=f"TorBox: {status}"
+                        reason=f"TorBox: {status}",
                     )
                     session.add(bl)
                     # We cannot await inside this sync helper, so we mark it for deletion outside
-                    return True # mark as failed
+                    return True  # mark as failed
                 elif status == "not_found":
-                    is_completed = (history.score is not None and history.score >= target_score)
-                    final_status = completed_status if is_completed else downloaded_status
+                    is_completed = (
+                        history.score is not None and history.score >= target_score
+                    )
+                    final_status = (
+                        completed_status if is_completed else downloaded_status
+                    )
                     status_str = "COMPLETED" if is_completed else "DOWNLOADED"
-                    logger.info("    ✅ %s → %s (nicht mehr in TorBox-Liste)", title, status_str)
+                    logger.info(
+                        "    ✅ %s → %s (nicht mehr in TorBox-Liste)", title, status_str
+                    )
                     target.status = final_status
                     changed += 1
                 else:
@@ -226,9 +332,23 @@ async def run_download_check_cycle() -> None:
             for movie in movies:
                 if not movie.download_history:
                     continue
-                latest = max(movie.download_history, key=lambda h: h.torbox_sent_at or datetime.min.replace(tzinfo=timezone.utc))
+                latest = max(
+                    movie.download_history,
+                    key=lambda h: (
+                        h.torbox_sent_at or datetime.min.replace(tzinfo=timezone.utc)
+                    ),
+                )
                 status, tb = _get_tb_status(latest)
-                if _handle_status_update(movie, latest, status, movie.title, movie.id, MediaStatus.SEARCHING, MediaStatus.COMPLETED, MediaStatus.DOWNLOADED):
+                if _handle_status_update(
+                    movie,
+                    latest,
+                    status,
+                    movie.title,
+                    movie.id,
+                    MediaStatus.SEARCHING,
+                    MediaStatus.COMPLETED,
+                    MediaStatus.DOWNLOADED,
+                ):
                     await session.delete(latest)
                     movie.status = MediaStatus.SEARCHING
                     changed += 1
@@ -236,21 +356,49 @@ async def run_download_check_cycle() -> None:
             for season in seasons:
                 if not season.download_history:
                     continue
-                latest = max(season.download_history, key=lambda h: h.torbox_sent_at or datetime.min.replace(tzinfo=timezone.utc))
+                latest = max(
+                    season.download_history,
+                    key=lambda h: (
+                        h.torbox_sent_at or datetime.min.replace(tzinfo=timezone.utc)
+                    ),
+                )
                 status, tb = _get_tb_status(latest)
                 title = f"{season.media_item.title} S{season.season_number:02d}"
-                if _handle_status_update(season, latest, status, title, season.media_item_id, SeasonStatus.SEARCHING, SeasonStatus.COMPLETED, SeasonStatus.DOWNLOADED):
+                if _handle_status_update(
+                    season,
+                    latest,
+                    status,
+                    title,
+                    season.media_item_id,
+                    SeasonStatus.SEARCHING,
+                    SeasonStatus.COMPLETED,
+                    SeasonStatus.DOWNLOADED,
+                ):
                     await session.delete(latest)
                     season.status = SeasonStatus.SEARCHING
                     changed += 1
-                    
+
             for episode in episodes:
                 if not episode.download_history:
                     continue
-                latest = max(episode.download_history, key=lambda h: h.torbox_sent_at or datetime.min.replace(tzinfo=timezone.utc))
+                latest = max(
+                    episode.download_history,
+                    key=lambda h: (
+                        h.torbox_sent_at or datetime.min.replace(tzinfo=timezone.utc)
+                    ),
+                )
                 status, tb = _get_tb_status(latest)
                 title = f"{episode.season.media_item.title} S{episode.season.season_number:02d}E{episode.episode_number:02d}"
-                if _handle_status_update(episode, latest, status, title, episode.season.media_item_id, EpisodeStatus.SEARCHING, EpisodeStatus.COMPLETED, EpisodeStatus.DOWNLOADED):
+                if _handle_status_update(
+                    episode,
+                    latest,
+                    status,
+                    title,
+                    episode.season.media_item_id,
+                    EpisodeStatus.SEARCHING,
+                    EpisodeStatus.COMPLETED,
+                    EpisodeStatus.DOWNLOADED,
+                ):
                     await session.delete(latest)
                     episode.status = EpisodeStatus.SEARCHING
                     changed += 1
@@ -258,7 +406,9 @@ async def run_download_check_cycle() -> None:
             await session.commit()
 
         if changed:
-            logger.info("🔎 Download-Check abgeschlossen: %d Status aktualisiert.", changed)
+            logger.info(
+                "🔎 Download-Check abgeschlossen: %d Status aktualisiert.", changed
+            )
         else:
             logger.info("🔎 Download-Check abgeschlossen: Keine Änderungen.")
     finally:

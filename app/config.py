@@ -11,6 +11,7 @@ Usage::
     print(settings.database_url)
     print(scoring_config["scoring"]["resolution"]["1080p"])
 """
+
 from __future__ import annotations
 
 import logging
@@ -35,7 +36,9 @@ class Settings:
 
     # --- Database ---
     # Default to a local SQLite database in the config volume mapping
-    database_url: str = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./config/nzboxer.db")
+    database_url: str = os.getenv(
+        "DATABASE_URL", "sqlite+aiosqlite:///./config/nzboxer.db"
+    )
 
     # --- API Keys (Now populated entirely from the DB on startup) ---
     tmdb_api_key: str = ""
@@ -74,6 +77,7 @@ def get_scoring_config() -> dict[str, Any]:
     """
     # Create a fresh copy to prevent mutating the default imported dict
     import copy
+
     return copy.deepcopy(DEFAULT_SCORING_CONFIG)
 
 
@@ -84,7 +88,7 @@ scoring_config: dict[str, Any] = get_scoring_config()
 
 async def reload_settings_from_db(session: AsyncSession) -> None:
     """Load settings from the SQLite database and update the global cache.
-    
+
     If the SystemSettings row does not exist, it will be created using the
     current in-memory defaults.
     """
@@ -110,7 +114,7 @@ async def reload_settings_from_db(session: AsyncSession) -> None:
             sh_retry_wait_hours=settings.sh_retry_wait_hours,
             dry_run=settings.dry_run,
             automation_state=settings.automation_state,
-            scoring_settings=scoring_config
+            scoring_settings=scoring_config,
         )
         session.add(db_settings)
         await session.commit()
@@ -126,7 +130,11 @@ async def reload_settings_from_db(session: AsyncSession) -> None:
     settings.sh_auto_retry = db_settings.sh_auto_retry
     settings.sh_retry_wait_hours = db_settings.sh_retry_wait_hours
     settings.dry_run = db_settings.dry_run
-    settings.automation_state = db_settings.automation_state.value if hasattr(db_settings.automation_state, 'value') else db_settings.automation_state
+    settings.automation_state = (
+        db_settings.automation_state.value
+        if hasattr(db_settings.automation_state, "value")
+        else db_settings.automation_state
+    )
 
     # Overwrite scoring config cache
     if db_settings.scoring_settings:

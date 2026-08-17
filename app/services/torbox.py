@@ -4,6 +4,7 @@ TorBox API Client
 Integrates with the TorBox API to check cache (if applicable) and send
 NZBs for downloading.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -16,11 +17,10 @@ from app.config import settings
 from app.core.rate_limiter import RateLimiter, RollingWindowRateLimiter
 
 logger = logging.getLogger(__name__)
-_send_limiter = RollingWindowRateLimiter(60, 3600.0) # 60/hour rolling window limit
+_send_limiter = RollingWindowRateLimiter(60, 3600.0)  # 60/hour rolling window limit
 _poll_limiter = RateLimiter(10.0)
 
 TORBOX_BASE_URL = "https://api.torbox.app/v1"
-
 
 
 class TorBoxError(Exception):
@@ -42,13 +42,9 @@ async def send_nzb_link(nzb_url: str) -> dict[str, str | int | None]:
 
     url = f"{TORBOX_BASE_URL}/api/usenet/createusenetdownload"
 
-    headers = {
-        "Authorization": f"Bearer {settings.torbox_api_key}"
-    }
+    headers = {"Authorization": f"Bearer {settings.torbox_api_key}"}
 
-    data = {
-        "link": nzb_url
-    }
+    data = {"link": nzb_url}
 
     max_retries = 3
     for attempt in range(max_retries):
@@ -63,7 +59,7 @@ async def send_nzb_link(nzb_url: str) -> dict[str, str | int | None]:
                     resp_data = result.get("data", {})
                     return {
                         "hash": resp_data.get("hash"),
-                        "id": resp_data.get("usenet_id") or resp_data.get("id")
+                        "id": resp_data.get("usenet_id") or resp_data.get("id"),
                     }
                 else:
                     logger.error("TorBox API returned error: %s", result.get("detail"))
@@ -75,17 +71,31 @@ async def send_nzb_link(nzb_url: str) -> dict[str, str | int | None]:
                     # Nur bei 500, 502, 503, 504 oder 429 einen Retry versuchen
                     if e.response.status_code not in (429, 500, 502, 503, 504):
                         is_retriable = False
-                
+
                 if not is_retriable:
-                    logger.error("Failed to send NZB to TorBox (non-retriable): [%s] %s", type(e).__name__, e)
+                    logger.error(
+                        "Failed to send NZB to TorBox (non-retriable): [%s] %s",
+                        type(e).__name__,
+                        e,
+                    )
                     return {}
-                
+
                 if attempt < max_retries - 1:
                     wait_time = (attempt + 1) * 3
-                    logger.warning("Failed to send NZB to TorBox: [%s] %s. Retrying in %ss...", type(e).__name__, e, wait_time)
+                    logger.warning(
+                        "Failed to send NZB to TorBox: [%s] %s. Retrying in %ss...",
+                        type(e).__name__,
+                        e,
+                        wait_time,
+                    )
                     await asyncio.sleep(wait_time)
                 else:
-                    logger.error("Failed to send NZB to TorBox after %d attempts: [%s] %s", max_retries, type(e).__name__, e)
+                    logger.error(
+                        "Failed to send NZB to TorBox after %d attempts: [%s] %s",
+                        max_retries,
+                        type(e).__name__,
+                        e,
+                    )
                     return {}
 
     return {}
@@ -106,13 +116,9 @@ async def send_magnet_link(magnet_url: str) -> dict[str, str | int | None]:
 
     url = f"{TORBOX_BASE_URL}/api/torrents/createtorrent"
 
-    headers = {
-        "Authorization": f"Bearer {settings.torbox_api_key}"
-    }
+    headers = {"Authorization": f"Bearer {settings.torbox_api_key}"}
 
-    data = {
-        "magnet": magnet_url
-    }
+    data = {"magnet": magnet_url}
 
     max_retries = 3
     for attempt in range(max_retries):
@@ -127,7 +133,7 @@ async def send_magnet_link(magnet_url: str) -> dict[str, str | int | None]:
                     resp_data = result.get("data", {})
                     return {
                         "hash": resp_data.get("hash"),
-                        "id": resp_data.get("torrent_id") or resp_data.get("id")
+                        "id": resp_data.get("torrent_id") or resp_data.get("id"),
                     }
                 else:
                     logger.error("TorBox API returned error: %s", result.get("detail"))
@@ -138,17 +144,31 @@ async def send_magnet_link(magnet_url: str) -> dict[str, str | int | None]:
                 if isinstance(e, httpx.HTTPStatusError):
                     if e.response.status_code not in (429, 500, 502, 503, 504):
                         is_retriable = False
-                
+
                 if not is_retriable:
-                    logger.error("Failed to send Magnet to TorBox (non-retriable): [%s] %s", type(e).__name__, e)
+                    logger.error(
+                        "Failed to send Magnet to TorBox (non-retriable): [%s] %s",
+                        type(e).__name__,
+                        e,
+                    )
                     return {}
-                
+
                 if attempt < max_retries - 1:
                     wait_time = (attempt + 1) * 3
-                    logger.warning("Failed to send Magnet to TorBox: [%s] %s. Retrying in %ss...", type(e).__name__, e, wait_time)
+                    logger.warning(
+                        "Failed to send Magnet to TorBox: [%s] %s. Retrying in %ss...",
+                        type(e).__name__,
+                        e,
+                        wait_time,
+                    )
                     await asyncio.sleep(wait_time)
                 else:
-                    logger.error("Failed to send Magnet to TorBox after %d attempts: [%s] %s", max_retries, type(e).__name__, e)
+                    logger.error(
+                        "Failed to send Magnet to TorBox after %d attempts: [%s] %s",
+                        max_retries,
+                        type(e).__name__,
+                        e,
+                    )
                     return {}
 
     return {}
@@ -156,10 +176,10 @@ async def send_magnet_link(magnet_url: str) -> dict[str, str | int | None]:
 
 async def check_download_status(download_id: str | int) -> dict[str, Any]:
     """Check the status of a specific TorBox download.
-    
+
     Args:
         download_id: The TorBox ID for the download.
-        
+
     Returns:
         A dictionary containing "status" and "detail". Status can be:
         "completed", "downloading", "failed", "error", etc.
@@ -168,9 +188,7 @@ async def check_download_status(download_id: str | int) -> dict[str, Any]:
         return {"status": "error", "detail": "Missing API key"}
 
     url = f"{TORBOX_BASE_URL}/api/usenet/mylist"
-    headers = {
-        "Authorization": f"Bearer {settings.torbox_api_key}"
-    }
+    headers = {"Authorization": f"Bearer {settings.torbox_api_key}"}
 
     await _poll_limiter.wait()
     async with httpx.AsyncClient(timeout=15.0) as client:
@@ -191,9 +209,12 @@ async def check_download_status(download_id: str | int) -> dict[str, Any]:
                         return {
                             "status": d.get("download_state", "unknown"),
                             "progress": d.get("progress", 0),
-                            "detail": d.get("name", "")
+                            "detail": d.get("name", ""),
                         }
-                return {"status": "not_found", "detail": "Download ID not found in TorBox"}
+                return {
+                    "status": "not_found",
+                    "detail": "Download ID not found in TorBox",
+                }
             else:
                 return {"status": "error", "detail": result.get("detail")}
 

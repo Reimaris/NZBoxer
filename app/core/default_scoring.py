@@ -1,90 +1,107 @@
 DEFAULT_SCORING_CONFIG = {
-    'api': {
-        'torbox_base_url': 'https://api.torbox.app/v1', 
-        'simkl_base_url': 'https://api.simkl.com', 
-        'tmdb_base_url': 'https://api.themoviedb.org/3'
-    }, 
-    'automation': {
-        'search_interval_minutes': 30, 
-        'min_age_days': 1, 
-        'auto_send_to_torbox': True, 
-        'auto_monitor_new_seasons': False
-    }, 
-    'scoring': {
-        'resolution': {
-            '2160p': 2500, 
-            '1440p': 1800, 
-            '1080p': 1200, 
-            '720p': 500, 
-            '480p': 100, 
-            'default': 0
-        }, 
-        'video_codec': {
-            'av1': 500, 
-            'hevc': 400, 'h265': 400, 'h.265': 400,
-            'h264': 200, 'avc': 200, 'h.264': 200,
-            'default': 0
-        }, 
-        'source': {
-            'remux': 1500, 'blu-ray remux': 1500, 'bluray remux': 1500,
-            'bluray': 1000, 'blu-ray': 1000, 'uhd bluray': 1000, 'uhd-bluray': 1000,
-            'web-dl': 800, 'web': 800, 
-            'webrip': 500, 
-            'hdtv': 200, 'pdtv': 200, 
-            'dvd': 0, 
-            'default': 0
-        }, 
-        'hdr': {
-            'dolby vision': 1000, 'dovi': 1000, 
-            'hdr10plus': 700, 'hdr10+': 700, 'hdr10': 700, 'hdr': 700, 
-            '10bit': 300, '10-bit': 300, 
-            'default': 0
+    "api": {
+        "torbox_base_url": "https://api.torbox.app/v1",
+        "simkl_base_url": "https://api.simkl.com",
+        "tmdb_base_url": "https://api.themoviedb.org/3",
+    },
+    "automation": {
+        "search_interval_minutes": 30,
+        "min_age_days": 1,
+        "auto_send_to_torbox": True,
+        "auto_monitor_new_seasons": False,
+    },
+    "scoring": {
+        "resolution": {
+            "2160p": 2500,
+            "1440p": 1800,
+            "1080p": 1200,
+            "720p": 500,
+            "480p": 100,
+            "default": 0,
         },
-        'audio_codec': {
+        "video_codec": {
+            "av1": 500,
+            "hevc": 400,
+            "h265": 400,
+            "h.265": 400,
+            "h264": 200,
+            "avc": 200,
+            "h.264": 200,
+            "default": 0,
+        },
+        "source": {
+            "remux": 1500,
+            "blu-ray remux": 1500,
+            "bluray remux": 1500,
+            "bluray": 1000,
+            "blu-ray": 1000,
+            "uhd bluray": 1000,
+            "uhd-bluray": 1000,
+            "web-dl": 800,
+            "web": 800,
+            "webrip": 500,
+            "hdtv": 200,
+            "pdtv": 200,
+            "dvd": 0,
+            "default": 0,
+        },
+        "hdr": {
+            "dolby vision": 1000,
+            "dovi": 1000,
+            "hdr10plus": 700,
+            "hdr10+": 700,
+            "hdr10": 700,
+            "hdr": 700,
+            "10bit": 300,
+            "10-bit": 300,
+            "default": 0,
+        },
+        "audio_codec": {
             # Tier 1
-            'truehd atmos': 3800, 'dts:x': 3800, 'auro-3d': 3800, 
+            "truehd atmos": 3800,
+            "dts:x": 3800,
+            "auro-3d": 3800,
             # Tier 2
-            'dts-hd ma': 3000, 'truehd': 3000, 'lpcm': 3000, 'flac': 3000, 
+            "dts-hd ma": 3000,
+            "truehd": 3000,
+            "lpcm": 3000,
+            "flac": 3000,
             # Tier 3
-            'eac3 atmos': 2000, 'dd+ atmos': 2000, 'dolby digital plus atmos': 2000,
+            "eac3 atmos": 2000,
+            "dd+ atmos": 2000,
+            "dolby digital plus atmos": 2000,
             # Tier 4
-            'eac3': 1000, 'dolby digital plus': 1000, 'dts': 1000, 'ac3': 1000, 'dolby digital': 1000,
+            "eac3": 1000,
+            "dolby digital plus": 1000,
+            "dts": 1000,
+            "ac3": 1000,
+            "dolby digital": 1000,
             # Tier 5
-            'aac': 200, 'opus': 200, 'mp3': 200, 
-            'default': 0
-        }, 
-        'audio_channels': {
-            '7.1': 200, 
-            '5.1': 200, 
-            '2.0': 0, '1.0': 0,
-            'default': 0
-        }, 
-        'bitrate_brackets': [
-            {'min_mbps': 80, 'score': 500}, 
-            {'min_mbps': 50, 'score': 300}, 
-            {'min_mbps': 25, 'score': 150}, 
-            {'min_mbps': 10, 'score': 50}, 
-            {'min_mbps': 0, 'score': 0}
-        ]
-    }, 
-    'cutoffs': {
-        'target_score': 8000, 
-        'upgrade_threshold': 500
-    }, 
-    'release_groups': {
-        'whitelist': [], 
-        'whitelist_multiplier': 1.0, 
-        'whitelist_bonus': 0, 
-        'blacklist': ['rarbg-spam', 'scene-nuke', 'etrg', 'fum']
-    }, 
-    'filters': {
-        'min_size_mb': 100, 
-        'max_size_gb': 80, 
-        'min_nzb_age_days': 0
-    }, 
-    'language_preferences': {
-        'preferred': ['en'], 
-        'preferred_bonus': 0, 
-        'missing_penalty': 0
-    }
+            "aac": 200,
+            "opus": 200,
+            "mp3": 200,
+            "default": 0,
+        },
+        "audio_channels": {"7.1": 200, "5.1": 200, "2.0": 0, "1.0": 0, "default": 0},
+        "bitrate_brackets": [
+            {"min_mbps": 80, "score": 500},
+            {"min_mbps": 50, "score": 300},
+            {"min_mbps": 25, "score": 150},
+            {"min_mbps": 10, "score": 50},
+            {"min_mbps": 0, "score": 0},
+        ],
+    },
+    "cutoffs": {"target_score": 8000, "upgrade_threshold": 500},
+    "release_groups": {
+        "whitelist": [],
+        "whitelist_multiplier": 1.0,
+        "whitelist_bonus": 0,
+        "blacklist": ["rarbg-spam", "scene-nuke", "etrg", "fum"],
+    },
+    "filters": {"min_size_mb": 100, "max_size_gb": 80, "min_nzb_age_days": 0},
+    "language_preferences": {
+        "preferred": ["en"],
+        "preferred_bonus": 0,
+        "missing_penalty": 0,
+    },
 }

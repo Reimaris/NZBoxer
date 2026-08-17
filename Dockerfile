@@ -1,4 +1,4 @@
-FROM python:3.11-slim
+FROM python:3.12-slim
 
 # Prevent Python from writing pyc files to disc
 ENV PYTHONDONTWRITEBYTECODE=1
@@ -19,8 +19,14 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the rest of the application
 COPY . .
 
-# Create a data directory for the SQLite database
-RUN mkdir -p /app/data
+# Create a data directory for the SQLite database and create a non-root user
+RUN mkdir -p /app/data && \
+    mkdir -p /app/config && \
+    useradd -m -s /bin/bash appuser && \
+    chown -R appuser:appuser /app
+
+# Switch to non-root user
+USER appuser
 
 # Expose port
 EXPOSE 8000

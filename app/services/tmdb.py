@@ -4,6 +4,7 @@ TMDB API Client
 Fetches release dates for movies (specifically digital release - type 4)
 and metadata for TV shows (episode counts, first air dates).
 """
+
 from __future__ import annotations
 
 import logging
@@ -19,7 +20,6 @@ logger = logging.getLogger(__name__)
 _limiter = RateLimiter(0.1)
 
 TMDB_BASE_URL = "https://api.themoviedb.org/3"
-
 
 
 class TMDBError(Exception):
@@ -157,13 +157,17 @@ async def get_season_details(tmdb_id: int, season_number: int) -> dict[str, Any]
             response.raise_for_status()
             return response.json()
         except httpx.HTTPError as e:
-            logger.error("TMDB season details error for %d S%d: %s", tmdb_id, season_number, e)
+            logger.error(
+                "TMDB season details error for %d S%d: %s", tmdb_id, season_number, e
+            )
             return None
 
 
-async def find_by_external_id(external_id: str, source: str = "imdb_id") -> dict[str, Any] | None:
+async def find_by_external_id(
+    external_id: str, source: str = "imdb_id"
+) -> dict[str, Any] | None:
     """Find TMDB metadata by an external ID (e.g. imdb_id).
-    
+
     Returns a dictionary with 'type' ('movie' or 'tv') and 'id' (the TMDB ID),
     or None if not found.
     """
@@ -185,12 +189,12 @@ async def find_by_external_id(external_id: str, source: str = "imdb_id") -> dict
             response = await client.get(url, params=params, headers=headers)
             response.raise_for_status()
             data = response.json()
-            
+
             if data.get("movie_results"):
                 return {"type": "movie", "id": data["movie_results"][0]["id"]}
             elif data.get("tv_results"):
                 return {"type": "tv", "id": data["tv_results"][0]["id"]}
-                
+
             return None
         except httpx.HTTPError as e:
             logger.error("TMDB find error for %s (%s): %s", external_id, source, e)

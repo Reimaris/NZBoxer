@@ -3,6 +3,7 @@ Release Name Parser
 ===================
 Uses `guessit` to extract structured metadata from raw NZB release names.
 """
+
 from __future__ import annotations
 
 import logging
@@ -16,6 +17,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class ParsedRelease:
     """Structured representation of an NZB release."""
+
     original_title: str
     title: str | None
     year: int | None
@@ -90,8 +92,9 @@ def parse_release_name(release_name: str) -> ParsedRelease:
         audio_channels=_get_str("audio_channels"),
         source=_get_str("source"),
         release_group=_get_str("release_group"),
-        hdr=_get_str("color_depth") or _get_str("other"), # Guessit sometimes puts HDR in 'other'
+        hdr=_get_str("color_depth")
+        or _get_str("other"),  # Guessit sometimes puts HDR in 'other'
         languages=languages,
         season=_get_int("season"),
-        episode=_get_int("episode")
+        episode=_get_int("episode"),
     )

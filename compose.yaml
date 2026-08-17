@@ -1,8 +1,5 @@
 services:
   nzboxer:
-    build:
-      context: .
-      dockerfile: Dockerfile
     image: ghcr.io/reimaris/nzboxer:latest
     container_name: nzboxer
     ports:

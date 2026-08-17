@@ -4,6 +4,7 @@ Scoring Engine
 Calculates a numerical score for a parsed release based on `config.yaml`.
 Evaluates whitelists, blacklists, and minimum constraints.
 """
+
 from __future__ import annotations
 
 import logging
@@ -18,13 +19,16 @@ logger = logging.getLogger(__name__)
 @dataclass
 class ScoreResult:
     """Result of scoring an NZB release."""
+
     score: float
     is_rejected: bool
     reject_reason: str | None
     bitrate_mbps: float | None
 
 
-def calculate_bitrate_mbps(size_bytes: int, runtime_minutes: int | None) -> float | None:
+def calculate_bitrate_mbps(
+    size_bytes: int, runtime_minutes: int | None
+) -> float | None:
     """Calculate the average bitrate in Megabits per second."""
     if not size_bytes or not runtime_minutes or runtime_minutes <= 0:
         return None
@@ -46,7 +50,7 @@ def score_release(
     expected_season: int | None = None,
     expected_episode: int | None = None,
     required_language: str | None = None,
-    api_language: str | None = None
+    api_language: str | None = None,
 ) -> ScoreResult:
     """Calculate the score for a parsed release."""
     # 1. Apply hard filters (size, age, blacklist)
@@ -59,52 +63,81 @@ def score_release(
     size_gb = size_mb / 1024
 
     if size_mb < min_size_mb:
-        return ScoreResult(0, True, f"Too small: {size_mb:.1f}MB < {min_size_mb}MB", None)
+        return ScoreResult(
+            0, True, f"Too small: {size_mb:.1f}MB < {min_size_mb}MB", None
+        )
     if size_gb > max_size_gb:
-        return ScoreResult(0, True, f"Too large: {size_gb:.1f}GB > {max_size_gb}GB", None)
+        return ScoreResult(
+            0, True, f"Too large: {size_gb:.1f}GB > {max_size_gb}GB", None
+        )
     if age_days < min_nzb_age:
         return ScoreResult(0, True, f"Too new: {age_days}d < {min_nzb_age}d", None)
 
     # Title matching
     if expected_title and parsed.title:
         import re
+
         def normalize(t: str) -> str:
             # Remove punctuation and lowercase
-            return re.sub(r'[^a-z0-9]', '', t.lower())
-        
+            return re.sub(r"[^a-z0-9]", "", t.lower())
+
         norm_expected = normalize(expected_title)
         norm_parsed = normalize(parsed.title)
-        
+
         match_found = (norm_expected in norm_parsed) or (norm_parsed in norm_expected)
-        
+
         if not match_found and expected_alt_title:
             norm_alt = normalize(expected_alt_title)
             match_found = (norm_alt in norm_parsed) or (norm_parsed in norm_alt)
-            
+
         if not match_found:
-            return ScoreResult(0, True, f"Title mismatch: '{parsed.title}' vs '{expected_title}' (alt: '{expected_alt_title}')", None)
+            return ScoreResult(
+                0,
+                True,
+                f"Title mismatch: '{parsed.title}' vs '{expected_title}' (alt: '{expected_alt_title}')",
+                None,
+            )
 
     # Year matching (allow +/- 1 year tolerance for movies)
     if expected_year and parsed.year:
         if abs(parsed.year - expected_year) > 1:
-            return ScoreResult(0, True, f"Year mismatch: {parsed.year} != {expected_year}", None)
+            return ScoreResult(
+                0, True, f"Year mismatch: {parsed.year} != {expected_year}", None
+            )
 
     # Season and Episode matching
     if expected_season is not None:
         if parsed.season and parsed.season != expected_season:
-            return ScoreResult(0, True, f"Season mismatch: {parsed.season} != {expected_season}", None)
-        
+            return ScoreResult(
+                0, True, f"Season mismatch: {parsed.season} != {expected_season}", None
+            )
+
         if expected_episode is not None:
             # We are looking for a specific episode
             if parsed.episode and parsed.episode != expected_episode:
-                return ScoreResult(0, True, f"Episode mismatch: {parsed.episode} != {expected_episode}", None)
+                return ScoreResult(
+                    0,
+                    True,
+                    f"Episode mismatch: {parsed.episode} != {expected_episode}",
+                    None,
+                )
             if not parsed.episode:
                 # If we expect an episode but none is found, it might be a season pack or misparsed
-                return ScoreResult(0, True, f"Missing episode in release name, expected {expected_episode}", None)
+                return ScoreResult(
+                    0,
+                    True,
+                    f"Missing episode in release name, expected {expected_episode}",
+                    None,
+                )
         else:
             # We are looking for a season pack. Reject if it's a single episode!
             if parsed.episode is not None:
-                return ScoreResult(0, True, f"Rejected single episode {parsed.episode} for season pack search", None)
+                return ScoreResult(
+                    0,
+                    True,
+                    f"Rejected single episode {parsed.episode} for season pack search",
+                    None,
+                )
 
     # Language check — normalize common variants then hard-reject if language not present
     # We check both the parsed languages from the title and the api_language provided by the indexer.
@@ -112,38 +145,61 @@ def score_release(
     # the user specifically wants a non-English release, OR we just let it pass if no language could be identified.
     # Wait, the user requirement: "Nur Releases mit dieser Sprache werden akzeptiert. Releases ohne erkennbare Sprache werden nicht abgelehnt."
     has_any_language_identified = bool(parsed.languages) or bool(api_language)
-    
+
     if required_language and has_any_language_identified:
         _LANG_MAP = {
             # English
-            "english": "en", "eng": "en",
+            "english": "en",
+            "eng": "en",
             # German
-            "german": "de", "deutsch": "de", "ger": "de",
+            "german": "de",
+            "deutsch": "de",
+            "ger": "de",
             # French — VOSTFR (French audio or subtitles) counts as French
-            "french": "fr", "fra": "fr", "fre": "fr", "vostfr": "fr", "vf": "fr",
+            "french": "fr",
+            "fra": "fr",
+            "fre": "fr",
+            "vostfr": "fr",
+            "vf": "fr",
             # Japanese
-            "japanese": "ja", "jpn": "ja",
+            "japanese": "ja",
+            "jpn": "ja",
             # Spanish
-            "spanish": "es", "spa": "es",
+            "spanish": "es",
+            "spa": "es",
             # Italian
-            "italian": "it", "ita": "it",
+            "italian": "it",
+            "ita": "it",
             # Portuguese
-            "portuguese": "pt", "por": "pt",
+            "portuguese": "pt",
+            "por": "pt",
             # Russian
-            "russian": "ru", "rus": "ru",
+            "russian": "ru",
+            "rus": "ru",
         }
         req_lang = required_language.strip().lower()
         req_lang = _LANG_MAP.get(req_lang, req_lang)  # normalize
-        
-        release_langs = {_LANG_MAP.get(l.lower(), l.lower()) for l in parsed.languages} if parsed.languages else set()
+
+        release_langs = (
+            {_LANG_MAP.get(l.lower(), l.lower()) for l in parsed.languages}
+            if parsed.languages
+            else set()
+        )
         if api_language:
             # Newznab languages are often strings like "English", "German", "English / German"
-            api_langs = [l.strip().lower() for l in api_language.replace("/", ",").split(",")]
+            api_langs = [
+                l.strip().lower() for l in api_language.replace("/", ",").split(",")
+            ]
             for al in api_langs:
                 release_langs.add(_LANG_MAP.get(al, al))
-                
+
         if req_lang not in release_langs:
-            return ScoreResult(0, True, f"Language mismatch: release has {release_langs} but required '{req_lang}'", None)
+            return ScoreResult(
+                0,
+                True,
+                f"Language mismatch: release has {release_langs} but required '{req_lang}'",
+                None,
+            )
 
     groups_cfg = scoring_config.get("release_groups", {})
     blacklist = [g.lower() for g in groups_cfg.get("blacklist", [])]
@@ -195,7 +251,9 @@ def score_release(
             score += lang_cfg.get("preferred_bonus", 0)
         else:
             score -= lang_cfg.get("missing_penalty", 0)
-    elif pref_langs: # No languages parsed, apply penalty just in case? Usually we don't.
+    elif (
+        pref_langs
+    ):  # No languages parsed, apply penalty just in case? Usually we don't.
         pass
 
     # 3. Bitrate Scoring with Codec Efficiency Multipliers
@@ -215,7 +273,9 @@ def score_release(
     if bitrate_mbps is not None:
         effective_bitrate = bitrate_mbps * codec_mult
         bitrate_brackets = cfg.get("bitrate_brackets", [])
-        for bracket in sorted(bitrate_brackets, key=lambda x: x["min_mbps"], reverse=True):
+        for bracket in sorted(
+            bitrate_brackets, key=lambda x: x["min_mbps"], reverse=True
+        ):
             if effective_bitrate >= bracket["min_mbps"]:
                 score += bracket["score"]
                 break

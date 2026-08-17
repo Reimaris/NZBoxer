@@ -3,6 +3,7 @@ Telegram Notification Service
 =============================
 Sends notifications to a Telegram chat using a bot token.
 """
+
 from __future__ import annotations
 
 import logging
@@ -14,12 +15,12 @@ logger = logging.getLogger(__name__)
 
 async def send_notification(message: str, token: str, chat_id: str) -> bool:
     """Send a notification message to Telegram.
-    
+
     Args:
         message: The message to send.
         token: Telegram bot token.
         chat_id: Telegram chat ID.
-        
+
     Returns:
         True if successful, False otherwise.
     """
@@ -29,11 +30,7 @@ async def send_notification(message: str, token: str, chat_id: str) -> bool:
         return False
 
     url = f"https://api.telegram.org/bot{token}/sendMessage"
-    payload = {
-        "chat_id": chat_id,
-        "text": message,
-        "parse_mode": "HTML"
-    }
+    payload = {"chat_id": chat_id, "text": message, "parse_mode": "HTML"}
 
     async with httpx.AsyncClient(timeout=10.0) as client:
         try:

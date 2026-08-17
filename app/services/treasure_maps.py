@@ -3,6 +3,7 @@ Treasure Maps (Newznab) API Client
 ==================================
 Searches the configured Usenet indexer for NZB releases.
 """
+
 from __future__ import annotations
 
 import logging
@@ -17,12 +18,16 @@ logger = logging.getLogger(__name__)
 _limiter = RateLimiter(0.6)
 
 
-
 class IndexerError(Exception):
     pass
 
 
-async def search_movie(imdb_id: str | None = None, tmdb_id: int | None = None, title: str | None = None, category: int | None = None) -> list[dict[str, Any]]:
+async def search_movie(
+    imdb_id: str | None = None,
+    tmdb_id: int | None = None,
+    title: str | None = None,
+    category: int | None = None,
+) -> list[dict[str, Any]]:
     """Search for a movie on the Newznab indexer.
 
     Args:
@@ -42,7 +47,7 @@ async def search_movie(imdb_id: str | None = None, tmdb_id: int | None = None, t
     params: dict[str, Any] = {
         "apikey": settings.treasure_maps_api_key,
         "t": "movie",
-        "o": "json"
+        "o": "json",
     }
 
     if imdb_id:
@@ -58,7 +63,15 @@ async def search_movie(imdb_id: str | None = None, tmdb_id: int | None = None, t
     return await _execute_search(url, params)
 
 
-async def search_show(tvdb_id: str | int | None = None, tmdb_id: int | None = None, imdb_id: str | None = None, title: str | None = None, season: int | None = None, ep: int | str | None = None, category: int | None = None) -> list[dict[str, Any]]:
+async def search_show(
+    tvdb_id: str | int | None = None,
+    tmdb_id: int | None = None,
+    imdb_id: str | None = None,
+    title: str | None = None,
+    season: int | None = None,
+    ep: int | str | None = None,
+    category: int | None = None,
+) -> list[dict[str, Any]]:
     """Search for a TV show season or episode on the Newznab indexer.
 
     Args:
@@ -81,7 +94,7 @@ async def search_show(tvdb_id: str | int | None = None, tmdb_id: int | None = No
     params: dict[str, Any] = {
         "apikey": settings.treasure_maps_api_key,
         "t": "tvsearch",
-        "o": "json"
+        "o": "json",
     }
 
     if season is not None:
@@ -97,8 +110,10 @@ async def search_show(tvdb_id: str | int | None = None, tmdb_id: int | None = No
         params["tmdbid"] = tmdb_id
     elif imdb_id:
         # Some indexers support imdbid for tvsearch too
-        params["imdbid"] = imdb_id.replace("tt", "") if isinstance(imdb_id, str) else imdb_id
-        
+        params["imdbid"] = (
+            imdb_id.replace("tt", "") if isinstance(imdb_id, str) else imdb_id
+        )
+
     if title:
         params["q"] = title
 
@@ -106,13 +121,13 @@ async def search_show(tvdb_id: str | int | None = None, tmdb_id: int | None = No
 
 
 async def search_raw(
-    query: str | None = None, 
+    query: str | None = None,
     category: int | None = None,
     season: int | None = None,
     ep: int | str | None = None,
     imdb_id: str | None = None,
     tmdb_id: int | None = None,
-    tvdb_id: int | str | None = None
+    tvdb_id: int | str | None = None,
 ) -> list[dict[str, Any]]:
     """Generic search on the Newznab indexer.
 
@@ -133,20 +148,20 @@ async def search_raw(
         return []
 
     url = "https://treasure-maps.com/api"
-    
+
     # Dynamically determine the best 't' parameter based on what fields we have
     search_type = "search"
     if season is not None or ep is not None or tvdb_id is not None:
         search_type = "tvsearch"
     elif imdb_id is not None and category == 2000:
         search_type = "movie"
-        
+
     params: dict[str, Any] = {
         "apikey": settings.treasure_maps_api_key,
         "t": search_type,
         "o": "json",
     }
-    
+
     if query:
         params["q"] = query
     if category:
@@ -156,7 +171,9 @@ async def search_raw(
     if ep is not None:
         params["ep"] = ep
     if imdb_id:
-        params["imdbid"] = imdb_id.replace("tt", "") if isinstance(imdb_id, str) else imdb_id
+        params["imdbid"] = (
+            imdb_id.replace("tt", "") if isinstance(imdb_id, str) else imdb_id
+        )
     if tmdb_id:
         params["tmdbid"] = tmdb_id
     if tvdb_id:
@@ -178,14 +195,14 @@ async def _execute_search(url: str, params: dict[str, Any]) -> list[dict[str, An
             response.raise_for_status()
 
             data = response.json()
-            
+
             # Check for API error
             if "@attributes" in data and "code" in data["@attributes"]:
                 code = data["@attributes"].get("code")
                 desc = data["@attributes"].get("description", "Unknown error")
                 logger.error("Indexer returned API error %s: %s", code, desc)
                 raise IndexerError(f"API Error {code}: {desc}")
-                
+
             channel = data.get("channel", {})
             items = channel.get("item", [])
 
@@ -218,7 +235,7 @@ async def _execute_search(url: str, params: dict[str, Any]) -> list[dict[str, An
                 if "guid" not in flat or flat["guid"].startswith("http"):
                     # The 'guid' in attr is the hash, the top-level 'guid' is a URL
                     flat["guid"] = attr_map.get("guid", flat.get("guid", ""))
-                
+
                 # Extract language attribute if provided by indexer
                 if "language" in attr_map:
                     flat["api_language"] = attr_map["language"]
@@ -226,13 +243,17 @@ async def _execute_search(url: str, params: dict[str, Any]) -> list[dict[str, An
                 # Fallback: size from enclosure length
                 if not flat["size"]:
                     enc = item.get("enclosure", {})
-                    enc_attrs = enc.get("@attributes", {}) if isinstance(enc, dict) else {}
+                    enc_attrs = (
+                        enc.get("@attributes", {}) if isinstance(enc, dict) else {}
+                    )
                     flat["size"] = enc_attrs.get("length", 0)
 
                 # Use direct link for download URL
                 if not flat.get("link"):
                     enc = item.get("enclosure", {})
-                    enc_attrs = enc.get("@attributes", {}) if isinstance(enc, dict) else {}
+                    enc_attrs = (
+                        enc.get("@attributes", {}) if isinstance(enc, dict) else {}
+                    )
                     flat["link"] = enc_attrs.get("url", "")
 
                 flat["size"] = int(flat["size"]) if flat["size"] else 0
@@ -250,11 +271,7 @@ async def _execute_search(url: str, params: dict[str, Any]) -> list[dict[str, An
 async def get_download_url(guid: str) -> str:
     """Generate the download URL for a specific NZB given its GUID/ID."""
     url = "https://treasure-maps.com/api"
-    params = {
-        "t": "get",
-        "id": guid,
-        "apikey": settings.treasure_maps_api_key
-    }
+    params = {"t": "get", "id": guid, "apikey": settings.treasure_maps_api_key}
     # Rather than executing it, we can just construct the URL,
     # as the TorBox service usually takes a URL or we need to download it first.
     # We will just return the built URL for the downloader.

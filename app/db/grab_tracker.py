@@ -3,6 +3,7 @@ Daily Grab Tracker
 ==================
 Helper functions to track and enforce the hard daily limit of 400 NZB grabs.
 """
+
 from __future__ import annotations
 
 import logging
