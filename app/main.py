@@ -30,7 +30,6 @@ config_dir = Path("/app/config")
 if not config_dir.exists():
     config_dir = Path("config")  # Fallback for local testing
 log_dir = config_dir / "logs"
-log_dir.mkdir(parents=True, exist_ok=True)
 log_file = log_dir / "nzboxer.log"
 
 formatter = logging.Formatter(
@@ -41,18 +40,25 @@ formatter = logging.Formatter(
 console_handler = logging.StreamHandler()
 console_handler.setFormatter(formatter)
 
-file_handler = TimedRotatingFileHandler(
-    filename=log_file, when="midnight", interval=1, backupCount=5, encoding="utf-8"
-)
-file_handler.suffix = "%Y-%m-%d.log"
-file_handler.setFormatter(formatter)
+try:
+    log_dir.mkdir(parents=True, exist_ok=True)
+    file_handler = TimedRotatingFileHandler(
+        filename=log_file, when="midnight", interval=1, backupCount=5, encoding="utf-8"
+    )
+    file_handler.suffix = "%Y-%m-%d.log"
+    file_handler.setFormatter(formatter)
+except PermissionError:
+    file_handler = None
+    import sys
+    print(f"WARNING: Permission denied creating log file {log_file}. Falling back to console logging.", file=sys.stderr)
 
 root_logger = logging.getLogger()
 root_logger.setLevel(getattr(logging, settings.log_level.upper(), logging.INFO))
 if root_logger.hasHandlers():
     root_logger.handlers.clear()
 root_logger.addHandler(console_handler)
-root_logger.addHandler(file_handler)
+if file_handler:
+    root_logger.addHandler(file_handler)
 
 logger = logging.getLogger(__name__)
 

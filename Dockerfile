@@ -22,8 +22,9 @@ COPY . .
 # Create a data directory for the SQLite database and create a non-root user
 RUN mkdir -p /app/data && \
     mkdir -p /app/config && \
-    useradd -m -s /bin/bash appuser && \
-    chown -R appuser:appuser /app
+    useradd -u 1000 -m -s /bin/bash appuser && \
+    chown -R appuser:appuser /app && \
+    chmod -R 775 /app/config /app/data
 
 # Switch to non-root user
 USER appuser
