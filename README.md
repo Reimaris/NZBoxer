@@ -10,6 +10,8 @@ NZBoxer is a lightweight, autonomous service that connects Simkl, TMDB, Newznab 
 - **Upgrade Logic**: Continuously monitors for better releases and upgrades existing downloads if they exceed your configured threshold.
 - **Modern UI**: A lightweight, fast HTMX & TailwindCSS dashboard for monitoring status and managing season tracking.
 - **Zero Dependencies (Almost)**: Uses SQLite with WAL-mode for high concurrency, meaning no heavy database setups (like PostgreSQL) are required.
+- **Respectful & Rate-Limited**: Built-in intelligent rate-limiters ensure you never hammer upstream APIs (Simkl, TMDB, Newznab, TorBox) and includes daily grab limits to protect your indexer quotas.
+- **Secure by Default**: The Docker container runs strictly as an unprivileged non-root user (UID 1000) for maximum security.
 
 ## Prerequisites
 
@@ -26,9 +28,13 @@ The easiest and most robust way to run NZBoxer is using the pre-built Docker ima
 
 Simply clone the repository and start the container:
 
+> [!IMPORTANT]
+> Because NZBoxer runs securely as an unprivileged user (UID 1000), you **must** manually create the `config` directory on your host *before* starting the container. If you let Docker create it automatically, it will be owned by `root` and the container will crash with a permission error.
+
 ```bash
 git clone https://github.com/Reimaris/NZBoxer.git
 cd NZBoxer
+mkdir config
 docker compose up -d
 ```
 
