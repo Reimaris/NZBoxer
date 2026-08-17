@@ -14,7 +14,6 @@ Usage::
 
 from __future__ import annotations
 
-import logging
 import os
 from functools import lru_cache
 from typing import TYPE_CHECKING, Any
@@ -24,7 +23,7 @@ from app.core.default_scoring import DEFAULT_SCORING_CONFIG
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
-logger = logging.getLogger(__name__)
+DEFAULT_USER_AGENT = "NZBoxer/1.0.0 (Linux; x64)"
 
 
 class Settings:

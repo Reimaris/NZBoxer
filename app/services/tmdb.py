@@ -13,7 +13,7 @@ from typing import Any
 
 import httpx
 
-from app.config import settings
+from app.config import DEFAULT_USER_AGENT, settings
 from app.core.rate_limiter import RateLimiter
 
 logger = logging.getLogger(__name__)
@@ -41,7 +41,7 @@ async def get_digital_release_date(tmdb_id: int) -> datetime | None:
 
     url = f"{TMDB_BASE_URL}/movie/{tmdb_id}/release_dates"
     params = {}
-    headers = {}
+    headers = {"User-Agent": DEFAULT_USER_AGENT}
     if settings.tmdb_api_key.startswith("ey"):
         headers["Authorization"] = f"Bearer {settings.tmdb_api_key}"
     else:
@@ -116,7 +116,7 @@ async def get_show_details(tmdb_id: int) -> dict[str, Any] | None:
 
     url = f"{TMDB_BASE_URL}/tv/{tmdb_id}"
     params = {"append_to_response": "alternative_titles,translations"}
-    headers = {}
+    headers = {"User-Agent": DEFAULT_USER_AGENT}
     if settings.tmdb_api_key.startswith("ey"):
         headers["Authorization"] = f"Bearer {settings.tmdb_api_key}"
     else:
@@ -144,7 +144,7 @@ async def get_season_details(tmdb_id: int, season_number: int) -> dict[str, Any]
 
     url = f"{TMDB_BASE_URL}/tv/{tmdb_id}/season/{season_number}"
     params = {}
-    headers = {}
+    headers = {"User-Agent": DEFAULT_USER_AGENT}
     if settings.tmdb_api_key.startswith("ey"):
         headers["Authorization"] = f"Bearer {settings.tmdb_api_key}"
     else:
@@ -177,7 +177,7 @@ async def find_by_external_id(
 
     url = f"{TMDB_BASE_URL}/find/{external_id}"
     params = {"external_source": source}
-    headers = {}
+    headers = {"User-Agent": DEFAULT_USER_AGENT}
     if settings.tmdb_api_key.startswith("ey"):
         headers["Authorization"] = f"Bearer {settings.tmdb_api_key}"
     else:

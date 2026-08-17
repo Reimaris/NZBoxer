@@ -11,6 +11,7 @@ from typing import Any
 
 import httpx
 
+from app.config import DEFAULT_USER_AGENT
 from app.core.rate_limiter import RateLimiter
 
 logger = logging.getLogger(__name__)
@@ -28,7 +29,9 @@ async def request_pin(client_id: str) -> dict[str, Any]:
     url = f"{SIMKL_BASE_URL}/oauth/pin"
     params = {"client_id": client_id, "app-name": "nzboxer", "app-version": "0.1.0"}
     await _limiter.wait()
-    async with httpx.AsyncClient(timeout=10.0) as client:
+    async with httpx.AsyncClient(
+        headers={"User-Agent": DEFAULT_USER_AGENT}, timeout=10.0
+    ) as client:
         response = await client.get(url, params=params)
         response.raise_for_status()
         return response.json()
@@ -39,7 +42,9 @@ async def check_pin(client_id: str, user_code: str) -> dict[str, Any]:
     url = f"{SIMKL_BASE_URL}/oauth/pin/{user_code}"
     params = {"client_id": client_id, "app-name": "nzboxer", "app-version": "0.1.0"}
     await _limiter.wait()
-    async with httpx.AsyncClient(timeout=10.0) as client:
+    async with httpx.AsyncClient(
+        headers={"User-Agent": DEFAULT_USER_AGENT}, timeout=10.0
+    ) as client:
         response = await client.get(url, params=params)
         response.raise_for_status()
         return response.json()
@@ -66,6 +71,7 @@ async def get_watchlist(
     headers = {
         "Authorization": f"Bearer {access_token}",
         "Content-Type": "application/json",
+        "User-Agent": DEFAULT_USER_AGENT,
     }
 
     statuses = ["plantowatch", "watching"]

@@ -30,6 +30,7 @@ tests/
 AGENT_INSTRUCTIONS.md
 .agents/
 docs/agent_memory/
+context.md
 
 # Docker Local Overrides
 compose.override.yaml

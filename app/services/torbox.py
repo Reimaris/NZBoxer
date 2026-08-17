@@ -13,7 +13,7 @@ from typing import Any
 
 import httpx
 
-from app.config import settings
+from app.config import DEFAULT_USER_AGENT, settings
 from app.core.rate_limiter import RateLimiter, RollingWindowRateLimiter
 
 logger = logging.getLogger(__name__)
@@ -42,7 +42,10 @@ async def send_nzb_link(nzb_url: str) -> dict[str, str | int | None]:
 
     url = f"{TORBOX_BASE_URL}/api/usenet/createusenetdownload"
 
-    headers = {"Authorization": f"Bearer {settings.torbox_api_key}"}
+    headers = {
+        "Authorization": f"Bearer {settings.torbox_api_key}",
+        "User-Agent": DEFAULT_USER_AGENT,
+    }
 
     data = {"link": nzb_url}
 
@@ -120,7 +123,10 @@ async def send_nzb_file(
         return {}
 
     url = f"{TORBOX_BASE_URL}/api/usenet/createusenetdownload"
-    headers = {"Authorization": f"Bearer {settings.torbox_api_key}"}
+    headers = {
+        "Authorization": f"Bearer {settings.torbox_api_key}",
+        "User-Agent": DEFAULT_USER_AGENT,
+    }
     files = {"file": (filename, nzb_bytes, "application/x-nzb")}
 
     max_retries = 3
@@ -199,7 +205,10 @@ async def send_magnet_link(magnet_url: str) -> dict[str, str | int | None]:
 
     url = f"{TORBOX_BASE_URL}/api/torrents/createtorrent"
 
-    headers = {"Authorization": f"Bearer {settings.torbox_api_key}"}
+    headers = {
+        "Authorization": f"Bearer {settings.torbox_api_key}",
+        "User-Agent": DEFAULT_USER_AGENT,
+    }
 
     data = {"magnet": magnet_url}
 
@@ -274,7 +283,10 @@ async def check_download_status(download_id: str | int) -> dict[str, Any]:
         return {"status": "error", "detail": "Missing API key"}
 
     url = f"{TORBOX_BASE_URL}/api/usenet/mylist"
-    headers = {"Authorization": f"Bearer {settings.torbox_api_key}"}
+    headers = {
+        "Authorization": f"Bearer {settings.torbox_api_key}",
+        "User-Agent": DEFAULT_USER_AGENT,
+    }
 
     await _poll_limiter.wait()
     async with httpx.AsyncClient(timeout=15.0) as client:

@@ -11,7 +11,7 @@ from typing import Any
 
 import httpx
 
-from app.config import settings
+from app.config import DEFAULT_USER_AGENT, settings
 from app.core.rate_limiter import RateLimiter
 
 logger = logging.getLogger(__name__)
@@ -189,7 +189,9 @@ async def _execute_search(url: str, params: dict[str, Any]) -> list[dict[str, An
     log_params = {k: v for k, v in params.items() if k != "apikey"}
     request_for_log = httpx.Request("GET", url, params=log_params)
     logger.info("    🔍 Indexer-Suche: %s", str(request_for_log.url))
-    async with httpx.AsyncClient(timeout=30.0) as client:
+    async with httpx.AsyncClient(
+        headers={"User-Agent": DEFAULT_USER_AGENT}, timeout=30.0
+    ) as client:
         try:
             response = await client.get(url, params=params)
             response.raise_for_status()
@@ -294,7 +296,9 @@ async def fetch_nzb_bytes(guid_or_url: str) -> tuple[bytes, str]:
         params = {"t": "get", "id": guid_or_url, "apikey": settings.treasure_maps_api_key}
 
     await _limiter.wait()
-    async with httpx.AsyncClient(timeout=30.0) as client:
+    async with httpx.AsyncClient(
+        headers={"User-Agent": DEFAULT_USER_AGENT}, timeout=30.0
+    ) as client:
         try:
             response = await client.get(url, params=params)
             response.raise_for_status()
