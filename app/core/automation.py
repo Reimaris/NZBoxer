@@ -1131,14 +1131,21 @@ async def _evaluate_and_download(
             best_candidate["score"],
         )
 
-        download_url = await treasure_maps.get_download_url(best_candidate["guid"])
-        torbox_result = await torbox.send_nzb_link(download_url)
+        try:
+            nzb_bytes, filename = await treasure_maps.fetch_nzb_bytes(best_candidate["guid"])
+            torbox_result = await torbox.send_nzb_file(nzb_bytes, filename=filename)
+        except treasure_maps.IndexerError as e:
+            target.fail_count += 1
+            target.last_error = f"NZB-Download fehlgeschlagen: {e}"
+            logger.error("    ❌ %s", target.last_error)
+            await session.commit()
+            return False
 
         if not torbox_result or (
             not torbox_result.get("hash") and not torbox_result.get("id")
         ):
             target.fail_count += 1
-            target.last_error = "Fehler beim Senden an TorBox."
+            target.last_error = torbox_result.get("error") if isinstance(torbox_result, dict) and torbox_result.get("error") else "Fehler beim Senden an TorBox."
             logger.error("    ❌ %s", target.last_error)
             await session.commit()
             return False

@@ -103,6 +103,87 @@ async def send_nzb_link(nzb_url: str) -> dict[str, str | int | None]:
     return {}
 
 
+async def send_nzb_file(
+    nzb_bytes: bytes, filename: str = "file.nzb"
+) -> dict[str, str | int | None]:
+    """Send raw NZB file content bytes to TorBox via multipart/form-data.
+
+    Args:
+        nzb_bytes: The raw NZB file bytes.
+        filename: Optional filename for the upload.
+
+    Returns:
+        A dictionary with "hash" and "id" if successful, else error dict.
+    """
+    if not settings.torbox_api_key:
+        logger.warning("TorBox API key missing.")
+        return {}
+
+    url = f"{TORBOX_BASE_URL}/api/usenet/createusenetdownload"
+    headers = {"Authorization": f"Bearer {settings.torbox_api_key}"}
+    files = {"file": (filename, nzb_bytes, "application/x-nzb")}
+
+    max_retries = 3
+    for attempt in range(max_retries):
+        await _send_limiter.wait()
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            try:
+                response = await client.post(url, headers=headers, files=files)
+                response.raise_for_status()
+
+                result = response.json()
+                if result.get("success"):
+                    resp_data = result.get("data", {})
+                    return {
+                        "hash": resp_data.get("hash"),
+                        "id": resp_data.get("usenet_id") or resp_data.get("id"),
+                    }
+                else:
+                    err_msg = result.get("detail") or "TorBox API Error"
+                    logger.error("TorBox API returned error: %s", err_msg)
+                    return {"error": err_msg}
+
+            except httpx.HTTPError as e:
+                is_retriable = True
+                err_detail = str(e)
+                if isinstance(e, httpx.HTTPStatusError):
+                    if e.response.status_code not in (429, 500, 502, 503, 504):
+                        is_retriable = False
+                    try:
+                        err_json = e.response.json()
+                        err_detail = (
+                            err_json.get("detail")
+                            or err_json.get("error")
+                            or e.response.text
+                        )
+                    except Exception:
+                        err_detail = e.response.text
+
+                if not is_retriable:
+                    logger.error("TorBox API error (non-retriable): %s", err_detail)
+                    return {"error": str(err_detail)}
+
+                if attempt < max_retries - 1:
+                    wait_time = (attempt + 1) * 3
+                    logger.warning(
+                        "Failed to send NZB file to TorBox: [%s] %s. Retrying in %ss...",
+                        type(e).__name__,
+                        e,
+                        wait_time,
+                    )
+                    await asyncio.sleep(wait_time)
+                else:
+                    logger.error(
+                        "Failed to send NZB file to TorBox after %d attempts: [%s] %s",
+                        max_retries,
+                        type(e).__name__,
+                        e,
+                    )
+                    return {}
+
+    return {}
+
+
 async def send_magnet_link(magnet_url: str) -> dict[str, str | int | None]:
     """Send a Magnet/Torrent URL to TorBox.
 

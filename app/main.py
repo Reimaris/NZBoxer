@@ -40,6 +40,7 @@ formatter = logging.Formatter(
 console_handler = logging.StreamHandler()
 console_handler.setFormatter(formatter)
 
+file_handler: TimedRotatingFileHandler | None = None
 try:
     log_dir.mkdir(parents=True, exist_ok=True)
     file_handler = TimedRotatingFileHandler(
@@ -640,14 +641,21 @@ async def confirm_grab_item(item_id: int):
         guid = candidate.get("guid", "")
         title = candidate.get("title", "")
 
-        download_url = await treasure_maps.get_download_url(guid)
-        torbox_result = await torbox.send_nzb_link(download_url)
+        try:
+            nzb_bytes, filename = await treasure_maps.fetch_nzb_bytes(guid)
+            torbox_result = await torbox.send_nzb_file(nzb_bytes, filename=filename)
+        except treasure_maps.IndexerError as e:
+            return HTMLResponse(
+                content=f'<div class="text-red-500">NZB-Download Fehler: {e}</div>',
+                status_code=500,
+            )
 
         if not torbox_result or (
             not torbox_result.get("hash") and not torbox_result.get("id")
         ):
+            err_msg = torbox_result.get("error") if isinstance(torbox_result, dict) and torbox_result.get("error") else "Fehler beim Senden an TorBox."
             return HTMLResponse(
-                content='<div class="text-red-500">Fehler beim Senden an TorBox.</div>',
+                content=f'<div class="text-red-500">{err_msg}</div>',
                 status_code=500,
             )
 
@@ -684,25 +692,14 @@ async def manual_push_to_torbox(magnet: str = Form(...)):
     logger = logging.getLogger(__name__)
 
     try:
-        # Some indexers return GUID as link (e.g. treasure_maps usually uses GUID for download).
-        # Or it might be a direct link or magnet.
         if magnet.startswith("magnet:"):
             result = await torbox.send_magnet_link(magnet)
-        elif (
-            magnet.startswith("http")
-            and "api.treasure" not in magnet.lower()
-            and "nzb" in magnet.lower()
-        ):
-            result = await torbox.send_nzb_link(magnet)
         else:
-            # If it's a GUID or a generic HTTP link (like Newznab download URL), use send_nzb_link
-            # Some indexers require an API key to download, but TreasureMaps handles that internally via `get_download_url` if it's a GUID.
-            if not magnet.startswith("http"):
-                download_url = await treasure_maps.get_download_url(magnet)
-            else:
-                download_url = magnet
-
-            result = await torbox.send_nzb_link(download_url)
+            try:
+                nzb_bytes, filename = await treasure_maps.fetch_nzb_bytes(magnet)
+                result = await torbox.send_nzb_file(nzb_bytes, filename=filename)
+            except treasure_maps.IndexerError as e:
+                result = {"error": f"NZB Download Error: {e}"}
 
         if result and (result.get("hash") or result.get("id")):
             return HTMLResponse(

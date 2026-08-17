@@ -268,12 +268,60 @@ async def _execute_search(url: str, params: dict[str, Any]) -> list[dict[str, An
             return []
 
 
+async def fetch_nzb_bytes(guid_or_url: str) -> tuple[bytes, str]:
+    """Fetch raw NZB XML content bytes locally from Treasure Maps using GUID or full download URL.
+
+    Args:
+        guid_or_url: GUID or direct download URL.
+
+    Returns:
+        (content_bytes, filename)
+
+    Raises:
+        IndexerError: If fetching fails or API key missing or response is invalid.
+    """
+    if not settings.treasure_maps_api_key:
+        raise IndexerError("Treasure Maps API key missing.")
+
+    if guid_or_url.startswith("http"):
+        url = guid_or_url
+        params = None
+        # If url doesn't have apikey, append it if it's treasure-maps
+        if "treasure-maps.com" in url and "apikey=" not in url:
+            url += f"&apikey={settings.treasure_maps_api_key}" if "?" in url else f"?apikey={settings.treasure_maps_api_key}"
+    else:
+        url = "https://treasure-maps.com/api"
+        params = {"t": "get", "id": guid_or_url, "apikey": settings.treasure_maps_api_key}
+
+    await _limiter.wait()
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        try:
+            response = await client.get(url, params=params)
+            response.raise_for_status()
+
+            content = response.content
+            if not content or b"<nzb" not in content.lower():
+                logger.error("Indexer returned response that does not appear to be an NZB XML document")
+                raise IndexerError("Received response from indexer is not a valid NZB XML document")
+
+            # Extract filename from Content-Disposition header if available
+            filename = f"{guid_or_url if not guid_or_url.startswith('http') else 'download'}.nzb"
+            cd = response.headers.get("content-disposition", "")
+            if "filename=" in cd:
+                fname = cd.split("filename=")[-1].strip('";\' ')
+                if fname:
+                    filename = fname
+
+            return content, filename
+        except httpx.HTTPError as e:
+            logger.error("Failed to fetch NZB bytes from indexer: %s", e)
+            raise IndexerError(f"HTTP error fetching NZB: {e}") from e
+
+
 async def get_download_url(guid: str) -> str:
     """Generate the download URL for a specific NZB given its GUID/ID."""
     url = "https://treasure-maps.com/api"
     params = {"t": "get", "id": guid, "apikey": settings.treasure_maps_api_key}
-    # Rather than executing it, we can just construct the URL,
-    # as the TorBox service usually takes a URL or we need to download it first.
-    # We will just return the built URL for the downloader.
     request = httpx.Request("GET", url, params=params)
     return str(request.url)
+
