@@ -7,12 +7,15 @@ Searches the configured Usenet indexer for NZB releases.
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import httpx
 
 from app.config import DEFAULT_USER_AGENT, settings
 from app.core.rate_limiter import RateLimiter
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
 _limiter = RateLimiter(0.6)
@@ -22,11 +25,52 @@ class IndexerError(Exception):
     pass
 
 
+async def resolve_indexer(
+    session: AsyncSession | None = None,
+    api_url: str | None = None,
+    api_key: str | None = None,
+) -> tuple[str, str]:
+    """Resolve active indexer API URL and API key."""
+    if api_url and api_key:
+        return api_url, api_key
+
+    from app.services.provider_service import get_active_indexers
+
+    if session is not None:
+        indexers = await get_active_indexers(session)
+        if indexers and indexers[0].api_key:
+            return (
+                indexers[0].api_url or "https://treasure-maps.com/api",
+                indexers[0].api_key or "",
+            )
+    else:
+        from app.db.database import async_session_factory
+
+        try:
+            async with async_session_factory() as db:
+                indexers = await get_active_indexers(db)
+                if indexers and indexers[0].api_key:
+                    return (
+                        indexers[0].api_url or "https://treasure-maps.com/api",
+                        indexers[0].api_key or "",
+                    )
+        except Exception:
+            pass
+
+    return (
+        api_url or "https://treasure-maps.com/api",
+        api_key or settings.treasure_maps_api_key or "",
+    )
+
+
 async def search_movie(
     imdb_id: str | None = None,
     tmdb_id: int | None = None,
     title: str | None = None,
     category: int | None = None,
+    api_url: str | None = None,
+    api_key: str | None = None,
+    session: AsyncSession | None = None,
 ) -> list[dict[str, Any]]:
     """Search for a movie on the Newznab indexer.
 
@@ -35,17 +79,23 @@ async def search_movie(
         tmdb_id: The TMDB ID.
         title: Movie title for fallback search.
         category: Optional TreasureMaps category ID (e.g. 2000).
+        api_url: Optional explicit indexer API URL.
+        api_key: Optional explicit indexer API key.
+        session: Optional DB session to resolve active provider.
 
     Returns:
         A list of search result items (dict).
     """
-    if not settings.treasure_maps_api_key:
+    resolved_url, resolved_key = await resolve_indexer(
+        session=session, api_url=api_url, api_key=api_key
+    )
+    if not resolved_key:
         logger.warning("Indexer API key missing.")
         return []
 
-    url = "https://treasure-maps.com/api"
+    url = resolved_url
     params: dict[str, Any] = {
-        "apikey": settings.treasure_maps_api_key,
+        "apikey": resolved_key,
         "t": "movie",
         "o": "json",
     }
@@ -71,6 +121,9 @@ async def search_show(
     season: int | None = None,
     ep: int | str | None = None,
     category: int | None = None,
+    api_url: str | None = None,
+    api_key: str | None = None,
+    session: AsyncSession | None = None,
 ) -> list[dict[str, Any]]:
     """Search for a TV show season or episode on the Newznab indexer.
 
@@ -82,17 +135,23 @@ async def search_show(
         season: Season number to search.
         ep: Optional episode number or string (e.g. '1,2,3' or '1').
         category: Optional TreasureMaps category ID (e.g. 5000 or 5070 for Anime).
+        api_url: Optional explicit indexer API URL.
+        api_key: Optional explicit indexer API key.
+        session: Optional DB session to resolve active provider.
 
     Returns:
         List of search result items.
     """
-    if not settings.treasure_maps_api_key:
+    resolved_url, resolved_key = await resolve_indexer(
+        session=session, api_url=api_url, api_key=api_key
+    )
+    if not resolved_key:
         logger.warning("Indexer API key missing.")
         return []
 
-    url = "https://treasure-maps.com/api"
+    url = resolved_url
     params: dict[str, Any] = {
-        "apikey": settings.treasure_maps_api_key,
+        "apikey": resolved_key,
         "t": "tvsearch",
         "o": "json",
     }
@@ -128,6 +187,9 @@ async def search_raw(
     imdb_id: str | None = None,
     tmdb_id: int | None = None,
     tvdb_id: int | str | None = None,
+    api_url: str | None = None,
+    api_key: str | None = None,
+    session: AsyncSession | None = None,
 ) -> list[dict[str, Any]]:
     """Generic search on the Newznab indexer.
 
@@ -139,15 +201,21 @@ async def search_raw(
         imdb_id: Optional IMDB ID.
         tmdb_id: Optional TMDB ID.
         tvdb_id: Optional TVDB ID.
+        api_url: Optional explicit indexer API URL.
+        api_key: Optional explicit indexer API key.
+        session: Optional DB session to resolve active provider.
 
     Returns:
         List of search result items.
     """
-    if not settings.treasure_maps_api_key:
+    resolved_url, resolved_key = await resolve_indexer(
+        session=session, api_url=api_url, api_key=api_key
+    )
+    if not resolved_key:
         logger.warning("Indexer API key missing.")
         return []
 
-    url = "https://treasure-maps.com/api"
+    url = resolved_url
 
     # Dynamically determine the best 't' parameter based on what fields we have
     search_type = "search"
@@ -157,7 +225,7 @@ async def search_raw(
         search_type = "movie"
 
     params: dict[str, Any] = {
-        "apikey": settings.treasure_maps_api_key,
+        "apikey": resolved_key,
         "t": search_type,
         "o": "json",
     }
@@ -168,7 +236,7 @@ async def search_raw(
         params["cat"] = category
     if season is not None:
         params["season"] = season
-    if ep is not None:
+    if ep:
         params["ep"] = ep
     if imdb_id:
         params["imdbid"] = (
@@ -183,14 +251,10 @@ async def search_raw(
 
 
 async def _execute_search(url: str, params: dict[str, Any]) -> list[dict[str, Any]]:
-    """Execute the search and parse the JSON results."""
+    """Execute the HTTP request to the indexer API and normalize results."""
     await _limiter.wait()
-    # Log the search URL for debugging (hide API key)
-    log_params = {k: v for k, v in params.items() if k != "apikey"}
-    request_for_log = httpx.Request("GET", url, params=log_params)
-    logger.info("    🔍 Indexer-Suche: %s", str(request_for_log.url))
     async with httpx.AsyncClient(
-        headers={"User-Agent": DEFAULT_USER_AGENT}, timeout=30.0
+        headers={"User-Agent": DEFAULT_USER_AGENT}, timeout=20.0
     ) as client:
         try:
             response = await client.get(url, params=params)
@@ -270,11 +334,19 @@ async def _execute_search(url: str, params: dict[str, Any]) -> list[dict[str, An
             return []
 
 
-async def fetch_nzb_bytes(guid_or_url: str) -> tuple[bytes, str]:
-    """Fetch raw NZB XML content bytes locally from Treasure Maps using GUID or full download URL.
+async def fetch_nzb_bytes(
+    guid_or_url: str,
+    api_url: str | None = None,
+    api_key: str | None = None,
+    session: AsyncSession | None = None,
+) -> tuple[bytes, str]:
+    """Fetch raw NZB XML content bytes locally from Treasure Maps / Newznab using GUID or full download URL.
 
     Args:
         guid_or_url: GUID or direct download URL.
+        api_url: Optional explicit indexer API URL.
+        api_key: Optional explicit indexer API key.
+        session: Optional DB session to resolve active provider.
 
     Returns:
         (content_bytes, filename)
@@ -282,25 +354,26 @@ async def fetch_nzb_bytes(guid_or_url: str) -> tuple[bytes, str]:
     Raises:
         IndexerError: If fetching fails or API key missing or response is invalid.
     """
-    if not settings.treasure_maps_api_key:
-        raise IndexerError("Treasure Maps API key missing.")
+    resolved_url, resolved_key = await resolve_indexer(
+        session=session, api_url=api_url, api_key=api_key
+    )
+    if not resolved_key:
+        raise IndexerError("Indexer API key missing.")
 
     if guid_or_url.startswith("http"):
         url = guid_or_url
         params = None
         # If url doesn't have apikey, append it if it's treasure-maps
-        if "treasure-maps.com" in url and "apikey=" not in url:
+        if ("treasure-maps.com" in url or "api" in url) and "apikey=" not in url:
             url += (
-                f"&apikey={settings.treasure_maps_api_key}"
-                if "?" in url
-                else f"?apikey={settings.treasure_maps_api_key}"
+                f"&apikey={resolved_key}" if "?" in url else f"?apikey={resolved_key}"
             )
     else:
-        url = "https://treasure-maps.com/api"
+        url = resolved_url
         params = {
             "t": "get",
             "id": guid_or_url,
-            "apikey": settings.treasure_maps_api_key,
+            "apikey": resolved_key,
         }
 
     await _limiter.wait()
@@ -334,9 +407,16 @@ async def fetch_nzb_bytes(guid_or_url: str) -> tuple[bytes, str]:
             raise IndexerError(f"HTTP error fetching NZB: {e}") from e
 
 
-async def get_download_url(guid: str) -> str:
+async def get_download_url(
+    guid: str,
+    api_url: str | None = None,
+    api_key: str | None = None,
+    session: AsyncSession | None = None,
+) -> str:
     """Generate the download URL for a specific NZB given its GUID/ID."""
-    url = "https://treasure-maps.com/api"
-    params = {"t": "get", "id": guid, "apikey": settings.treasure_maps_api_key}
-    request = httpx.Request("GET", url, params=params)
+    resolved_url, resolved_key = await resolve_indexer(
+        session=session, api_url=api_url, api_key=api_key
+    )
+    params = {"t": "get", "id": guid, "apikey": resolved_key}
+    request = httpx.Request("GET", resolved_url, params=params)
     return str(request.url)
