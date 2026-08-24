@@ -205,14 +205,41 @@ class NotificationChannel(Base):
     )
 
 
+class ProviderCategory(str, enum.Enum):
+    """Broad functional category for third-party providers and integrations."""
+
+    WATCHLIST = "watchlist"
+    PRINT_MEDIA = "print_media"
+    METADATA = "metadata"
+    DOWNLOADER = "downloader"
+    INDEXER = "indexer"
+
+
 class Provider(Base):
-    """Represents a metadata provider, e.g., a Simkl account."""
+    """Represents a third-party integration or service provider (Watchlist, Reading, Metadata, Downloader, Indexer)."""
 
     __tablename__ = "providers"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    type: Mapped[str] = mapped_column(String(50), nullable=False)  # e.g., 'simkl'
+    category: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default="watchlist",
+        server_default="watchlist",
+        index=True,
+    )
+    type: Mapped[str] = mapped_column(
+        String(50), nullable=False
+    )  # e.g., 'simkl', 'torbox', 'treasure_maps', 'tmdb', 'anilist', 'hardcover', 'openlibrary'
     name: Mapped[str] = mapped_column(String(200), nullable=False)
+
+    # Generic API & Endpoint Credentials
+    api_key: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    api_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+    # Priority & Lifecycle State
+    priority: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="1")
 
     # Simkl specific fields
     username: Mapped[str | None] = mapped_column(String(200), nullable=True)

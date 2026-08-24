@@ -36,3 +36,4 @@ context.md
 compose.override.yaml
 compose.dev.yaml
 TESTING_CHECKLIST.md
+.scratch/

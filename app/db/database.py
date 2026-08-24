@@ -327,6 +327,109 @@ async def init_db(database_url: str) -> None:
                 except Exception:
                     pass
 
+            # Providers multi-category columns migration
+            for col, col_type in [
+                ("category", "VARCHAR(50) NOT NULL DEFAULT 'watchlist'"),
+                ("api_key", "VARCHAR(500)"),
+                ("api_url", "VARCHAR(500)"),
+                ("priority", "INTEGER NOT NULL DEFAULT 1"),
+                ("is_active", "BOOLEAN NOT NULL DEFAULT 1"),
+            ]:
+                try:
+                    await session.execute(
+                        __import__("sqlalchemy").text(
+                            f"ALTER TABLE providers ADD COLUMN {col} {col_type};"
+                        )
+                    )
+                except Exception:
+                    pass
+
+            # Backfill existing providers category
+            try:
+                await session.execute(
+                    __import__("sqlalchemy").text(
+                        "UPDATE providers SET category = 'print_media' WHERE type IN ('hardcover', 'openlibrary');"
+                    )
+                )
+                await session.execute(
+                    __import__("sqlalchemy").text(
+                        "UPDATE providers SET category = 'metadata' WHERE type = 'anilist';"
+                    )
+                )
+                await session.execute(
+                    __import__("sqlalchemy").text(
+                        "UPDATE providers SET category = 'watchlist' WHERE type = 'simkl';"
+                    )
+                )
+            except Exception:
+                pass
+
+            # Auto-seed providers from legacy SystemSettings
+            try:
+                from sqlalchemy import select
+
+                from app.db.models import Provider, ProviderCategory, SystemSettings
+
+                settings_res = await session.execute(
+                    select(SystemSettings).where(SystemSettings.id == 1)
+                )
+                db_settings = settings_res.scalar_one_or_none()
+
+                if db_settings:
+                    prov_res = await session.execute(select(Provider))
+                    existing_providers = prov_res.scalars().all()
+                    existing_types = {p.type for p in existing_providers}
+
+                    # TMDB
+                    if (
+                        db_settings.tmdb_api_key
+                        and db_settings.tmdb_api_key != "your_tmdb_api_v3_key_here"
+                        and "tmdb" not in existing_types
+                    ):
+                        tmdb_p = Provider(
+                            category=ProviderCategory.METADATA.value,
+                            type="tmdb",
+                            name="The Movie Database (TMDB)",
+                            api_key=db_settings.tmdb_api_key,
+                            is_active=True,
+                        )
+                        session.add(tmdb_p)
+
+                    # TorBox
+                    if (
+                        db_settings.torbox_api_key
+                        and db_settings.torbox_api_key != "your_torbox_api_key_here"
+                        and "torbox" not in existing_types
+                    ):
+                        torbox_p = Provider(
+                            category=ProviderCategory.DOWNLOADER.value,
+                            type="torbox",
+                            name="TorBox Downloader",
+                            api_key=db_settings.torbox_api_key,
+                            is_active=True,
+                        )
+                        session.add(torbox_p)
+
+                    # Treasure Maps
+                    if (
+                        db_settings.treasure_maps_api_key
+                        and db_settings.treasure_maps_api_key
+                        != "your_newznab_api_key_here"
+                        and "treasure_maps" not in existing_types
+                    ):
+                        tm_p = Provider(
+                            category=ProviderCategory.INDEXER.value,
+                            type="treasure_maps",
+                            name="Treasure Maps Indexer",
+                            api_key=db_settings.treasure_maps_api_key,
+                            api_url="https://treasure-maps.com/api",
+                            priority=1,
+                            is_active=True,
+                        )
+                        session.add(tm_p)
+            except Exception as e:
+                logger.warning("Error migrating legacy provider settings: %s", e)
+
             await session.commit()
 
     logger.info("Database initialized successfully.")
