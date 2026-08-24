@@ -62,7 +62,24 @@ async def get_active_indexers(db: AsyncSession) -> Sequence[Provider]:
         .order_by(Provider.priority.asc(), Provider.id.asc())
     )
     result = await db.execute(stmt)
-    return result.scalars().all()
+    indexers = list(result.scalars().all())
+    if not indexers:
+        from app.config import settings
+
+        api_key = getattr(settings, "treasure_maps_api_key", "")
+        return [
+            Provider(
+                id=0,
+                name="TreasureMaps",
+                type="treasure_maps",
+                category=ProviderCategory.INDEXER.value,
+                api_url="https://treasuremaps.net/api",
+                api_key=api_key,
+                priority=1,
+                is_active=True,
+            )
+        ]
+    return indexers
 
 
 async def get_metadata_provider(

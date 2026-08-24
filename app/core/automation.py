@@ -34,7 +34,7 @@ from app.db.models import (
     Season,
     SeasonStatus,
 )
-from app.services import simkl, tmdb, torbox, treasure_maps
+from app.services import provider_service, simkl, tmdb, torbox, treasure_maps
 
 logger = logging.getLogger(__name__)
 
@@ -683,24 +683,6 @@ async def _process_movie(session: AsyncSession, movie: MediaItem) -> None:
         else None
     )
 
-    results = []
-    is_title_fallback = False
-    if movie.imdb_id:
-        results = await treasure_maps.search_movie(
-            imdb_id=movie.imdb_id, category=cat_id
-        )
-    if not results and movie.tmdb_id:
-        results = await treasure_maps.search_movie(
-            tmdb_id=movie.tmdb_id, category=cat_id
-        )
-    if not results:
-        logger.warning(
-            "    ⚠️ No ID match for movie '%s', falling back to title search.",
-            movie.title,
-        )
-        results = await treasure_maps.search_movie(title=movie.title, category=cat_id)
-        is_title_fallback = True
-
     filters = {}
     if profile:
         filters = {
@@ -712,15 +694,108 @@ async def _process_movie(session: AsyncSession, movie: MediaItem) -> None:
             "audio_channels": profile.audio_channels or "any",
         }
 
-    await _evaluate_and_download(
-        session,
-        results,
-        movie=movie,
-        reject_words=reject_words,
-        required_language=required_language,
-        is_title_fallback=is_title_fallback,
-        filters=filters,
-    )
+    active_indexers = await provider_service.get_active_indexers(session)
+    if not active_indexers:
+        logger.warning("    ⚠️ No active indexers configured.")
+        await _evaluate_and_download(
+            session,
+            [],
+            movie=movie,
+            reject_words=reject_words,
+            required_language=required_language,
+            is_title_fallback=False,
+            filters=filters,
+        )
+        return
+
+    all_results: list[dict[str, Any]] = []
+    is_title_fallback = False
+
+    for indexer in active_indexers:
+        logger.info(
+            "    🔍 Searching indexer '%s' (priority %d) for movie '%s'...",
+            indexer.name,
+            indexer.priority,
+            movie.title,
+        )
+        results = []
+        if movie.imdb_id:
+            results = await treasure_maps.search_movie(
+                imdb_id=movie.imdb_id,
+                category=cat_id,
+                api_url=indexer.api_url,
+                api_key=indexer.api_key,
+                session=session,
+            )
+        if not results and movie.tmdb_id:
+            results = await treasure_maps.search_movie(
+                tmdb_id=movie.tmdb_id,
+                category=cat_id,
+                api_url=indexer.api_url,
+                api_key=indexer.api_key,
+                session=session,
+            )
+        if not results:
+            logger.warning(
+                "    ⚠️ No ID match for movie '%s' on '%s', falling back to title search.",
+                movie.title,
+                indexer.name,
+            )
+            results = await treasure_maps.search_movie(
+                title=movie.title,
+                category=cat_id,
+                api_url=indexer.api_url,
+                api_key=indexer.api_key,
+                session=session,
+            )
+            if results:
+                is_title_fallback = True
+
+        if not results:
+            continue
+
+        grabbed = await _evaluate_and_download(
+            session,
+            results,
+            movie=movie,
+            reject_words=reject_words,
+            required_language=required_language,
+            is_title_fallback=is_title_fallback,
+            filters=filters,
+            indexer_name=indexer.name,
+            indexer_url=indexer.api_url,
+            indexer_key=indexer.api_key,
+            early_exit_on_cutoff=True,
+        )
+        if grabbed:
+            logger.info(
+                "    🎯 Target score cutoff met or release grabbed on indexer '%s'. Halting indexer search cascade.",
+                indexer.name,
+            )
+            return
+
+        all_results.extend(results)
+
+    if not all_results:
+        await _evaluate_and_download(
+            session,
+            [],
+            movie=movie,
+            reject_words=reject_words,
+            required_language=required_language,
+            is_title_fallback=is_title_fallback,
+            filters=filters,
+        )
+    else:
+        await _evaluate_and_download(
+            session,
+            all_results,
+            movie=movie,
+            reject_words=reject_words,
+            required_language=required_language,
+            is_title_fallback=is_title_fallback,
+            filters=filters,
+        )
 
 
 async def _process_season(session: AsyncSession, season: Season) -> None:
@@ -803,17 +878,39 @@ async def _process_season(session: AsyncSession, season: Season) -> None:
 
     logger.info("    📺 Suche %d ausstehende Episoden.", len(missing_episodes))
 
-    async def _search_show_id_first(s: int, ep: str | None = None) -> tuple[list, bool]:
+    active_indexers = await provider_service.get_active_indexers(session)
+    if not active_indexers:
+        logger.warning("    ⚠️ No active indexers configured.")
+        return
+
+    async def _search_show_id_first(
+        s: int,
+        ep: str | None = None,
+        api_url: str | None = None,
+        api_key: str | None = None,
+    ) -> tuple[list, bool]:
         """Search by TVDB, then TMDB, then title fallback. Returns (results, is_title_fallback)."""
         if tvdb_id:
             r = await treasure_maps.search_show(
-                tvdb_id=tvdb_id, season=s, ep=ep, category=cat_id
+                tvdb_id=tvdb_id,
+                season=s,
+                ep=ep,
+                category=cat_id,
+                api_url=api_url,
+                api_key=api_key,
+                session=session,
             )
             if r:
                 return r, False
         if tmdb_id:
             r = await treasure_maps.search_show(
-                tmdb_id=tmdb_id, season=s, ep=ep, category=cat_id
+                tmdb_id=tmdb_id,
+                season=s,
+                ep=ep,
+                category=cat_id,
+                api_url=api_url,
+                api_key=api_key,
+                session=session,
             )
             if r:
                 return r, False
@@ -824,14 +921,32 @@ async def _process_season(session: AsyncSession, season: Season) -> None:
             f"E{ep}" if ep else "",
         )
         r = await treasure_maps.search_show(
-            title=season.media_item.title, season=s, ep=ep, category=cat_id
+            title=season.media_item.title,
+            season=s,
+            ep=ep,
+            category=cat_id,
+            api_url=api_url,
+            api_key=api_key,
+            session=session,
         )
         return r, True
 
     if prefer_seasons:
         logger.info("    📦 Searching season pack for S%02d...", season.season_number)
-        results, is_fallback = await _search_show_id_first(season.season_number)
-        if results:
+        all_season_results: list[dict[str, Any]] = []
+        is_season_fallback = False
+
+        for indexer in active_indexers:
+            results, is_fallback = await _search_show_id_first(
+                season.season_number,
+                api_url=indexer.api_url,
+                api_key=indexer.api_key,
+            )
+            if not results:
+                continue
+            if is_fallback:
+                is_season_fallback = True
+
             grabbed = await _evaluate_and_download(
                 session,
                 results,
@@ -841,6 +956,10 @@ async def _process_season(session: AsyncSession, season: Season) -> None:
                 required_language=required_language,
                 is_title_fallback=is_fallback,
                 filters=filters,
+                indexer_name=indexer.name,
+                indexer_url=indexer.api_url,
+                indexer_key=indexer.api_key,
+                early_exit_on_cutoff=True,
             )
             await session.refresh(season)
             if grabbed or season.status in [
@@ -849,7 +968,46 @@ async def _process_season(session: AsyncSession, season: Season) -> None:
                 SeasonStatus.COMPLETED,
                 SeasonStatus.MANUAL_GRAB,
             ]:
-                # Season Pack was successful, check auto-monitor for next season
+                logger.info(
+                    "    🎯 Season pack grabbed on indexer '%s'. Halting cascade.",
+                    indexer.name,
+                )
+                if season.media_item.auto_monitor_next_season:
+                    next_s_stmt = select(Season).where(
+                        Season.media_item_id == season.media_item_id,
+                        Season.season_number == season.season_number + 1,
+                    )
+                    next_s = (await session.execute(next_s_stmt)).scalar_one_or_none()
+                    if next_s and not next_s.monitored:
+                        next_s.monitored = True
+                        next_s.status = SeasonStatus.SEARCHING
+                        logger.info(
+                            "    🔄 Automatically enabling next season: S%02d",
+                            next_s.season_number,
+                        )
+                        await session.commit()
+                return
+
+            all_season_results.extend(results)
+
+        if all_season_results:
+            grabbed = await _evaluate_and_download(
+                session,
+                all_season_results,
+                season=season,
+                target_episodes=missing_episodes,
+                reject_words=reject_words,
+                required_language=required_language,
+                is_title_fallback=is_season_fallback,
+                filters=filters,
+            )
+            await session.refresh(season)
+            if grabbed or season.status in [
+                SeasonStatus.DOWNLOADING,
+                SeasonStatus.DOWNLOADED,
+                SeasonStatus.COMPLETED,
+                SeasonStatus.MANUAL_GRAB,
+            ]:
                 if season.media_item.auto_monitor_next_season:
                     next_s_stmt = select(Season).where(
                         Season.media_item_id == season.media_item_id,
@@ -877,28 +1035,82 @@ async def _process_season(session: AsyncSession, season: Season) -> None:
                 season.season_number,
                 ep.episode_number,
             )
-            ep_results, is_fallback = await _search_show_id_first(
-                season.season_number, str(ep.episode_number)
-            )
+            all_ep_results: list[dict[str, Any]] = []
+            is_ep_fallback = False
+            early_grabbed = False
 
-            # Additional fallback for Anime Absolute Episode Numbering
-            if not ep_results and season.media_item.media_type == MediaType.ANIME:
-                ep_title_search = f"{season.media_item.title} {ep.episode_number:02d}"
-                abs_res = await treasure_maps.search_show(
-                    title=ep_title_search, category=cat_id
+            for indexer in active_indexers:
+                ep_results, is_fallback = await _search_show_id_first(
+                    season.season_number,
+                    str(ep.episode_number),
+                    api_url=indexer.api_url,
+                    api_key=indexer.api_key,
                 )
-                ep_results = abs_res
-                is_fallback = True
 
-            await _evaluate_and_download(
-                session,
-                ep_results,
-                episode=ep,
-                reject_words=reject_words,
-                required_language=required_language,
-                is_title_fallback=is_fallback,
-                filters=filters,
-            )
+                # Additional fallback for Anime Absolute Episode Numbering
+                if not ep_results and season.media_item.media_type == MediaType.ANIME:
+                    ep_title_search = f"{season.media_item.title} {ep.episode_number:02d}"
+                    abs_res = await treasure_maps.search_show(
+                        title=ep_title_search,
+                        category=cat_id,
+                        api_url=indexer.api_url,
+                        api_key=indexer.api_key,
+                        session=session,
+                    )
+                    ep_results = abs_res
+                    is_fallback = True
+
+                if not ep_results:
+                    continue
+                if is_fallback:
+                    is_ep_fallback = True
+
+                grabbed = await _evaluate_and_download(
+                    session,
+                    ep_results,
+                    episode=ep,
+                    reject_words=reject_words,
+                    required_language=required_language,
+                    is_title_fallback=is_fallback,
+                    filters=filters,
+                    indexer_name=indexer.name,
+                    indexer_url=indexer.api_url,
+                    indexer_key=indexer.api_key,
+                    early_exit_on_cutoff=True,
+                )
+                if grabbed:
+                    logger.info(
+                        "    🎯 Target cutoff met for S%02dE%02d on indexer '%s'.",
+                        season.season_number,
+                        ep.episode_number,
+                        indexer.name,
+                    )
+                    early_grabbed = True
+                    break
+
+                all_ep_results.extend(ep_results)
+
+            if not early_grabbed:
+                if all_ep_results:
+                    await _evaluate_and_download(
+                        session,
+                        all_ep_results,
+                        episode=ep,
+                        reject_words=reject_words,
+                        required_language=required_language,
+                        is_title_fallback=is_ep_fallback,
+                        filters=filters,
+                    )
+                else:
+                    await _evaluate_and_download(
+                        session,
+                        [],
+                        episode=ep,
+                        reject_words=reject_words,
+                        required_language=required_language,
+                        is_title_fallback=is_ep_fallback,
+                        filters=filters,
+                    )
         except Exception as ep_err:  # noqa: BLE001
             logger.error(
                 "    ❌ Error searching S%02dE%02d: %s",
@@ -946,6 +1158,10 @@ async def _evaluate_and_download(
     required_language: str | None = None,
     is_title_fallback: bool = False,
     filters: dict[str, Any] | None = None,
+    indexer_name: str | None = None,
+    indexer_url: str | None = None,
+    indexer_key: str | None = None,
+    early_exit_on_cutoff: bool = False,
 ) -> bool:
     from app.db.models import (
         BlacklistedRelease,
@@ -962,6 +1178,9 @@ async def _evaluate_and_download(
     target: Any = episode if episode else (season if season else movie)
 
     if not search_results:
+        if early_exit_on_cutoff:
+            return False
+
         if target.best_score is not None:
             from app.db.models import (
                 BlacklistedRelease,
@@ -1016,8 +1235,8 @@ async def _evaluate_and_download(
     current_best_score = target.best_score or 0.0
 
     cutoffs = scoring_config.get("cutoffs", {})
-    target_score = cutoffs.get("target_score", 2500)
-    upgrade_threshold = cutoffs.get("upgrade_threshold", 300)
+    target_score = cutoffs.get("target_score", 8000)
+    upgrade_threshold = cutoffs.get("upgrade_threshold", 500)
 
     # Fetch blacklisted guids and titles
     media_item_id = (
@@ -1157,9 +1376,10 @@ async def _evaluate_and_download(
     candidates.sort(key=lambda x: x["score"], reverse=True)
 
     if not candidates:
+        if early_exit_on_cutoff:
+            return False
+
         if target.best_score is not None:
-            # We already have a downloaded release, but no upgrades (or even valid candidates) were found this time.
-            # Revert to COMPLETE so we don't loop in SEARCHING forever.
             from app.db.models import (
                 BlacklistedRelease,
                 EpisodeStatus,
@@ -1211,6 +1431,12 @@ async def _evaluate_and_download(
         await session.commit()
         return False
 
+    best_candidate = candidates[0]
+
+    # If checking for early exit on target cutoff score
+    if early_exit_on_cutoff and best_candidate["score"] < target_score:
+        return False
+
     log_title = ""
     if episode and episode.season and episode.season.media_item:
         log_title = f"{episode.season.media_item.title} S{episode.season.season_number:02d}E{episode.episode_number:02d}"
@@ -1223,10 +1449,13 @@ async def _evaluate_and_download(
     for i, c in enumerate(candidates[:5]):
         logger.info("       %d. [%.1f] %s", i + 1, c["score"], c["title"])
 
-    best_candidate = candidates[0]
-
-    if not best_candidate:
-        return False
+    if early_exit_on_cutoff and best_candidate["score"] >= target_score:
+        logger.info(
+            "    🎯 Target cutoff threshold reached (%.1f >= %d) on indexer '%s'. Triggering early exit.",
+            best_candidate["score"],
+            target_score,
+            indexer_name or "active",
+        )
 
     # If this was a title-search fallback, don't auto-send to TorBox.
     # Instead store the best candidate for manual approval.
@@ -1270,12 +1499,13 @@ async def _evaluate_and_download(
         should_download = True
 
     if not should_download:
+        if early_exit_on_cutoff:
+            return False
+
         target.fail_count = 0
         target.last_error = f"Bestes Release (Score {best_candidate['score']}) liegt unter dem Upgrade-Schwellenwert."
         logger.info("    ❌ %s", target.last_error)
 
-        # If we didn't find an upgrade, but we already have a download (since should_download is False),
-        # we must set the status back to COMPLETE so it doesn't stay in SEARCHING forever.
         from app.db.models import (
             BlacklistedRelease,
             EpisodeStatus,
@@ -1348,9 +1578,14 @@ async def _evaluate_and_download(
 
         try:
             nzb_bytes, filename = await treasure_maps.fetch_nzb_bytes(
-                best_candidate["guid"]
+                best_candidate["guid"],
+                api_url=indexer_url,
+                api_key=indexer_key,
+                session=session,
             )
-            torbox_result = await torbox.send_nzb_file(nzb_bytes, filename=filename)
+            torbox_result = await torbox.send_nzb_file(
+                nzb_bytes, filename=filename, session=session
+            )
         except treasure_maps.IndexerError as e:
             target.fail_count += 1
             target.last_error = f"NZB download failed: {e}"
@@ -1633,29 +1868,44 @@ async def process_print_book(session: AsyncSession, book: BookItem) -> bool:
         queries.append(f"{book.title} {book.author}".strip())
     queries.append(book.title.strip())
 
+    active_indexers = await provider_service.get_active_indexers(session)
+    if not active_indexers:
+        logger.warning("  ⚠️ No active indexers configured.")
+        book.last_error = "No active indexers configured."
+        await session.commit()
+        return False
+
     results: list[dict] = []
     seen_keys: set[str] = set()
 
-    for q in queries:
-        for cid in cat_ids:
-            try:
-                raw_res = await treasure_maps.search_raw(query=q, category=cid)
-                for r in raw_res:
-                    # Robust deduplication by GUID, link, or normalized title + size
-                    dedup_key = (
-                        r.get("guid")
-                        or (
-                            f"{r.get('title', '').strip().lower()}_{r.get('size', 0)}"
-                            if r.get("title")
-                            else None
-                        )
-                        or r.get("link", "")
+    for indexer in active_indexers:
+        for q in queries:
+            for cid in cat_ids:
+                try:
+                    raw_res = await treasure_maps.search_raw(
+                        query=q,
+                        category=cid,
+                        api_url=indexer.api_url,
+                        api_key=indexer.api_key,
+                        session=session,
                     )
-                    if dedup_key and dedup_key not in seen_keys:
-                        seen_keys.add(dedup_key)
-                        results.append(r)
-            except Exception as e:
-                logger.warning("  ⚠️ Indexer search failed for query '%s': %s", q, e)
+                    for r in raw_res:
+                        dedup_key = (
+                            r.get("guid")
+                            or (
+                                f"{r.get('title', '').strip().lower()}_{r.get('size', 0)}"
+                                if r.get("title")
+                                else None
+                            )
+                            or r.get("link", "")
+                        )
+                        if dedup_key and dedup_key not in seen_keys:
+                            seen_keys.add(dedup_key)
+                            r["_indexer_url"] = indexer.api_url
+                            r["_indexer_key"] = indexer.api_key
+                            results.append(r)
+                except Exception as e:
+                    logger.warning("  ⚠️ Indexer '%s' search failed for query '%s': %s", indexer.name, q, e)
 
     if not results:
         book.empty_search_count += 1
@@ -1733,8 +1983,13 @@ async def process_print_book(session: AsyncSession, book: BookItem) -> bool:
         return False
 
     try:
+        idx_url = best_candidate["item"].get("_indexer_url")
+        idx_key = best_candidate["item"].get("_indexer_key")
         nzb_bytes, filename = await treasure_maps.fetch_nzb_bytes(
-            best_candidate["guid"]
+            best_candidate["guid"],
+            api_url=idx_url,
+            api_key=idx_key,
+            session=session,
         )
         is_fake_content, fake_content_reason = is_nzb_content_fake(
             nzb_bytes, media_type="book"
@@ -1750,7 +2005,7 @@ async def process_print_book(session: AsyncSession, book: BookItem) -> bool:
             return False
 
         torbox_res = await torbox.send_nzb_file(
-            nzb_bytes, filename=filename or f"{book.title}.nzb"
+            nzb_bytes, filename=filename or f"{book.title}.nzb", session=session
         )
     except Exception as e:
         book.last_error = f"NZB fetch or dispatch error: {e}"
@@ -1834,6 +2089,11 @@ async def process_print_manga(session: AsyncSession, manga: MangaItem) -> bool:
         sorted(wanted_numbers),
     )
 
+    active_indexers = await provider_service.get_active_indexers(session)
+    if not active_indexers:
+        logger.warning("  ⚠️ No active indexers configured.")
+        return False
+
     # -----------------------------------------------------------------------
     # Step 1: Pack-First Search Cascade
     # -----------------------------------------------------------------------
@@ -1847,27 +2107,36 @@ async def process_print_manga(session: AsyncSession, manga: MangaItem) -> bool:
     pack_results: list[dict] = []
     seen_pack_keys: set[str] = set()
 
-    for pq in pack_queries:
-        for cid in cat_ids:
-            try:
-                raw_res = await treasure_maps.search_raw(query=pq, category=cid)
-                for r in raw_res:
-                    dedup_key = (
-                        r.get("guid")
-                        or (
-                            f"{r.get('title', '').strip().lower()}_{r.get('size', 0)}"
-                            if r.get("title")
-                            else None
-                        )
-                        or r.get("link", "")
+    for indexer in active_indexers:
+        for pq in pack_queries:
+            for cid in cat_ids:
+                try:
+                    raw_res = await treasure_maps.search_raw(
+                        query=pq,
+                        category=cid,
+                        api_url=indexer.api_url,
+                        api_key=indexer.api_key,
+                        session=session,
                     )
-                    if dedup_key and dedup_key not in seen_pack_keys:
-                        seen_pack_keys.add(dedup_key)
-                        pack_results.append(r)
-            except Exception as e:
-                logger.warning(
-                    "  ⚠️ Indexer pack search failed for query '%s': %s", pq, e
-                )
+                    for r in raw_res:
+                        dedup_key = (
+                            r.get("guid")
+                            or (
+                                f"{r.get('title', '').strip().lower()}_{r.get('size', 0)}"
+                                if r.get("title")
+                                else None
+                            )
+                            or r.get("link", "")
+                        )
+                        if dedup_key and dedup_key not in seen_pack_keys:
+                            seen_pack_keys.add(dedup_key)
+                            r["_indexer_url"] = indexer.api_url
+                            r["_indexer_key"] = indexer.api_key
+                            pack_results.append(r)
+                except Exception as e:
+                    logger.warning(
+                        "  ⚠️ Indexer '%s' pack search failed for query '%s': %s", indexer.name, pq, e
+                    )
 
     best_pack: dict | None = None
     best_pack_covered_vols: set[int] = set()
@@ -1940,13 +2209,18 @@ async def process_print_manga(session: AsyncSession, manga: MangaItem) -> bool:
 
         if await can_grab_today(session, limit=400):
             try:
+                idx_url = best_pack["item"].get("_indexer_url")
+                idx_key = best_pack["item"].get("_indexer_key")
                 nzb_bytes, filename = await treasure_maps.fetch_nzb_bytes(
-                    best_pack["guid"]
+                    best_pack["guid"],
+                    api_url=idx_url,
+                    api_key=idx_key,
+                    session=session,
                 )
                 is_fake_content, _ = is_nzb_content_fake(nzb_bytes, media_type="manga")
                 if not is_fake_content:
                     torbox_res = await torbox.send_nzb_file(
-                        nzb_bytes, filename=filename or f"{manga.title}_Pack.nzb"
+                        nzb_bytes, filename=filename or f"{manga.title}_Pack.nzb", session=session
                     )
                     if torbox_res and (torbox_res.get("hash") or torbox_res.get("id")):
                         await increment_today_grab_count(session)
@@ -1989,25 +2263,34 @@ async def process_print_manga(session: AsyncSession, manga: MangaItem) -> bool:
         vol_results: list[dict] = []
         vol_seen_keys: set[str] = set()
 
-        for vq in vol_queries:
-            for cid in cat_ids:
-                try:
-                    raw_res = await treasure_maps.search_raw(query=vq, category=cid)
-                    for r in raw_res:
-                        dedup_key = (
-                            r.get("guid")
-                            or (
-                                f"{r.get('title', '').strip().lower()}_{r.get('size', 0)}"
-                                if r.get("title")
-                                else None
-                            )
-                            or r.get("link", "")
+        for indexer in active_indexers:
+            for vq in vol_queries:
+                for cid in cat_ids:
+                    try:
+                        raw_res = await treasure_maps.search_raw(
+                            query=vq,
+                            category=cid,
+                            api_url=indexer.api_url,
+                            api_key=indexer.api_key,
+                            session=session,
                         )
-                        if dedup_key and dedup_key not in vol_seen_keys:
-                            vol_seen_keys.add(dedup_key)
-                            vol_results.append(r)
-                except Exception as e:
-                    logger.warning("  ⚠️ Volume search failed for query '%s': %s", vq, e)
+                        for r in raw_res:
+                            dedup_key = (
+                                r.get("guid")
+                                or (
+                                    f"{r.get('title', '').strip().lower()}_{r.get('size', 0)}"
+                                    if r.get("title")
+                                    else None
+                                )
+                                or r.get("link", "")
+                            )
+                            if dedup_key and dedup_key not in vol_seen_keys:
+                                vol_seen_keys.add(dedup_key)
+                                r["_indexer_url"] = indexer.api_url
+                                r["_indexer_key"] = indexer.api_key
+                                vol_results.append(r)
+                    except Exception as e:
+                        logger.warning("  ⚠️ Volume search failed for query '%s': %s", vq, e)
 
         candidates: list[dict] = []
         for item in vol_results:
@@ -2054,15 +2337,20 @@ async def process_print_manga(session: AsyncSession, manga: MangaItem) -> bool:
             break
 
         try:
+            idx_url = best_vol_cand["item"].get("_indexer_url")
+            idx_key = best_vol_cand["item"].get("_indexer_key")
             nzb_bytes, filename = await treasure_maps.fetch_nzb_bytes(
-                best_vol_cand["guid"]
+                best_vol_cand["guid"],
+                api_url=idx_url,
+                api_key=idx_key,
+                session=session,
             )
             is_fake_content, _ = is_nzb_content_fake(nzb_bytes, media_type="manga")
             if is_fake_content:
                 continue
 
             torbox_res = await torbox.send_nzb_file(
-                nzb_bytes, filename=filename or f"{manga.title}_Vol_{n}.nzb"
+                nzb_bytes, filename=filename or f"{manga.title}_Vol_{n}.nzb", session=session
             )
             if torbox_res and (torbox_res.get("hash") or torbox_res.get("id")):
                 await increment_today_grab_count(session)
