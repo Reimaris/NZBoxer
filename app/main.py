@@ -590,6 +590,14 @@ async def manual_search_print(
         title = item.get("title", "")
         description = item.get("description", "")
 
+        # Safely coerce category to int — indexers may return a human-readable
+        # string like "Books > Comics" instead of a numeric ID.
+        raw_cat = item.get("category", cat_ids[0])
+        try:
+            item_cat_id = int(raw_cat) if raw_cat is not None else cat_ids[0]
+        except (ValueError, TypeError):
+            item_cat_id = cat_ids[0]
+
         # Volume strict filtering if specified
         is_exact_vol = False
         if vol_clean:
@@ -600,7 +608,7 @@ async def manual_search_print(
         detected_fmt = detect_print_format(
             title=title,
             description=description,
-            category_id=item.get("category", cat_ids[0]),
+            category_id=item_cat_id,
             media_type=media_type,
         )
 
@@ -615,7 +623,6 @@ async def manual_search_print(
         if vol_clean:
             score_val += 500 if is_exact_vol else 200
 
-        item_cat_id = int(item.get("category", cat_ids[0]) or cat_ids[0])
         valid_results.append({
             "title": title,
             "link": item.get("link", ""),
