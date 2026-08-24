@@ -1584,9 +1584,6 @@ async def export_settings():
 @app.post("/settings/global")
 async def save_global_settings(
     request: Request,
-    tmdb_api_key: str = Form(""),
-    treasure_maps_api_key: str = Form(""),
-    torbox_api_key: str = Form(""),
     scan_interval_multiplier: int = Form(1),
     sh_max_retries: int = Form(3),
     sh_max_time_hours: float = Form(12.0),
@@ -1615,9 +1612,6 @@ async def save_global_settings(
         db_settings = (await session.execute(stmt)).scalar_one_or_none()
 
         if db_settings:
-            db_settings.tmdb_api_key = tmdb_api_key
-            db_settings.treasure_maps_api_key = treasure_maps_api_key
-            db_settings.torbox_api_key = torbox_api_key
             db_settings.scan_interval_multiplier = scan_interval_multiplier
             db_settings.sh_max_retries = sh_max_retries
             db_settings.sh_max_time_hours = sh_max_time_hours
@@ -1630,7 +1624,9 @@ async def save_global_settings(
             db_settings.reading_download_dir = reading_download_dir
             db_settings.manga_blacklisted_formats = manga_blacklisted_formats
             db_settings.book_blacklisted_formats = book_blacklisted_formats
-            db_settings.magazine_blacklisted_formats = magazine_blacklisted_formats
+            db_settings.magazine_blacklisted_formats = (
+                magazine_blacklisted_formats
+            )
 
             sc: dict[str, Any] = copy.deepcopy(
                 db_settings.scoring_settings or DEFAULT_SCORING_CONFIG
