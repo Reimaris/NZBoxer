@@ -130,7 +130,9 @@
                 </thead>
                 <tbody class="divide-y divide-[#3f3f46] text-sm" x-data="{ expandedManga: {} }">
                     {% for item in mangas %}
-                    <tr class="hover:bg-[#2a2a32] transition-colors" x-show="search === '' || '{{ item.title | lower }}'.includes(search.toLowerCase())">
+                    <tr class="hover:bg-[#2a2a32] transition-colors cursor-pointer" 
+                        x-show="search === '' || '{{ item.title | lower }}'.includes(search.toLowerCase())"
+                        @click="expandedManga[{{ item.id }}] = !expandedManga[{{ item.id }}]; if(expandedManga[{{ item.id }}] && !$el.dataset.loaded) { $el.dataset.loaded = 'true'; htmx.ajax('GET', '/dashboard/print/manga/{{ item.id }}/volumes', '#manga-drawer-{{ item.id }}'); }">
                         <td class="py-3 px-4 text-center text-[#a1a1aa] align-middle">{{ loop.index }}</td>
                         <td class="py-3 px-4 align-middle">
                             <div class="flex items-center gap-3">
@@ -148,11 +150,8 @@
                             </div>
                         </td>
                         <td class="py-3 px-4 text-[#d1d5db] align-middle">
-                            <button @click="expandedManga[{{ item.id }}] = !expandedManga[{{ item.id }}]" 
-                                    hx-get="/dashboard/print/manga/{{ item.id }}/volumes" 
-                                    hx-target="#manga-drawer-{{ item.id }}" 
-                                    hx-trigger="click once"
-                                    class="inline-flex items-center gap-1.5 px-2.5 py-1 bg-[#1e1e24] hover:bg-[#3f3f46] border border-[#3f3f46] rounded text-xs font-medium text-gray-200 transition-colors">
+                            <button @click.stop="expandedManga[{{ item.id }}] = !expandedManga[{{ item.id }}]; if(expandedManga[{{ item.id }}] && !$el.closest('tr').dataset.loaded) { $el.closest('tr').dataset.loaded = 'true'; htmx.ajax('GET', '/dashboard/print/manga/{{ item.id }}/volumes', '#manga-drawer-{{ item.id }}'); }" 
+                                    class="inline-flex items-center gap-1.5 px-2.5 py-1 bg-[#1e1e24] hover:bg-[#3f3f46] border border-[#3f3f46] rounded text-xs font-medium text-gray-200 transition-colors shadow-sm">
                                 <span>📚 {{ item.volumes | length }} Volumes</span>
                                 <svg class="w-3.5 h-3.5 transition-transform duration-200" :class="{'rotate-180': expandedManga[{{ item.id }}]}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
                             </button>
@@ -166,9 +165,9 @@
                                 {% if item.status.value == 'SEARCHING' %}WANTED{% else %}{{ item.status.value }}{% endif %}
                             </span>
                         </td>
-                        <td class="py-3 px-4 text-right align-middle">
+                        <td class="py-3 px-4 text-right align-middle" @click.stop>
                             <div class="flex items-center justify-end gap-2">
-                                <a href="/dashboard/print/manual-search?query={{ item.title }}&media_type=manga" class="px-2.5 py-1 bg-[#1e1e24] hover:bg-[#3f3f46] border border-[#3f3f46] text-[#d40060] hover:text-white text-xs font-semibold rounded transition-colors">
+                                <a href="/dashboard/print/manual-search?query={{ item.title }}&media_type=manga" class="px-2.5 py-1 bg-[#1e1e24] hover:bg-[#3f3f46] border border-[#3f3f46] text-white text-xs font-semibold rounded transition-colors shadow-sm">
                                     Search 🔍
                                 </a>
                                 <button hx-delete="/api/print/manga/{{ item.id }}"
@@ -246,7 +245,7 @@
                         </td>
                         <td class="py-3 px-4 text-right align-middle">
                             <div class="flex items-center justify-end gap-2">
-                                <a href="/dashboard/print/manual-search?query={{ item.title }}&media_type=book" class="px-2.5 py-1 bg-[#1e1e24] hover:bg-[#3f3f46] border border-[#3f3f46] text-[#d40060] hover:text-white text-xs font-semibold rounded transition-colors">
+                                <a href="/dashboard/print/manual-search?query={{ item.title }}&media_type=book" class="px-2.5 py-1 bg-[#1e1e24] hover:bg-[#3f3f46] border border-[#3f3f46] text-white text-xs font-semibold rounded transition-colors shadow-sm">
                                     Search 🔍
                                 </a>
                                 <button hx-delete="/api/print/book/{{ item.id }}"

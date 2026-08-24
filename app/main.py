@@ -1105,12 +1105,18 @@ async def print_manual_search_page(
     query: str = "",
     media_type: str = "manga",
     format_type: str = "any",
+    volume: str = "",
+    volume_number: str = "",
+    author: str = "",
 ):
     """Dedicated dashboard for manual searching print media (Manga, Books, Magazines)."""
+    vol = volume or volume_number
     defaults = {
         "query": query,
         "media_type": media_type,
         "format_type": format_type,
+        "volume": vol,
+        "author": author,
     }
     return templates.TemplateResponse(
         request=request,

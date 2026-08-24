@@ -36,11 +36,11 @@
                 <div class="grid grid-cols-2 gap-3">
                     <div>
                         <label class="block text-xs font-semibold text-[#a1a1aa] uppercase tracking-wider mb-1">Volume / Issue</label>
-                        <input type="text" name="volume" class="w-full bg-[#1e1e24] border border-[#3f3f46] rounded-md px-3 py-2 text-white text-sm focus:outline-none focus:border-[#d40060]" placeholder="e.g. 01">
+                        <input type="text" name="volume" value="{{ defaults.get('volume', '') }}" class="w-full bg-[#1e1e24] border border-[#3f3f46] rounded-md px-3 py-2 text-white text-sm focus:outline-none focus:border-[#d40060]" placeholder="e.g. 01">
                     </div>
                     <div>
                         <label class="block text-xs font-semibold text-[#a1a1aa] uppercase tracking-wider mb-1">Author</label>
-                        <input type="text" name="author" class="w-full bg-[#1e1e24] border border-[#3f3f46] rounded-md px-3 py-2 text-white text-sm focus:outline-none focus:border-[#d40060]" placeholder="e.g. Kentaro Miura">
+                        <input type="text" name="author" value="{{ defaults.get('author', '') }}" class="w-full bg-[#1e1e24] border border-[#3f3f46] rounded-md px-3 py-2 text-white text-sm focus:outline-none focus:border-[#d40060]" placeholder="e.g. Kentaro Miura">
                     </div>
                 </div>
 
