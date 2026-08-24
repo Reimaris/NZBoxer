@@ -86,19 +86,16 @@
     
     <!-- Table Toolbar: Tabs & Search -->
     <div class="p-4 border-b border-[#3f3f46] flex flex-col md:flex-row justify-between items-center gap-4">
-        <!-- Tabs with Icons and Count Badges -->
+        <!-- Tabs with Icons -->
         <div class="flex gap-2 bg-[#1e1e24] p-1 rounded-lg border border-[#3f3f46]">
             <button @click="tab = 'movie'; search = ''" :class="{'bg-[#d40060] text-white': tab === 'movie', 'text-[#a1a1aa] hover:text-white': tab !== 'movie'}" class="px-4 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-2">
                 <span>🎬 Movies</span>
-                <span class="text-xs px-1.5 py-0.5 rounded-full bg-[#2a2a32] text-white">{{ movie_items|length }}</span>
             </button>
             <button @click="tab = 'show'; search = ''" :class="{'bg-[#d40060] text-white': tab === 'show', 'text-[#a1a1aa] hover:text-white': tab !== 'show'}" class="px-4 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-2">
                 <span>📺 Series</span>
-                <span class="text-xs px-1.5 py-0.5 rounded-full bg-[#2a2a32] text-white">{{ series_items|length }}</span>
             </button>
             <button @click="tab = 'anime'; search = ''" :class="{'bg-[#d40060] text-white': tab === 'anime', 'text-[#a1a1aa] hover:text-white': tab !== 'anime'}" class="px-4 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-2">
                 <span>😊 Anime</span>
-                <span class="text-xs px-1.5 py-0.5 rounded-full bg-[#2a2a32] text-white">{{ anime_items|length }}</span>
             </button>
         </div>
 
@@ -154,7 +151,7 @@
                     <th class="px-6 py-3.5 text-right">Actions</th>
                 </tr>
             </thead>
-            <tbody class="divide-y border-[#3f3f46] text-sm">
+            <tbody class="divide-y divide-[#3f3f46] text-sm">
                 {% for item in items %}
                 {% set display_category = item.media_type.value %}
                 <tr class="hover:bg-[#2a2a32] transition-colors group" 

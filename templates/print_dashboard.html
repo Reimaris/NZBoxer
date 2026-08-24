@@ -90,15 +90,12 @@
         <div class="flex gap-2 bg-[#1e1e24] p-1 rounded-lg border border-[#3f3f46]">
             <button @click="tab = 'manga'; search = ''" :class="{'bg-[#d40060] text-white': tab === 'manga', 'text-[#a1a1aa] hover:text-white': tab !== 'manga'}" class="px-4 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-2">
                 <span>📖 Manga</span>
-                <span class="text-xs px-1.5 py-0.5 rounded-full bg-[#2a2a32] text-white">{{ mangas|length }}</span>
             </button>
             <button @click="tab = 'books'; search = ''" :class="{'bg-[#d40060] text-white': tab === 'books', 'text-[#a1a1aa] hover:text-white': tab !== 'books'}" class="px-4 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-2">
                 <span>📕 Books</span>
-                <span class="text-xs px-1.5 py-0.5 rounded-full bg-[#2a2a32] text-white">{{ books|length }}</span>
             </button>
             <button @click="tab = 'magazines'; search = ''" :class="{'bg-[#d40060] text-white': tab === 'magazines', 'text-[#a1a1aa] hover:text-white': tab !== 'magazines'}" class="px-4 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-2">
                 <span>📰 Magazines</span>
-                <span class="text-xs px-1.5 py-0.5 rounded-full bg-[#2a2a32] text-white">{{ magazines|length }}</span>
             </button>
         </div>
 
