@@ -128,9 +128,9 @@
                         <th class="py-3 px-4 text-right">Actions</th>
                     </tr>
                 </thead>
-                <tbody class="divide-y divide-[#3f3f46] text-sm">
+                <tbody class="divide-y divide-[#3f3f46] text-sm" x-data="{ expandedManga: {} }">
                     {% for item in mangas %}
-                    <tr class="hover:bg-[#2a2a32] transition-colors" x-data="{ expanded: false }" x-show="search === '' || '{{ item.title | lower }}'.includes(search.toLowerCase())">
+                    <tr class="hover:bg-[#2a2a32] transition-colors" x-show="search === '' || '{{ item.title | lower }}'.includes(search.toLowerCase())">
                         <td class="py-3 px-4 text-center text-[#a1a1aa] align-middle">{{ loop.index }}</td>
                         <td class="py-3 px-4 align-middle">
                             <div class="flex items-center gap-3">
@@ -148,13 +148,13 @@
                             </div>
                         </td>
                         <td class="py-3 px-4 text-[#d1d5db] align-middle">
-                            <button @click="expanded = !expanded" 
+                            <button @click="expandedManga[{{ item.id }}] = !expandedManga[{{ item.id }}]" 
                                     hx-get="/dashboard/print/manga/{{ item.id }}/volumes" 
                                     hx-target="#manga-drawer-{{ item.id }}" 
                                     hx-trigger="click once"
                                     class="inline-flex items-center gap-1.5 px-2.5 py-1 bg-[#1e1e24] hover:bg-[#3f3f46] border border-[#3f3f46] rounded text-xs font-medium text-gray-200 transition-colors">
                                 <span>📚 {{ item.volumes | length }} Volumes</span>
-                                <svg class="w-3.5 h-3.5 transition-transform duration-200" :class="{'rotate-180': expanded}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                                <svg class="w-3.5 h-3.5 transition-transform duration-200" :class="{'rotate-180': expandedManga[{{ item.id }}]}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
                             </button>
                         </td>
                         <td class="py-3 px-4 align-middle">
@@ -183,7 +183,7 @@
                         </td>
                     </tr>
                     <!-- Expandable Volume Drawer Container -->
-                    <tr id="manga-drawer-row-{{ item.id }}" class="bg-[#18181d]">
+                    <tr id="manga-drawer-row-{{ item.id }}" class="bg-[#18181d]" x-show="expandedManga[{{ item.id }}]" style="display: none;">
                         <td colspan="5" class="p-0 border-0">
                             <div id="manga-drawer-{{ item.id }}"></div>
                         </td>

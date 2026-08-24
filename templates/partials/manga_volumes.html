@@ -13,7 +13,7 @@
             <button hx-post="/api/print/manga/{{ manga.id }}/monitor?mode=all" 
                     hx-target="#manga-volumes-{{ manga.id }}" 
                     hx-swap="outerHTML"
-                    class="px-2.5 py-1 text-xs font-medium bg-[#2a2a34] hover:bg-[#3f3f46] text-gray-200 rounded border border-[#3f3f46] transition-colors">
+                    class="px-2.5 py-1 text-xs font-medium bg-[#2a2a34] hover:bg-[#3f3f46] text-gray-200 rounded border border-[#3f3f46] transition-colors shadow-sm">
                 ✓ Monitor All
             </button>
 
@@ -23,7 +23,7 @@
                   class="flex items-center gap-1">
                 <input type="number" name="start_volume" min="1" max="{{ manga.volumes|length or 999 }}" placeholder="Vol #" required
                        class="w-16 px-2 py-1 text-xs bg-[#111115] border border-[#3f3f46] rounded text-white focus:outline-none focus:border-[#d40060]">
-                <button type="submit" class="px-2.5 py-1 text-xs font-medium bg-[#2a2a34] hover:bg-[#3f3f46] text-gray-200 rounded border border-[#3f3f46] transition-colors">
+                <button type="submit" class="px-2.5 py-1 text-xs font-medium bg-[#2a2a34] hover:bg-[#3f3f46] text-gray-200 rounded border border-[#3f3f46] transition-colors shadow-sm">
                     ▶ Monitor From
                 </button>
             </form>
@@ -31,7 +31,7 @@
             <button hx-post="/api/print/manga/{{ manga.id }}/monitor?mode=none" 
                     hx-target="#manga-volumes-{{ manga.id }}" 
                     hx-swap="outerHTML"
-                    class="px-2.5 py-1 text-xs font-medium bg-[#2a2a34] hover:bg-[#3f3f46] text-[#a1a1aa] hover:text-white rounded border border-[#3f3f46] transition-colors">
+                    class="px-2.5 py-1 text-xs font-medium bg-[#2a2a34] hover:bg-[#3f3f46] text-[#a1a1aa] hover:text-white rounded border border-[#3f3f46] transition-colors shadow-sm">
                 ✗ Unmonitor All
             </button>
 
@@ -40,7 +40,7 @@
                   hx-target="#manga-volumes-{{ manga.id }}"
                   hx-swap="outerHTML"
                   class="flex items-center gap-1 ml-2">
-                <button type="submit" title="Add next volume" class="px-2.5 py-1 text-xs font-medium bg-emerald-950 hover:bg-emerald-900 text-emerald-300 rounded border border-emerald-800 transition-colors">
+                <button type="submit" title="Add next volume" class="px-2.5 py-1 text-xs font-medium bg-emerald-950 hover:bg-emerald-900 text-emerald-300 rounded border border-emerald-800 transition-colors shadow-sm">
                     + Add Vol {{ (manga.volumes|length) + 1 }}
                 </button>
             </form>
@@ -48,36 +48,34 @@
     </div>
 
     {% if manga.volumes %}
-    <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2.5 max-h-80 overflow-y-auto pr-1">
+    <div class="grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-2.5 max-h-96 overflow-y-auto pr-1">
         {% for vol in manga.volumes|sort(attribute='volume_number') %}
-        <div class="bg-[#1e1e24] border border-[#3f3f46] rounded-lg p-2.5 flex flex-col justify-between hover:border-[#52525b] transition-colors">
-            <div class="flex items-center justify-between mb-1.5">
-                <span class="font-bold text-xs text-white">Vol {{ vol.volume_number }}</span>
-                
-                <!-- Status Badge -->
-                <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded
-                    {% if vol.status.value == 'COMPLETED' or vol.status.value == 'DOWNLOADED' %}bg-emerald-950 text-emerald-400 border border-emerald-800
-                    {% elif vol.status.value == 'SEARCHING' %}bg-yellow-950 text-yellow-400 border border-yellow-800 animate-pulse
-                    {% elif vol.status.value == 'DOWNLOADING' %}bg-blue-950 text-blue-400 border border-blue-800 animate-pulse
-                    {% elif vol.status.value == 'IGNORED' %}bg-slate-900 text-slate-500 border border-slate-700
-                    {% else %}bg-[#111115] text-[#a1a1aa] border border-[#3f3f46]{% endif %}">
-                    {% if vol.status.value == 'SEARCHING' %}WANTED{% else %}{{ vol.status.value }}{% endif %}
-                </span>
+        <div class="p-3 bg-[#1e1e24] hover:bg-[#272730] rounded border border-[#3f3f46] flex justify-between items-center text-xs transition-colors shadow-sm">
+            <div class="flex items-center gap-2">
+                <span class="font-bold text-[#d40060] font-mono text-sm">Vol {{ "%02d"|format(vol.volume_number) }}</span>
             </div>
-
-            <div class="flex items-center justify-between mt-2 pt-2 border-t border-[#2a2a32] text-[11px]">
-                <!-- Status Toggle -->
+            <div class="flex items-center gap-2 shrink-0">
+                <!-- Status Badge (Click to toggle status) -->
                 <button hx-post="/api/print/manga/volume/{{ vol.id }}/toggle-status" 
                         hx-target="#manga-volumes-{{ manga.id }}" 
                         hx-swap="outerHTML"
-                        class="text-xs text-[#a1a1aa] hover:text-white transition-colors underline">
-                    {% if vol.status.value == 'SEARCHING' %}Unmonitor{% else %}Monitor{% endif %}
+                        title="Click to toggle monitoring status"
+                        class="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider transition-opacity hover:opacity-80 cursor-pointer
+                    {% if vol.status.value == 'COMPLETED' or vol.status.value == 'DOWNLOADED' %}bg-emerald-900/60 text-emerald-300 border border-emerald-700
+                    {% elif vol.status.value == 'SEARCHING' %}bg-yellow-900/60 text-yellow-300 border border-yellow-700 animate-pulse
+                    {% elif vol.status.value == 'DOWNLOADING' %}bg-blue-900/60 text-blue-300 border border-blue-700 animate-pulse
+                    {% elif vol.status.value == 'IGNORED' %}bg-slate-800 text-slate-400 border border-slate-700
+                    {% else %}bg-[#111115] text-[#a1a1aa] border border-[#3f3f46]{% endif %}">
+                    {% if vol.status.value == 'SEARCHING' %}WANTED{% else %}{{ vol.status.value }}{% endif %}
                 </button>
 
                 <!-- Search Link -->
                 <a href="/dashboard/print/manual-search?query={{ manga.title }}&media_type=manga&volume_number={{ vol.volume_number }}" 
-                   class="text-[#d40060] hover:text-white font-semibold transition-colors">
-                    Search 🔍
+                   title="Search volume manually"
+                   class="ml-1 text-slate-400 hover:text-[#d40060] transition-colors focus:outline-none p-0.5">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                    </svg>
                 </a>
             </div>
         </div>
