@@ -37,49 +37,51 @@ from app.services import simkl, tmdb, torbox, treasure_maps
 logger = logging.getLogger(__name__)
 
 
-async def sync_simkl_watchlist() -> None:
-    """Sync the Simkl 'plan to watch' list to the local SQLite database."""
-    log_process_start(logger, "Watchlist Sync Engine")
+async def sync_all_providers() -> None:
+    """Sync watchlists and libraries from all configured providers (Simkl, etc.)."""
+    log_process_start(logger, "Provider Sync Engine")
     from app.db.models import Provider
 
     async with async_session_factory() as session:
         try:
-            stmt = (
-                select(Provider)
-                .where(Provider.type == "simkl")
-                .options(selectinload(Provider.profiles))
-            )
+            stmt = select(Provider).options(selectinload(Provider.profiles))
             providers_res = await session.execute(stmt)
             providers = providers_res.scalars().unique().all()
 
             for provider in providers:
-                if not provider.client_id or not provider.access_token:
-                    logger.warning(
-                        "Provider %s lacks Simkl credentials, skipping.", provider.name
+                if provider.type == "simkl":
+                    if not provider.client_id or not provider.access_token:
+                        logger.warning(
+                            "Provider %s lacks Simkl credentials, skipping.", provider.name
+                        )
+                        continue
+
+                    movies = await simkl.get_watchlist(
+                        "movies", provider.client_id, provider.access_token
                     )
-                    continue
+                    shows = await simkl.get_watchlist(
+                        "shows", provider.client_id, provider.access_token
+                    )
+                    anime = await simkl.get_watchlist(
+                        "anime", provider.client_id, provider.access_token
+                    )
 
-                movies = await simkl.get_watchlist(
-                    "movies", provider.client_id, provider.access_token
-                )
-                shows = await simkl.get_watchlist(
-                    "shows", provider.client_id, provider.access_token
-                )
-                anime = await simkl.get_watchlist(
-                    "anime", provider.client_id, provider.access_token
-                )
-
-                await _sync_items(session, movies, MediaType.MOVIE, provider.id)
-                await _sync_items(session, shows, MediaType.SHOW, provider.id)
-                await _sync_items(session, anime, MediaType.ANIME, provider.id)
+                    await _sync_items(session, movies, MediaType.MOVIE, provider.id)
+                    await _sync_items(session, shows, MediaType.SHOW, provider.id)
+                    await _sync_items(session, anime, MediaType.ANIME, provider.id)
 
             await session.commit()
-            logger.info("Simkl watchlist sync completed successfully.")
+            logger.info("All provider watchlists synced successfully.")
         except Exception as e:  # noqa: BLE001
-            logger.error("Simkl sync failed: %s", e)
+            logger.error("Provider sync failed: %s", e)
             await session.rollback()
         finally:
-            log_process_end(logger, "Watchlist Sync Engine")
+            log_process_end(logger, "Provider Sync Engine")
+
+
+async def sync_simkl_watchlist() -> None:
+    """Sync the Simkl 'plan to watch' list to the local SQLite database."""
+    await sync_all_providers()
 
 
 async def _sync_items(

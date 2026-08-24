@@ -968,17 +968,6 @@ async def set_automation_state(state: str = Form(...)):
     return HTMLResponse(content="<script>window.location.reload();</script>")
 
 
-@app.post("/sync")
-async def sync_watchlist():
-    """Trigger manual Simkl sync."""
-    from app.core.automation import sync_simkl_watchlist
-
-    await sync_simkl_watchlist()
-    return HTMLResponse(
-        content='<div class="p-4 bg-[#d40060] text-white rounded">Sync complete! Reload the page.</div>'
-    )
-
-
 @app.get("/api/status")
 async def get_status():
     """Health check and scheduler status."""
@@ -1878,11 +1867,11 @@ async def run_system_check(request: Request):
 
 @app.post("/sync", response_class=HTMLResponse)
 async def manual_sync(background_tasks: BackgroundTasks):
-    """Trigger manual Simkl sync and show flash message."""
-    from app.core.automation import sync_simkl_watchlist
+    """Trigger manual sync for all configured providers and show flash message."""
+    from app.core.automation import sync_all_providers
 
-    background_tasks.add_task(sync_simkl_watchlist)
-    msg = "Simkl Sync im Hintergrund gestartet."
+    background_tasks.add_task(sync_all_providers)
+    msg = "Provider sync started in background."
 
     return HTMLResponse(
         content=f"""
