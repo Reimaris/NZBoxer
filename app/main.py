@@ -261,6 +261,9 @@ async def dashboard(request: Request):
         name="dashboard.html",
         context={
             "items": items,
+            "movie_items": movie_items,
+            "series_items": series_items,
+            "anime_items": anime_items,
             "movie_stats": movie_stats,
             "series_stats": series_stats,
             "anime_stats": anime_stats,
@@ -725,6 +728,8 @@ async def manual_search_movie_route(item_id: int):
 @app.post("/items/{item_id}/retry")
 async def retry_item(item_id: int):
     """Reset item and season status to pending and delete blacklisted releases for this item."""
+    from datetime import datetime, timezone
+
     from sqlalchemy import select
 
     from app.db.database import async_session_factory
@@ -739,13 +744,26 @@ async def retry_item(item_id: int):
     async with async_session_factory() as session:
         item = await session.get(MediaItem, item_id)
         if item:
-            item.status = MediaStatus.PENDING
+            rd = item.release_date
+            if rd and rd.tzinfo is None:
+                rd = rd.replace(tzinfo=timezone.utc)
+            if (rd and rd > datetime.now(timezone.utc)) or (not rd and item.year and item.year > datetime.now().year):
+                item.status = MediaStatus.FUTURE
+            else:
+                item.status = MediaStatus.SEARCHING
+            item.fail_count = 0
+            item.last_error = None
 
             # Reset seasons
             stmt = select(Season).where(Season.media_item_id == item_id)
             result = await session.execute(stmt)
             for season in result.scalars():
-                season.status = SeasonStatus.PENDING
+                if item.status == MediaStatus.FUTURE:
+                    season.status = SeasonStatus.FUTURE
+                else:
+                    season.status = SeasonStatus.SEARCHING if season.monitored else SeasonStatus.PENDING
+                season.fail_count = 0
+                season.last_error = None
 
             # Clear blacklisted releases for this item
             stmt_bl = select(BlacklistedRelease).where(

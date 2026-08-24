@@ -119,8 +119,12 @@
                 <div x-show="showStatus" @click.away="showStatus = false" style="display: none;" x-transition class="absolute top-full right-0 mt-2 w-80 bg-[#2a2a32] border border-[#3f3f46] rounded-lg shadow-xl p-4 z-10 text-xs text-gray-300">
                     <div class="space-y-3">
                         <div class="flex items-start gap-3">
+                            <span class="bg-blue-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider shrink-0 w-16 text-center">FUTURE</span>
+                            <span>Releasing in the future. Will be searched automatically upon release.</span>
+                        </div>
+                        <div class="flex items-start gap-3">
                             <span class="bg-[#d40060] text-white text-[10px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider shrink-0 w-16 text-center">WANTED</span>
-                            <span>Movie or series is being searched. Either not found yet or releasing in the future.</span>
+                            <span>Movie or series is being searched. Currently missing or active.</span>
                         </div>
                         <div class="flex items-start gap-3">
                             <span class="bg-emerald-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider shrink-0 w-16 text-center">DONE</span>
@@ -150,7 +154,7 @@
                     <th class="px-6 py-3.5 text-right">Actions</th>
                 </tr>
             </thead>
-            <tbody class="divide-y divide-[#3f3f46] text-sm">
+            <tbody class="divide-y border-[#3f3f46] text-sm">
                 {% for item in items %}
                 {% set display_category = item.media_type.value %}
                 <tr class="hover:bg-[#2a2a32] transition-colors group" 
@@ -201,6 +205,8 @@
                                 {% if item.pending_candidate_json %}
                                 <span class="text-[10px] text-yellow-300 font-mono max-w-[200px] truncate" title="{{ item.pending_candidate_json.title }}">{{ item.pending_candidate_json.title[:40] }}…</span>
                                 {% endif %}
+                            {% elif item.status.value == 'future' %}
+                                <span class="bg-blue-600 text-white text-[11px] font-bold px-2 py-1 rounded uppercase tracking-wider shadow-sm">FUTURE</span>
                             {% elif item.status.value == 'searching' or item.status.value == 'pending' %}
                                 <span class="bg-[#d40060] text-white text-[11px] font-bold px-2 py-1 rounded uppercase tracking-wider shadow-sm">WANTED</span>
                             {% else %}

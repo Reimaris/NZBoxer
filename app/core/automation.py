@@ -236,10 +236,10 @@ async def _sync_items(
 
                 # Determine status
                 if release_date and release_date > datetime.now(timezone.utc):
-                    item.status = MediaStatus.PENDING
+                    item.status = MediaStatus.FUTURE
                 elif item.year and item.year > datetime.now().year:
                     # Fallback if no release date but year is in the future
-                    item.status = MediaStatus.PENDING
+                    item.status = MediaStatus.FUTURE
                 else:
                     item.status = MediaStatus.SEARCHING
 
@@ -267,9 +267,50 @@ async def _sync_items(
                     ):
                         item.alt_title = details.get("original_name")
 
+                    # Extract first air date / release date
+                    show_release_date = None
+                    if details.get("first_air_date"):
+                        try:
+                            show_release_date = datetime.strptime(
+                                details["first_air_date"], "%Y-%m-%d"
+                            ).replace(tzinfo=timezone.utc)
+                        except ValueError:
+                            pass
+                    elif details.get("release_date"):
+                        try:
+                            show_release_date = datetime.strptime(
+                                details["release_date"], "%Y-%m-%d"
+                            ).replace(tzinfo=timezone.utc)
+                        except ValueError:
+                            pass
+
+                    if show_release_date:
+                        item.release_date = show_release_date
+
+                    # Determine status
+                    if item.release_date and item.release_date > datetime.now(timezone.utc):
+                        item.status = MediaStatus.FUTURE
+                    elif item.year and item.year > datetime.now().year:
+                        item.status = MediaStatus.FUTURE
+                    else:
+                        item.status = MediaStatus.SEARCHING
+
                     for s in details.get("seasons", []):
                         s_num = s.get("season_number")
                         if s_num is not None and s_num > 0:
+                            s_air_date = None
+                            if s.get("air_date"):
+                                try:
+                                    s_air_date = datetime.strptime(
+                                        s["air_date"], "%Y-%m-%d"
+                                    ).replace(tzinfo=timezone.utc)
+                                except ValueError:
+                                    pass
+
+                            is_season_future = (
+                                s_air_date and s_air_date > datetime.now(timezone.utc)
+                            ) or (item.status == MediaStatus.FUTURE)
+
                             # Check if season already exists to avoid UNIQUE constraint error
                             existing_season_stmt = select(Season).where(
                                 Season.media_item_id == item.id,
@@ -284,11 +325,32 @@ async def _sync_items(
                                     season_number=s_num,
                                     monitored=(s_num == 1),
                                     episode_count=s.get("episode_count"),
-                                    status=SeasonStatus.SEARCHING
-                                    if (s_num == 1)
-                                    else SeasonStatus.PENDING,
+                                    air_date=s_air_date,
+                                    status=SeasonStatus.FUTURE
+                                    if is_season_future
+                                    else (
+                                        SeasonStatus.SEARCHING
+                                        if (s_num == 1)
+                                        else SeasonStatus.PENDING
+                                    ),
                                 )
                                 session.add(season_obj)
+                            else:
+                                if s_air_date:
+                                    existing_season.air_date = s_air_date
+                                if existing_season.status in (
+                                    SeasonStatus.PENDING,
+                                    SeasonStatus.SEARCHING,
+                                    SeasonStatus.FUTURE,
+                                ):
+                                    if is_season_future:
+                                        existing_season.status = SeasonStatus.FUTURE
+                                    elif existing_season.status == SeasonStatus.FUTURE:
+                                        existing_season.status = (
+                                            SeasonStatus.SEARCHING
+                                            if existing_season.monitored
+                                            else SeasonStatus.PENDING
+                                        )
 
         else:
             # Update existing
@@ -301,6 +363,18 @@ async def _sync_items(
                 item.anilist_id = anilist_id
             # Ensure provider matches
             item.provider_id = provider_id
+
+            # Sync status based on release date / year for existing items
+            if item.status in (MediaStatus.PENDING, MediaStatus.SEARCHING, MediaStatus.FUTURE):
+                rd = item.release_date
+                if rd and rd.tzinfo is None:
+                    rd = rd.replace(tzinfo=timezone.utc)
+                if rd and rd > datetime.now(timezone.utc):
+                    item.status = MediaStatus.FUTURE
+                elif not rd and item.year and item.year > datetime.now().year:
+                    item.status = MediaStatus.FUTURE
+                else:
+                    item.status = MediaStatus.SEARCHING
 
         item.simkl_synced_at = datetime.now(timezone.utc)
 
@@ -338,14 +412,29 @@ async def _sync_season_episodes(session: AsyncSession, season: Season) -> None:
             except ValueError:
                 pass
 
+        ep_is_future = air_date is not None and air_date > datetime.now(timezone.utc)
+
         if ep_num in existing_eps:
             existing_eps[ep_num].air_date = air_date
+            if existing_eps[ep_num].status in (
+                EpisodeStatus.PENDING,
+                EpisodeStatus.SEARCHING,
+                EpisodeStatus.FUTURE,
+            ):
+                if ep_is_future:
+                    existing_eps[ep_num].status = EpisodeStatus.FUTURE
+                elif existing_eps[ep_num].status == EpisodeStatus.FUTURE:
+                    existing_eps[ep_num].status = (
+                        EpisodeStatus.SEARCHING
+                        if season.monitored
+                        else EpisodeStatus.PENDING
+                    )
         else:
             new_ep = Episode(
                 season_id=season.id,
                 episode_number=ep_num,
                 air_date=air_date,
-                status=EpisodeStatus.PENDING,
+                status=EpisodeStatus.FUTURE if ep_is_future else EpisodeStatus.PENDING,
             )
             session.add(new_ep)
 
@@ -378,7 +467,7 @@ async def run_automation_cycle(force: bool = False) -> None:
                 select(Season)
                 .where(
                     Season.monitored == True,
-                    Season.status.in_([SeasonStatus.SEARCHING, SeasonStatus.PENDING]),
+                    Season.status.in_([SeasonStatus.SEARCHING, SeasonStatus.PENDING, SeasonStatus.FUTURE]),
                 )
                 .options(selectinload(Season.media_item))
             )
@@ -387,60 +476,82 @@ async def run_automation_cycle(force: bool = False) -> None:
                 if season.media_item and season.media_item.tmdb_id:
                     await _sync_season_episodes(session, season)
 
-            # Update pending movies that have reached their release date
-            stmt_m = select(MediaItem).where(
-                MediaItem.status == MediaStatus.PENDING,
+            # Update pending/future items that have reached their release date
+            stmt_reached = select(MediaItem).where(
+                MediaItem.status.in_([MediaStatus.PENDING, MediaStatus.FUTURE]),
                 MediaItem.release_date.isnot(None),
                 MediaItem.release_date <= datetime.now(timezone.utc),
             )
-            movies_result = await session.execute(stmt_m)
-            for m in movies_result.scalars():
+            reached_result = await session.execute(stmt_reached)
+            for m in reached_result.scalars():
                 m.status = MediaStatus.SEARCHING
                 logger.info(
-                    "🔄 Movie '%s' has reached its release date and is now being searched.",
+                    "🔄 Item '%s' has reached its release date and is now being searched.",
                     m.title,
                 )
 
-            # Revert searching movies that have a future release date
-            stmt_m_rev = select(MediaItem).where(
-                MediaItem.status == MediaStatus.SEARCHING,
-                MediaItem.media_type == MediaType.MOVIE,
+            # Revert searching/pending items that have a future release date or future year
+            stmt_future = select(MediaItem).where(
+                MediaItem.status.in_([MediaStatus.SEARCHING, MediaStatus.PENDING]),
             )
-            movies_to_check = (await session.execute(stmt_m_rev)).scalars().all()
-            for m in movies_to_check:
+            items_to_check = (await session.execute(stmt_future)).scalars().all()
+            for m in items_to_check:
                 # Ensure release_date is timezone-aware for comparison
                 rd = m.release_date
                 if rd and rd.tzinfo is None:
                     rd = rd.replace(tzinfo=timezone.utc)
                 if rd and rd > datetime.now(timezone.utc):
-                    m.status = MediaStatus.PENDING
+                    m.status = MediaStatus.FUTURE
                     m.fail_count = 0
                     logger.info(
-                        "    🔄 Film '%s' set to PENDING (Release Date: %s is in the future)",
+                        "    🔄 Item '%s' set to FUTURE (Release Date: %s is in the future)",
                         m.title,
                         rd.strftime("%Y-%m-%d"),
                     )
                 elif not m.release_date and m.year and m.year > datetime.now().year:
-                    m.status = MediaStatus.PENDING
+                    m.status = MediaStatus.FUTURE
                     m.fail_count = 0
                     logger.info(
-                        "    🔄 Film '%s' set to PENDING (Year %s is in the future)",
+                        "    🔄 Item '%s' set to FUTURE (Year %s is in the future)",
                         m.title,
                         m.year,
                     )
 
+            # Sync season status with parent item if parent is FUTURE
+            stmt_s_future = (
+                select(Season)
+                .join(MediaItem)
+                .where(
+                    Season.status.in_([SeasonStatus.SEARCHING, SeasonStatus.PENDING]),
+                    MediaItem.status == MediaStatus.FUTURE,
+                )
+            )
+            for s in (await session.execute(stmt_s_future)).scalars().all():
+                s.status = SeasonStatus.FUTURE
+
             await session.commit()
 
-            # Update pending episodes that have reached their air date
+            # Update pending/future episodes that have reached their air date
             from app.db.models import Episode, EpisodeStatus
 
             stmt_e = select(Episode).where(
-                Episode.status == EpisodeStatus.PENDING,
+                Episode.status.in_([EpisodeStatus.PENDING, EpisodeStatus.FUTURE]),
+                Episode.air_date.isnot(None),
                 Episode.air_date <= datetime.now(timezone.utc),
             )
             result_e = await session.execute(stmt_e)
             for pending_ep in result_e.scalars():
                 pending_ep.status = EpisodeStatus.SEARCHING
+
+            # Set episodes with future air date to FUTURE
+            stmt_e_future = select(Episode).where(
+                Episode.status.in_([EpisodeStatus.PENDING, EpisodeStatus.SEARCHING]),
+                Episode.air_date.isnot(None),
+                Episode.air_date > datetime.now(timezone.utc),
+            )
+            result_e_future = await session.execute(stmt_e_future)
+            for future_ep in result_e_future.scalars():
+                future_ep.status = EpisodeStatus.FUTURE
 
             await session.commit()
 
@@ -1405,7 +1516,13 @@ async def manual_search_movie(session: AsyncSession, item_id: int) -> bool:
     if not results:
         media_item.fail_count += 1
         media_item.last_error = "No matching releases found for this movie."
-        media_item.status = MediaStatus.PENDING  # Revert back
+        rd = media_item.release_date
+        if rd and rd.tzinfo is None:
+            rd = rd.replace(tzinfo=timezone.utc)
+        if (rd and rd > datetime.now(timezone.utc)) or (not rd and media_item.year and media_item.year > datetime.now().year):
+            media_item.status = MediaStatus.FUTURE
+        else:
+            media_item.status = MediaStatus.SEARCHING
         logger.warning("❌ %s", media_item.last_error)
         await session.commit()
         return False
