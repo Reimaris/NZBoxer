@@ -22,7 +22,7 @@
                   hx-swap="outerHTML" 
                   class="flex items-center gap-1">
                 <input type="number" name="start_volume" min="1" max="{{ manga.volumes|length or 999 }}" placeholder="Vol #" required
-                       class="w-16 px-2 py-1 text-xs bg-[#111115] border border-[#3f3f46] rounded text-white focus:outline-none focus:border-[#d40060]">
+                       class="w-16 px-2 py-1 text-xs bg-[#111115] border border-[#3f3f46] rounded text-white text-center focus:outline-none focus:border-[#d40060] [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none">
                 <button type="submit" class="px-2.5 py-1 text-xs font-medium bg-[#2a2a34] hover:bg-[#3f3f46] text-gray-200 rounded border border-[#3f3f46] transition-colors shadow-sm">
                     ▶ Monitor From
                 </button>

@@ -28,15 +28,18 @@
             display: flex !important;
         }
         
-        /* Hide number input spinners globally to enforce keyboard entry */
-        input[type="number"]::-webkit-inner-spin-button,
-        input[type="number"]::-webkit-outer-spin-button {
+        /* Remove number input spinners globally across all browsers & engines */
+        input::-webkit-outer-spin-button,
+        input::-webkit-inner-spin-button,
+        input[type="number"]::-webkit-outer-spin-button,
+        input[type="number"]::-webkit-inner-spin-button {
             -webkit-appearance: none !important;
             margin: 0 !important;
+            display: none !important;
         }
         input[type="number"] {
             -moz-appearance: textfield !important;
-            appearance: none !important;
+            appearance: textfield !important;
         }
     </style>
 </head>
