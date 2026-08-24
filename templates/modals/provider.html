@@ -1,250 +1,525 @@
 <!-- Provider Modal -->
 <div class="fixed inset-0 bg-black bg-opacity-70 z-[100] flex items-center justify-center p-4 animate-fade-in" id="provider-modal-overlay">
-    <div class="bg-[#1e1e24] border border-[#3f3f46] rounded-xl shadow-2xl w-full max-w-4xl overflow-hidden flex flex-col max-h-[90vh]">
+    <div class="bg-[#1e1e24] border border-[#3f3f46] rounded-xl shadow-2xl w-full max-w-4xl overflow-hidden flex flex-col max-h-[90vh]"
+         x-data="{
+             isEdit: {{ 'true' if provider else 'false' }},
+             step: {{ 2 if provider else 1 }},
+             providerType: '{{ provider.type if provider else '' }}',
+             providerCategory: '{{ provider.category if provider else '' }}',
+             selectProvider(type, category, defaultName) {
+                 this.providerType = type;
+                 this.providerCategory = category;
+                 const nameInput = document.getElementById('provider-name-input');
+                 if (nameInput && !nameInput.value) {
+                     nameInput.value = defaultName;
+                 }
+                 this.step = 2;
+             },
+             enable_movies: {{ 'true' if (provider and provider.profiles|selectattr('media_type.value','equalto','movie')|list|length > 0) else 'false' }},
+             enable_series: {{ 'true' if (provider and provider.profiles|selectattr('media_type.value','equalto','show')|list|length > 0) else 'false' }},
+             enable_anime: {{ 'true' if (provider and provider.profiles|selectattr('media_type.value','equalto','anime')|list|length > 0) else 'false' }},
+             enable_manga: true,
+             enable_books: true
+         }">
         
+        <!-- Header -->
         <div class="bg-[#2a2a32] rounded-t-xl px-6 py-4 border-b border-[#3f3f46] flex justify-between items-center shrink-0">
-            <h2 class="text-xl font-bold text-white flex items-center gap-2">
-                <svg class="w-5 h-5 text-[#d40060]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg>
-                {% if provider %}Edit Provider{% else %}Add New Provider{% endif %}
-            </h2>
+            <div class="flex items-center gap-3">
+                <template x-if="step === 2 && !isEdit">
+                    <button type="button" @click="step = 1" class="text-[#a1a1aa] hover:text-white transition-colors flex items-center gap-1 text-sm font-semibold bg-[#1e1e24] px-2.5 py-1 rounded-lg border border-[#3f3f46]">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+                        Back to Providers
+                    </button>
+                </template>
+                <h2 class="text-xl font-bold text-white flex items-center gap-2">
+                    <svg class="w-5 h-5 text-[#d40060]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
+                    <span x-text="isEdit ? 'Edit Provider: {{ provider.name if provider else '' }}' : (step === 1 ? 'Add New Provider — Select Type' : 'Configure Provider')">Add New Provider</span>
+                </h2>
+            </div>
             <button onclick="document.getElementById('modal-container').innerHTML = '';" class="text-[#a1a1aa] hover:text-white transition-colors">
                 <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
             </button>
         </div>
         
-        <div class="p-6 overflow-y-auto" x-data="{
-            providerType: '{{ provider.type if provider else 'simkl' }}',
-            enable_movies: {{ 'true' if (provider and provider.profiles|selectattr('media_type.value','equalto','movie')|list|length > 0) else 'false' }},
-            enable_series: {{ 'true' if (provider and provider.profiles|selectattr('media_type.value','equalto','show')|list|length > 0) else 'false' }},
-            enable_anime: {{ 'true' if (provider and provider.profiles|selectattr('media_type.value','equalto','anime')|list|length > 0) else 'false' }},
-            enable_manga: true,
-            enable_books: true
-        }">
-            <form id="provider-form" hx-post="/settings/provider{% if provider %}/{{ provider.id }}{% endif %}" class="space-y-8">
-                
-                <!-- General Info -->
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div class="flex flex-col col-span-1 md:col-span-2">
-                        <label class="h-6 text-[#d1d5db] font-medium mb-1 flex items-center">Provider Integration Type <span class="text-red-500 ml-1">*</span></label>
-                        <select name="provider_type" x-model="providerType" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors">
-                            <option value="simkl">Simkl (Video Media Watchlists: Movies, TV Shows, Anime)</option>
-                            <option value="anilist">AniList (Manga & Anime Tracking)</option>
-                            <option value="hardcover">Hardcover (Books & Comics Tracking)</option>
-                        </select>
-                    </div>
+        <div class="p-6 overflow-y-auto">
 
-                    <div class="flex flex-col">
-                        <label class="h-6 text-[#d1d5db] font-medium mb-1 flex items-center">Display Name <span class="text-red-500 ml-1">*</span></label>
-                        <input type="text" name="name" value="{{ provider.name if provider else '' }}" required class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors" placeholder="e.g. My Provider Profile">
-                    </div>
-                    
-                    <div class="flex flex-col">
-                        <label class="h-6 text-[#d1d5db] font-medium mb-1 flex items-center gap-1.5">
-                            <span x-text="providerType === 'simkl' ? 'Simkl Username' : (providerType === 'anilist' ? 'AniList Username' : (providerType === 'hardcover' ? 'Hardcover Username' : 'Username / Host'))">Username</span>
-                        </label>
-                        <input type="text" name="simkl_username" value="{{ provider.username if provider else '' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors" placeholder="username or host">
-                    </div>
-                    
-                    <!-- Simkl Specific: Client ID & PIN Auth -->
-                    <div class="flex flex-col" x-show="providerType === 'simkl'">
-                        <label class="h-6 text-[#d1d5db] font-medium mb-1 flex items-center justify-between">
-                            <span>Simkl Client ID</span>
-                            <a href="https://simkl.com/settings/developer/" target="_blank" class="text-xs text-blue-400 hover:underline">Get Client ID</a>
-                        </label>
-                        <input type="password" name="client_id" value="{{ '' if provider and provider.client_id == 'your_simkl_client_id_here' else (provider.client_id if provider and provider.client_id else '') }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors font-mono">
-                    </div>
+            <!-- STEP 1: VISUAL PROVIDER CATALOG -->
+            <div x-show="step === 1" class="space-y-6 animate-fade-in">
+                <p class="text-[#a1a1aa] text-sm">Choose a provider integration below to configure credentials and sync options.</p>
 
-                    <div class="flex flex-col" x-show="providerType === 'simkl'">
-                        <label class="h-6 text-[#d1d5db] font-medium mb-1 flex items-center gap-1.5">
-                            Simkl Access Token
-                        </label>
-                        <div class="flex gap-2 w-full">
-                            <input type="password" id="access_token" name="access_token" value="{{ '' if provider and provider.access_token == 'your_simkl_access_token_here' else (provider.access_token if provider and provider.access_token else '') }}" class="flex-1 min-w-0 h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors font-mono">
-                            <button type="button" hx-post="/simkl/auth/start" hx-include="[name='client_id']" hx-target="#simkl-auth-container-modal" class="h-11 bg-blue-600 hover:bg-blue-700 text-white px-4 rounded-lg font-medium transition-colors text-sm whitespace-nowrap shadow-lg shadow-blue-900/20 shrink-0">
-                                Connect via PIN
-                            </button>
-                        </div>
-                        <div id="simkl-auth-container-modal" class="mt-2"></div>
-                    </div>
-
-                    <!-- Hardcover / AniList Specific Token -->
-                    <div class="flex flex-col col-span-1 md:col-span-2" x-show="providerType === 'hardcover' || providerType === 'anilist'" style="display: none;">
-                        <label class="h-6 text-[#d1d5db] font-medium mb-1 flex items-center justify-between">
-                            <span x-text="providerType === 'hardcover' ? 'Hardcover API Bearer Token' : 'AniList Access Token (Optional for Public Lists)'">API Key / Token</span>
-                        </label>
-                        <input type="password" name="access_token" value="{{ provider.access_token if provider and provider.access_token else '' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors font-mono" placeholder="Bearer token">
-                    </div>
-
-                    <div class="flex flex-col">
-                        <label class="h-6 text-[#d1d5db] font-medium mb-1 flex items-center gap-1.5">
-                            Search Interval Multiplier
-                        </label>
-                        {% set cycle_skip = provider.profiles[0].search_cycle_skip if provider and provider.profiles|length > 0 else '1' %}
-                        <input type="number" name="search_cycle_skip" value="{{ cycle_skip }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors font-mono" placeholder="1 = Every loop, 4 = Every 4th loop">
-                    </div>
-
-                    <div class="flex flex-col">
-                        <label class="h-6 text-[#d1d5db] font-medium mb-1 flex items-center gap-1.5">Notification Channel</label>
-                        {% set global_notif = provider.profiles[0].notification_channel_id if provider and provider.profiles|length > 0 else none %}
-                        <select name="global_notification" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors">
-                            <option value="">None</option>
-                            {% for n in notifications %}
-                            <option value="{{ n.id }}" {% if global_notif == n.id %}selected{% endif %}>{{ n.name }}</option>
-                            {% endfor %}
-                        </select>
-                    </div>
-
-                </div>
-
-                <!-- SIMKL PROFILES SECTION -->
-                <div x-show="providerType === 'simkl'" class="space-y-6">
-                    <h3 class="text-sm font-bold text-[#a1a1aa] uppercase tracking-wider">Simkl Sync Profiles</h3>
-                    
-                    <!-- Movies Profile -->
-                    {% set m_prof_list = provider.profiles | selectattr("media_type.value", "equalto", "movie") | list if provider else [] %}
-                    {% set m_prof = m_prof_list[0] if m_prof_list else none %}
-                    <div class="border border-[#3f3f46] rounded-xl bg-[#1e1e24]">
-                        <div class="bg-[#2a2a32] rounded-t-xl px-6 py-4 flex items-center justify-between cursor-pointer" @click="enable_movies = !enable_movies">
-                            <h4 class="text-base font-bold text-white flex items-center gap-2">
-                                <input type="checkbox" name="enable_movies" value="True" x-model="enable_movies" @click.stop class="w-4 h-4 accent-[#d40060]">
-                                Sync Movies
-                            </h4>
-                        </div>
-                        <div x-show="enable_movies" class="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
-                            <div>
-                                <label class="text-xs uppercase tracking-wider text-[#a1a1aa] mb-1 block font-semibold">Movies Category ID</label>
-                                <input type="number" name="movie_category_id" value="{{ provider.movie_category_id if provider and provider.movie_category_id else '2000' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] rounded-lg px-3 text-white font-mono text-sm">
+                <!-- Watchlist Section -->
+                <div class="space-y-3">
+                    <h3 class="text-xs font-bold text-[#d40060] uppercase tracking-wider flex items-center gap-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
+                        Watchlist Providers
+                    </h3>
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        <button type="button" @click="selectProvider('simkl', 'watchlist', 'Simkl Watchlist')" class="bg-[#111115] hover:bg-[#2a2a32] border border-[#3f3f46] hover:border-[#d40060] rounded-xl p-4 text-left transition-all group flex flex-col justify-between">
+                            <div class="flex items-center gap-3 mb-2">
+                                <div class="w-10 h-10 rounded-lg bg-sky-500/20 text-sky-400 flex items-center justify-center font-bold text-lg">S</div>
+                                <div>
+                                    <div class="font-bold text-white group-hover:text-[#d40060] transition-colors">Simkl</div>
+                                    <div class="text-xs text-[#a1a1aa]">Watchlist Integration</div>
+                                </div>
                             </div>
-                            <div>
-                                <label class="text-xs uppercase tracking-wider text-[#a1a1aa] mb-1 block font-semibold">Reject Words (CSV)</label>
-                                <input type="text" name="movies_reject" value="{{ m_prof.reject_words_csv if m_prof and m_prof.reject_words_csv is not none else 'cam,ts,subbed' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] rounded-lg px-3 text-white text-sm">
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- TV Shows Profile -->
-                    {% set s_prof_list = provider.profiles | selectattr("media_type.value", "equalto", "show") | list if provider else [] %}
-                    {% set s_prof = s_prof_list[0] if s_prof_list else none %}
-                    <div class="border border-[#3f3f46] rounded-xl bg-[#1e1e24]">
-                        <div class="bg-[#2a2a32] rounded-t-xl px-6 py-4 flex items-center justify-between cursor-pointer" @click="enable_series = !enable_series">
-                            <h4 class="text-base font-bold text-white flex items-center gap-2">
-                                <input type="checkbox" name="enable_series" value="True" x-model="enable_series" @click.stop class="w-4 h-4 accent-[#d40060]">
-                                Sync TV Shows
-                            </h4>
-                        </div>
-                        <div x-show="enable_series" class="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
-                            <div>
-                                <label class="text-xs uppercase tracking-wider text-[#a1a1aa] mb-1 block font-semibold">TV Shows Category ID</label>
-                                <input type="number" name="series_category_id" value="{{ provider.series_category_id if provider and provider.series_category_id else '5000' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] rounded-lg px-3 text-white font-mono text-sm">
-                            </div>
-                            <div>
-                                <label class="text-xs uppercase tracking-wider text-[#a1a1aa] mb-1 block font-semibold">Reject Words (CSV)</label>
-                                <input type="text" name="series_reject" value="{{ s_prof.reject_words_csv if s_prof and s_prof.reject_words_csv is not none else 'cam,ts,subbed' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] rounded-lg px-3 text-white text-sm">
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Anime Profile -->
-                    {% set a_prof_list = provider.profiles | selectattr("media_type.value", "equalto", "anime") | list if provider else [] %}
-                    {% set a_prof = a_prof_list[0] if a_prof_list else none %}
-                    <div class="border border-[#3f3f46] rounded-xl bg-[#1e1e24]">
-                        <div class="bg-[#2a2a32] rounded-t-xl px-6 py-4 flex items-center justify-between cursor-pointer" @click="enable_anime = !enable_anime">
-                            <h4 class="text-base font-bold text-white flex items-center gap-2">
-                                <input type="checkbox" name="enable_anime" value="True" x-model="enable_anime" @click.stop class="w-4 h-4 accent-[#d40060]">
-                                Sync Anime
-                            </h4>
-                        </div>
-                        <div x-show="enable_anime" class="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
-                            <div>
-                                <label class="text-xs uppercase tracking-wider text-[#a1a1aa] mb-1 block font-semibold">Anime Category ID</label>
-                                <input type="number" name="anime_category_id" value="{{ provider.anime_category_id if provider and provider.anime_category_id else '5070' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] rounded-lg px-3 text-white font-mono text-sm">
-                            </div>
-                            <div>
-                                <label class="text-xs uppercase tracking-wider text-[#a1a1aa] mb-1 block font-semibold">Reject Words (CSV)</label>
-                                <input type="text" name="anime_reject" value="{{ a_prof.reject_words_csv if a_prof and a_prof.reject_words_csv is not none else 'cam,ts,subbed' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] rounded-lg px-3 text-white text-sm">
-                            </div>
-                        </div>
+                            <p class="text-xs text-[#71717a] mt-1">Sync movies, TV shows, and anime watchlists with automatic PIN authentication.</p>
+                        </button>
                     </div>
                 </div>
 
-                <!-- ANILIST PROFILES SECTION -->
-                <div x-show="providerType === 'anilist'" class="space-y-6" style="display: none;">
-                    <h3 class="text-sm font-bold text-[#a1a1aa] uppercase tracking-wider">AniList Tracking Profiles</h3>
+                <!-- Print Media Section -->
+                <div class="space-y-3">
+                    <h3 class="text-xs font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path></svg>
+                        Print Media Providers
+                    </h3>
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        <button type="button" @click="selectProvider('hardcover', 'print_media', 'Hardcover Books')" class="bg-[#111115] hover:bg-[#2a2a32] border border-[#3f3f46] hover:border-emerald-400 rounded-xl p-4 text-left transition-all group flex flex-col justify-between">
+                            <div class="flex items-center gap-3 mb-2">
+                                <div class="w-10 h-10 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold text-lg">H</div>
+                                <div>
+                                    <div class="font-bold text-white group-hover:text-emerald-400 transition-colors">Hardcover</div>
+                                    <div class="text-xs text-[#a1a1aa]">Book Tracking</div>
+                                </div>
+                            </div>
+                            <p class="text-xs text-[#71717a] mt-1">Sync Want-to-Read books, graphic novels, and literature via API Bearer token.</p>
+                        </button>
+                        <button type="button" @click="selectProvider('openlibrary', 'print_media', 'OpenLibrary')" class="bg-[#111115] hover:bg-[#2a2a32] border border-[#3f3f46] hover:border-emerald-400 rounded-xl p-4 text-left transition-all group flex flex-col justify-between">
+                            <div class="flex items-center gap-3 mb-2">
+                                <div class="w-10 h-10 rounded-lg bg-teal-500/20 text-teal-400 flex items-center justify-center font-bold text-lg">OL</div>
+                                <div>
+                                    <div class="font-bold text-white group-hover:text-emerald-400 transition-colors">OpenLibrary</div>
+                                    <div class="text-xs text-[#a1a1aa]">Open Book Database</div>
+                                </div>
+                            </div>
+                            <p class="text-xs text-[#71717a] mt-1">Open-source catalog and reading list provider for book discovery and metadata.</p>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Metadata Section -->
+                <div class="space-y-3">
+                    <h3 class="text-xs font-bold text-amber-400 uppercase tracking-wider flex items-center gap-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                        Metadata Providers
+                    </h3>
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        <button type="button" @click="selectProvider('tmdb', 'metadata', 'TMDB')" class="bg-[#111115] hover:bg-[#2a2a32] border border-[#3f3f46] hover:border-amber-400 rounded-xl p-4 text-left transition-all group flex flex-col justify-between">
+                            <div class="flex items-center gap-3 mb-2">
+                                <div class="w-10 h-10 rounded-lg bg-amber-500/20 text-amber-400 flex items-center justify-center font-bold text-lg">T</div>
+                                <div>
+                                    <div class="font-bold text-white group-hover:text-amber-400 transition-colors">TMDB</div>
+                                    <div class="text-xs text-[#a1a1aa]">The Movie Database</div>
+                                </div>
+                            </div>
+                            <p class="text-xs text-[#71717a] mt-1">Core metadata engine for movie and TV show identification, posters, and details.</p>
+                        </button>
+                        <button type="button" @click="selectProvider('anilist', 'metadata', 'AniList')" class="bg-[#111115] hover:bg-[#2a2a32] border border-[#3f3f46] hover:border-amber-400 rounded-xl p-4 text-left transition-all group flex flex-col justify-between">
+                            <div class="flex items-center gap-3 mb-2">
+                                <div class="w-10 h-10 rounded-lg bg-indigo-500/20 text-indigo-400 flex items-center justify-center font-bold text-lg">A</div>
+                                <div>
+                                    <div class="font-bold text-white group-hover:text-amber-400 transition-colors">AniList</div>
+                                    <div class="text-xs text-[#a1a1aa]">Anime & Manga Metadata</div>
+                                </div>
+                            </div>
+                            <p class="text-xs text-[#71717a] mt-1">Japanese animation and manga series metadata, tracking, and volume structure.</p>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Downloader Section -->
+                <div class="space-y-3">
+                    <h3 class="text-xs font-bold text-purple-400 uppercase tracking-wider flex items-center gap-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                        Downloader Providers
+                    </h3>
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        <button type="button" @click="selectProvider('torbox', 'downloader', 'TorBox')" class="bg-[#111115] hover:bg-[#2a2a32] border border-[#3f3f46] hover:border-purple-400 rounded-xl p-4 text-left transition-all group flex flex-col justify-between">
+                            <div class="flex items-center gap-3 mb-2">
+                                <div class="w-10 h-10 rounded-lg bg-purple-500/20 text-purple-400 flex items-center justify-center font-bold text-lg">TB</div>
+                                <div>
+                                    <div class="font-bold text-white group-hover:text-purple-400 transition-colors">TorBox</div>
+                                    <div class="text-xs text-[#a1a1aa]">Debrid & Usenet Client</div>
+                                </div>
+                            </div>
+                            <p class="text-xs text-[#71717a] mt-1">Cloud Usenet downloader client for queuing, caching, and streaming NZB downloads.</p>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Indexer Section -->
+                <div class="space-y-3">
+                    <h3 class="text-xs font-bold text-blue-400 uppercase tracking-wider flex items-center gap-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                        Indexer Providers
+                    </h3>
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        <button type="button" @click="selectProvider('treasure_maps', 'indexer', 'TreasureMaps')" class="bg-[#111115] hover:bg-[#2a2a32] border border-[#3f3f46] hover:border-blue-400 rounded-xl p-4 text-left transition-all group flex flex-col justify-between">
+                            <div class="flex items-center gap-3 mb-2">
+                                <div class="w-10 h-10 rounded-lg bg-blue-500/20 text-blue-400 flex items-center justify-center font-bold text-lg">TM</div>
+                                <div>
+                                    <div class="font-bold text-white group-hover:text-blue-400 transition-colors">TreasureMaps</div>
+                                    <div class="text-xs text-[#a1a1aa]">Newznab Usenet Indexer</div>
+                                </div>
+                            </div>
+                            <p class="text-xs text-[#71717a] mt-1">Sequential multi-indexer search cascade with early-exit cutoff score evaluation.</p>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- STEP 2: DYNAMIC CONFIGURATION VIEW -->
+            <div x-show="step === 2" class="animate-fade-in">
+                <form id="provider-form" hx-post="/settings/provider{% if provider %}/{{ provider.id }}{% endif %}" class="space-y-8">
+                    <input type="hidden" name="provider_type" x-model="providerType">
+                    <input type="hidden" name="category" x-model="providerCategory">
                     
-                    <div class="border border-[#3f3f46] rounded-xl bg-[#1e1e24]">
-                        <div class="bg-[#2a2a32] rounded-t-xl px-6 py-4 flex items-center justify-between cursor-pointer">
-                            <h4 class="text-base font-bold text-white flex items-center gap-2">
-                                <input type="checkbox" name="enable_manga" value="True" x-model="enable_manga" class="w-4 h-4 accent-[#d40060]">
-                                Sync Manga Reading List
-                            </h4>
+                    <!-- Basic Info (Common to all) -->
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div class="flex flex-col">
+                            <label class="h-6 text-[#d1d5db] font-medium mb-1 flex items-center">Display Name <span class="text-red-500 ml-1">*</span></label>
+                            <input type="text" id="provider-name-input" name="name" value="{{ provider.name if provider else '' }}" required class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors" placeholder="e.g. My Provider">
                         </div>
-                        <div x-show="enable_manga" class="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
-                            <div>
-                                <label class="text-xs uppercase tracking-wider text-[#a1a1aa] mb-1 block font-semibold">Manga Category ID</label>
-                                <input type="number" name="series_category_id" value="{{ provider.series_category_id if provider and provider.series_category_id else '7030' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] rounded-lg px-3 text-white font-mono text-sm">
+
+                        <!-- Active State Toggle -->
+                        <div class="flex flex-col justify-center">
+                            <label class="h-6 text-[#d1d5db] font-medium mb-1 flex items-center gap-2">Active Status</label>
+                            <label class="relative inline-flex items-center cursor-pointer mt-1">
+                                <input type="checkbox" name="is_active" value="true" class="sr-only peer" {% if not provider or provider.is_active %}checked{% endif %}>
+                                <div class="w-11 h-6 bg-[#3f3f46] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#d40060]"></div>
+                                <span class="ml-3 text-sm font-medium text-white">Enable Provider in Automation</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- ========================================== -->
+                    <!-- TORBOX CONFIGURATION                       -->
+                    <!-- ========================================== -->
+                    <div x-show="providerType === 'torbox'" class="space-y-6">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div class="flex flex-col col-span-1 md:col-span-2">
+                                <label class="h-6 text-[#d1d5db] font-medium mb-1 flex items-center justify-between">
+                                    <span>TorBox API Key <span class="text-red-500 ml-1">*</span></span>
+                                    <a href="https://torbox.app/settings" target="_blank" class="text-xs text-blue-400 hover:underline">Get API Key</a>
+                                </label>
+                                <input type="password" name="api_key" value="{{ provider.api_key if provider and provider.api_key else '' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors font-mono" placeholder="Your TorBox API Token">
                             </div>
-                            <div>
-                                <label class="text-xs uppercase tracking-wider text-[#a1a1aa] mb-1 block font-semibold">Reject Words (CSV)</label>
-                                <input type="text" name="series_reject" value="{{ s_prof.reject_words_csv if s_prof and s_prof.reject_words_csv is not none else 'raw,french,german,spanish' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] rounded-lg px-3 text-white text-sm">
+                            <div class="flex flex-col col-span-1 md:col-span-2">
+                                <label class="h-6 text-[#d1d5db] font-medium mb-1 flex items-center">TorBox API Base URL</label>
+                                <input type="text" name="api_url" value="{{ provider.api_url if provider and provider.api_url else 'https://api.torbox.app/v1/api' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors font-mono" placeholder="https://api.torbox.app/v1/api">
                             </div>
                         </div>
                     </div>
 
-                    <div class="border border-[#3f3f46] rounded-xl bg-[#1e1e24]">
-                        <div class="bg-[#2a2a32] rounded-t-xl px-6 py-4 flex items-center justify-between cursor-pointer">
-                            <h4 class="text-base font-bold text-white flex items-center gap-2">
-                                <input type="checkbox" name="enable_anime" value="True" x-model="enable_anime" class="w-4 h-4 accent-[#d40060]">
-                                Sync Anime Watchlist
-                            </h4>
-                        </div>
-                        <div x-show="enable_anime" class="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
-                            <div>
-                                <label class="text-xs uppercase tracking-wider text-[#a1a1aa] mb-1 block font-semibold">Anime Category ID</label>
-                                <input type="number" name="anime_category_id" value="{{ provider.anime_category_id if provider and provider.anime_category_id else '5070' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] rounded-lg px-3 text-white font-mono text-sm">
+                    <!-- ========================================== -->
+                    <!-- TREASUREMAPS / INDEXER CONFIGURATION       -->
+                    <!-- ========================================== -->
+                    <div x-show="providerType === 'treasure_maps'" class="space-y-6">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div class="flex flex-col">
+                                <label class="h-6 text-[#d1d5db] font-medium mb-1 flex items-center justify-between">
+                                    <span>Indexer API Key <span class="text-red-500 ml-1">*</span></span>
+                                    <a href="https://treasuremaps.net/" target="_blank" class="text-xs text-blue-400 hover:underline">Get API Key</a>
+                                </label>
+                                <input type="password" name="api_key" value="{{ provider.api_key if provider and provider.api_key else '' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors font-mono" placeholder="Your Indexer API Key">
                             </div>
-                            <div>
-                                <label class="text-xs uppercase tracking-wider text-[#a1a1aa] mb-1 block font-semibold">Reject Words (CSV)</label>
-                                <input type="text" name="anime_reject" value="{{ a_prof.reject_words_csv if a_prof and a_prof.reject_words_csv is not none else 'cam,ts,subbed' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] rounded-lg px-3 text-white text-sm">
+                            <div class="flex flex-col">
+                                <label class="h-6 text-[#d1d5db] font-medium mb-1 flex items-center">
+                                    <span>Priority Order (1 = Highest)</span>
+                                </label>
+                                <input type="number" name="priority" value="{{ provider.priority if provider and provider.priority is not none else '1' }}" min="1" max="99" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors font-mono text-center">
+                            </div>
+                            <div class="flex flex-col col-span-1 md:col-span-2">
+                                <label class="h-6 text-[#d1d5db] font-medium mb-1 flex items-center">Indexer Endpoint / API Base URL <span class="text-red-500 ml-1">*</span></label>
+                                <input type="text" name="api_url" value="{{ provider.api_url if provider and provider.api_url else 'https://treasuremaps.net/api' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors font-mono" placeholder="https://treasuremaps.net/api">
+                            </div>
+                        </div>
+
+                        <!-- Indexer Categories -->
+                        <div class="border border-[#3f3f46] rounded-xl bg-[#1e1e24] p-6 space-y-4">
+                            <h4 class="text-sm font-bold text-white uppercase tracking-wider">Newznab Search Categories</h4>
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <div>
+                                    <label class="text-xs text-[#a1a1aa] block font-semibold mb-1">Movies Category ID</label>
+                                    <input type="number" name="movie_category_id" value="{{ provider.movie_category_id if provider and provider.movie_category_id else '2000' }}" class="w-full h-10 bg-[#111115] border border-[#3f3f46] rounded-lg px-3 text-white font-mono text-sm">
+                                </div>
+                                <div>
+                                    <label class="text-xs text-[#a1a1aa] block font-semibold mb-1">TV Shows Category ID</label>
+                                    <input type="number" name="series_category_id" value="{{ provider.series_category_id if provider and provider.series_category_id else '5000' }}" class="w-full h-10 bg-[#111115] border border-[#3f3f46] rounded-lg px-3 text-white font-mono text-sm">
+                                </div>
+                                <div>
+                                    <label class="text-xs text-[#a1a1aa] block font-semibold mb-1">Anime Category ID</label>
+                                    <input type="number" name="anime_category_id" value="{{ provider.anime_category_id if provider and provider.anime_category_id else '5070' }}" class="w-full h-10 bg-[#111115] border border-[#3f3f46] rounded-lg px-3 text-white font-mono text-sm">
+                                </div>
                             </div>
                         </div>
                     </div>
-                </div>
 
-                <!-- HARDCOVER PROFILES SECTION -->
-                <div x-show="providerType === 'hardcover'" class="space-y-6" style="display: none;">
-                    <h3 class="text-sm font-bold text-[#a1a1aa] uppercase tracking-wider">Hardcover Book Profiles</h3>
-                    
-                    <div class="border border-[#3f3f46] rounded-xl bg-[#1e1e24]">
-                        <div class="bg-[#2a2a32] rounded-t-xl px-6 py-4 flex items-center justify-between cursor-pointer">
-                            <h4 class="text-base font-bold text-white flex items-center gap-2">
-                                <input type="checkbox" name="enable_books" value="True" x-model="enable_books" class="w-4 h-4 accent-[#d40060]">
-                                Sync Want-to-Read Books & Novels
-                            </h4>
-                        </div>
-                        <div x-show="enable_books" class="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
-                            <div>
-                                <label class="text-xs uppercase tracking-wider text-[#a1a1aa] mb-1 block font-semibold">E-Books Category ID</label>
-                                <input type="number" name="movie_category_id" value="{{ provider.movie_category_id if provider and provider.movie_category_id else '7020' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] rounded-lg px-3 text-white font-mono text-sm">
-                            </div>
-                            <div>
-                                <label class="text-xs uppercase tracking-wider text-[#a1a1aa] mb-1 block font-semibold">Reject Words (CSV)</label>
-                                <input type="text" name="movies_reject" value="{{ m_prof.reject_words_csv if m_prof and m_prof.reject_words_csv is not none else 'audiobook,mp3,m4b' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] rounded-lg px-3 text-white text-sm">
+                    <!-- ========================================== -->
+                    <!-- TMDB CONFIGURATION                         -->
+                    <!-- ========================================== -->
+                    <div x-show="providerType === 'tmdb'" class="space-y-6">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div class="flex flex-col col-span-1 md:col-span-2">
+                                <label class="h-6 text-[#d1d5db] font-medium mb-1 flex items-center justify-between">
+                                    <span>TMDB API v3 Key <span class="text-red-500 ml-1">*</span></span>
+                                    <a href="https://www.themoviedb.org/settings/api" target="_blank" class="text-xs text-blue-400 hover:underline">Get TMDB Key</a>
+                                </label>
+                                <input type="password" name="api_key" value="{{ provider.api_key if provider and provider.api_key else '' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors font-mono" placeholder="Your TMDB v3 API Key">
                             </div>
                         </div>
                     </div>
-                </div>
 
-                <!-- Form Submit Actions -->
-                <div class="flex justify-end gap-3 pt-4 border-t border-[#3f3f46]">
-                    <button type="button" onclick="document.getElementById('modal-container').innerHTML = '';" class="px-5 py-2.5 bg-[#3f3f46] hover:bg-[#52525b] text-white rounded-lg font-medium transition-colors text-sm">
-                        Cancel
-                    </button>
-                    <button type="submit" class="px-6 py-2.5 bg-[#d40060] hover:bg-[#a3004a] text-white rounded-lg font-bold transition-colors text-sm shadow-lg">
-                        Save Provider
-                    </button>
-                </div>
+                    <!-- ========================================== -->
+                    <!-- OPENLIBRARY CONFIGURATION                  -->
+                    <!-- ========================================== -->
+                    <div x-show="providerType === 'openlibrary'" class="space-y-6">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div class="flex flex-col col-span-1 md:col-span-2">
+                                <label class="h-6 text-[#d1d5db] font-medium mb-1 flex items-center">OpenLibrary Base URL</label>
+                                <input type="text" name="api_url" value="{{ provider.api_url if provider and provider.api_url else 'https://openlibrary.org' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors font-mono" placeholder="https://openlibrary.org">
+                            </div>
+                        </div>
+                    </div>
 
-            </form>
+                    <!-- ========================================== -->
+                    <!-- SIMKL CONFIGURATION                        -->
+                    <!-- ========================================== -->
+                    <div x-show="providerType === 'simkl'" class="space-y-6">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div class="flex flex-col">
+                                <label class="h-6 text-[#d1d5db] font-medium mb-1 flex items-center">Simkl Username</label>
+                                <input type="text" name="simkl_username" value="{{ provider.username if provider else '' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors" placeholder="Simkl username">
+                            </div>
+
+                            <div class="flex flex-col">
+                                <label class="h-6 text-[#d1d5db] font-medium mb-1 flex items-center justify-between">
+                                    <span>Simkl Client ID</span>
+                                    <a href="https://simkl.com/settings/developer/" target="_blank" class="text-xs text-blue-400 hover:underline">Get Client ID</a>
+                                </label>
+                                <input type="password" name="client_id" value="{{ '' if provider and provider.client_id == 'your_simkl_client_id_here' else (provider.client_id if provider and provider.client_id else '') }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors font-mono">
+                            </div>
+
+                            <div class="flex flex-col col-span-1 md:col-span-2">
+                                <label class="h-6 text-[#d1d5db] font-medium mb-1 flex items-center gap-1.5">
+                                    Simkl Access Token
+                                </label>
+                                <div class="flex gap-2 w-full">
+                                    <input type="password" id="access_token" name="access_token" value="{{ '' if provider and provider.access_token == 'your_simkl_access_token_here' else (provider.access_token if provider and provider.access_token else '') }}" class="flex-1 min-w-0 h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors font-mono">
+                                    <button type="button" hx-post="/simkl/auth/start" hx-include="[name='client_id']" hx-target="#simkl-auth-container-modal" class="h-11 bg-blue-600 hover:bg-blue-700 text-white px-4 rounded-lg font-medium transition-colors text-sm whitespace-nowrap shadow-lg shadow-blue-900/20 shrink-0">
+                                        Connect via PIN
+                                    </button>
+                                </div>
+                                <div id="simkl-auth-container-modal" class="mt-2"></div>
+                            </div>
+
+                            <div class="flex flex-col">
+                                <label class="h-6 text-[#d1d5db] font-medium mb-1 flex items-center gap-1.5">Search Interval Multiplier</label>
+                                {% set cycle_skip = provider.profiles[0].search_cycle_skip if provider and provider.profiles|length > 0 else '1' %}
+                                <input type="number" name="search_cycle_skip" value="{{ cycle_skip }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors font-mono" placeholder="1 = Every cycle">
+                            </div>
+
+                            <div class="flex flex-col">
+                                <label class="h-6 text-[#d1d5db] font-medium mb-1 flex items-center gap-1.5">Notification Channel</label>
+                                {% set global_notif = provider.profiles[0].notification_channel_id if provider and provider.profiles|length > 0 else none %}
+                                <select name="global_notification" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors">
+                                    <option value="">None</option>
+                                    {% for n in notifications %}
+                                    <option value="{{ n.id }}" {% if global_notif == n.id %}selected{% endif %}>{{ n.name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- SIMKL PROFILES SECTION -->
+                        <div class="space-y-6">
+                            <h3 class="text-sm font-bold text-[#a1a1aa] uppercase tracking-wider">Simkl Sync Profiles</h3>
+                            
+                            <!-- Movies Profile -->
+                            {% set m_prof_list = provider.profiles | selectattr("media_type.value", "equalto", "movie") | list if provider else [] %}
+                            {% set m_prof = m_prof_list[0] if m_prof_list else none %}
+                            <div class="border border-[#3f3f46] rounded-xl bg-[#1e1e24]">
+                                <div class="bg-[#2a2a32] rounded-t-xl px-6 py-4 flex items-center justify-between cursor-pointer" @click="enable_movies = !enable_movies">
+                                    <h4 class="text-base font-bold text-white flex items-center gap-2">
+                                        <input type="checkbox" name="enable_movies" value="True" x-model="enable_movies" @click.stop class="w-4 h-4 accent-[#d40060]">
+                                        Sync Movies
+                                    </h4>
+                                </div>
+                                <div x-show="enable_movies" class="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    <div>
+                                        <label class="text-xs uppercase tracking-wider text-[#a1a1aa] mb-1 block font-semibold">Movies Category ID</label>
+                                        <input type="number" name="movie_category_id" value="{{ provider.movie_category_id if provider and provider.movie_category_id else '2000' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] rounded-lg px-3 text-white font-mono text-sm">
+                                    </div>
+                                    <div>
+                                        <label class="text-xs uppercase tracking-wider text-[#a1a1aa] mb-1 block font-semibold">Reject Words (CSV)</label>
+                                        <input type="text" name="movies_reject" value="{{ m_prof.reject_words_csv if m_prof and m_prof.reject_words_csv is not none else 'cam,ts,subbed' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] rounded-lg px-3 text-white text-sm">
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- TV Shows Profile -->
+                            {% set s_prof_list = provider.profiles | selectattr("media_type.value", "equalto", "show") | list if provider else [] %}
+                            {% set s_prof = s_prof_list[0] if s_prof_list else none %}
+                            <div class="border border-[#3f3f46] rounded-xl bg-[#1e1e24]">
+                                <div class="bg-[#2a2a32] rounded-t-xl px-6 py-4 flex items-center justify-between cursor-pointer" @click="enable_series = !enable_series">
+                                    <h4 class="text-base font-bold text-white flex items-center gap-2">
+                                        <input type="checkbox" name="enable_series" value="True" x-model="enable_series" @click.stop class="w-4 h-4 accent-[#d40060]">
+                                        Sync TV Shows
+                                    </h4>
+                                </div>
+                                <div x-show="enable_series" class="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    <div>
+                                        <label class="text-xs uppercase tracking-wider text-[#a1a1aa] mb-1 block font-semibold">TV Shows Category ID</label>
+                                        <input type="number" name="series_category_id" value="{{ provider.series_category_id if provider and provider.series_category_id else '5000' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] rounded-lg px-3 text-white font-mono text-sm">
+                                    </div>
+                                    <div>
+                                        <label class="text-xs uppercase tracking-wider text-[#a1a1aa] mb-1 block font-semibold">Reject Words (CSV)</label>
+                                        <input type="text" name="series_reject" value="{{ s_prof.reject_words_csv if s_prof and s_prof.reject_words_csv is not none else 'cam,ts,subbed' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] rounded-lg px-3 text-white text-sm">
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Anime Profile -->
+                            {% set a_prof_list = provider.profiles | selectattr("media_type.value", "equalto", "anime") | list if provider else [] %}
+                            {% set a_prof = a_prof_list[0] if a_prof_list else none %}
+                            <div class="border border-[#3f3f46] rounded-xl bg-[#1e1e24]">
+                                <div class="bg-[#2a2a32] rounded-t-xl px-6 py-4 flex items-center justify-between cursor-pointer" @click="enable_anime = !enable_anime">
+                                    <h4 class="text-base font-bold text-white flex items-center gap-2">
+                                        <input type="checkbox" name="enable_anime" value="True" x-model="enable_anime" @click.stop class="w-4 h-4 accent-[#d40060]">
+                                        Sync Anime
+                                    </h4>
+                                </div>
+                                <div x-show="enable_anime" class="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    <div>
+                                        <label class="text-xs uppercase tracking-wider text-[#a1a1aa] mb-1 block font-semibold">Anime Category ID</label>
+                                        <input type="number" name="anime_category_id" value="{{ provider.anime_category_id if provider and provider.anime_category_id else '5070' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] rounded-lg px-3 text-white font-mono text-sm">
+                                    </div>
+                                    <div>
+                                        <label class="text-xs uppercase tracking-wider text-[#a1a1aa] mb-1 block font-semibold">Reject Words (CSV)</label>
+                                        <input type="text" name="anime_reject" value="{{ a_prof.reject_words_csv if a_prof and a_prof.reject_words_csv is not none else 'cam,ts,subbed' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] rounded-lg px-3 text-white text-sm">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ========================================== -->
+                    <!-- HARDCOVER CONFIGURATION                    -->
+                    <!-- ========================================== -->
+                    <div x-show="providerType === 'hardcover'" class="space-y-6">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div class="flex flex-col">
+                                <label class="h-6 text-[#d1d5db] font-medium mb-1 flex items-center">Hardcover Username</label>
+                                <input type="text" name="simkl_username" value="{{ provider.username if provider else '' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors" placeholder="Hardcover username">
+                            </div>
+                            <div class="flex flex-col">
+                                <label class="h-6 text-[#d1d5db] font-medium mb-1 flex items-center justify-between">
+                                    <span>Hardcover API Bearer Token <span class="text-red-500 ml-1">*</span></span>
+                                    <a href="https://hardcover.app/account/api" target="_blank" class="text-xs text-blue-400 hover:underline">Get Token</a>
+                                </label>
+                                <input type="password" name="access_token" value="{{ provider.access_token if provider and provider.access_token else '' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors font-mono" placeholder="Bearer Token">
+                            </div>
+                        </div>
+
+                        <!-- Hardcover Profile -->
+                        {% set m_prof_list = provider.profiles | selectattr("media_type.value", "equalto", "movie") | list if provider else [] %}
+                        {% set m_prof = m_prof_list[0] if m_prof_list else none %}
+                        <div class="border border-[#3f3f46] rounded-xl bg-[#1e1e24]">
+                            <div class="bg-[#2a2a32] rounded-t-xl px-6 py-4 flex items-center justify-between cursor-pointer">
+                                <h4 class="text-base font-bold text-white flex items-center gap-2">
+                                    <input type="checkbox" name="enable_books" value="True" x-model="enable_books" class="w-4 h-4 accent-[#d40060]">
+                                    Sync Want-to-Read Books & Novels
+                                </h4>
+                            </div>
+                            <div x-show="enable_books" class="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <div>
+                                    <label class="text-xs uppercase tracking-wider text-[#a1a1aa] mb-1 block font-semibold">E-Books Category ID</label>
+                                    <input type="number" name="movie_category_id" value="{{ provider.movie_category_id if provider and provider.movie_category_id else '7020' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] rounded-lg px-3 text-white font-mono text-sm">
+                                </div>
+                                <div>
+                                    <label class="text-xs uppercase tracking-wider text-[#a1a1aa] mb-1 block font-semibold">Reject Words (CSV)</label>
+                                    <input type="text" name="movies_reject" value="{{ m_prof.reject_words_csv if m_prof and m_prof.reject_words_csv is not none else 'audiobook,mp3,m4b' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] rounded-lg px-3 text-white text-sm">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ========================================== -->
+                    <!-- ANILIST CONFIGURATION                      -->
+                    <!-- ========================================== -->
+                    <div x-show="providerType === 'anilist'" class="space-y-6">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div class="flex flex-col">
+                                <label class="h-6 text-[#d1d5db] font-medium mb-1 flex items-center">AniList Username</label>
+                                <input type="text" name="simkl_username" value="{{ provider.username if provider else '' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors" placeholder="AniList username">
+                            </div>
+                            <div class="flex flex-col">
+                                <label class="h-6 text-[#d1d5db] font-medium mb-1 flex items-center justify-between">
+                                    <span>Access Token (Optional for Public Lists)</span>
+                                </label>
+                                <input type="password" name="access_token" value="{{ provider.access_token if provider and provider.access_token else '' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors font-mono" placeholder="Optional token">
+                            </div>
+                        </div>
+
+                        <!-- AniList Profiles -->
+                        {% set s_prof_list = provider.profiles | selectattr("media_type.value", "equalto", "show") | list if provider else [] %}
+                        {% set s_prof = s_prof_list[0] if s_prof_list else none %}
+                        {% set a_prof_list = provider.profiles | selectattr("media_type.value", "equalto", "anime") | list if provider else [] %}
+                        {% set a_prof = a_prof_list[0] if a_prof_list else none %}
+                        <div class="space-y-4">
+                            <div class="border border-[#3f3f46] rounded-xl bg-[#1e1e24]">
+                                <div class="bg-[#2a2a32] rounded-t-xl px-6 py-4 flex items-center justify-between cursor-pointer">
+                                    <h4 class="text-base font-bold text-white flex items-center gap-2">
+                                        <input type="checkbox" name="enable_manga" value="True" x-model="enable_manga" class="w-4 h-4 accent-[#d40060]">
+                                        Sync Manga Reading List
+                                    </h4>
+                                </div>
+                                <div x-show="enable_manga" class="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    <div>
+                                        <label class="text-xs uppercase tracking-wider text-[#a1a1aa] mb-1 block font-semibold">Manga Category ID</label>
+                                        <input type="number" name="series_category_id" value="{{ provider.series_category_id if provider and provider.series_category_id else '7030' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] rounded-lg px-3 text-white font-mono text-sm">
+                                    </div>
+                                    <div>
+                                        <label class="text-xs uppercase tracking-wider text-[#a1a1aa] mb-1 block font-semibold">Reject Words (CSV)</label>
+                                        <input type="text" name="series_reject" value="{{ s_prof.reject_words_csv if s_prof and s_prof.reject_words_csv is not none else 'raw,french,german,spanish' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] rounded-lg px-3 text-white text-sm">
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="border border-[#3f3f46] rounded-xl bg-[#1e1e24]">
+                                <div class="bg-[#2a2a32] rounded-t-xl px-6 py-4 flex items-center justify-between cursor-pointer">
+                                    <h4 class="text-base font-bold text-white flex items-center gap-2">
+                                        <input type="checkbox" name="enable_anime" value="True" x-model="enable_anime" class="w-4 h-4 accent-[#d40060]">
+                                        Sync Anime Watchlist
+                                    </h4>
+                                </div>
+                                <div x-show="enable_anime" class="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    <div>
+                                        <label class="text-xs uppercase tracking-wider text-[#a1a1aa] mb-1 block font-semibold">Anime Category ID</label>
+                                        <input type="number" name="anime_category_id" value="{{ provider.anime_category_id if provider and provider.anime_category_id else '5070' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] rounded-lg px-3 text-white font-mono text-sm">
+                                    </div>
+                                    <div>
+                                        <label class="text-xs uppercase tracking-wider text-[#a1a1aa] mb-1 block font-semibold">Reject Words (CSV)</label>
+                                        <input type="text" name="anime_reject" value="{{ a_prof.reject_words_csv if a_prof and a_prof.reject_words_csv is not none else 'cam,ts,subbed' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] rounded-lg px-3 text-white text-sm">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Form Submit Actions -->
+                    <div class="flex justify-end gap-3 pt-4 border-t border-[#3f3f46]">
+                        <button type="button" onclick="document.getElementById('modal-container').innerHTML = '';" class="px-5 py-2.5 bg-[#3f3f46] hover:bg-[#52525b] text-white rounded-lg font-medium transition-colors text-sm">
+                            Cancel
+                        </button>
+                        <button type="submit" class="px-6 py-2.5 bg-[#d40060] hover:bg-[#a3004a] text-white rounded-lg font-bold transition-colors text-sm shadow-lg shadow-[#d40060]/20">
+                            Save Provider
+                        </button>
+                    </div>
+
+                </form>
+            </div>
+
         </div>
     </div>
 </div>

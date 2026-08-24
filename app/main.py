@@ -1737,6 +1737,11 @@ async def save_provider(
     simkl_username: str = Form(""),
     access_token: str = Form(""),
     client_id: str = Form(""),
+    api_key: str = Form(""),
+    api_url: str = Form(""),
+    priority: int = Form(1),
+    is_active: bool = Form(True),
+    category: str = Form(""),
     movie_category_id: int = Form(2000),
     series_category_id: int = Form(5000),
     anime_category_id: int = Form(5070),
@@ -1789,7 +1794,24 @@ async def save_provider(
 ):
     from sqlalchemy.orm import selectinload
 
-    from app.db.models import Provider, ProviderProfile
+    from app.db.models import Provider, ProviderCategory, ProviderProfile
+    from app.services import provider_service
+
+    # Determine standard category from provider type if not explicitly supplied
+    resolved_category = category
+    if not resolved_category:
+        type_cat_map = {
+            "simkl": ProviderCategory.WATCHLIST.value,
+            "hardcover": ProviderCategory.PRINT_MEDIA.value,
+            "openlibrary": ProviderCategory.PRINT_MEDIA.value,
+            "tmdb": ProviderCategory.METADATA.value,
+            "anilist": ProviderCategory.METADATA.value,
+            "torbox": ProviderCategory.DOWNLOADER.value,
+            "treasure_maps": ProviderCategory.INDEXER.value,
+        }
+        resolved_category = type_cat_map.get(
+            provider_type.lower(), ProviderCategory.WATCHLIST.value
+        )
 
     async with async_session_factory() as session:
         if provider_id:
@@ -1797,25 +1819,38 @@ async def save_provider(
                 Provider, provider_id, options=[selectinload(Provider.profiles)]
             )
             if not provider:
-                provider = Provider(type=provider_type)
+                provider = Provider(
+                    type=provider_type, category=resolved_category
+                )
                 session.add(provider)
             else:
                 provider.type = provider_type
+                provider.category = resolved_category
         else:
-            provider = Provider(type=provider_type)
+            provider = Provider(type=provider_type, category=resolved_category)
             session.add(provider)
 
         provider.name = name
         provider.username = simkl_username
         provider.access_token = access_token
         provider.client_id = client_id
+        provider.api_key = api_key
+        provider.api_url = api_url
+        provider.priority = priority
+        provider.is_active = is_active
         provider.movie_category_id = movie_category_id
         provider.series_category_id = series_category_id
         provider.anime_category_id = anime_category_id
-
         provider.bandwidth_mbit = bandwidth_mbit
 
         await session.flush()  # get ID
+
+        # If Downloader and active, enforce single-active downloader rule
+        if (
+            provider.category == ProviderCategory.DOWNLOADER.value
+            and provider.is_active
+        ):
+            await provider_service.set_active_downloader(session, provider.id)
 
         # clear old profiles and recreate
         if provider_id:
@@ -1896,6 +1931,29 @@ async def save_provider(
         await session.commit()
 
     # Reload page
+    return HTMLResponse(content="<script>window.location.reload();</script>")
+
+
+@app.post("/settings/provider/{provider_id}/toggle-active")
+async def toggle_provider_active(provider_id: int):
+    from app.db.models import Provider, ProviderCategory
+    from app.services import provider_service
+
+    async with async_session_factory() as session:
+        provider = await session.get(Provider, provider_id)
+        if provider:
+            if provider.category == ProviderCategory.DOWNLOADER.value:
+                if not provider.is_active:
+                    await provider_service.set_active_downloader(
+                        session, provider.id
+                    )
+                else:
+                    provider.is_active = False
+                    await session.commit()
+            else:
+                provider.is_active = not provider.is_active
+                await session.commit()
+
     return HTMLResponse(content="<script>window.location.reload();</script>")
 
 
