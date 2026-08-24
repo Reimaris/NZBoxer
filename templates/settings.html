@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div class="max-w-7xl mx-auto space-y-8 text-sm" x-data="{ activeTab: 'global' }">
+<div class="max-w-7xl mx-auto space-y-8 text-sm" x-data="{ activeTab: 'general' }">
     <div class="flex items-center justify-between mb-8">
         <h1 class="text-3xl font-bold text-white flex items-center gap-3">
             <svg class="w-8 h-8 text-[#d40060]" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clip-rule="evenodd"></path></svg>
@@ -22,13 +22,24 @@
     <!-- Navigation Tabs -->
     <div class="border-b border-[#3f3f46]">
         <nav class="-mb-px flex space-x-8">
-            <button @click="activeTab = 'global'" :class="activeTab === 'global' ? 'border-[#d40060] text-[#d40060]' : 'border-transparent text-[#a1a1aa] hover:text-white hover:border-[#3f3f46]'" class="whitespace-nowrap pb-4 px-1 border-b-2 font-medium transition-colors">
-                Globale Settings & Scoring
+            <button @click="activeTab = 'general'" :class="activeTab === 'general' ? 'border-[#d40060] text-[#d40060]' : 'border-transparent text-[#a1a1aa] hover:text-white hover:border-[#3f3f46]'" class="whitespace-nowrap pb-4 px-1 border-b-2 font-medium transition-colors flex items-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                General & Automation
             </button>
-            <button @click="activeTab = 'providers'" :class="activeTab === 'providers' ? 'border-[#d40060] text-[#d40060]' : 'border-transparent text-[#a1a1aa] hover:text-white hover:border-[#3f3f46]'" class="whitespace-nowrap pb-4 px-1 border-b-2 font-medium transition-colors">
+            <button @click="activeTab = 'scoring'" :class="activeTab === 'scoring' ? 'border-[#d40060] text-[#d40060]' : 'border-transparent text-[#a1a1aa] hover:text-white hover:border-[#3f3f46]'" class="whitespace-nowrap pb-4 px-1 border-b-2 font-medium transition-colors flex items-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg>
+                Video Scoring & Rules
+            </button>
+            <button @click="activeTab = 'print'" :class="activeTab === 'print' ? 'border-[#d40060] text-[#d40060]' : 'border-transparent text-[#a1a1aa] hover:text-white hover:border-[#3f3f46]'" class="whitespace-nowrap pb-4 px-1 border-b-2 font-medium transition-colors flex items-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path></svg>
+                Print Media
+            </button>
+            <button @click="activeTab = 'providers'" :class="activeTab === 'providers' ? 'border-[#d40060] text-[#d40060]' : 'border-transparent text-[#a1a1aa] hover:text-white hover:border-[#3f3f46]'" class="whitespace-nowrap pb-4 px-1 border-b-2 font-medium transition-colors flex items-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
                 Providers & Profiles
             </button>
-            <button @click="activeTab = 'notifications'" :class="activeTab === 'notifications' ? 'border-[#d40060] text-[#d40060]' : 'border-transparent text-[#a1a1aa] hover:text-white hover:border-[#3f3f46]'" class="whitespace-nowrap pb-4 px-1 border-b-2 font-medium transition-colors">
+            <button @click="activeTab = 'notifications'" :class="activeTab === 'notifications' ? 'border-[#d40060] text-[#d40060]' : 'border-transparent text-[#a1a1aa] hover:text-white hover:border-[#3f3f46]'" class="whitespace-nowrap pb-4 px-1 border-b-2 font-medium transition-colors flex items-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path></svg>
                 Notifications
             </button>
         </nav>
@@ -36,28 +47,19 @@
 
     <div id="settings-result" class="empty:hidden mb-4"></div>
 
-    <!-- Tab 1: Global Settings -->
-    <div x-show="activeTab === 'global'" class="space-y-8 animate-fade-in">
-        <form hx-post="/settings/global" hx-target="#settings-result" class="space-y-8">
-            
+    <form id="global-settings-form" hx-post="/settings/global" hx-target="#settings-result">
+
+        <!-- Tab 1: General & Automation -->
+        <div x-show="activeTab === 'general'" class="space-y-8 animate-fade-in">
             <!-- Group: API Keys -->
             <div class="bg-[#1e1e24] border border-[#3f3f46] rounded-xl shadow-lg">
                 <div class="bg-[#2a2a32] rounded-t-xl border-b border-[#3f3f46] px-6 py-4 flex items-center gap-2">
                     <h2 class="text-lg font-semibold text-white">API Keys & Integrations</h2>
                 </div>
                 <div class="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
-                    
                     <div class="relative group">
                         <label class="block text-[#d1d5db] font-medium mb-1 flex items-center gap-2">
                             TMDB API Key 
-                            <div class="relative inline-block" x-data="{ show: false }" @click.away="show = false" @mouseenter="show = true" @mouseleave="show = false">
-                                <span class="text-[#d40060] cursor-pointer" @click="show = !show">
-                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                                </span>
-                                <div x-show="show" style="display: none;" class="absolute z-50 w-64 p-3 mt-2 text-xs font-normal text-white bg-[#2a2a32] border border-[#3f3f46] rounded shadow-xl left-1/2 transform -translate-x-1/2">
-                                    Used to fetch metadata such as posters, descriptions, and release dates.
-                                </div>
-                            </div>
                             <a href="https://www.themoviedb.org/settings/api" target="_blank" class="ml-auto text-xs text-blue-400 hover:underline">Click here</a>
                         </label>
                         <input type="password" name="tmdb_api_key" value="{{ '' if db_settings and db_settings.tmdb_api_key == 'your_tmdb_api_v3_key_here' else (db_settings.tmdb_api_key if db_settings and db_settings.tmdb_api_key else '') }}" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-3 text-white focus:outline-none transition-colors font-mono">
@@ -66,14 +68,6 @@
                     <div class="relative group">
                         <label class="block text-[#d1d5db] font-medium mb-1 flex items-center gap-2">
                             TorBox API Key 
-                            <div class="relative inline-block" x-data="{ show: false }" @click.away="show = false" @mouseenter="show = true" @mouseleave="show = false">
-                                <span class="text-[#d40060] cursor-pointer" @click="show = !show">
-                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                                </span>
-                                <div x-show="show" style="display: none;" class="absolute z-50 w-64 p-3 mt-2 text-xs font-normal text-white bg-[#2a2a32] border border-[#3f3f46] rounded shadow-xl left-1/2 transform -translate-x-1/2">
-                                    TorBox Account API Key to send NZB files for download.
-                                </div>
-                            </div>
                             <a href="https://torbox.app/settings" target="_blank" class="ml-auto text-xs text-blue-400 hover:underline">Click here</a>
                         </label>
                         <input type="password" name="torbox_api_key" value="{{ '' if db_settings and db_settings.torbox_api_key == 'your_torbox_api_key_here' else (db_settings.torbox_api_key if db_settings and db_settings.torbox_api_key else '') }}" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-3 text-white focus:outline-none transition-colors font-mono">
@@ -81,14 +75,6 @@
                     <div class="relative group">
                         <label class="block text-[#d1d5db] font-medium mb-1 flex items-center gap-2">
                             Treasure Maps API Key 
-                            <div class="relative inline-block" x-data="{ show: false }" @click.away="show = false" @mouseenter="show = true" @mouseleave="show = false">
-                                <span class="text-[#d40060] cursor-pointer" @click="show = !show">
-                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                                </span>
-                                <div x-show="show" style="display: none;" class="absolute z-50 w-64 p-3 mt-2 text-xs font-normal text-white bg-[#2a2a32] border border-[#3f3f46] rounded shadow-xl left-1/2 transform -translate-x-1/2">
-                                    API Key aus den Treasure Maps (Prowlarr) Settings unter General > Security.
-                                </div>
-                            </div>
                             <a href="https://treasure-maps.com/" target="_blank" class="ml-auto text-xs text-blue-400 hover:underline">Click here</a>
                         </label>
                         <input type="password" name="treasure_maps_api_key" value="{{ '' if db_settings and db_settings.treasure_maps_api_key == 'your_newznab_api_key_here' else (db_settings.treasure_maps_api_key if db_settings and db_settings.treasure_maps_api_key else '') }}" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-3 text-white focus:outline-none transition-colors font-mono">
@@ -97,131 +83,236 @@
             </div>
 
             <!-- Group: Self Healing -->
-            <div class="bg-[#1e1e24] border border-[#3f3f46] rounded-xl shadow-lg" x-data="{ expanded: true }">
-                <div class="bg-[#2a2a32] rounded-t-xl border-b border-[#3f3f46] px-6 py-4 flex items-center justify-between cursor-pointer hover:bg-[#32323c] transition-colors" @click="expanded = !expanded">
+            <div class="bg-[#1e1e24] border border-[#3f3f46] rounded-xl shadow-lg">
+                <div class="bg-[#2a2a32] rounded-t-xl border-b border-[#3f3f46] px-6 py-4 flex items-center justify-between">
                     <h2 class="text-lg font-semibold text-white flex items-center gap-2">
                         <svg class="w-5 h-5 text-yellow-500" fill="currentColor" viewBox="0 0 20 20"><path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z"></path></svg>
-                        Self-Healing & Automation
+                        Self-Healing & Search Automation
                     </h2>
-                    <svg class="w-5 h-5 text-[#a1a1aa] transform transition-transform" :class="{'rotate-180': expanded}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
                 </div>
-                <div x-show="expanded" x-collapse>
-                    <div class="p-6 space-y-6">
-                        <div class="bg-[#2a2a32] border-l-4 border-yellow-500 rounded p-4 text-[#a1a1aa] text-sm">
-                            Failed downloads on TorBox are automatically canceled, blacklisted, and replaced by the next best release. No endless loops!
+                <div class="p-6 space-y-6">
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <div>
+                            <label class="block text-[#d1d5db] font-medium mb-1 text-xs uppercase tracking-wider">Max Retries</label>
+                            <input type="number" name="sh_max_retries" value="{{ db_settings.sh_max_retries if db_settings else '5' }}" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors font-mono text-center">
                         </div>
-                        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                            <div>
-                                <label class="block text-[#d1d5db] font-medium mb-1 text-xs uppercase tracking-wider flex items-center gap-1">
-                                    Max. Retries 
-                                    <div class="relative inline-block" x-data="{ show: false }" @click.away="show = false" @mouseenter="show = true" @mouseleave="show = false">
-                                        <span class="text-[#d40060] cursor-pointer" @click="show = !show">
-                                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                                        </span>
-                                        <div x-show="show" style="display: none;" class="absolute z-50 w-48 p-2 mt-1 text-xs font-normal text-white bg-[#2a2a32] border border-[#3f3f46] rounded shadow-xl left-1/2 transform -translate-x-1/2">
-                                            Maximum number of failed attempts per MediaItem
-                                        </div>
-                                    </div>
-                                </label>
-                                <input type="number" name="sh_max_retries" value="{{ db_settings.sh_max_retries if db_settings else '5' }}" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors font-mono text-center">
-                            </div>
-                            <div>
-                                <label class="block text-[#d1d5db] font-medium mb-1 text-xs uppercase tracking-wider flex items-center gap-1">
-                                    Max. Wait (Hours) 
-                                    <div class="relative inline-block" x-data="{ show: false }" @click.away="show = false" @mouseenter="show = true" @mouseleave="show = false">
-                                        <span class="text-[#d40060] cursor-pointer" @click="show = !show">
-                                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                                        </span>
-                                        <div x-show="show" style="display: none;" class="absolute z-50 w-48 p-2 mt-1 text-xs font-normal text-white bg-[#2a2a32] border border-[#3f3f46] rounded shadow-xl left-1/2 transform -translate-x-1/2">
-                                            How long TorBox has to complete a download before it is considered an error.
-                                        </div>
-                                    </div>
-                                </label>
-                                <input type="number" step="0.1" name="sh_max_time_hours" value="{{ db_settings.sh_max_time_hours if db_settings else '24.0' }}" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors font-mono text-center">
-                            </div>
-                            <div>
-                                <label class="block text-[#d1d5db] font-medium mb-1 text-xs uppercase tracking-wider flex items-center gap-1">
-                                    Scan Multiplier 
-                                    <div class="relative inline-block" x-data="{ show: false }" @click.away="show = false" @mouseenter="show = true" @mouseleave="show = false">
-                                        <span class="text-[#d40060] cursor-pointer" @click="show = !show">
-                                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                                        </span>
-                                        <div x-show="show" style="display: none;" class="absolute z-50 w-48 p-2 mt-1 text-xs font-normal text-white bg-[#2a2a32] border border-[#3f3f46] rounded shadow-xl left-1/2 transform -translate-x-1/2">
-                                            Multiplier for the 15-minute cycle. 2 means every 30 mins.
-                                        </div>
-                                    </div>
-                                </label>
-                                <input type="number" name="scan_interval_multiplier" value="{{ db_settings.scan_interval_multiplier if db_settings else '2' }}" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors font-mono text-center">
-                            </div>
-                            <div>
-                                <label class="block text-[#d1d5db] font-medium mb-1 text-xs uppercase tracking-wider flex items-center gap-1">
-                                    Auto Retry 
-                                    <div class="relative inline-block" x-data="{ show: false }" @click.away="show = false" @mouseenter="show = true" @mouseleave="show = false">
-                                        <span class="text-[#d40060] cursor-pointer" @click="show = !show">
-                                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                                        </span>
-                                        <div x-show="show" style="display: none;" class="absolute z-50 w-48 p-2 mt-1 text-xs font-normal text-white bg-[#2a2a32] border border-[#3f3f46] rounded shadow-xl left-1/2 transform -translate-x-1/2">
-                                            Should releases be searched for again after a longer period if nothing was found before?
-                                        </div>
-                                    </div>
-                                </label>
-                                <select name="sh_auto_retry" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors">
-                                    <option value="True" {% if db_settings and db_settings.sh_auto_retry %}selected{% endif %}>Enabled</option>
-                                    <option value="False" {% if db_settings and not db_settings.sh_auto_retry %}selected{% endif %}>Disabled</option>
-                                </select>
-                            </div>
-                            <div>
-                                <label class="block text-[#d1d5db] font-medium mb-1 text-xs uppercase tracking-wider flex items-center gap-1">
-                                    Retry Delay (Hrs) 
-                                    <div class="relative inline-block" x-data="{ show: false }" @click.away="show = false" @mouseenter="show = true" @mouseleave="show = false">
-                                        <span class="text-[#d40060] cursor-pointer" @click="show = !show">
-                                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                                        </span>
-                                        <div x-show="show" style="display: none;" class="absolute z-50 w-48 p-2 mt-1 text-xs font-normal text-white bg-[#2a2a32] border border-[#3f3f46] rounded shadow-xl left-1/2 transform -translate-x-1/2">
-                                            Time in hours between unsuccessful searches.
-                                        </div>
-                                    </div>
-                                </label>
-                                <input type="number" step="0.1" name="sh_retry_wait_hours" value="{{ db_settings.sh_retry_wait_hours if db_settings else '12.0' }}" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors font-mono text-center">
-                            </div>
+                        <div>
+                            <label class="block text-[#d1d5db] font-medium mb-1 text-xs uppercase tracking-wider">Max Wait (Hours)</label>
+                            <input type="number" step="0.1" name="sh_max_time_hours" value="{{ db_settings.sh_max_time_hours if db_settings else '24.0' }}" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors font-mono text-center">
                         </div>
-                        <div class="mt-6 flex items-center gap-3">
-                            <label class="relative inline-flex items-center cursor-pointer">
-                                <input type="checkbox" name="dry_run" value="true" class="sr-only peer" {% if db_settings and db_settings.dry_run %}checked{% endif %}>
-                                <div class="w-11 h-6 bg-[#3f3f46] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#d40060]"></div>
-                                <span class="ml-3 text-sm font-medium text-white flex items-center gap-2">
-                                    🧪 Dry Run Mode
-                                    <div class="relative inline-block" x-data="{ show: false }" @click.away="show = false" @mouseenter="show = true" @mouseleave="show = false">
-                                        <span class="text-[#a1a1aa] cursor-pointer" @click.prevent="show = !show">
-                                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                                        </span>
-                                        <div x-show="show" style="display: none;" class="absolute z-50 w-64 p-2 mt-1 text-xs font-normal text-white bg-[#2a2a32] border border-[#3f3f46] rounded shadow-xl left-1/2 transform -translate-x-1/2">
-                                            Performs the search and scoring, but DOES NOT send downloads to TorBox. Ideal for testing scoring values.
-                                        </div>
-                                    </div>
-                                </span>
+                        <div>
+                            <label class="block text-[#d1d5db] font-medium mb-1 text-xs uppercase tracking-wider">Scan Multiplier (15min base)</label>
+                            <input type="number" name="scan_interval_multiplier" value="{{ db_settings.scan_interval_multiplier if db_settings else '2' }}" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors font-mono text-center">
+                        </div>
+                        <div>
+                            <label class="block text-[#d1d5db] font-medium mb-1 text-xs uppercase tracking-wider">Auto Retry</label>
+                            <select name="sh_auto_retry" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors">
+                                <option value="True" {% if db_settings and db_settings.sh_auto_retry %}selected{% endif %}>Enabled</option>
+                                <option value="False" {% if db_settings and not db_settings.sh_auto_retry %}selected{% endif %}>Disabled</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-[#d1d5db] font-medium mb-1 text-xs uppercase tracking-wider">Retry Delay (Hours)</label>
+                            <input type="number" step="0.1" name="sh_retry_wait_hours" value="{{ db_settings.sh_retry_wait_hours if db_settings else '12.0' }}" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors font-mono text-center">
+                        </div>
+                    </div>
+                    
+                    <div class="mt-6 flex items-center gap-3">
+                        <label class="relative inline-flex items-center cursor-pointer">
+                            <input type="checkbox" name="dry_run" value="true" class="sr-only peer" {% if db_settings and db_settings.dry_run %}checked{% endif %}>
+                            <div class="w-11 h-6 bg-[#3f3f46] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#d40060]"></div>
+                            <span class="ml-3 text-sm font-medium text-white flex items-center gap-2">
+                                🧪 Dry Run Mode (Searches and scores without pushing to TorBox)
+                            </span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Group: Search Backoff -->
+            <div class="bg-[#1e1e24] border border-[#3f3f46] rounded-xl shadow-lg">
+                <div class="bg-[#2a2a32] rounded-t-xl border-b border-[#3f3f46] px-6 py-4 flex items-center gap-2">
+                    <h2 class="text-lg font-semibold text-white">Progressive Search Backoff</h2>
+                </div>
+                <div class="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                        <label class="block text-[#d1d5db] font-medium mb-1 text-xs uppercase tracking-wider">Backoff Tier 2 Skip (Cycles)</label>
+                        <input type="number" name="backoff_tier2_skip" value="{{ db_settings.backoff_tier2_skip if db_settings else '6' }}" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors">
+                    </div>
+                    <div>
+                        <label class="block text-[#d1d5db] font-medium mb-1 text-xs uppercase tracking-wider">Backoff Tier 3 Skip (Cycles)</label>
+                        <input type="number" name="backoff_tier3_skip" value="{{ db_settings.backoff_tier3_skip if db_settings else '24' }}" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors">
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex justify-end pt-4">
+                <button type="submit" class="bg-[#d40060] hover:bg-[#a3004a] text-white px-8 py-3 rounded-lg flex items-center gap-2 font-bold transition-transform hover:scale-105 shadow-[0_0_15px_rgba(212,0,96,0.4)]">
+                    Save General Settings
+                </button>
+            </div>
+        </div>
+
+        <!-- Tab 2: Video Scoring & Rules -->
+        <div x-show="activeTab === 'scoring'" class="space-y-8 animate-fade-in" style="display: none;">
+            <div class="bg-[#1e1e24] border border-[#3f3f46] rounded-xl shadow-lg">
+                <div class="bg-[#2a2a32] rounded-t-xl border-b border-[#3f3f46] px-6 py-4 flex items-center justify-between">
+                    <h2 class="text-lg font-semibold text-white flex items-center gap-2">
+                        <svg class="w-5 h-5 text-[#d40060]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg>
+                        Video Scoring Engine (Strict Engine Specification)
+                    </h2>
+                    <span class="text-xs font-semibold px-2.5 py-1 rounded bg-[#2a2a32] border border-[#3f3f46] text-[#a1a1aa] uppercase">Automatic Rule Engine</span>
+                </div>
+                <div class="p-6 space-y-6">
+                    <p class="text-xs text-[#a1a1aa]">
+                        NZBoxer calculates release candidate scores deterministically using an algorithmic multi-tier point matrix. Highest scoring release matching your provider profile is automatically chosen.
+                    </p>
+
+                    <!-- Targets & Cutoffs -->
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div class="bg-[#111115] border border-[#3f3f46] rounded-lg p-4">
+                            <div class="text-xs font-semibold text-[#a1a1aa] uppercase tracking-wider mb-1">Target Score Cutoff</div>
+                            <div class="text-2xl font-bold text-white font-mono">8000 <span class="text-xs text-emerald-400 font-normal">pts (Prevents redundant re-searches once top release is grabbed)</span></div>
+                        </div>
+
+                        <!-- Editable Upgrade Threshold with optimal hint -->
+                        <div class="bg-[#111115] border border-[#3f3f46] rounded-lg p-4">
+                            <label class="block text-xs font-semibold text-[#a1a1aa] uppercase tracking-wider mb-1 flex items-center justify-between">
+                                <span>Upgrade Threshold</span>
+                                <span class="text-xs text-emerald-400 font-medium lowercase">Optimal: 500 – 800 pts</span>
                             </label>
+                            <div class="flex items-center gap-3 mt-1">
+                                <input type="number" name="upgrade_threshold" value="{{ db_settings.upgrade_threshold if db_settings else '500' }}" min="100" max="3000" step="50" class="w-32 bg-[#1e1e24] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2 text-white font-mono text-lg font-bold text-center">
+                                <span class="text-xs text-[#a1a1aa]">Minimum delta required to replace an existing release.</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Scoring Matrices -->
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <!-- Resolution -->
+                        <div class="bg-[#111115] border border-[#3f3f46] rounded-lg p-4 space-y-2">
+                            <h3 class="text-xs font-bold text-white uppercase tracking-wider border-b border-[#2a2a32] pb-2">Resolution</h3>
+                            <div class="flex justify-between text-xs py-1"><span class="text-gray-300">2160p (4K UHD)</span><span class="font-mono text-emerald-400 font-bold">+2500 pts</span></div>
+                            <div class="flex justify-between text-xs py-1"><span class="text-gray-300">1440p (QHD)</span><span class="font-mono text-teal-400 font-bold">+1800 pts</span></div>
+                            <div class="flex justify-between text-xs py-1"><span class="text-gray-300">1080p (FHD)</span><span class="font-mono text-blue-400 font-bold">+1200 pts</span></div>
+                            <div class="flex justify-between text-xs py-1"><span class="text-gray-300">720p (HD)</span><span class="font-mono text-yellow-500 font-bold">+500 pts</span></div>
+                            <div class="flex justify-between text-xs py-1"><span class="text-gray-300">480p / SD</span><span class="font-mono text-slate-500">+100 pts</span></div>
+                        </div>
+
+                        <!-- Source Quality -->
+                        <div class="bg-[#111115] border border-[#3f3f46] rounded-lg p-4 space-y-2">
+                            <h3 class="text-xs font-bold text-white uppercase tracking-wider border-b border-[#2a2a32] pb-2">Source Quality</h3>
+                            <div class="flex justify-between text-xs py-1"><span class="text-gray-300">Remux (Lossless)</span><span class="font-mono text-emerald-400 font-bold">+1500 pts</span></div>
+                            <div class="flex justify-between text-xs py-1"><span class="text-gray-300">BluRay / UHD BD</span><span class="font-mono text-teal-400 font-bold">+1000 pts</span></div>
+                            <div class="flex justify-between text-xs py-1"><span class="text-gray-300">WEB-DL</span><span class="font-mono text-blue-400 font-bold">+800 pts</span></div>
+                            <div class="flex justify-between text-xs py-1"><span class="text-gray-300">WEBRip</span><span class="font-mono text-yellow-500 font-bold">+500 pts</span></div>
+                            <div class="flex justify-between text-xs py-1"><span class="text-gray-300">HDTV / Broadcast</span><span class="font-mono text-slate-500">+200 pts</span></div>
+                        </div>
+
+                        <!-- Audio Codec Tier -->
+                        <div class="bg-[#111115] border border-[#3f3f46] rounded-lg p-4 space-y-2">
+                            <h3 class="text-xs font-bold text-white uppercase tracking-wider border-b border-[#2a2a32] pb-2">Audio Formats</h3>
+                            <div class="flex justify-between text-xs py-1"><span class="text-gray-300">TrueHD Atmos / DTS:X</span><span class="font-mono text-emerald-400 font-bold">+3800 pts</span></div>
+                            <div class="flex justify-between text-xs py-1"><span class="text-gray-300">DTS-HD MA / TrueHD / FLAC</span><span class="font-mono text-teal-400 font-bold">+3000 pts</span></div>
+                            <div class="flex justify-between text-xs py-1"><span class="text-gray-300">EAC3 Atmos / DD+ Atmos</span><span class="font-mono text-blue-400 font-bold">+2000 pts</span></div>
+                            <div class="flex justify-between text-xs py-1"><span class="text-gray-300">EAC3 / DTS / AC3 (5.1)</span><span class="font-mono text-yellow-500 font-bold">+1000 pts</span></div>
+                            <div class="flex justify-between text-xs py-1"><span class="text-gray-300">AAC / Opus / MP3</span><span class="font-mono text-slate-500">+200 pts</span></div>
+                        </div>
+                    </div>
+
+                    <!-- Codec, HDR & Bitrate -->
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 pt-2">
+                        <!-- Codecs -->
+                        <div class="bg-[#111115] border border-[#3f3f46] rounded-lg p-4 space-y-2">
+                            <h3 class="text-xs font-bold text-white uppercase tracking-wider border-b border-[#2a2a32] pb-2">Video Codec</h3>
+                            <div class="flex justify-between text-xs py-1"><span class="text-gray-300">AV1</span><span class="font-mono text-emerald-400 font-bold">+500 pts</span></div>
+                            <div class="flex justify-between text-xs py-1"><span class="text-gray-300">HEVC / H.265 / x265</span><span class="font-mono text-teal-400 font-bold">+400 pts</span></div>
+                            <div class="flex justify-between text-xs py-1"><span class="text-gray-300">AVC / H.264 / x264</span><span class="font-mono text-blue-400 font-bold">+200 pts</span></div>
+                        </div>
+
+                        <!-- HDR -->
+                        <div class="bg-[#111115] border border-[#3f3f46] rounded-lg p-4 space-y-2">
+                            <h3 class="text-xs font-bold text-white uppercase tracking-wider border-b border-[#2a2a32] pb-2">HDR & Color</h3>
+                            <div class="flex justify-between text-xs py-1"><span class="text-gray-300">Dolby Vision (DV)</span><span class="font-mono text-emerald-400 font-bold">+1000 pts</span></div>
+                            <div class="flex justify-between text-xs py-1"><span class="text-gray-300">HDR10+ / HDR10 / HDR</span><span class="font-mono text-teal-400 font-bold">+700 pts</span></div>
+                            <div class="flex justify-between text-xs py-1"><span class="text-gray-300">10-Bit Color</span><span class="font-mono text-blue-400 font-bold">+300 pts</span></div>
+                        </div>
+
+                        <!-- Channels & Bitrate -->
+                        <div class="bg-[#111115] border border-[#3f3f46] rounded-lg p-4 space-y-2">
+                            <h3 class="text-xs font-bold text-white uppercase tracking-wider border-b border-[#2a2a32] pb-2">Channels & Bitrate</h3>
+                            <div class="flex justify-between text-xs py-1"><span class="text-gray-300">7.1 / 5.1 Surround</span><span class="font-mono text-teal-400 font-bold">+200 pts</span></div>
+                            <div class="flex justify-between text-xs py-1"><span class="text-gray-300">Bitrate &ge; 80 Mbps</span><span class="font-mono text-emerald-400 font-bold">+500 pts</span></div>
+                            <div class="flex justify-between text-xs py-1"><span class="text-gray-300">Bitrate &ge; 50 Mbps</span><span class="font-mono text-teal-400 font-bold">+300 pts</span></div>
+                            <div class="flex justify-between text-xs py-1"><span class="text-gray-300">Bitrate &ge; 25 Mbps</span><span class="font-mono text-blue-400 font-bold">+150 pts</span></div>
                         </div>
                     </div>
                 </div>
             </div>
 
-
-            <!-- Submit Button -->
             <div class="flex justify-end pt-4">
                 <button type="submit" class="bg-[#d40060] hover:bg-[#a3004a] text-white px-8 py-3 rounded-lg flex items-center gap-2 font-bold transition-transform hover:scale-105 shadow-[0_0_15px_rgba(212,0,96,0.4)]">
-                    <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M8 16.5a1.5 1.5 0 01-1.06-.44l-4-4a1.5 1.5 0 012.12-2.12l2.94 2.94 7.44-7.44a1.5 1.5 0 112.12 2.12l-8.5 8.5a1.5 1.5 0 01-1.06.44z"></path></svg>
-                    Globale Settings Speichern
+                    Save Upgrade Threshold
                 </button>
             </div>
-            
-        </form>
-    </div>
+        </div>
 
-    <!-- Tab 2: Providers -->
+        <!-- Tab 3: Print Media -->
+        <div x-show="activeTab === 'print'" class="space-y-8 animate-fade-in" style="display: none;">
+            <div class="bg-[#1e1e24] border border-[#3f3f46] rounded-xl shadow-lg">
+                <div class="bg-[#2a2a32] rounded-t-xl border-b border-[#3f3f46] px-6 py-4 flex items-center gap-2">
+                    <h2 class="text-lg font-semibold text-white">Storage & Hierarchy Settings</h2>
+                </div>
+                <div class="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                        <label class="block text-[#d1d5db] font-medium mb-1 text-xs uppercase tracking-wider">Reading Download Directory</label>
+                        <input type="text" name="reading_download_dir" value="{{ db_settings.reading_download_dir if db_settings else 'downloads' }}" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors">
+                    </div>
+                    <div>
+                        <div class="bg-[#2a2a32] border border-[#3f3f46] rounded-lg p-3 text-xs text-[#a1a1aa] space-y-1">
+                            <span class="text-white font-semibold block mb-1">Standard Format Hierarchy:</span>
+                            <div>• Manga: <span class="text-emerald-400 font-bold">CBZ</span> (1000) > <span class="text-teal-300">CBR</span> (700) > PDF (300)</div>
+                            <div>• Books: <span class="text-blue-400 font-bold">EPUB</span> (1000) > PDF (400)</div>
+                            <div>• Magazines: <span class="text-rose-400 font-bold">PDF</span> (1000) > EPUB (700)</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-[#1e1e24] border border-[#3f3f46] rounded-xl shadow-lg">
+                <div class="bg-[#2a2a32] rounded-t-xl border-b border-[#3f3f46] px-6 py-4 flex items-center gap-2">
+                    <h2 class="text-lg font-semibold text-white">Print Media Format Blacklists (Comma Separated)</h2>
+                </div>
+                <div class="p-6 grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div>
+                        <label class="block text-[#d1d5db] font-medium mb-1 text-xs uppercase tracking-wider">Manga Blacklist</label>
+                        <input type="text" name="manga_blacklisted_formats" value="{{ db_settings.manga_blacklisted_formats if db_settings else '' }}" placeholder="pdf, mobi" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors">
+                    </div>
+                    <div>
+                        <label class="block text-[#d1d5db] font-medium mb-1 text-xs uppercase tracking-wider">Book Blacklist</label>
+                        <input type="text" name="book_blacklisted_formats" value="{{ db_settings.book_blacklisted_formats if db_settings else '' }}" placeholder="pdf" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors">
+                    </div>
+                    <div>
+                        <label class="block text-[#d1d5db] font-medium mb-1 text-xs uppercase tracking-wider">Magazine Blacklist</label>
+                        <input type="text" name="magazine_blacklisted_formats" value="{{ db_settings.magazine_blacklisted_formats if db_settings else '' }}" placeholder="epub" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors">
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex justify-end pt-4">
+                <button type="submit" class="bg-[#d40060] hover:bg-[#a3004a] text-white px-8 py-3 rounded-lg flex items-center gap-2 font-bold transition-transform hover:scale-105 shadow-[0_0_15px_rgba(212,0,96,0.4)]">
+                    Save Print Media Settings
+                </button>
+            </div>
+        </div>
+
+    </form>
+
+    <!-- Tab 4: Providers & Profiles -->
     <div x-show="activeTab === 'providers'" class="space-y-6 animate-fade-in" style="display: none;">
         <div class="flex items-center justify-between mb-4">
-            <h2 class="text-xl font-bold text-white">Connected Providers (Simkl)</h2>
+            <h2 class="text-xl font-bold text-white">Connected Providers</h2>
             <button hx-get="/settings/provider/new" hx-target="#modal-container" class="bg-[#3f3f46] hover:bg-[#52525b] text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
                 Add New Provider
@@ -243,38 +334,39 @@
                     
                     <div class="flex items-center gap-3 mb-4">
                         <div class="w-10 h-10 rounded-full bg-[#d40060] bg-opacity-20 flex items-center justify-center text-[#d40060]">
-                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg>
+                            <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 20 20"><path d="M5.5 16a3.5 3.5 0 01-.369-6.98 4 4 0 117.759-1.549V8a3.5 3.5 0 116.71 1.694A4.002 4.002 0 0115 16H5.5z" /></svg>
                         </div>
                         <div>
                             <h3 class="text-lg font-bold text-white">{{ provider.name }}</h3>
-                            <p class="text-xs text-[#a1a1aa]">Simkl Account: @{{ provider.username or 'Not connected' }}</p>
+                            <p class="text-xs text-[#a1a1aa] font-mono">{{ provider.type }} • {{ provider.username }}</p>
                         </div>
                     </div>
                     
-                    <div class="space-y-3 mt-6">
-                        {% set movies_profile = provider.profiles | selectattr("media_type", "equalto", "movies") | list %}
-                        <div class="flex items-center justify-between text-sm bg-[#111115] rounded p-2 border border-[#3f3f46]">
-                            <span class="text-[#a1a1aa] font-medium">Movies</span>
-                            {% if movies_profile %}
-                                <span class="bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded text-xs font-bold">Active</span>
-                            {% else %}
-                                <span class="bg-[#3f3f46] text-[#a1a1aa] px-2 py-0.5 rounded text-xs font-bold">Inactive</span>
-                            {% endif %}
-                        </div>
+                    <!-- Profiles Configured List Preview -->
+                    <div class="space-y-2 mt-4">
+                        <div class="text-xs font-semibold text-[#a1a1aa] uppercase tracking-wider">Configured Profiles</div>
+                        {% set movie_profile = provider.profiles | selectattr("media_type.value", "equalto", "movie") | first %}
+                        {% set show_profile = provider.profiles | selectattr("media_type.value", "equalto", "show") | first %}
+                        {% set anime_profile = provider.profiles | selectattr("media_type.value", "equalto", "anime") | first %}
                         
-                        {% set series_profile = provider.profiles | selectattr("media_type", "equalto", "shows") | list %}
-                        <div class="flex items-center justify-between text-sm bg-[#111115] rounded p-2 border border-[#3f3f46]">
-                            <span class="text-[#a1a1aa] font-medium">Series</span>
-                            {% if series_profile %}
+                        <div class="flex items-center justify-between text-xs py-1 border-b border-[#2a2a32]">
+                            <span class="text-gray-300">Movies:</span>
+                            {% if movie_profile %}
                                 <span class="bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded text-xs font-bold">Active</span>
                             {% else %}
                                 <span class="bg-[#3f3f46] text-[#a1a1aa] px-2 py-0.5 rounded text-xs font-bold">Inactive</span>
                             {% endif %}
                         </div>
-
-                        {% set anime_profile = provider.profiles | selectattr("media_type", "equalto", "anime") | list %}
-                        <div class="flex items-center justify-between text-sm bg-[#111115] rounded p-2 border border-[#3f3f46]">
-                            <span class="text-[#a1a1aa] font-medium">Anime</span>
+                        <div class="flex items-center justify-between text-xs py-1 border-b border-[#2a2a32]">
+                            <span class="text-gray-300">TV Shows:</span>
+                            {% if show_profile %}
+                                <span class="bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded text-xs font-bold">Active</span>
+                            {% else %}
+                                <span class="bg-[#3f3f46] text-[#a1a1aa] px-2 py-0.5 rounded text-xs font-bold">Inactive</span>
+                            {% endif %}
+                        </div>
+                        <div class="flex items-center justify-between text-xs py-1">
+                            <span class="text-gray-300">Anime:</span>
                             {% if anime_profile %}
                                 <span class="bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded text-xs font-bold">Active</span>
                             {% else %}
@@ -286,13 +378,13 @@
             </div>
             {% else %}
             <div class="col-span-full bg-[#111115] border border-dashed border-[#3f3f46] rounded-xl p-12 text-center text-[#a1a1aa]">
-                Keine Provider eingerichtet. Klicken Sie auf "Add New Provider", um zu beginnen.
+                No providers configured. Click "Add New Provider" to get started.
             </div>
             {% endfor %}
         </div>
     </div>
 
-    <!-- Tab 3: Notifications -->
+    <!-- Tab 5: Notifications -->
     <div x-show="activeTab === 'notifications'" class="space-y-6 animate-fade-in" style="display: none;">
         <div class="flex items-center justify-between mb-4">
             <h2 class="text-xl font-bold text-white">Notification Channels</h2>
@@ -333,7 +425,7 @@
             </div>
             {% else %}
             <div class="col-span-full bg-[#111115] border border-dashed border-[#3f3f46] rounded-xl p-12 text-center text-[#a1a1aa]">
-                Keine Notification Channels eingerichtet.
+                No notification channels configured.
             </div>
             {% endfor %}
         </div>

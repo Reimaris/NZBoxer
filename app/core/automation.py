@@ -156,7 +156,7 @@ async def _sync_items(
                         details_movie = await tmdb.get_movie_details(tmdb_id)
                         if details_movie:
                             logger.info(
-                                "    🔄 '%s' ist laut TMDB ein Film, ändere Medientyp zu MOVIE.",
+                                "    🔄 '%s' is identified as a movie by TMDB, updating media type to MOVIE.",
                                 item.title,
                             )
                             item.media_type = MediaType.MOVIE
@@ -169,7 +169,7 @@ async def _sync_items(
             # IMDB Fallback if TMDB ID failed or was missing
             if not details and item.imdb_id:
                 logger.info(
-                    "    🔍 TMDB Suche per ID fehlgeschlagen/fehlt. Nutze IMDB Fallback für '%s' (%s)...",
+                    "    🔍 TMDB lookup failed/missing. Using IMDB fallback for '%s' (%s)...",
                     item.title,
                     item.imdb_id,
                 )
@@ -181,7 +181,7 @@ async def _sync_items(
                     if fallback_res["type"] == "movie":
                         if media_type != MediaType.MOVIE:
                             logger.info(
-                                "    🔄 Ändere Medientyp für '%s' zu MOVIE durch IMDB-Fallback.",
+                                "    🔄 Updating media type for '%s' to MOVIE via IMDB fallback.",
                                 item.title,
                             )
                             item.media_type = MediaType.MOVIE
@@ -190,7 +190,7 @@ async def _sync_items(
                     else:
                         if media_type == MediaType.MOVIE:
                             logger.info(
-                                "    🔄 Ändere Medientyp für '%s' zu SHOW durch IMDB-Fallback.",
+                                "    🔄 Updating media type for '%s' to SHOW via IMDB fallback.",
                                 item.title,
                             )
                             item.media_type = MediaType.SHOW
@@ -356,14 +356,14 @@ async def run_automation_cycle(force: bool = False) -> None:
     Args:
         force: If True, bypass the per-provider cycle skip throttle and always run.
     """
-    log_process_start(logger, "Automations-Zyklus")
+    log_process_start(logger, "Automation Cycle")
     try:
         if force:
             logger.info(
-                "🔍 Manueller Suchlauf gestartet (Intervall-Multiplikator wird ignoriert)..."
+                "🔍 Manual search run started (bypassing interval multiplier)..."
             )
         else:
-            logger.info("🔄 Starte Automatisierungs-Zyklus...")
+            logger.info("🔄 Starting automation cycle...")
 
         # 0. Self-healing: fix failed downloads before searching
         await run_self_healing_cycle()
@@ -397,7 +397,7 @@ async def run_automation_cycle(force: bool = False) -> None:
             for m in movies_result.scalars():
                 m.status = MediaStatus.SEARCHING
                 logger.info(
-                    "🔄 Film %s hat sein Release-Datum erreicht und wird nun gesucht.",
+                    "🔄 Movie '%s' has reached its release date and is now being searched.",
                     m.title,
                 )
 
@@ -416,7 +416,7 @@ async def run_automation_cycle(force: bool = False) -> None:
                     m.status = MediaStatus.PENDING
                     m.fail_count = 0
                     logger.info(
-                        "    🔄 Film '%s' auf PENDING gesetzt (Release Date: %s liegt in der Zukunft)",
+                        "    🔄 Film '%s' set to PENDING (Release Date: %s is in the future)",
                         m.title,
                         rd.strftime("%Y-%m-%d"),
                     )
@@ -424,7 +424,7 @@ async def run_automation_cycle(force: bool = False) -> None:
                     m.status = MediaStatus.PENDING
                     m.fail_count = 0
                     logger.info(
-                        "    🔄 Film '%s' auf PENDING gesetzt (Jahr %s liegt in der Zukunft)",
+                        "    🔄 Film '%s' set to PENDING (Year %s is in the future)",
                         m.title,
                         m.year,
                     )
@@ -486,7 +486,7 @@ async def run_automation_cycle(force: bool = False) -> None:
                 for movie in movies_result.scalars():
                     await _process_movie(session, movie)
             else:
-                logger.info("⏩ Überspringe Film-Suche in diesem Zyklus.")
+                logger.info("⏩ Skipping movie search in this cycle.")
 
             if active_shows_provider_ids:
                 # 3. Process Shows (Seasons)
@@ -513,20 +513,20 @@ async def run_automation_cycle(force: bool = False) -> None:
                 for season in seasons_result.scalars():
                     await _process_season(session, season)
             else:
-                logger.info("⏩ Überspringe Serien-Suche in diesem Zyklus.")
+                logger.info("⏩ Skipping series search in this cycle.")
 
         # 4. Download-Check: update status for items already sent to TorBox
         await run_download_check_cycle()
     finally:
-        log_process_end(logger, "Automations-Zyklus")
+        log_process_end(logger, "Automation Cycle")
 
 
 async def _process_movie(session: AsyncSession, movie: MediaItem) -> None:
     from app.db.models import MediaType, ProviderProfile
 
-    logger.info("🎬 Lade Film: %s", movie.title)
+    logger.info("🎬 Processing movie: %s", movie.title)
     if not movie.imdb_id and not movie.tmdb_id:
-        logger.warning("⚠️ Film %s hat keine IDs, versuche Titel-Suche.", movie.title)
+        logger.warning("⚠️ Film %s has no IDs, attempting title search.", movie.title)
 
     # Load provider to get category ID
     await session.refresh(movie, ["provider"])
@@ -567,7 +567,7 @@ async def _process_movie(session: AsyncSession, movie: MediaItem) -> None:
         )
     if not results:
         logger.warning(
-            "    ⚠️ Keine ID-Treffer für Film '%s', falle auf Titelsuche zurück.",
+            "    ⚠️ No ID match for movie '%s', falling back to title search.",
             movie.title,
         )
         results = await treasure_maps.search_movie(title=movie.title, category=cat_id)
@@ -605,7 +605,7 @@ async def _process_season(session: AsyncSession, season: Season) -> None:
     )
 
     logger.info(
-        "📺 Lade Episodendaten für Serie: %s S%02d",
+        "📺 Loading episode data for series: %s S%02d",
         season.media_item.title,
         season.season_number,
     )
@@ -671,7 +671,7 @@ async def _process_season(session: AsyncSession, season: Season) -> None:
 
     if not missing_episodes:
         logger.info(
-            "    ✅ Keine ausstehenden Episoden für S%02d.", season.season_number
+            "    ✅ No pending episodes for S%02d.", season.season_number
         )
         return
 
@@ -693,7 +693,7 @@ async def _process_season(session: AsyncSession, season: Season) -> None:
                 return r, False
         # Title fallback — warn operator
         logger.warning(
-            "    ⚠️ Keine ID-Treffer für S%02d%s, falle auf Titelsuche zurück.",
+            "    ⚠️ No ID match for S%02d%s, falling back to title search.",
             s,
             f"E{ep}" if ep else "",
         )
@@ -703,7 +703,7 @@ async def _process_season(session: AsyncSession, season: Season) -> None:
         return r, True
 
     if prefer_seasons:
-        logger.info("    📦 Suche Season Pack für S%02d...", season.season_number)
+        logger.info("    📦 Searching season pack for S%02d...", season.season_number)
         results, is_fallback = await _search_show_id_first(season.season_number)
         if results:
             grabbed = await _evaluate_and_download(
@@ -734,7 +734,7 @@ async def _process_season(session: AsyncSession, season: Season) -> None:
                         next_s.monitored = True
                         next_s.status = SeasonStatus.SEARCHING
                         logger.info(
-                            "    🔄 Aktiviere automatisch nächste Staffel: S%02d",
+                            "    🔄 Automatically enabling next season: S%02d",
                             next_s.season_number,
                         )
                         await session.commit()
@@ -775,7 +775,7 @@ async def _process_season(session: AsyncSession, season: Season) -> None:
             )
         except Exception as ep_err:  # noqa: BLE001
             logger.error(
-                "    ❌ Fehler beim Suchen von S%02dE%02d: %s",
+                "    ❌ Error searching S%02dE%02d: %s",
                 season.season_number,
                 ep.episode_number,
                 ep_err,
@@ -803,7 +803,7 @@ async def _process_season(session: AsyncSession, season: Season) -> None:
                 next_s.monitored = True
                 next_s.status = SeasonStatus.SEARCHING
                 logger.info(
-                    "    🔄 Alle Episoden geladen. Aktiviere nächste Staffel: S%02d",
+                    "    🔄 All episodes downloaded. Enabling next season: S%02d",
                     next_s.season_number,
                 )
         await session.commit()
@@ -837,21 +837,34 @@ async def _evaluate_and_download(
 
     if not search_results:
         if target.best_score is not None:
-            from app.db.models import EpisodeStatus, MediaStatus, SeasonStatus
+            from app.db.models import (
+                BlacklistedRelease,
+                EpisodeStatus,
+                MediaStatus,
+                SeasonStatus,
+            )
 
             target.fail_count = 0
             if movie:
                 target.status = MediaStatus.COMPLETED
+                from sqlalchemy import delete
+                await session.execute(delete(BlacklistedRelease).where(BlacklistedRelease.media_item_id == movie.id))
             elif season:
                 target.status = SeasonStatus.COMPLETED
+                from sqlalchemy import delete
+                await session.execute(delete(BlacklistedRelease).where(BlacklistedRelease.media_item_id == season.media_item_id))
             elif episode:
                 target.status = EpisodeStatus.COMPLETED
-            target.last_error = "Keine Suchergebnisse auf dem Indexer gefunden, behalte existierendes Release (Status: COMPLETED)."
+                from sqlalchemy import delete
+                await session.execute(delete(BlacklistedRelease).where(BlacklistedRelease.media_item_id == episode.season.media_item_id))
+            target.last_error = "No indexer results found, keeping existing release (Status: COMPLETED)."
             logger.info("    ❌ %s", target.last_error)
         else:
             target.fail_count += 1
-            target.last_error = "Keine Suchergebnisse auf dem Indexer gefunden."
-            logger.info("    ❌ %s", target.last_error)
+            target.empty_search_count += 1
+
+            target.last_error = f"Empty search count: {target.empty_search_count}"
+            logger.info("    ❌ No search results found (Empty Search Count: %d)", target.empty_search_count)
 
         await session.commit()
         return False
@@ -1003,23 +1016,33 @@ async def _evaluate_and_download(
         if target.best_score is not None:
             # We already have a downloaded release, but no upgrades (or even valid candidates) were found this time.
             # Revert to COMPLETE so we don't loop in SEARCHING forever.
-            from app.db.models import EpisodeStatus, MediaStatus, SeasonStatus
+            from app.db.models import (
+                BlacklistedRelease,
+                EpisodeStatus,
+                MediaStatus,
+                SeasonStatus,
+            )
 
             target.fail_count = 0
             if movie:
                 target.status = MediaStatus.COMPLETED
+                from sqlalchemy import delete
+                await session.execute(delete(BlacklistedRelease).where(BlacklistedRelease.media_item_id == movie.id))
             elif season:
                 target.status = SeasonStatus.COMPLETED
+                from sqlalchemy import delete
+                await session.execute(delete(BlacklistedRelease).where(BlacklistedRelease.media_item_id == season.media_item_id))
             elif episode:
                 target.status = EpisodeStatus.COMPLETED
-            target.last_error = "Suche ergab keine Treffer, behalte existierendes Release (Status: COMPLETED)."
+                from sqlalchemy import delete
+                await session.execute(delete(BlacklistedRelease).where(BlacklistedRelease.media_item_id == episode.season.media_item_id))
+            target.last_error = "Search yielded no hits, keeping existing release (Status: COMPLETED)."
             logger.info("    ❌ %s", target.last_error)
         else:
             target.fail_count += 1
-            target.last_error = (
-                "Keine passenden (oder ausreichend bewerteten) Releases gefunden."
-            )
-            logger.info("    ❌ %s", target.last_error)
+            target.empty_search_count += 1
+            target.last_error = f"Empty search count: {target.empty_search_count}"
+            logger.info("    ❌ No matching releases found (Empty Search Count: %d)", target.empty_search_count)
 
         await session.commit()
         return False
@@ -1032,7 +1055,7 @@ async def _evaluate_and_download(
     elif movie:
         log_title = movie.title
 
-    logger.info("    🏆 Top %d Releases für %s:", min(5, len(candidates)), log_title)
+    logger.info("    🏆 Top %d releases for %s:", min(5, len(candidates)), log_title)
     for i, c in enumerate(candidates[:5]):
         logger.info("       %d. [%.1f] %s", i + 1, c["score"], c["title"])
 
@@ -1047,7 +1070,7 @@ async def _evaluate_and_download(
         from app.db.models import EpisodeStatus, MediaStatus, SeasonStatus
 
         logger.warning(
-            "    ⚠️ Ergebnis aus Titelsuche — kein automatischer Download. Bester Kandidat muss manuell bestätigt werden."
+            "    ⚠️ Result from title search — requires manual confirmation before downloading."
         )
         pending = {
             "title": best_candidate["title"],
@@ -1089,14 +1112,25 @@ async def _evaluate_and_download(
 
         # If we didn't find an upgrade, but we already have a download (since should_download is False),
         # we must set the status back to COMPLETE so it doesn't stay in SEARCHING forever.
-        from app.db.models import EpisodeStatus, MediaStatus, SeasonStatus
+        from app.db.models import (
+            BlacklistedRelease,
+            EpisodeStatus,
+            MediaStatus,
+            SeasonStatus,
+        )
 
         if movie:
             target.status = MediaStatus.COMPLETED
+            from sqlalchemy import delete
+            await session.execute(delete(BlacklistedRelease).where(BlacklistedRelease.media_item_id == movie.id))
         elif season:
             target.status = SeasonStatus.COMPLETED
+            from sqlalchemy import delete
+            await session.execute(delete(BlacklistedRelease).where(BlacklistedRelease.media_item_id == season.media_item_id))
         elif episode:
             target.status = EpisodeStatus.COMPLETED
+            from sqlalchemy import delete
+            await session.execute(delete(BlacklistedRelease).where(BlacklistedRelease.media_item_id == episode.season.media_item_id))
 
         await session.commit()
         return False
@@ -1109,9 +1143,9 @@ async def _evaluate_and_download(
         # Check hard daily grab limit (400 grabs/day)
         if not await can_grab_today(session, limit=400):
             target.fail_count += 1
-            target.last_error = "⚠️ Tages-Grab-Limit von 400 NZB-Downloads bereits erreicht. Grab übersprungen."
+            target.last_error = "⚠️ Daily grab limit of 400 NZB downloads reached. Skipping grab."
             logger.warning(
-                "    ⚠️ Tages-Grab-Limit von 400 Grabs erreicht. Überspringe Grab von '%s'.",
+                "    ⚠️ Daily grab limit of 400 reached. Skipping grab for '%s'.",
                 best_candidate["title"],
             )
             await session.commit()
@@ -1119,14 +1153,14 @@ async def _evaluate_and_download(
 
         if settings.dry_run:
             logger.info(
-                "    🧪 [DRY RUN] Würde Datei '%s' (Score: %s) an TorBox senden.",
+                "    🧪 [DRY RUN] Would send file '%s' (Score: %s) to TorBox.",
                 best_candidate["title"],
                 best_candidate["score"],
             )
             return True
 
         logger.info(
-            "    📥 Sende an TorBox: %s (Score: %s)",
+            "    📥 Sending to TorBox: %s (Score: %s)",
             best_candidate["title"],
             best_candidate["score"],
         )
@@ -1136,7 +1170,7 @@ async def _evaluate_and_download(
             torbox_result = await torbox.send_nzb_file(nzb_bytes, filename=filename)
         except treasure_maps.IndexerError as e:
             target.fail_count += 1
-            target.last_error = f"NZB-Download fehlgeschlagen: {e}"
+            target.last_error = f"NZB download failed: {e}"
             logger.error("    ❌ %s", target.last_error)
             await session.commit()
             return False
@@ -1145,7 +1179,7 @@ async def _evaluate_and_download(
             not torbox_result.get("hash") and not torbox_result.get("id")
         ):
             target.fail_count += 1
-            target.last_error = torbox_result.get("error") if isinstance(torbox_result, dict) and torbox_result.get("error") else "Fehler beim Senden an TorBox."
+            target.last_error = torbox_result.get("error") if isinstance(torbox_result, dict) and torbox_result.get("error") else "Error sending to TorBox."
             logger.error("    ❌ %s", target.last_error)
             await session.commit()
             return False
@@ -1179,7 +1213,7 @@ async def _evaluate_and_download(
             session.add(history)
 
             if best_candidate["score"] >= target_score:
-                logger.info("    ✅ Target score erreicht.")
+                logger.info("    ✅ Target score reached.")
 
             new_status = (
                 MediaStatus.DOWNLOADING
@@ -1248,14 +1282,14 @@ async def manual_search_episode(session: AsyncSession, episode_id: int) -> bool:
     episode = (await session.execute(stmt)).scalar_one_or_none()
 
     if not episode or not episode.season or not episode.season.media_item:
-        logger.error("❌ Episode %s nicht gefunden oder unvollständig.", episode_id)
+        logger.error("❌ Episode %s not found or incomplete.", episode_id)
         return False
 
     season = episode.season
     media_item = season.media_item
 
     logger.info(
-        "🔍 Manuelle Suche für: %s S%02dE%02d gestartet",
+        "🔍 Manual search started for: %s S%02dE%02d gestartet",
         media_item.title,
         season.season_number,
         episode.episode_number,
@@ -1306,7 +1340,7 @@ async def manual_search_episode(session: AsyncSession, episode_id: int) -> bool:
 
     if not results:
         episode.fail_count += 1
-        episode.last_error = "Keine passenden Releases für diese Episode gefunden."
+        episode.last_error = "No matching releases found for this episode."
         episode.status = EpisodeStatus.PENDING  # Revert back
         logger.warning("❌ %s", episode.last_error)
         await session.commit()
@@ -1341,10 +1375,10 @@ async def manual_search_movie(session: AsyncSession, item_id: int) -> bool:
     media_item = (await session.execute(stmt)).scalar_one_or_none()
 
     if not media_item or media_item.media_type != MediaType.MOVIE:
-        logger.error("❌ Movie %s nicht gefunden oder kein Film.", item_id)
+        logger.error("❌ Movie %s not found or is not a movie.", item_id)
         return False
 
-    logger.info("🔍 Manuelle Suche für Film: %s gestartet", media_item.title)
+    logger.info("🔍 Manual search started for movie: %s gestartet", media_item.title)
 
     media_item.status = MediaStatus.SEARCHING
     await session.commit()
@@ -1370,7 +1404,7 @@ async def manual_search_movie(session: AsyncSession, item_id: int) -> bool:
 
     if not results:
         media_item.fail_count += 1
-        media_item.last_error = "Keine passenden Releases für diesen Film gefunden."
+        media_item.last_error = "No matching releases found for this movie."
         media_item.status = MediaStatus.PENDING  # Revert back
         logger.warning("❌ %s", media_item.last_error)
         await session.commit()
@@ -1382,3 +1416,33 @@ async def manual_search_movie(session: AsyncSession, item_id: int) -> bool:
 
     await session.refresh(media_item)
     return media_item.status in [MediaStatus.DOWNLOADED, MediaStatus.COMPLETED]
+
+async def run_print_automation_cycle(force: bool = False) -> None:
+    """
+    Background job for Print Media.
+    Searches for Manga, Books, and Magazines that are in SEARCHING state.
+    """
+    logger.info("=== Start Print Media Automation Cycle ===")
+
+    from app.db.database import async_session_factory
+    from app.db.models import BookItem, MagazineSubscription, MangaItem, MediaStatus
+
+    async with async_session_factory() as session:
+        # Simple stub to query pending items
+        stmt_manga = select(MangaItem).where(MangaItem.status.in_([MediaStatus.PENDING, MediaStatus.SEARCHING]))
+        mangas = (await session.execute(stmt_manga)).scalars().all()
+        for manga in mangas:
+            logger.info(f"    -> Processing Manga: {manga.title}")
+            # Real search logic and reading_scorer integration goes here
+        
+        stmt_books = select(BookItem).where(BookItem.status.in_([MediaStatus.PENDING, MediaStatus.SEARCHING]))
+        books = (await session.execute(stmt_books)).scalars().all()
+        for book in books:
+            logger.info(f"    -> Processing Book: {book.title}")
+
+        stmt_mags = select(MagazineSubscription).where(MagazineSubscription.status.in_([MediaStatus.PENDING, MediaStatus.SEARCHING]))
+        mags = (await session.execute(stmt_mags)).scalars().all()
+        for mag in mags:
+            logger.info(f"    -> Processing Magazine: {mag.title}")
+            
+    logger.info("=== End Print Media Automation Cycle ===")

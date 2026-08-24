@@ -318,3 +318,59 @@ async def check_download_status(download_id: str | int) -> dict[str, Any]:
 
         except httpx.HTTPError as e:
             return {"status": "error", "detail": str(e)}
+
+async def delete_download(download_id: int) -> dict:
+    """Deletes a download from TorBox."""
+    if not settings.torbox_api_key:
+        return {"success": False, "detail": "No API key configured"}
+        
+    headers = {
+        "Authorization": f"Bearer {settings.torbox_api_key}",
+        "User-Agent": DEFAULT_USER_AGENT,
+    }
+        
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        try:
+            response = await client.post(
+                "https://api.torbox.app/v1/api/usenet/controlusenetdownload",
+                headers=headers,
+                json={"usenet_id": download_id, "operation": "delete"}
+            )
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPError as e:
+            logger.error(f"Failed to delete TorBox download {download_id}: {e}")
+            return {"success": False, "detail": str(e)}
+
+async def download_file_payload(download_id: int, file_id: int) -> bytes | None:
+    """Directly requests the payload file stream from TorBox."""
+    if not settings.torbox_api_key:
+        return None
+        
+    headers = {
+        "Authorization": f"Bearer {settings.torbox_api_key}",
+        "User-Agent": DEFAULT_USER_AGENT,
+    }
+        
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        try:
+            # TorBox typically requires getting the download link first
+            response = await client.get(
+                f"https://api.torbox.app/v1/api/usenet/requestdownload?token={headers['Authorization'].replace('Bearer ', '')}&usenet_id={download_id}&file_id={file_id}"
+            )
+            response.raise_for_status()
+            res_json = response.json()
+            if not res_json.get("success"):
+                return None
+                
+            dl_url = res_json.get("data")
+            if not dl_url:
+                return None
+                
+            # Now download the actual file bytes
+            file_response = await client.get(dl_url)
+            file_response.raise_for_status()
+            return file_response.content
+        except httpx.HTTPError as e:
+            logger.error(f"Failed to fetch file payload {file_id} from {download_id}: {e}")
+            return None

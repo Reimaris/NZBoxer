@@ -54,6 +54,7 @@ class AutomationState(str, enum.Enum):
 class MediaStatus(str, enum.Enum):
     """Lifecycle status of a MediaItem within NZBoxer."""
 
+    FUTURE = "future"
     PENDING = "pending"
     SEARCHING = "searching"
     DOWNLOADING = "downloading"
@@ -69,6 +70,7 @@ class MediaStatus(str, enum.Enum):
 class SeasonStatus(str, enum.Enum):
     """Lifecycle status of an individual season."""
 
+    FUTURE = "future"
     PENDING = "pending"
     SEARCHING = "searching"
     DOWNLOADING = "downloading"
@@ -84,6 +86,7 @@ class SeasonStatus(str, enum.Enum):
 class EpisodeStatus(str, enum.Enum):
     """Lifecycle status of an individual episode."""
 
+    FUTURE = "future"
     PENDING = "pending"
     SEARCHING = "searching"
     DOWNLOADING = "downloading"
@@ -145,6 +148,17 @@ class SystemSettings(Base):
 
     # Structured Scoring Settings
     scoring_settings: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=True)
+
+    # Core Automation (ADR-012)
+    upgrade_threshold: Mapped[int] = mapped_column(Integer, default=500, server_default="500")
+    backoff_tier2_skip: Mapped[int] = mapped_column(Integer, default=6, server_default="6")
+    backoff_tier3_skip: Mapped[int] = mapped_column(Integer, default=24, server_default="24")
+
+    # Print Media (ADR-013)
+    reading_download_dir: Mapped[str] = mapped_column(String(500), default="downloads", server_default="downloads")
+    manga_blacklisted_formats: Mapped[str] = mapped_column(String(200), default="", server_default="")
+    book_blacklisted_formats: Mapped[str] = mapped_column(String(200), default="", server_default="")
+    magazine_blacklisted_formats: Mapped[str] = mapped_column(String(200), default="", server_default="")
 
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -360,6 +374,10 @@ class MediaItem(Base):
     # --- Manual Grab (title-search fallback) ---
     pending_candidate_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
+    # --- Search Automation Tracking ---
+    empty_search_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    last_searched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
     # --- Audit timestamps ---
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
@@ -472,6 +490,10 @@ class Season(Base):
     # --- Manual Grab (title-search fallback) ---
     pending_candidate_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
+    # --- Search Automation Tracking ---
+    empty_search_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    last_searched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
     # --- Audit timestamps ---
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
@@ -566,6 +588,10 @@ class Episode(Base):
 
     # --- Manual Grab (title-search fallback) ---
     pending_candidate_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+    # --- Search Automation Tracking ---
+    empty_search_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    last_searched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
@@ -755,3 +781,108 @@ class DailyGrabCounter(Base):
         String(10), unique=True, index=True
     )  # YYYY-MM-DD
     count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+
+# ---------------------------------------------------------------------------
+# Print Media Models (ADR-013)
+# ---------------------------------------------------------------------------
+
+
+class MangaItem(Base):
+    """Represents a tracked Manga series (e.g. from AniList)."""
+
+    __tablename__ = "manga_items"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    anilist_id: Mapped[str] = mapped_column(String(100), unique=True, index=True)
+    title: Mapped[str] = mapped_column(String(500), nullable=False)
+    status: Mapped[MediaStatus] = mapped_column(
+        Enum(MediaStatus), default=MediaStatus.PENDING
+    )
+    
+    # Metadata
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    cover_image: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    start_year: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    
+    # Tracking & Errors
+    empty_search_count: Mapped[int] = mapped_column(Integer, default=0)
+    last_searched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    fail_count: Mapped[int] = mapped_column(Integer, default=0)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    volumes: Mapped[list["MangaVolume"]] = relationship(
+        "MangaVolume", back_populates="manga", cascade="all, delete-orphan", lazy="selectin"
+    )
+
+class MangaVolume(Base):
+    """Represents a specific volume of a Manga."""
+
+    __tablename__ = "manga_volumes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    manga_id: Mapped[int] = mapped_column(ForeignKey("manga_items.id"), nullable=False)
+    volume_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[EpisodeStatus] = mapped_column(
+        Enum(EpisodeStatus), default=EpisodeStatus.PENDING
+    )
+
+    empty_search_count: Mapped[int] = mapped_column(Integer, default=0)
+    last_searched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    
+    manga: Mapped[MangaItem] = relationship("MangaItem", back_populates="volumes")
+
+
+class BookItem(Base):
+    """Represents a standalone Book (e.g. from Hardcover/OpenLibrary)."""
+
+    __tablename__ = "book_items"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    isbn: Mapped[str | None] = mapped_column(String(50), nullable=True, index=True)
+    title: Mapped[str] = mapped_column(String(500), nullable=False)
+    author: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    status: Mapped[MediaStatus] = mapped_column(
+        Enum(MediaStatus), default=MediaStatus.PENDING
+    )
+    
+    empty_search_count: Mapped[int] = mapped_column(Integer, default=0)
+    last_searched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    fail_count: Mapped[int] = mapped_column(Integer, default=0)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class MagazineSubscription(Base):
+    """Represents a recurring subscription to a Magazine."""
+
+    __tablename__ = "magazine_subscriptions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    title: Mapped[str] = mapped_column(String(500), nullable=False)
+    publisher: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    status: Mapped[MediaStatus] = mapped_column(
+        Enum(MediaStatus), default=MediaStatus.PENDING
+    )
+    
+    empty_search_count: Mapped[int] = mapped_column(Integer, default=0)
+    last_searched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    issues: Mapped[list["MagazineIssue"]] = relationship(
+        "MagazineIssue", back_populates="subscription", cascade="all, delete-orphan", lazy="selectin"
+    )
+
+class MagazineIssue(Base):
+    """Represents a single downloaded issue of a Magazine."""
+
+    __tablename__ = "magazine_issues"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    subscription_id: Mapped[int] = mapped_column(ForeignKey("magazine_subscriptions.id"), nullable=False)
+    issue_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    issue_number: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    
+    status: Mapped[EpisodeStatus] = mapped_column(
+        Enum(EpisodeStatus), default=EpisodeStatus.COMPLETED
+    )
+
+    subscription: Mapped[MagazineSubscription] = relationship("MagazineSubscription", back_populates="issues")

@@ -13,7 +13,7 @@
         
         <div class="p-6">
             <p class="text-sm text-[#a1a1aa] mb-6">
-                Teste die Verbindung zu allen angebundenen Systemen...
+                Testing connectivity to all integrated external systems and indexers...
             </p>
             
             <div id="system-check-results" hx-get="/system/check/run" hx-trigger="load" class="min-h-[200px] flex items-center justify-center">
@@ -22,13 +22,13 @@
                         <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                         <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                     </svg>
-                    <span>Lade Testergebnisse...</span>
+                    <span>Running connectivity tests...</span>
                 </div>
             </div>
             
             <div class="mt-6 flex justify-end">
                 <button onclick="document.getElementById('system-check-modal').remove()" class="bg-[#3f3f46] hover:bg-[#52525b] text-white px-6 py-2 rounded-lg font-medium transition-colors">
-                    Schließen
+                    Close
                 </button>
             </div>
         </div>

@@ -13,63 +13,50 @@
         </div>
         
         <div class="p-6 overflow-y-auto" x-data="{
-            enable_movies: {{ 'true' if (provider and provider.profiles|selectattr('media_type','equalto','movies')|list|length > 0) else 'false' }},
-            enable_series: {{ 'true' if (provider and provider.profiles|selectattr('media_type','equalto','shows')|list|length > 0) else 'false' }},
-            enable_anime: {{ 'true' if (provider and provider.profiles|selectattr('media_type','equalto','anime')|list|length > 0) else 'false' }}
+            providerType: '{{ provider.type if provider else 'simkl' }}',
+            enable_movies: {{ 'true' if (provider and provider.profiles|selectattr('media_type.value','equalto','movie')|list|length > 0) else 'false' }},
+            enable_series: {{ 'true' if (provider and provider.profiles|selectattr('media_type.value','equalto','show')|list|length > 0) else 'false' }},
+            enable_anime: {{ 'true' if (provider and provider.profiles|selectattr('media_type.value','equalto','anime')|list|length > 0) else 'false' }},
+            enable_manga: true,
+            enable_books: true
         }">
             <form id="provider-form" hx-post="/settings/provider{% if provider %}/{{ provider.id }}{% endif %}" class="space-y-8">
                 
                 <!-- General Info -->
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div class="flex flex-col col-span-1 md:col-span-2">
+                        <label class="h-6 text-[#d1d5db] font-medium mb-1 flex items-center">Provider Integration Type <span class="text-red-500 ml-1">*</span></label>
+                        <select name="provider_type" x-model="providerType" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors">
+                            <option value="simkl">Simkl (Video Media Watchlists: Movies, TV Shows, Anime)</option>
+                            <option value="anilist">AniList (Manga & Anime Tracking)</option>
+                            <option value="hardcover">Hardcover (Books & Comics Tracking)</option>
+                        </select>
+                    </div>
+
                     <div class="flex flex-col">
                         <label class="h-6 text-[#d1d5db] font-medium mb-1 flex items-center">Display Name <span class="text-red-500 ml-1">*</span></label>
-                        <input type="text" name="name" value="{{ provider.name if provider else '' }}" required class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors" placeholder="e.g. My Simkl Profile">
+                        <input type="text" name="name" value="{{ provider.name if provider else '' }}" required class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors" placeholder="e.g. My Provider Profile">
                     </div>
                     
                     <div class="flex flex-col">
                         <label class="h-6 text-[#d1d5db] font-medium mb-1 flex items-center gap-1.5">
-                            Simkl Username
-                            <div class="relative inline-block" x-data="{ show: false }" @click.away="show = false" @mouseenter="show = true" @mouseleave="show = false">
-    <span class="text-[#d40060] cursor-pointer" @click.prevent="show = !show">
-        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-    </span>
-    <div x-show="show" style="display: none;" class="absolute z-[110] w-64 p-3 mt-2 text-xs font-normal text-white bg-[#2a2a32] border border-[#3f3f46] rounded shadow-xl left-1/2 transform -translate-x-1/2 whitespace-normal break-words">
-        Your Simkl username.
-    </div>
-</div>
+                            <span x-text="providerType === 'simkl' ? 'Simkl Username' : (providerType === 'anilist' ? 'AniList Username' : (providerType === 'hardcover' ? 'Hardcover Username' : 'Username / Host'))">Username</span>
                         </label>
-                        <input type="text" name="simkl_username" value="{{ provider.username if provider else '' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors" placeholder="username">
+                        <input type="text" name="simkl_username" value="{{ provider.username if provider else '' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors" placeholder="username or host">
                     </div>
                     
-                    <div class="flex flex-col">
+                    <!-- Simkl Specific: Client ID & PIN Auth -->
+                    <div class="flex flex-col" x-show="providerType === 'simkl'">
                         <label class="h-6 text-[#d1d5db] font-medium mb-1 flex items-center justify-between">
-                            <span class="flex items-center gap-1.5">
-                                Simkl Client ID
-                                <div class="relative inline-block" x-data="{ show: false }" @click.away="show = false" @mouseenter="show = true" @mouseleave="show = false">
-    <span class="text-[#d40060] cursor-pointer" @click.prevent="show = !show">
-        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-    </span>
-    <div x-show="show" style="display: none;" class="absolute z-[110] w-64 p-3 mt-2 text-xs font-normal text-white bg-[#2a2a32] border border-[#3f3f46] rounded shadow-xl left-1/2 transform -translate-x-1/2 whitespace-normal break-words">
-        The Client ID of your Simkl API app.
-    </div>
-</div>
-                            </span>
-                            <a href="https://simkl.com/settings/developer/" target="_blank" class="text-xs text-blue-400 hover:underline">Click here</a>
+                            <span>Simkl Client ID</span>
+                            <a href="https://simkl.com/settings/developer/" target="_blank" class="text-xs text-blue-400 hover:underline">Get Client ID</a>
                         </label>
                         <input type="password" name="client_id" value="{{ '' if provider and provider.client_id == 'your_simkl_client_id_here' else (provider.client_id if provider and provider.client_id else '') }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors font-mono">
                     </div>
 
-                    <div class="flex flex-col">
+                    <div class="flex flex-col" x-show="providerType === 'simkl'">
                         <label class="h-6 text-[#d1d5db] font-medium mb-1 flex items-center gap-1.5">
                             Simkl Access Token
-                            <div class="relative inline-block" x-data="{ show: false }" @click.away="show = false" @mouseenter="show = true" @mouseleave="show = false">
-    <span class="text-[#d40060] cursor-pointer" @click.prevent="show = !show">
-        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-    </span>
-    <div x-show="show" style="display: none;" class="absolute z-[110] w-64 p-3 mt-2 text-xs font-normal text-white bg-[#2a2a32] border border-[#3f3f46] rounded shadow-xl left-1/2 transform -translate-x-1/2 whitespace-normal break-words">
-        The secret access token.
-    </div>
-</div>
                         </label>
                         <div class="flex gap-2 w-full">
                             <input type="password" id="access_token" name="access_token" value="{{ '' if provider and provider.access_token == 'your_simkl_access_token_here' else (provider.access_token if provider and provider.access_token else '') }}" class="flex-1 min-w-0 h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors font-mono">
@@ -80,17 +67,17 @@
                         <div id="simkl-auth-container-modal" class="mt-2"></div>
                     </div>
 
+                    <!-- Hardcover / AniList Specific Token -->
+                    <div class="flex flex-col col-span-1 md:col-span-2" x-show="providerType === 'hardcover' || providerType === 'anilist'" style="display: none;">
+                        <label class="h-6 text-[#d1d5db] font-medium mb-1 flex items-center justify-between">
+                            <span x-text="providerType === 'hardcover' ? 'Hardcover API Bearer Token' : 'AniList Access Token (Optional for Public Lists)'">API Key / Token</span>
+                        </label>
+                        <input type="password" name="access_token" value="{{ provider.access_token if provider and provider.access_token else '' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors font-mono" placeholder="Bearer token">
+                    </div>
+
                     <div class="flex flex-col">
                         <label class="h-6 text-[#d1d5db] font-medium mb-1 flex items-center gap-1.5">
                             Search Interval Multiplier
-                            <div class="relative inline-block" x-data="{ show: false }" @click.away="show = false" @mouseenter="show = true" @mouseleave="show = false">
-    <span class="text-[#d40060] cursor-pointer" @click.prevent="show = !show">
-        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-    </span>
-    <div x-show="show" style="display: none;" class="absolute z-[110] w-64 p-3 mt-2 text-xs font-normal text-white bg-[#2a2a32] border border-[#3f3f46] rounded shadow-xl left-1/2 transform -translate-x-1/2 whitespace-normal break-words">
-        1 interval = 1 base scan loop (default 15 minutes). e.g., '1' means search every loop, '4' means search every 4th loop (every hour).
-    </div>
-</div>
                         </label>
                         {% set cycle_skip = provider.profiles[0].search_cycle_skip if provider and provider.profiles|length > 0 else '1' %}
                         <input type="number" name="search_cycle_skip" value="{{ cycle_skip }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors font-mono" placeholder="1 = Every loop, 4 = Every 4th loop">
@@ -109,442 +96,155 @@
 
                 </div>
 
-                <!-- Movies Profile -->
-                {% set m_prof_list = provider.profiles | selectattr("media_type", "equalto", "movies") | list if provider else [] %}
-                {% set m_prof = m_prof_list[0] if m_prof_list else none %}
-                
-                <div class="border border-[#3f3f46] rounded-xl">
-                    <div class="bg-[#2a2a32] rounded-t-xl px-6 py-4 flex items-center justify-between cursor-pointer" @click="enable_movies = !enable_movies">
-                        <h3 class="text-lg font-bold text-white flex items-center gap-2">
-                            <input type="checkbox" name="enable_movies" value="True" x-model="enable_movies" @click.stop class="w-4 h-4 accent-[#d40060]">
-                            Sync Movies
-                        </h3>
-                    </div>
+                <!-- SIMKL PROFILES SECTION -->
+                <div x-show="providerType === 'simkl'" class="space-y-6">
+                    <h3 class="text-sm font-bold text-[#a1a1aa] uppercase tracking-wider">Simkl Sync Profiles</h3>
                     
-                    <div x-show="enable_movies" x-collapse>
-                        <div class="p-6 bg-[#1e1e24]">
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                <div class="flex flex-col">
-                                    <label class="h-6 text-[#d1d5db] text-xs uppercase tracking-wider mb-1 flex items-center gap-1">
-                                        TreasureMaps Kategorie ID
-                                        <div class="relative inline-block" x-data="{ show: false }" @click.away="show = false" @mouseenter="show = true" @mouseleave="show = false">
-    <span class="text-[#d40060] cursor-pointer" @click.prevent="show = !show">
-        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-    </span>
-    <div x-show="show" style="display: none;" class="absolute z-[110] w-64 p-3 mt-2 text-xs font-normal text-white bg-[#2a2a32] border border-[#3f3f46] rounded shadow-xl left-1/2 transform -translate-x-1/2 whitespace-normal break-words">
-        The category ID for movies on TreasureMaps. (e.g. 2000 for all movies)
-    </div>
-</div>
-                                    </label>
-                                    <input type="number" name="movie_category_id" value="{{ provider.movie_category_id if provider and provider.movie_category_id else '2000' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors text-sm font-mono" placeholder="2000">
-                                </div>
-                                <div class="flex flex-col">
-                                    <label class="h-6 text-[#d1d5db] text-xs uppercase tracking-wider mb-1 flex items-center">Blacklist (CSV)</label>
-                                    <input type="text" name="movies_reject" value="{{ m_prof.reject_words_csv if m_prof and m_prof.reject_words_csv is not none else 'cam,ts,subbed' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors text-sm" placeholder="z.B. cam,ts,subbed">
-                                </div>
-                                <div class="flex flex-col">
-                                    <label class="h-6 text-[#d1d5db] text-xs uppercase tracking-wider mb-1 flex items-center gap-1">
-                                        Required Language
-                                        <div class="relative inline-block" x-data="{ show: false }" @click.away="show = false" @mouseenter="show = true" @mouseleave="show = false">
-    <span class="text-[#d40060] cursor-pointer" @click.prevent="show = !show">
-        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-    </span>
-    <div x-show="show" style="display: none;" class="absolute z-[110] w-64 p-3 mt-2 text-xs font-normal text-white bg-[#2a2a32] border border-[#3f3f46] rounded shadow-xl left-1/2 transform -translate-x-1/2 whitespace-normal break-words">
-        Only releases with this language will be accepted. Releases without a detectable language will not be rejected.
-    </div>
-</div>
-                                    </label>
-                                    <select name="movies_langs" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors text-sm">
-                                        <option value="">No restriction</option>
-                                        <option value="de" {% if m_prof and m_prof.languages_csv == 'de' %}selected{% endif %}>German (de)</option>
-                                        <option value="en" {% if m_prof and m_prof.languages_csv == 'en' %}selected{% endif %}>English (en)</option>
-                                        <option value="fr" {% if m_prof and m_prof.languages_csv == 'fr' %}selected{% endif %}>French (fr)</option>
-                                        <option value="ja" {% if m_prof and m_prof.languages_csv == 'ja' %}selected{% endif %}>Japanese (ja)</option>
-                                        <option value="es" {% if m_prof and m_prof.languages_csv == 'es' %}selected{% endif %}>Spanish (es)</option>
-                                        <option value="it" {% if m_prof and m_prof.languages_csv == 'it' %}selected{% endif %}>Italian (it)</option>
-                                        <option value="pt" {% if m_prof and m_prof.languages_csv == 'pt' %}selected{% endif %}>Portuguese (pt)</option>
-                                        <option value="ru" {% if m_prof and m_prof.languages_csv == 'ru' %}selected{% endif %}>Russian (ru)</option>
-                                    </select>
-                                </div>
+                    <!-- Movies Profile -->
+                    {% set m_prof_list = provider.profiles | selectattr("media_type.value", "equalto", "movie") | list if provider else [] %}
+                    {% set m_prof = m_prof_list[0] if m_prof_list else none %}
+                    <div class="border border-[#3f3f46] rounded-xl bg-[#1e1e24]">
+                        <div class="bg-[#2a2a32] rounded-t-xl px-6 py-4 flex items-center justify-between cursor-pointer" @click="enable_movies = !enable_movies">
+                            <h4 class="text-base font-bold text-white flex items-center gap-2">
+                                <input type="checkbox" name="enable_movies" value="True" x-model="enable_movies" @click.stop class="w-4 h-4 accent-[#d40060]">
+                                Sync Movies
+                            </h4>
+                        </div>
+                        <div x-show="enable_movies" class="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div>
+                                <label class="text-xs uppercase tracking-wider text-[#a1a1aa] mb-1 block font-semibold">Movies Category ID</label>
+                                <input type="number" name="movie_category_id" value="{{ provider.movie_category_id if provider and provider.movie_category_id else '2000' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] rounded-lg px-3 text-white font-mono text-sm">
+                            </div>
+                            <div>
+                                <label class="text-xs uppercase tracking-wider text-[#a1a1aa] mb-1 block font-semibold">Reject Words (CSV)</label>
+                                <input type="text" name="movies_reject" value="{{ m_prof.reject_words_csv if m_prof and m_prof.reject_words_csv is not none else 'cam,ts,subbed' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] rounded-lg px-3 text-white text-sm">
+                            </div>
+                        </div>
+                    </div>
 
-                                <div class="flex flex-col">
-                                    <label class="h-6 text-[#d1d5db] text-xs uppercase tracking-wider mb-1 flex items-center">Min / Max Size (MB)</label>
-                                    <div class="grid grid-cols-2 gap-3">
-                                        <input type="number" name="movies_min_mb" value="{{ m_prof.min_mb if m_prof and m_prof.min_mb else '500' }}" placeholder="Min" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors text-sm font-mono">
-                                        <input type="number" name="movies_max_mb" value="{{ m_prof.max_mb if m_prof and m_prof.max_mb else '25000' }}" placeholder="Max" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors text-sm font-mono">
-                                    </div>
-                                </div>
-                                <div class="col-span-1 md:col-span-2 mt-4">
-                                    <hr class="border-[#3f3f46] mb-4">
-                                    <label class="block text-xs font-semibold text-white uppercase tracking-wider mb-3">Video Requirements</label>
-                                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                                        <div class="flex flex-col">
-                                            <label class="h-6 text-[#d1d5db] text-xs uppercase tracking-wider mb-1 flex items-center">Resolution</label>
-                                            <select name="movies_resolution" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors text-sm">
-                                                <option value="any" {% if not m_prof or m_prof.resolution == 'any' or m_prof.resolution == 'Automatic / best' %}selected{% endif %}>Best Available (Any Res)</option>
-                                                <option value="2160p" {% if m_prof and m_prof.resolution == '2160p' %}selected{% endif %}>2160p (4K)</option>
-                                                <option value="1080p" {% if m_prof and m_prof.resolution == '1080p' %}selected{% endif %}>1080p</option>
-                                                <option value="720p" {% if m_prof and m_prof.resolution == '720p' %}selected{% endif %}>720p</option>
-                                            </select>
-                                        </div>
-                                        <div class="flex flex-col">
-                                            <label class="h-6 text-[#d1d5db] text-xs uppercase tracking-wider mb-1 flex items-center">Source</label>
-                                            <select name="movies_source" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors text-sm">
-                                                <option value="any" {% if not m_prof or m_prof.source == 'any' %}selected{% endif %}>Best Available (Any Source)</option>
-                                                <option value="remux" {% if m_prof and m_prof.source == 'remux' %}selected{% endif %}>Remux Only</option>
-                                                <option value="bluray" {% if m_prof and m_prof.source == 'bluray' %}selected{% endif %}>BluRay Only</option>
-                                                <option value="web" {% if m_prof and m_prof.source == 'web' %}selected{% endif %}>WEB-DL / WEB Only</option>
-                                            </select>
-                                        </div>
-                                        <div class="flex flex-col">
-                                            <label class="h-6 text-[#d1d5db] text-xs uppercase tracking-wider mb-1 flex items-center">Codec</label>
-                                            <select name="movies_video_codec" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors text-sm">
-                                                <option value="any" {% if not m_prof or m_prof.video_codec == 'any' %}selected{% endif %}>Best Available (Any Codec)</option>
-                                                <option value="hevc" {% if m_prof and m_prof.video_codec == 'hevc' %}selected{% endif %}>HEVC / H.265</option>
-                                                <option value="av1" {% if m_prof and m_prof.video_codec == 'av1' %}selected{% endif %}>AV1</option>
-                                                <option value="h264" {% if m_prof and m_prof.video_codec == 'h264' %}selected{% endif %}>H.264</option>
-                                            </select>
-                                        </div>
-                                        <div class="flex flex-col">
-                                            <label class="h-6 text-[#d1d5db] text-xs uppercase tracking-wider mb-1 flex items-center">HDR</label>
-                                            <select name="movies_hdr" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors text-sm">
-                                                <option value="any" {% if not m_prof or m_prof.hdr == 'any' %}selected{% endif %}>Best Available (Any HDR)</option>
-                                                <option value="dolby vision" {% if m_prof and m_prof.hdr == 'dolby vision' %}selected{% endif %}>Dolby Vision</option>
-                                                <option value="hdr10" {% if m_prof and m_prof.hdr == 'hdr10' %}selected{% endif %}>HDR10 / HDR10+</option>
-                                                <option value="sdr" {% if m_prof and m_prof.hdr == 'sdr' %}selected{% endif %}>SDR Only</option>
-                                            </select>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div class="col-span-1 md:col-span-2 mb-2">
-                                    <label class="block text-xs font-semibold text-white uppercase tracking-wider mb-3">Audio Requirements</label>
-                                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                        <div class="flex flex-col">
-                                            <label class="h-6 text-[#d1d5db] text-xs uppercase tracking-wider mb-1 flex items-center">Audio Tier</label>
-                                            <select name="movies_audio_tier" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors text-sm">
-                                                <option value="any" {% if not m_prof or m_prof.audio_tier == 'any' %}selected{% endif %}>Best Available (Any Audio)</option>
-                                                <option value="tier1" {% if m_prof and m_prof.audio_tier == 'tier1' %}selected{% endif %}>Tier 1 (TrueHD Atmos, DTS:X)</option>
-                                                <option value="tier2" {% if m_prof and m_prof.audio_tier == 'tier2' %}selected{% endif %}>Tier 2 (DTS-HD MA, TrueHD)</option>
-                                                <option value="tier3" {% if m_prof and m_prof.audio_tier == 'tier3' %}selected{% endif %}>Tier 3 (DD+ Atmos)</option>
-                                                <option value="tier4" {% if m_prof and m_prof.audio_tier == 'tier4' %}selected{% endif %}>Tier 4 (EAC3, DTS, AC3)</option>
-                                            </select>
-                                        </div>
-                                        <div class="flex flex-col">
-                                            <label class="h-6 text-[#d1d5db] text-xs uppercase tracking-wider mb-1 flex items-center">Channels</label>
-                                            <select name="movies_audio_channels" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors text-sm">
-                                                <option value="any" {% if not m_prof or m_prof.audio_channels == 'any' %}selected{% endif %}>Any Channels</option>
-                                                <option value="7.1" {% if m_prof and m_prof.audio_channels == '7.1' %}selected{% endif %}>7.1 Only</option>
-                                                <option value="5.1" {% if m_prof and m_prof.audio_channels == '5.1' %}selected{% endif %}>5.1 Only</option>
-                                                <option value="2.0" {% if m_prof and m_prof.audio_channels == '2.0' %}selected{% endif %}>2.0 Only</option>
-                                            </select>
-                                        </div>
-                                    </div>
-                                </div>
+                    <!-- TV Shows Profile -->
+                    {% set s_prof_list = provider.profiles | selectattr("media_type.value", "equalto", "show") | list if provider else [] %}
+                    {% set s_prof = s_prof_list[0] if s_prof_list else none %}
+                    <div class="border border-[#3f3f46] rounded-xl bg-[#1e1e24]">
+                        <div class="bg-[#2a2a32] rounded-t-xl px-6 py-4 flex items-center justify-between cursor-pointer" @click="enable_series = !enable_series">
+                            <h4 class="text-base font-bold text-white flex items-center gap-2">
+                                <input type="checkbox" name="enable_series" value="True" x-model="enable_series" @click.stop class="w-4 h-4 accent-[#d40060]">
+                                Sync TV Shows
+                            </h4>
+                        </div>
+                        <div x-show="enable_series" class="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div>
+                                <label class="text-xs uppercase tracking-wider text-[#a1a1aa] mb-1 block font-semibold">TV Shows Category ID</label>
+                                <input type="number" name="series_category_id" value="{{ provider.series_category_id if provider and provider.series_category_id else '5000' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] rounded-lg px-3 text-white font-mono text-sm">
+                            </div>
+                            <div>
+                                <label class="text-xs uppercase tracking-wider text-[#a1a1aa] mb-1 block font-semibold">Reject Words (CSV)</label>
+                                <input type="text" name="series_reject" value="{{ s_prof.reject_words_csv if s_prof and s_prof.reject_words_csv is not none else 'cam,ts,subbed' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] rounded-lg px-3 text-white text-sm">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Anime Profile -->
+                    {% set a_prof_list = provider.profiles | selectattr("media_type.value", "equalto", "anime") | list if provider else [] %}
+                    {% set a_prof = a_prof_list[0] if a_prof_list else none %}
+                    <div class="border border-[#3f3f46] rounded-xl bg-[#1e1e24]">
+                        <div class="bg-[#2a2a32] rounded-t-xl px-6 py-4 flex items-center justify-between cursor-pointer" @click="enable_anime = !enable_anime">
+                            <h4 class="text-base font-bold text-white flex items-center gap-2">
+                                <input type="checkbox" name="enable_anime" value="True" x-model="enable_anime" @click.stop class="w-4 h-4 accent-[#d40060]">
+                                Sync Anime
+                            </h4>
+                        </div>
+                        <div x-show="enable_anime" class="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div>
+                                <label class="text-xs uppercase tracking-wider text-[#a1a1aa] mb-1 block font-semibold">Anime Category ID</label>
+                                <input type="number" name="anime_category_id" value="{{ provider.anime_category_id if provider and provider.anime_category_id else '5070' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] rounded-lg px-3 text-white font-mono text-sm">
+                            </div>
+                            <div>
+                                <label class="text-xs uppercase tracking-wider text-[#a1a1aa] mb-1 block font-semibold">Reject Words (CSV)</label>
+                                <input type="text" name="anime_reject" value="{{ a_prof.reject_words_csv if a_prof and a_prof.reject_words_csv is not none else 'cam,ts,subbed' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] rounded-lg px-3 text-white text-sm">
                             </div>
                         </div>
                     </div>
                 </div>
 
-                <!-- Series Profile -->
-                {% set s_prof_list = provider.profiles | selectattr("media_type", "equalto", "shows") | list if provider else [] %}
-                {% set s_prof = s_prof_list[0] if s_prof_list else none %}
-
-                <div class="border border-[#3f3f46] rounded-xl">
-                    <div class="bg-[#2a2a32] rounded-t-xl px-6 py-4 flex items-center justify-between cursor-pointer" @click="enable_series = !enable_series">
-                        <h3 class="text-lg font-bold text-white flex items-center gap-2">
-                            <input type="checkbox" name="enable_series" value="True" x-model="enable_series" @click.stop class="w-4 h-4 accent-[#d40060]">
-                            Sync Series
-                        </h3>
-                    </div>
+                <!-- ANILIST PROFILES SECTION -->
+                <div x-show="providerType === 'anilist'" class="space-y-6" style="display: none;">
+                    <h3 class="text-sm font-bold text-[#a1a1aa] uppercase tracking-wider">AniList Tracking Profiles</h3>
                     
-                    <div x-show="enable_series" x-collapse>
-                        <div class="p-6 bg-[#1e1e24]">
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                <div class="flex flex-col">
-                                    <label class="h-6 text-[#d1d5db] text-xs uppercase tracking-wider mb-1 flex items-center gap-1">
-                                        TreasureMaps Kategorie ID
-                                        <div class="relative inline-block" x-data="{ show: false }" @click.away="show = false" @mouseenter="show = true" @mouseleave="show = false">
-    <span class="text-[#d40060] cursor-pointer" @click.prevent="show = !show">
-        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-    </span>
-    <div x-show="show" style="display: none;" class="absolute z-[110] w-64 p-3 mt-2 text-xs font-normal text-white bg-[#2a2a32] border border-[#3f3f46] rounded shadow-xl left-1/2 transform -translate-x-1/2 whitespace-normal break-words">
-        The category ID for series on TreasureMaps. (e.g. 5000 for all series, 5100 for German series)
-    </div>
-</div>
-                                    </label>
-                                    <input type="number" name="series_category_id" value="{{ provider.series_category_id if provider and provider.series_category_id else '5000' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors text-sm font-mono" placeholder="5000">
-                                </div>
-                                <div class="flex flex-col">
-                                    <label class="h-6 text-[#d1d5db] text-xs uppercase tracking-wider mb-1 flex items-center">Blacklist (CSV)</label>
-                                    <input type="text" name="series_reject" value="{{ s_prof.reject_words_csv if s_prof and s_prof.reject_words_csv is not none else 'subbed,omU' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors text-sm" placeholder="z.B. subbed,omU">
-                                </div>
-                                <div class="flex flex-col">
-                                    <label class="h-6 text-[#d1d5db] text-xs uppercase tracking-wider mb-1 flex items-center gap-1">
-                                        Required Language
-                                        <div class="relative inline-block" x-data="{ show: false }" @click.away="show = false" @mouseenter="show = true" @mouseleave="show = false">
-    <span class="text-[#d40060] cursor-pointer" @click.prevent="show = !show">
-        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-    </span>
-    <div x-show="show" style="display: none;" class="absolute z-[110] w-64 p-3 mt-2 text-xs font-normal text-white bg-[#2a2a32] border border-[#3f3f46] rounded shadow-xl left-1/2 transform -translate-x-1/2 whitespace-normal break-words">
-        Only releases with this language will be accepted.
-    </div>
-</div>
-                                    </label>
-                                    <select name="series_langs" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors text-sm">
-                                        <option value="">No restriction</option>
-                                        <option value="de" {% if s_prof and s_prof.languages_csv == 'de' %}selected{% endif %}>German (de)</option>
-                                        <option value="en" {% if s_prof and s_prof.languages_csv == 'en' %}selected{% endif %}>English (en)</option>
-                                        <option value="fr" {% if s_prof and s_prof.languages_csv == 'fr' %}selected{% endif %}>French (fr)</option>
-                                        <option value="ja" {% if s_prof and s_prof.languages_csv == 'ja' %}selected{% endif %}>Japanese (ja)</option>
-                                        <option value="es" {% if s_prof and s_prof.languages_csv == 'es' %}selected{% endif %}>Spanish (es)</option>
-                                        <option value="it" {% if s_prof and s_prof.languages_csv == 'it' %}selected{% endif %}>Italian (it)</option>
-                                        <option value="pt" {% if s_prof and s_prof.languages_csv == 'pt' %}selected{% endif %}>Portuguese (pt)</option>
-                                        <option value="ru" {% if s_prof and s_prof.languages_csv == 'ru' %}selected{% endif %}>Russian (ru)</option>
-                                    </select>
-                                </div>
-                                <div class="flex flex-col">
-                                    <label class="h-6 text-[#d1d5db] text-xs uppercase tracking-wider mb-1 flex items-center">Episode Search Block Size</label>
-                                    <input type="number" name="series_block_size" value="{{ s_prof.episode_block_size if s_prof and s_prof.episode_block_size else '5' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors text-sm font-mono" placeholder="5">
-                                </div>
+                    <div class="border border-[#3f3f46] rounded-xl bg-[#1e1e24]">
+                        <div class="bg-[#2a2a32] rounded-t-xl px-6 py-4 flex items-center justify-between cursor-pointer">
+                            <h4 class="text-base font-bold text-white flex items-center gap-2">
+                                <input type="checkbox" name="enable_manga" value="True" x-model="enable_manga" class="w-4 h-4 accent-[#d40060]">
+                                Sync Manga Reading List
+                            </h4>
+                        </div>
+                        <div x-show="enable_manga" class="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div>
+                                <label class="text-xs uppercase tracking-wider text-[#a1a1aa] mb-1 block font-semibold">Manga Category ID</label>
+                                <input type="number" name="series_category_id" value="{{ provider.series_category_id if provider and provider.series_category_id else '7030' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] rounded-lg px-3 text-white font-mono text-sm">
+                            </div>
+                            <div>
+                                <label class="text-xs uppercase tracking-wider text-[#a1a1aa] mb-1 block font-semibold">Reject Words (CSV)</label>
+                                <input type="text" name="series_reject" value="{{ s_prof.reject_words_csv if s_prof and s_prof.reject_words_csv is not none else 'raw,french,german,spanish' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] rounded-lg px-3 text-white text-sm">
+                            </div>
+                        </div>
+                    </div>
 
-                                <div class="flex flex-col">
-                                    <label class="h-6 text-[#d1d5db] text-xs uppercase tracking-wider mb-1 flex items-center">Min / Max Size (MB)</label>
-                                    <div class="grid grid-cols-2 gap-3">
-                                        <input type="number" name="series_min_mb" value="{{ s_prof.min_mb if s_prof and s_prof.min_mb else '200' }}" placeholder="Min" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors text-sm font-mono">
-                                        <input type="number" name="series_max_mb" value="{{ s_prof.max_mb if s_prof and s_prof.max_mb else '8000' }}" placeholder="Max" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors text-sm font-mono">
-                                    </div>
-                                </div>
-                                <div class="col-span-1 md:col-span-2 mt-4">
-                                    <hr class="border-[#3f3f46] mb-4">
-                                    <label class="block text-xs font-semibold text-white uppercase tracking-wider mb-3">Video Requirements</label>
-                                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                                        <div class="flex flex-col">
-                                            <label class="h-6 text-[#d1d5db] text-xs uppercase tracking-wider mb-1 flex items-center">Resolution</label>
-                                            <select name="series_resolution" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors text-sm">
-                                                <option value="any" {% if not s_prof or s_prof.resolution == 'any' or s_prof.resolution == 'Automatic / best' %}selected{% endif %}>Best Available (Any Res)</option>
-                                                <option value="2160p" {% if s_prof and s_prof.resolution == '2160p' %}selected{% endif %}>2160p (4K)</option>
-                                                <option value="1080p" {% if s_prof and s_prof.resolution == '1080p' %}selected{% endif %}>1080p</option>
-                                                <option value="720p" {% if s_prof and s_prof.resolution == '720p' %}selected{% endif %}>720p</option>
-                                            </select>
-                                        </div>
-                                        <div class="flex flex-col">
-                                            <label class="h-6 text-[#d1d5db] text-xs uppercase tracking-wider mb-1 flex items-center">Source</label>
-                                            <select name="series_source" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors text-sm">
-                                                <option value="any" {% if not s_prof or s_prof.source == 'any' %}selected{% endif %}>Best Available (Any Source)</option>
-                                                <option value="remux" {% if s_prof and s_prof.source == 'remux' %}selected{% endif %}>Remux Only</option>
-                                                <option value="bluray" {% if s_prof and s_prof.source == 'bluray' %}selected{% endif %}>BluRay Only</option>
-                                                <option value="web" {% if s_prof and s_prof.source == 'web' %}selected{% endif %}>WEB-DL / WEB Only</option>
-                                            </select>
-                                        </div>
-                                        <div class="flex flex-col">
-                                            <label class="h-6 text-[#d1d5db] text-xs uppercase tracking-wider mb-1 flex items-center">Codec</label>
-                                            <select name="series_video_codec" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors text-sm">
-                                                <option value="any" {% if not s_prof or s_prof.video_codec == 'any' %}selected{% endif %}>Best Available (Any Codec)</option>
-                                                <option value="hevc" {% if s_prof and s_prof.video_codec == 'hevc' %}selected{% endif %}>HEVC / H.265</option>
-                                                <option value="av1" {% if s_prof and s_prof.video_codec == 'av1' %}selected{% endif %}>AV1</option>
-                                                <option value="h264" {% if s_prof and s_prof.video_codec == 'h264' %}selected{% endif %}>H.264</option>
-                                            </select>
-                                        </div>
-                                        <div class="flex flex-col">
-                                            <label class="h-6 text-[#d1d5db] text-xs uppercase tracking-wider mb-1 flex items-center">HDR</label>
-                                            <select name="series_hdr" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors text-sm">
-                                                <option value="any" {% if not s_prof or s_prof.hdr == 'any' %}selected{% endif %}>Best Available (Any HDR)</option>
-                                                <option value="dolby vision" {% if s_prof and s_prof.hdr == 'dolby vision' %}selected{% endif %}>Dolby Vision</option>
-                                                <option value="hdr10" {% if s_prof and s_prof.hdr == 'hdr10' %}selected{% endif %}>HDR10 / HDR10+</option>
-                                                <option value="sdr" {% if s_prof and s_prof.hdr == 'sdr' %}selected{% endif %}>SDR Only</option>
-                                            </select>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div class="col-span-1 md:col-span-2 mb-2">
-                                    <label class="block text-xs font-semibold text-white uppercase tracking-wider mb-3">Audio Requirements</label>
-                                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                        <div class="flex flex-col">
-                                            <label class="h-6 text-[#d1d5db] text-xs uppercase tracking-wider mb-1 flex items-center">Audio Tier</label>
-                                            <select name="series_audio_tier" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors text-sm">
-                                                <option value="any" {% if not s_prof or s_prof.audio_tier == 'any' %}selected{% endif %}>Best Available (Any Audio)</option>
-                                                <option value="tier1" {% if s_prof and s_prof.audio_tier == 'tier1' %}selected{% endif %}>Tier 1 (TrueHD Atmos, DTS:X)</option>
-                                                <option value="tier2" {% if s_prof and s_prof.audio_tier == 'tier2' %}selected{% endif %}>Tier 2 (DTS-HD MA, TrueHD)</option>
-                                                <option value="tier3" {% if s_prof and s_prof.audio_tier == 'tier3' %}selected{% endif %}>Tier 3 (DD+ Atmos)</option>
-                                                <option value="tier4" {% if s_prof and s_prof.audio_tier == 'tier4' %}selected{% endif %}>Tier 4 (EAC3, DTS, AC3)</option>
-                                            </select>
-                                        </div>
-                                        <div class="flex flex-col">
-                                            <label class="h-6 text-[#d1d5db] text-xs uppercase tracking-wider mb-1 flex items-center">Channels</label>
-                                            <select name="series_audio_channels" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors text-sm">
-                                                <option value="any" {% if not s_prof or s_prof.audio_channels == 'any' %}selected{% endif %}>Any Channels</option>
-                                                <option value="7.1" {% if s_prof and s_prof.audio_channels == '7.1' %}selected{% endif %}>7.1 Only</option>
-                                                <option value="5.1" {% if s_prof and s_prof.audio_channels == '5.1' %}selected{% endif %}>5.1 Only</option>
-                                                <option value="2.0" {% if s_prof and s_prof.audio_channels == '2.0' %}selected{% endif %}>2.0 Only</option>
-                                            </select>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div class="md:col-span-2 pt-2">
-                                    <label class="flex items-center gap-2 text-[#d1d5db] text-sm cursor-pointer">
-                                        <input type="checkbox" name="series_prefer_seasons" value="True" {% if s_prof and s_prof.prefer_complete_seasons %}checked{% endif %} class="w-4 h-4 accent-[#d40060]">
-                                        <span>Prefer complete seasons (Searches for SXX first, if it fails it searches for individual episodes)</span>
-                                    </label>
-                                </div>
+                    <div class="border border-[#3f3f46] rounded-xl bg-[#1e1e24]">
+                        <div class="bg-[#2a2a32] rounded-t-xl px-6 py-4 flex items-center justify-between cursor-pointer">
+                            <h4 class="text-base font-bold text-white flex items-center gap-2">
+                                <input type="checkbox" name="enable_anime" value="True" x-model="enable_anime" class="w-4 h-4 accent-[#d40060]">
+                                Sync Anime Watchlist
+                            </h4>
+                        </div>
+                        <div x-show="enable_anime" class="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div>
+                                <label class="text-xs uppercase tracking-wider text-[#a1a1aa] mb-1 block font-semibold">Anime Category ID</label>
+                                <input type="number" name="anime_category_id" value="{{ provider.anime_category_id if provider and provider.anime_category_id else '5070' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] rounded-lg px-3 text-white font-mono text-sm">
+                            </div>
+                            <div>
+                                <label class="text-xs uppercase tracking-wider text-[#a1a1aa] mb-1 block font-semibold">Reject Words (CSV)</label>
+                                <input type="text" name="anime_reject" value="{{ a_prof.reject_words_csv if a_prof and a_prof.reject_words_csv is not none else 'cam,ts,subbed' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] rounded-lg px-3 text-white text-sm">
                             </div>
                         </div>
                     </div>
                 </div>
-                
-                <!-- Anime Profile -->
-                {% set a_prof_list = provider.profiles | selectattr("media_type", "equalto", "anime") | list if provider else [] %}
-                {% set a_prof = a_prof_list[0] if a_prof_list else none %}
 
-                <div class="border border-[#3f3f46] rounded-xl">
-                    <div class="bg-[#2a2a32] rounded-t-xl px-6 py-4 flex items-center justify-between cursor-pointer" @click="enable_anime = !enable_anime">
-                        <h3 class="text-lg font-bold text-white flex items-center gap-2">
-                            <input type="checkbox" name="enable_anime" value="True" x-model="enable_anime" @click.stop class="w-4 h-4 accent-[#d40060]">
-                            Sync Anime
-                        </h3>
-                    </div>
+                <!-- HARDCOVER PROFILES SECTION -->
+                <div x-show="providerType === 'hardcover'" class="space-y-6" style="display: none;">
+                    <h3 class="text-sm font-bold text-[#a1a1aa] uppercase tracking-wider">Hardcover Book Profiles</h3>
                     
-                    <div x-show="enable_anime" x-collapse>
-                        <div class="p-6 bg-[#1e1e24]">
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                <div class="flex flex-col">
-                                    <label class="h-6 text-[#d1d5db] text-xs uppercase tracking-wider mb-1 flex items-center gap-1">
-                                        TreasureMaps Kategorie ID
-                                        <div class="relative inline-block" x-data="{ show: false }" @click.away="show = false" @mouseenter="show = true" @mouseleave="show = false">
-    <span class="text-[#d40060] cursor-pointer" @click.prevent="show = !show">
-        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-    </span>
-    <div x-show="show" style="display: none;" class="absolute z-[110] w-64 p-3 mt-2 text-xs font-normal text-white bg-[#2a2a32] border border-[#3f3f46] rounded shadow-xl left-1/2 transform -translate-x-1/2 whitespace-normal break-words">
-        The category ID for anime on TreasureMaps. (e.g. 5070)
-    </div>
-</div>
-                                    </label>
-                                    <input type="number" name="anime_category_id" value="{{ provider.anime_category_id if provider and provider.anime_category_id else '5070' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors text-sm font-mono" placeholder="5070">
-                                </div>
-                                <div class="flex flex-col">
-                                    <label class="h-6 text-[#d1d5db] text-xs uppercase tracking-wider mb-1 flex items-center">Blacklist (CSV)</label>
-                                    <input type="text" name="anime_reject" value="{{ a_prof.reject_words_csv if a_prof and a_prof.reject_words_csv is not none else 'subbed,omU' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors text-sm" placeholder="z.B. subbed,omU">
-                                </div>
-                                <div class="flex flex-col">
-                                    <label class="h-6 text-[#d1d5db] text-xs uppercase tracking-wider mb-1 flex items-center gap-1">
-                                        Required Language
-                                        <div class="relative inline-block" x-data="{ show: false }" @click.away="show = false" @mouseenter="show = true" @mouseleave="show = false">
-    <span class="text-[#d40060] cursor-pointer" @click.prevent="show = !show">
-        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-    </span>
-    <div x-show="show" style="display: none;" class="absolute z-[110] w-64 p-3 mt-2 text-xs font-normal text-white bg-[#2a2a32] border border-[#3f3f46] rounded shadow-xl left-1/2 transform -translate-x-1/2 whitespace-normal break-words">
-        Only releases with this language will be accepted.
-    </div>
-</div>
-                                    </label>
-                                    <select name="anime_langs" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors text-sm">
-                                        <option value="">No restriction</option>
-                                        <option value="de" {% if a_prof and a_prof.languages_csv == 'de' %}selected{% endif %}>German (de)</option>
-                                        <option value="en" {% if a_prof and a_prof.languages_csv == 'en' %}selected{% endif %}>English (en)</option>
-                                        <option value="fr" {% if a_prof and a_prof.languages_csv == 'fr' %}selected{% endif %}>French (fr)</option>
-                                        <option value="ja" {% if a_prof and a_prof.languages_csv == 'ja' %}selected{% endif %}>Japanese (ja)</option>
-                                        <option value="es" {% if a_prof and a_prof.languages_csv == 'es' %}selected{% endif %}>Spanish (es)</option>
-                                        <option value="it" {% if a_prof and a_prof.languages_csv == 'it' %}selected{% endif %}>Italian (it)</option>
-                                        <option value="pt" {% if a_prof and a_prof.languages_csv == 'pt' %}selected{% endif %}>Portuguese (pt)</option>
-                                        <option value="ru" {% if a_prof and a_prof.languages_csv == 'ru' %}selected{% endif %}>Russian (ru)</option>
-                                    </select>
-                                </div>
-                                <div class="flex flex-col">
-                                    <label class="h-6 text-[#d1d5db] text-xs uppercase tracking-wider mb-1 flex items-center">Episode Search Block Size</label>
-                                    <input type="number" name="anime_block_size" value="{{ a_prof.episode_block_size if a_prof and a_prof.episode_block_size else '5' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors text-sm font-mono" placeholder="5">
-                                </div>
-
-                                <div class="flex flex-col">
-                                    <label class="h-6 text-[#d1d5db] text-xs uppercase tracking-wider mb-1 flex items-center">Min / Max Size (MB)</label>
-                                    <div class="grid grid-cols-2 gap-3">
-                                        <input type="number" name="anime_min_mb" value="{{ a_prof.min_mb if a_prof and a_prof.min_mb else '200' }}" placeholder="Min" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors text-sm font-mono">
-                                        <input type="number" name="anime_max_mb" value="{{ a_prof.max_mb if a_prof and a_prof.max_mb else '8000' }}" placeholder="Max" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors text-sm font-mono">
-                                    </div>
-                                </div>
-                                <div class="col-span-1 md:col-span-2 mt-4">
-                                    <hr class="border-[#3f3f46] mb-4">
-                                    <label class="block text-xs font-semibold text-white uppercase tracking-wider mb-3">Video Requirements</label>
-                                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                                        <div class="flex flex-col">
-                                            <label class="h-6 text-[#d1d5db] text-xs uppercase tracking-wider mb-1 flex items-center">Resolution</label>
-                                            <select name="anime_resolution" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors text-sm">
-                                                <option value="any" {% if not a_prof or a_prof.resolution == 'any' or a_prof.resolution == 'Automatic / best' %}selected{% endif %}>Best Available (Any Res)</option>
-                                                <option value="2160p" {% if a_prof and a_prof.resolution == '2160p' %}selected{% endif %}>2160p (4K)</option>
-                                                <option value="1080p" {% if a_prof and a_prof.resolution == '1080p' %}selected{% endif %}>1080p</option>
-                                                <option value="720p" {% if a_prof and a_prof.resolution == '720p' %}selected{% endif %}>720p</option>
-                                            </select>
-                                        </div>
-                                        <div class="flex flex-col">
-                                            <label class="h-6 text-[#d1d5db] text-xs uppercase tracking-wider mb-1 flex items-center">Source</label>
-                                            <select name="anime_source" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors text-sm">
-                                                <option value="any" {% if not a_prof or a_prof.source == 'any' %}selected{% endif %}>Best Available (Any Source)</option>
-                                                <option value="remux" {% if a_prof and a_prof.source == 'remux' %}selected{% endif %}>Remux Only</option>
-                                                <option value="bluray" {% if a_prof and a_prof.source == 'bluray' %}selected{% endif %}>BluRay Only</option>
-                                                <option value="web" {% if a_prof and a_prof.source == 'web' %}selected{% endif %}>WEB-DL / WEB Only</option>
-                                            </select>
-                                        </div>
-                                        <div class="flex flex-col">
-                                            <label class="h-6 text-[#d1d5db] text-xs uppercase tracking-wider mb-1 flex items-center">Codec</label>
-                                            <select name="anime_video_codec" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors text-sm">
-                                                <option value="any" {% if not a_prof or a_prof.video_codec == 'any' %}selected{% endif %}>Best Available (Any Codec)</option>
-                                                <option value="hevc" {% if a_prof and a_prof.video_codec == 'hevc' %}selected{% endif %}>HEVC / H.265</option>
-                                                <option value="av1" {% if a_prof and a_prof.video_codec == 'av1' %}selected{% endif %}>AV1</option>
-                                                <option value="h264" {% if a_prof and a_prof.video_codec == 'h264' %}selected{% endif %}>H.264</option>
-                                            </select>
-                                        </div>
-                                        <div class="flex flex-col">
-                                            <label class="h-6 text-[#d1d5db] text-xs uppercase tracking-wider mb-1 flex items-center">HDR</label>
-                                            <select name="anime_hdr" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors text-sm">
-                                                <option value="any" {% if not a_prof or a_prof.hdr == 'any' %}selected{% endif %}>Best Available (Any HDR)</option>
-                                                <option value="dolby vision" {% if a_prof and a_prof.hdr == 'dolby vision' %}selected{% endif %}>Dolby Vision</option>
-                                                <option value="hdr10" {% if a_prof and a_prof.hdr == 'hdr10' %}selected{% endif %}>HDR10 / HDR10+</option>
-                                                <option value="sdr" {% if a_prof and a_prof.hdr == 'sdr' %}selected{% endif %}>SDR Only</option>
-                                            </select>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div class="col-span-1 md:col-span-2 mb-2">
-                                    <label class="block text-xs font-semibold text-white uppercase tracking-wider mb-3">Audio Requirements</label>
-                                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                        <div class="flex flex-col">
-                                            <label class="h-6 text-[#d1d5db] text-xs uppercase tracking-wider mb-1 flex items-center">Audio Tier</label>
-                                            <select name="anime_audio_tier" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors text-sm">
-                                                <option value="any" {% if not a_prof or a_prof.audio_tier == 'any' %}selected{% endif %}>Best Available (Any Audio)</option>
-                                                <option value="tier1" {% if a_prof and a_prof.audio_tier == 'tier1' %}selected{% endif %}>Tier 1 (TrueHD Atmos, DTS:X)</option>
-                                                <option value="tier2" {% if a_prof and a_prof.audio_tier == 'tier2' %}selected{% endif %}>Tier 2 (DTS-HD MA, TrueHD)</option>
-                                                <option value="tier3" {% if a_prof and a_prof.audio_tier == 'tier3' %}selected{% endif %}>Tier 3 (DD+ Atmos)</option>
-                                                <option value="tier4" {% if a_prof and a_prof.audio_tier == 'tier4' %}selected{% endif %}>Tier 4 (EAC3, DTS, AC3)</option>
-                                            </select>
-                                        </div>
-                                        <div class="flex flex-col">
-                                            <label class="h-6 text-[#d1d5db] text-xs uppercase tracking-wider mb-1 flex items-center">Channels</label>
-                                            <select name="anime_audio_channels" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors text-sm">
-                                                <option value="any" {% if not a_prof or a_prof.audio_channels == 'any' %}selected{% endif %}>Any Channels</option>
-                                                <option value="7.1" {% if a_prof and a_prof.audio_channels == '7.1' %}selected{% endif %}>7.1 Only</option>
-                                                <option value="5.1" {% if a_prof and a_prof.audio_channels == '5.1' %}selected{% endif %}>5.1 Only</option>
-                                                <option value="2.0" {% if a_prof and a_prof.audio_channels == '2.0' %}selected{% endif %}>2.0 Only</option>
-                                            </select>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div class="md:col-span-2 pt-2">
-                                    <label class="flex items-center gap-2 text-[#d1d5db] text-sm cursor-pointer">
-                                        <input type="checkbox" name="anime_prefer_seasons" value="True" {% if a_prof and a_prof.prefer_complete_seasons %}checked{% endif %} class="w-4 h-4 accent-[#d40060]">
-                                        <span>Prefer complete seasons (Searches for SXX first, if it fails it searches for individual episodes)</span>
-                                    </label>
-                                </div>
+                    <div class="border border-[#3f3f46] rounded-xl bg-[#1e1e24]">
+                        <div class="bg-[#2a2a32] rounded-t-xl px-6 py-4 flex items-center justify-between cursor-pointer">
+                            <h4 class="text-base font-bold text-white flex items-center gap-2">
+                                <input type="checkbox" name="enable_books" value="True" x-model="enable_books" class="w-4 h-4 accent-[#d40060]">
+                                Sync Want-to-Read Books & Novels
+                            </h4>
+                        </div>
+                        <div x-show="enable_books" class="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div>
+                                <label class="text-xs uppercase tracking-wider text-[#a1a1aa] mb-1 block font-semibold">E-Books Category ID</label>
+                                <input type="number" name="movie_category_id" value="{{ provider.movie_category_id if provider and provider.movie_category_id else '7020' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] rounded-lg px-3 text-white font-mono text-sm">
+                            </div>
+                            <div>
+                                <label class="text-xs uppercase tracking-wider text-[#a1a1aa] mb-1 block font-semibold">Reject Words (CSV)</label>
+                                <input type="text" name="movies_reject" value="{{ m_prof.reject_words_csv if m_prof and m_prof.reject_words_csv is not none else 'audiobook,mp3,m4b' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] rounded-lg px-3 text-white text-sm">
                             </div>
                         </div>
                     </div>
+                </div>
+
+                <!-- Form Submit Actions -->
+                <div class="flex justify-end gap-3 pt-4 border-t border-[#3f3f46]">
+                    <button type="button" onclick="document.getElementById('modal-container').innerHTML = '';" class="px-5 py-2.5 bg-[#3f3f46] hover:bg-[#52525b] text-white rounded-lg font-medium transition-colors text-sm">
+                        Cancel
+                    </button>
+                    <button type="submit" class="px-6 py-2.5 bg-[#d40060] hover:bg-[#a3004a] text-white rounded-lg font-bold transition-colors text-sm shadow-lg">
+                        Save Provider
+                    </button>
                 </div>
 
             </form>
-        </div>
-        
-        <div class="bg-[#2a2a32] rounded-t-xl px-6 py-4 border-t border-[#3f3f46] flex justify-end gap-3 shrink-0">
-            <button type="button" onclick="document.getElementById('modal-container').innerHTML = '';" class="px-4 py-2 text-[#a1a1aa] hover:text-white font-medium transition-colors">Cancel</button>
-            <button type="submit" form="provider-form" class="bg-[#d40060] hover:bg-[#a3004a] text-white px-6 py-2 rounded-lg font-bold transition-transform hover:scale-105 shadow-[0_0_10px_rgba(212,0,96,0.3)]">
-                Save
-            </button>
         </div>
     </div>
 </div>

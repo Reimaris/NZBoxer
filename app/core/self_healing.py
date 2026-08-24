@@ -122,7 +122,7 @@ async def run_self_healing_cycle() -> None:
 
                 if status in ("failed", "error", "not_found"):
                     logger.warning(
-                        "⚠️ Self-Healing: Download fehlgeschlagen für %s",
+                        "⚠️ Self-Healing: Download failed for %s",
                         history.nzb_title,
                     )
 
@@ -206,7 +206,7 @@ async def run_download_check_cycle() -> None:
             logger.debug("TorBox API key missing. Skipping download check.")
             return
 
-        logger.info("🔎 Prüfe Download-Status bei TorBox...")
+        logger.info("🔎 Checking download status on TorBox...")
 
         try:
             import httpx
@@ -223,7 +223,7 @@ async def run_download_check_cycle() -> None:
             return
 
         if not tb_data.get("success"):
-            logger.error("❌ TorBox API Fehler: %s", tb_data.get("detail"))
+            logger.error("❌ TorBox API Error: %s", tb_data.get("detail"))
             return
 
         tb_items: dict[str, dict] = {}
@@ -326,7 +326,7 @@ async def run_download_check_cycle() -> None:
                     target.status = final_status
                     changed += 1
                 else:
-                    logger.info("    ⏳ %s → noch lädt (TorBox: %s)", title, status)
+                    logger.info("    ⏳ %s → still downloading (TorBox: %s)", title, status)
                 return False
 
             for movie in movies:
@@ -410,6 +410,6 @@ async def run_download_check_cycle() -> None:
                 "🔎 Download-Check abgeschlossen: %d Status aktualisiert.", changed
             )
         else:
-            logger.info("🔎 Download-Check abgeschlossen: Keine Änderungen.")
+            logger.info("🔎 Download check finished: No changes.")
     finally:
         log_process_end(logger, "Download Check Engine")

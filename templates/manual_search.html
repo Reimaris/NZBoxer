@@ -1,12 +1,14 @@
 {% extends "base.html" %}
 
 {% block content %}
+{% include "components/navbar.html" %}
+
 <style>
     /* Prevent full page scroll, let the panels handle it */
     body { overflow: hidden; }
 </style>
 
-<div class="flex flex-col h-[calc(100vh-5.5rem)]">
+<div class="flex flex-col h-[calc(100vh-10rem)]">
     <div class="mb-4 border-b border-[#3f3f46] pb-3 shrink-0 flex items-center justify-between">
         <div>
             <h1 class="text-2xl font-bold text-white tracking-wide">Manual Search</h1>

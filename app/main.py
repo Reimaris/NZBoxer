@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from fastapi import BackgroundTasks, FastAPI, Form, Request
+from fastapi import BackgroundTasks, FastAPI, Form, Request, Response
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -139,7 +139,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                 "Running full automation cycle (Interval multiplier: %d)",
                 settings.scan_interval_multiplier,
             )
+            from app.core.automation import run_print_automation_cycle
             await run_automation_cycle()
+            await run_print_automation_cycle()
         else:
             logger.info(
                 "Skipping full automation cycle (Interval multiplier: %d, Current cycle: %d)",
@@ -505,6 +507,135 @@ async def manual_search(
     )
 
 
+@app.post("/api/search/print/manual", response_class=HTMLResponse)
+async def manual_search_print(
+    request: Request,
+    media_type: str = Form("manga"),
+    query: str = Form(""),
+    volume: str = Form(""),
+    author: str = Form(""),
+    format_filter: str = Form("any"),
+):
+    """Dedicated manual search endpoint for Print Media releases."""
+    from app.core.reading_scorer import (
+        detect_print_format,
+        match_volume_or_issue,
+        score_print_release,
+    )
+    from app.services import treasure_maps
+
+    if not query.strip():
+        return HTMLResponse(
+            content='<div class="p-8 text-center bg-[#2a2a32] border border-[#3f3f46] rounded-xl text-[#a1a1aa]">'
+            '<div class="text-3xl mb-2">🔍</div><p>Please enter a title or search query.</p></div>'
+        )
+
+    base_title = query.strip()
+    vol_clean = (
+        volume.strip().lower().replace("volume", "").replace("vol", "").replace("v", "").replace("#", "").strip()
+        if volume.strip()
+        else ""
+    )
+
+    # Build search query fallback cascade
+    search_queries = []
+    if media_type == "manga" and vol_clean:
+        if vol_clean.isdigit():
+            vol_num = int(vol_clean)
+            search_queries.append(f"{base_title} v{vol_num:02d}")
+            search_queries.append(f"{base_title} {vol_num:02d}")
+            search_queries.append(f"{base_title} vol {vol_num}")
+            search_queries.append(f"{base_title} v{vol_num}")
+            search_queries.append(base_title)
+        else:
+            search_queries.append(f"{base_title} {volume.strip()}")
+            search_queries.append(base_title)
+    elif media_type == "book" and author.strip():
+        search_queries.append(f"{base_title} {author.strip()}")
+        search_queries.append(base_title)
+    else:
+        search_queries.append(base_title)
+
+    # Categories to query: primary + generic fallback
+    cat_ids = [7030, 7000] if media_type == "manga" else ([7010, 7000] if media_type == "magazine" else [7020, 7000])
+
+    PRINT_CATEGORY_NAMES: dict[int, str] = {
+        7000: "EBooks (General)",
+        7010: "Magazines",
+        7020: "EBooks",
+        7030: "Comics / Manga",
+    }
+
+    seen_guids: set[str] = set()
+    raw_results = []
+
+    for q in search_queries:
+        for cat in cat_ids:
+            items = await treasure_maps.search_raw(query=q, category=cat)
+            for item in items:
+                guid = item.get("guid") or item.get("title") or item.get("link")
+                if guid and guid not in seen_guids:
+                    seen_guids.add(guid)
+                    raw_results.append(item)
+
+    if not raw_results:
+        return templates.TemplateResponse(
+            request=request,
+            name="partials/print_search_results.html",
+            context={"results": []},
+        )
+
+    valid_results = []
+    for item in raw_results:
+        title = item.get("title", "")
+        description = item.get("description", "")
+
+        # Volume strict filtering if specified
+        is_exact_vol = False
+        if vol_clean:
+            is_match, is_exact_vol = match_volume_or_issue(title, vol_clean)
+            if not is_match:
+                continue  # Skip releases that do not match the requested volume!
+
+        detected_fmt = detect_print_format(
+            title=title,
+            description=description,
+            category_id=item.get("category", cat_ids[0]),
+            media_type=media_type,
+        )
+
+        # Apply format filter if specified
+        if format_filter != "any" and detected_fmt != format_filter.lower():
+            continue
+
+        scoring_res = score_print_release(parsed_format=detected_fmt, media_type=media_type)
+        score_val = scoring_res.get("score", 0)
+
+        # Priority boost for exact volume single releases vs packs
+        if vol_clean:
+            score_val += 500 if is_exact_vol else 200
+
+        item_cat_id = int(item.get("category", cat_ids[0]) or cat_ids[0])
+        valid_results.append({
+            "title": title,
+            "link": item.get("link", ""),
+            "size": item.get("size", 0),
+            "pub_date": item.get("pub_date", ""),
+            "format": detected_fmt,
+            "score": score_val,
+            "category_id": item_cat_id,
+            "category_name": PRINT_CATEGORY_NAMES.get(item_cat_id, f"Cat {item_cat_id}"),
+        })
+
+    valid_results.sort(key=lambda x: x["score"], reverse=True)
+
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/print_search_results.html",
+        context={"results": valid_results},
+    )
+
+
 @app.get("/items/{item_id}", response_class=HTMLResponse)
 async def item_detail(request: Request, item_id: int):
     """Detailed view for a single item (shows seasons if it's a series)."""
@@ -633,7 +764,7 @@ async def confirm_grab_item(item_id: int):
         item = await session.get(MediaItem, item_id)
         if not item or not item.pending_candidate_json:
             return HTMLResponse(
-                content='<div class="text-red-500">Kein ausstehender Kandidat gefunden.</div>',
+                content='<div class="text-red-500">No pending candidate found.</div>',
                 status_code=400,
             )
 
@@ -646,14 +777,14 @@ async def confirm_grab_item(item_id: int):
             torbox_result = await torbox.send_nzb_file(nzb_bytes, filename=filename)
         except treasure_maps.IndexerError as e:
             return HTMLResponse(
-                content=f'<div class="text-red-500">NZB-Download Fehler: {e}</div>',
+                content=f'<div class="text-red-500">NZB Download Error: {e}</div>',
                 status_code=500,
             )
 
         if not torbox_result or (
             not torbox_result.get("hash") and not torbox_result.get("id")
         ):
-            err_msg = torbox_result.get("error") if isinstance(torbox_result, dict) and torbox_result.get("error") else "Fehler beim Senden an TorBox."
+            err_msg = torbox_result.get("error") if isinstance(torbox_result, dict) and torbox_result.get("error") else "Error sending to TorBox."
             return HTMLResponse(
                 content=f'<div class="text-red-500">{err_msg}</div>',
                 status_code=500,
@@ -838,6 +969,133 @@ async def get_status():
 # ---------------------------------------------------------------------------
 
 
+
+@app.get("/dashboard/print", response_class=HTMLResponse)
+async def print_dashboard(request: Request):
+    """Main dashboard displaying Print Media (Manga, Books, Magazines)."""
+    from sqlalchemy import select
+    from sqlalchemy.orm import selectinload
+
+    from app.db.database import async_session_factory
+    from app.db.models import BookItem, MagazineSubscription, MangaItem, MediaStatus
+
+    async with async_session_factory() as session:
+        manga_stmt = select(MangaItem).options(selectinload(MangaItem.volumes)).order_by(MangaItem.title)
+        book_stmt = select(BookItem).order_by(BookItem.title)
+        mag_stmt = select(MagazineSubscription).options(selectinload(MagazineSubscription.issues)).order_by(MagazineSubscription.title)
+
+        mangas = (await session.execute(manga_stmt)).scalars().all()
+        books = (await session.execute(book_stmt)).scalars().all()
+        magazines = (await session.execute(mag_stmt)).scalars().all()
+
+        manga_stats = {
+            "total": len(mangas),
+            "wanted": sum(1 for m in mangas if m.status in [MediaStatus.PENDING, MediaStatus.SEARCHING]),
+            "completed": sum(1 for m in mangas if m.status in [MediaStatus.DOWNLOADED, MediaStatus.COMPLETED]),
+            "ignored": sum(1 for m in mangas if m.status == MediaStatus.IGNORED),
+        }
+        book_stats = {
+            "total": len(books),
+            "wanted": sum(1 for b in books if b.status in [MediaStatus.PENDING, MediaStatus.SEARCHING]),
+            "completed": sum(1 for b in books if b.status in [MediaStatus.DOWNLOADED, MediaStatus.COMPLETED]),
+            "ignored": sum(1 for b in books if b.status == MediaStatus.IGNORED),
+        }
+        magazine_stats = {
+            "total": len(magazines),
+            "wanted": sum(1 for m in magazines if m.status in [MediaStatus.PENDING, MediaStatus.SEARCHING]),
+            "completed": sum(1 for m in magazines if m.status in [MediaStatus.DOWNLOADED, MediaStatus.COMPLETED]),
+            "ignored": sum(1 for m in magazines if m.status == MediaStatus.IGNORED),
+        }
+
+    return templates.TemplateResponse(
+        request=request,
+        name="print_dashboard.html",
+        context={
+            "mangas": mangas,
+            "books": books,
+            "magazines": magazines,
+            "manga_stats": manga_stats,
+            "book_stats": book_stats,
+            "magazine_stats": magazine_stats,
+        },
+    )
+
+
+@app.get("/dashboard/print/manual-search", response_class=HTMLResponse)
+async def print_manual_search_page(
+    request: Request,
+    query: str = "",
+    media_type: str = "manga",
+    format_type: str = "any",
+):
+    """Dedicated dashboard for manual searching print media (Manga, Books, Magazines)."""
+    defaults = {
+        "query": query,
+        "media_type": media_type,
+        "format_type": format_type,
+    }
+    return templates.TemplateResponse(
+        request=request,
+        name="print_manual_search.html",
+        context={"defaults": defaults},
+    )
+
+
+@app.get("/print/add/modal", response_class=HTMLResponse)
+async def get_add_print_media_modal(request: Request):
+    """Render the modal to add a new print media item."""
+    return templates.TemplateResponse(
+        request=request,
+        name="modals/add_print_media.html",
+        context={},
+    )
+
+
+@app.post("/api/print/add")
+async def add_print_media(
+    request: Request,
+    media_type: str = Form(...),
+    title: str = Form(...),
+    anilist_id: str = Form(""),
+    start_year: str = Form(""),
+    author: str = Form(""),
+    isbn: str = Form(""),
+    publisher: str = Form(""),
+):
+    """Add a new Manga, Book, or Magazine subscription to database."""
+    from app.db.database import async_session_factory
+    from app.db.models import BookItem, MagazineSubscription, MangaItem, MediaStatus
+
+    async with async_session_factory() as session:
+        if media_type == "manga":
+            year_val = int(start_year) if start_year.isdigit() else None
+            manga = MangaItem(
+                title=title.strip(),
+                anilist_id=anilist_id.strip() if anilist_id else None,
+                start_year=year_val,
+                status=MediaStatus.SEARCHING,
+            )
+            session.add(manga)
+        elif media_type == "book":
+            book = BookItem(
+                title=title.strip(),
+                author=author.strip() if author else None,
+                isbn=isbn.strip() if isbn else None,
+                status=MediaStatus.SEARCHING,
+            )
+            session.add(book)
+        elif media_type == "magazine":
+            magazine = MagazineSubscription(
+                title=title.strip(),
+                publisher=publisher.strip() if publisher else None,
+                status=MediaStatus.SEARCHING,
+            )
+            session.add(magazine)
+
+        await session.commit()
+
+    return Response(headers={"HX-Redirect": "/dashboard/print"})
+
 @app.get("/settings", response_class=HTMLResponse)
 async def get_settings_page(request: Request):
     """Render the settings form."""
@@ -993,6 +1251,13 @@ async def save_global_settings(
     sh_auto_retry: bool = Form(True),
     sh_retry_wait_hours: float = Form(24.0),
     dry_run: bool = Form(False),
+    upgrade_threshold: int = Form(500),
+    backoff_tier2_skip: int = Form(6),
+    backoff_tier3_skip: int = Form(24),
+    reading_download_dir: str = Form("downloads"),
+    manga_blacklisted_formats: str = Form(""),
+    book_blacklisted_formats: str = Form(""),
+    magazine_blacklisted_formats: str = Form(""),
 ):
     import copy
 
@@ -1017,6 +1282,13 @@ async def save_global_settings(
             db_settings.sh_auto_retry = sh_auto_retry
             db_settings.sh_retry_wait_hours = sh_retry_wait_hours
             db_settings.dry_run = dry_run
+            db_settings.upgrade_threshold = upgrade_threshold
+            db_settings.backoff_tier2_skip = backoff_tier2_skip
+            db_settings.backoff_tier3_skip = backoff_tier3_skip
+            db_settings.reading_download_dir = reading_download_dir
+            db_settings.manga_blacklisted_formats = manga_blacklisted_formats
+            db_settings.book_blacklisted_formats = book_blacklisted_formats
+            db_settings.magazine_blacklisted_formats = magazine_blacklisted_formats
 
             sc: dict[str, Any] = copy.deepcopy(
                 db_settings.scoring_settings or DEFAULT_SCORING_CONFIG
@@ -1171,6 +1443,7 @@ async def save_provider(
     anime_reject: str = Form(""),
     anime_prefer_seasons: bool = Form(False),
     anime_block_size: int = Form(5),
+    provider_type: str = Form("simkl"),
 ):
     from sqlalchemy.orm import selectinload
 
@@ -1182,10 +1455,12 @@ async def save_provider(
                 Provider, provider_id, options=[selectinload(Provider.profiles)]
             )
             if not provider:
-                provider = Provider(type="simkl")
+                provider = Provider(type=provider_type)
                 session.add(provider)
+            else:
+                provider.type = provider_type
         else:
-            provider = Provider(type="simkl")
+            provider = Provider(type=provider_type)
             session.add(provider)
 
         provider.name = name
@@ -1466,7 +1741,7 @@ async def run_system_check(request: Request):
                         "ok": r.status_code == 200,
                         "msg": "Erfolgreich"
                         if r.status_code == 200
-                        else f"Fehler {r.status_code}",
+                        else f"Error {r.status_code}",
                     }
                 except Exception as e:
                     results["tmdb"] = {"ok": False, "msg": str(e)}
@@ -1487,7 +1762,7 @@ async def run_system_check(request: Request):
                         "ok": r.status_code == 200,
                         "msg": "Erfolgreich"
                         if r.status_code == 200
-                        else f"Fehler {r.status_code}",
+                        else f"Error {r.status_code}",
                     }
                 except Exception as e:
                     results["treasure_maps"] = {"ok": False, "msg": str(e)}
@@ -1507,7 +1782,7 @@ async def run_system_check(request: Request):
                         "ok": r.status_code == 200,
                         "msg": "Erfolgreich"
                         if r.status_code == 200
-                        else f"Fehler {r.status_code}",
+                        else f"Error {r.status_code}",
                     }
                 except Exception as e:
                     results["torbox"] = {"ok": False, "msg": str(e)}
@@ -1528,7 +1803,7 @@ async def run_system_check(request: Request):
                         "ok": r.status_code == 200,
                         "msg": "Erfolgreich"
                         if r.status_code == 200
-                        else f"Fehler {r.status_code}",
+                        else f"Error {r.status_code}",
                     }
                 except Exception as e:
                     results["simkl"] = {"ok": False, "msg": str(e)}
@@ -1545,7 +1820,7 @@ async def run_system_check(request: Request):
                         "ok": r.status_code == 200,
                         "msg": "Erfolgreich"
                         if r.status_code == 200
-                        else f"Fehler {r.status_code}",
+                        else f"Error {r.status_code}",
                     }
                 except Exception as e:
                     results["telegram"] = {"ok": False, "msg": str(e)}
@@ -1602,9 +1877,10 @@ async def manual_sync(background_tasks: BackgroundTasks):
 @app.post("/search", response_class=HTMLResponse)
 async def manual_search_full(background_tasks: BackgroundTasks):
     """Trigger manual full automation cycle."""
-    from app.core.automation import run_automation_cycle
+    from app.core.automation import run_automation_cycle, run_print_automation_cycle
 
     background_tasks.add_task(run_automation_cycle, force=True)
+    background_tasks.add_task(run_print_automation_cycle, force=True)
 
     return HTMLResponse(
         content="""
