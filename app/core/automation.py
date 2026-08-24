@@ -1634,16 +1634,25 @@ async def process_print_book(session: AsyncSession, book: BookItem) -> bool:
     queries.append(book.title.strip())
 
     results: list[dict] = []
-    seen_guids: set[str] = set()
+    seen_keys: set[str] = set()
 
     for q in queries:
         for cid in cat_ids:
             try:
                 raw_res = await treasure_maps.search_raw(query=q, category=cid)
                 for r in raw_res:
-                    guid = r.get("guid") or r.get("link", "")
-                    if guid and guid not in seen_guids:
-                        seen_guids.add(guid)
+                    # Robust deduplication by GUID, link, or normalized title + size
+                    dedup_key = (
+                        r.get("guid")
+                        or (
+                            f"{r.get('title', '').strip().lower()}_{r.get('size', 0)}"
+                            if r.get("title")
+                            else None
+                        )
+                        or r.get("link", "")
+                    )
+                    if dedup_key and dedup_key not in seen_keys:
+                        seen_keys.add(dedup_key)
                         results.append(r)
             except Exception as e:
                 logger.warning("  ⚠️ Indexer search failed for query '%s': %s", q, e)
@@ -1836,16 +1845,24 @@ async def process_print_manga(session: AsyncSession, manga: MangaItem) -> bool:
     ]
 
     pack_results: list[dict] = []
-    seen_guids: set[str] = set()
+    seen_pack_keys: set[str] = set()
 
     for pq in pack_queries:
         for cid in cat_ids:
             try:
                 raw_res = await treasure_maps.search_raw(query=pq, category=cid)
                 for r in raw_res:
-                    guid = r.get("guid") or r.get("link", "")
-                    if guid and guid not in seen_guids:
-                        seen_guids.add(guid)
+                    dedup_key = (
+                        r.get("guid")
+                        or (
+                            f"{r.get('title', '').strip().lower()}_{r.get('size', 0)}"
+                            if r.get("title")
+                            else None
+                        )
+                        or r.get("link", "")
+                    )
+                    if dedup_key and dedup_key not in seen_pack_keys:
+                        seen_pack_keys.add(dedup_key)
                         pack_results.append(r)
             except Exception as e:
                 logger.warning(
@@ -1970,16 +1987,24 @@ async def process_print_manga(session: AsyncSession, manga: MangaItem) -> bool:
         ]
 
         vol_results: list[dict] = []
-        vol_seen_guids: set[str] = set()
+        vol_seen_keys: set[str] = set()
 
         for vq in vol_queries:
             for cid in cat_ids:
                 try:
                     raw_res = await treasure_maps.search_raw(query=vq, category=cid)
                     for r in raw_res:
-                        guid = r.get("guid") or r.get("link", "")
-                        if guid and guid not in vol_seen_guids:
-                            vol_seen_guids.add(guid)
+                        dedup_key = (
+                            r.get("guid")
+                            or (
+                                f"{r.get('title', '').strip().lower()}_{r.get('size', 0)}"
+                                if r.get("title")
+                                else None
+                            )
+                            or r.get("link", "")
+                        )
+                        if dedup_key and dedup_key not in vol_seen_keys:
+                            vol_seen_keys.add(dedup_key)
                             vol_results.append(r)
                 except Exception as e:
                     logger.warning("  ⚠️ Volume search failed for query '%s': %s", vq, e)
