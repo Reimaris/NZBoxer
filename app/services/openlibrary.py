@@ -6,6 +6,7 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
+
 async def search_books(query: str) -> list[dict[str, Any]]:
     """Search OpenLibrary for books."""
     url = f"https://openlibrary.org/search.json?q={quote(query)}&limit=10"
@@ -19,9 +20,12 @@ async def search_books(query: str) -> list[dict[str, Any]]:
             logger.error(f"OpenLibrary search failed: {e}")
             return []
 
+
 async def get_book_by_isbn(isbn: str) -> dict[str, Any] | None:
     """Fetch specific book details from OpenLibrary via ISBN."""
-    url = f"https://openlibrary.org/api/books?bibkeys=ISBN:{isbn}&format=json&jscmd=data"
+    url = (
+        f"https://openlibrary.org/api/books?bibkeys=ISBN:{isbn}&format=json&jscmd=data"
+    )
     async with httpx.AsyncClient(timeout=10.0) as client:
         try:
             resp = await client.get(url)

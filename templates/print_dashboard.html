@@ -130,9 +130,9 @@
                 </thead>
                 <tbody class="divide-y divide-[#3f3f46] text-sm">
                     {% for item in mangas %}
-                    <tr class="hover:bg-[#2a2a32] transition-colors" x-show="search === '' || '{{ item.title | lower }}'.includes(search.toLowerCase())">
-                        <td class="py-3 px-4 text-center text-[#a1a1aa]">{{ loop.index }}</td>
-                        <td class="py-3 px-4">
+                    <tr class="hover:bg-[#2a2a32] transition-colors" x-data="{ expanded: false }" x-show="search === '' || '{{ item.title | lower }}'.includes(search.toLowerCase())">
+                        <td class="py-3 px-4 text-center text-[#a1a1aa] align-middle">{{ loop.index }}</td>
+                        <td class="py-3 px-4 align-middle">
                             <div class="flex items-center gap-3">
                                 {% if item.cover_image %}
                                 <img src="{{ item.cover_image }}" alt="Cover" class="w-10 h-14 object-cover rounded shadow">
@@ -147,20 +147,45 @@
                                 </div>
                             </div>
                         </td>
-                        <td class="py-3 px-4 text-[#d1d5db]">
-                            {{ item.volumes | length }} Volumes
+                        <td class="py-3 px-4 text-[#d1d5db] align-middle">
+                            <button @click="expanded = !expanded" 
+                                    hx-get="/dashboard/print/manga/{{ item.id }}/volumes" 
+                                    hx-target="#manga-drawer-{{ item.id }}" 
+                                    hx-trigger="click once"
+                                    class="inline-flex items-center gap-1.5 px-2.5 py-1 bg-[#1e1e24] hover:bg-[#3f3f46] border border-[#3f3f46] rounded text-xs font-medium text-gray-200 transition-colors">
+                                <span>📚 {{ item.volumes | length }} Volumes</span>
+                                <svg class="w-3.5 h-3.5 transition-transform duration-200" :class="{'rotate-180': expanded}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                            </button>
                         </td>
-                        <td class="py-3 px-4">
+                        <td class="py-3 px-4 align-middle">
                             <span class="px-2.5 py-1 rounded-full text-xs font-semibold uppercase tracking-wider
                                 {% if item.status.value == 'COMPLETED' or item.status.value == 'DOWNLOADED' %}bg-emerald-950 text-emerald-400 border border-emerald-800
                                 {% elif item.status.value == 'SEARCHING' %}bg-yellow-950 text-yellow-400 border border-yellow-800 animate-pulse
                                 {% elif item.status.value == 'IGNORED' %}bg-slate-900 text-slate-500 border border-slate-700
                                 {% else %}bg-[#1e1e24] text-[#a1a1aa] border border-[#3f3f46]{% endif %}">
-                                {{ item.status.value }}
+                                {% if item.status.value == 'SEARCHING' %}WANTED{% else %}{{ item.status.value }}{% endif %}
                             </span>
                         </td>
-                        <td class="py-3 px-4 text-right">
-                            <a href="/dashboard/print/manual-search?query={{ item.title }}&media_type=manga" class="text-[#d40060] hover:text-white text-xs font-semibold">Search</a>
+                        <td class="py-3 px-4 text-right align-middle">
+                            <div class="flex items-center justify-end gap-2">
+                                <a href="/dashboard/print/manual-search?query={{ item.title }}&media_type=manga" class="px-2.5 py-1 bg-[#1e1e24] hover:bg-[#3f3f46] border border-[#3f3f46] text-[#d40060] hover:text-white text-xs font-semibold rounded transition-colors">
+                                    Search 🔍
+                                </a>
+                                <button hx-delete="/api/print/manga/{{ item.id }}"
+                                        hx-confirm="Are you sure you want to remove {{ item.title }} and all its tracked volumes?"
+                                        hx-target="closest tr"
+                                        hx-swap="outerHTML"
+                                        title="Delete Manga"
+                                        class="p-1 text-[#a1a1aa] hover:text-rose-400 transition-colors">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                    <!-- Expandable Volume Drawer Container -->
+                    <tr id="manga-drawer-row-{{ item.id }}" class="bg-[#18181d]">
+                        <td colspan="5" class="p-0 border-0">
+                            <div id="manga-drawer-{{ item.id }}"></div>
                         </td>
                     </tr>
                     {% else %}
@@ -199,23 +224,40 @@
                 <tbody class="divide-y divide-[#3f3f46] text-sm">
                     {% for item in books %}
                     <tr class="hover:bg-[#2a2a32] transition-colors" x-show="search === '' || '{{ item.title | lower }}'.includes(search.toLowerCase()) || '{{ (item.author or '') | lower }}'.includes(search.toLowerCase())">
-                        <td class="py-3 px-4 text-center text-[#a1a1aa]">{{ loop.index }}</td>
-                        <td class="py-3 px-4">
+                        <td class="py-3 px-4 text-center text-[#a1a1aa] align-middle">{{ loop.index }}</td>
+                        <td class="py-3 px-4 align-middle">
                             <span class="font-semibold text-white block">{{ item.title }}</span>
                             <span class="text-xs text-[#a1a1aa]">By {{ item.author or 'Unknown' }}</span>
                         </td>
-                        <td class="py-3 px-4 text-[#a1a1aa] font-mono text-xs">{{ item.isbn or '-' }}</td>
-                        <td class="py-3 px-4">
-                            <span class="px-2.5 py-1 rounded-full text-xs font-semibold uppercase tracking-wider
-                                {% if item.status.value == 'COMPLETED' or item.status.value == 'DOWNLOADED' %}bg-emerald-950 text-emerald-400 border border-emerald-800
-                                {% elif item.status.value == 'SEARCHING' %}bg-yellow-950 text-yellow-400 border border-yellow-800 animate-pulse
-                                {% elif item.status.value == 'IGNORED' %}bg-slate-900 text-slate-500 border border-slate-700
-                                {% else %}bg-[#1e1e24] text-[#a1a1aa] border border-[#3f3f46]{% endif %}">
-                                {{ item.status.value }}
-                            </span>
+                        <td class="py-3 px-4 text-[#a1a1aa] font-mono text-xs align-middle">{{ item.isbn or '-' }}</td>
+                        <td class="py-3 px-4 align-middle">
+                            <!-- Interactive Status Dropdown -->
+                            <form hx-post="/api/print/book/{{ item.id }}/status" hx-trigger="change">
+                                <select name="status" class="bg-[#1e1e24] border border-[#3f3f46] rounded px-2.5 py-1 text-xs font-semibold focus:outline-none focus:border-[#d40060] cursor-pointer
+                                    {% if item.status.value == 'COMPLETED' or item.status.value == 'DOWNLOADED' %}text-emerald-400
+                                    {% elif item.status.value == 'SEARCHING' %}text-yellow-400
+                                    {% elif item.status.value == 'IGNORED' %}text-slate-400
+                                    {% else %}text-gray-300{% endif %}">
+                                    <option value="searching" {% if item.status.value == 'SEARCHING' or item.status.value == 'PENDING' %}selected{% endif %}>WANTED</option>
+                                    <option value="completed" {% if item.status.value == 'COMPLETED' or item.status.value == 'DOWNLOADED' %}selected{% endif %}>COMPLETED</option>
+                                    <option value="ignored" {% if item.status.value == 'IGNORED' %}selected{% endif %}>IGNORED</option>
+                                </select>
+                            </form>
                         </td>
-                        <td class="py-3 px-4 text-right">
-                            <a href="/dashboard/print/manual-search?query={{ item.title }}&media_type=book" class="text-[#d40060] hover:text-white text-xs font-semibold">Search</a>
+                        <td class="py-3 px-4 text-right align-middle">
+                            <div class="flex items-center justify-end gap-2">
+                                <a href="/dashboard/print/manual-search?query={{ item.title }}&media_type=book" class="px-2.5 py-1 bg-[#1e1e24] hover:bg-[#3f3f46] border border-[#3f3f46] text-[#d40060] hover:text-white text-xs font-semibold rounded transition-colors">
+                                    Search 🔍
+                                </a>
+                                <button hx-delete="/api/print/book/{{ item.id }}"
+                                        hx-confirm="Are you sure you want to remove {{ item.title }}?"
+                                        hx-target="closest tr"
+                                        hx-swap="outerHTML"
+                                        title="Delete Book"
+                                        class="p-1 text-[#a1a1aa] hover:text-rose-400 transition-colors">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                                </button>
+                            </div>
                         </td>
                     </tr>
                     {% else %}
@@ -238,59 +280,15 @@
         </div>
     </div>
 
-    <!-- Magazines Tab Content -->
-    <div x-show="tab === 'magazines'" style="display: none;">
-        <div class="overflow-x-auto">
-            <table class="w-full text-left border-collapse">
-                <thead>
-                    <tr class="border-b border-[#3f3f46] bg-[#1e1e24] text-xs font-semibold text-[#a1a1aa] uppercase tracking-wider">
-                        <th class="py-3 px-4 w-12 text-center">#</th>
-                        <th class="py-3 px-4">Title & Publisher</th>
-                        <th class="py-3 px-4">Issues</th>
-                        <th class="py-3 px-4">Status</th>
-                        <th class="py-3 px-4 text-right">Actions</th>
-                    </tr>
-                </thead>
-                <tbody class="divide-y divide-[#3f3f46] text-sm">
-                    {% for item in magazines %}
-                    <tr class="hover:bg-[#2a2a32] transition-colors" x-show="search === '' || '{{ item.title | lower }}'.includes(search.toLowerCase())">
-                        <td class="py-3 px-4 text-center text-[#a1a1aa]">{{ loop.index }}</td>
-                        <td class="py-3 px-4">
-                            <span class="font-semibold text-white block">{{ item.title }}</span>
-                            <span class="text-xs text-[#a1a1aa]">{{ item.publisher or 'Independent' }}</span>
-                        </td>
-                        <td class="py-3 px-4 text-[#d1d5db]">{{ item.issues | length }} Issues</td>
-                        <td class="py-3 px-4">
-                            <span class="px-2.5 py-1 rounded-full text-xs font-semibold uppercase tracking-wider
-                                {% if item.status.value == 'COMPLETED' or item.status.value == 'DOWNLOADED' %}bg-emerald-950 text-emerald-400 border border-emerald-800
-                                {% elif item.status.value == 'SEARCHING' %}bg-yellow-950 text-yellow-400 border border-yellow-800 animate-pulse
-                                {% elif item.status.value == 'IGNORED' %}bg-slate-900 text-slate-500 border border-slate-700
-                                {% else %}bg-[#1e1e24] text-[#a1a1aa] border border-[#3f3f46]{% endif %}">
-                                {{ item.status.value }}
-                            </span>
-                        </td>
-                        <td class="py-3 px-4 text-right">
-                            <a href="/dashboard/print/manual-search?query={{ item.title }}&media_type=magazine" class="text-[#d40060] hover:text-white text-xs font-semibold">Search</a>
-                        </td>
-                    </tr>
-                    {% else %}
-                    <tr>
-                        <td colspan="5" class="py-12 text-center text-[#a1a1aa]">
-                            <svg class="mx-auto h-12 w-12 text-[#52525b] mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z"></path>
-                            </svg>
-                            <h3 class="text-base font-semibold text-gray-300 mb-1">No Magazine Subscriptions</h3>
-                            <p class="text-sm text-[#a1a1aa] mb-4">Track magazine titles to automatically download new periodic issues.</p>
-                            <button hx-get="/print/add/modal" hx-target="#modal-container" class="bg-[#d40060] hover:bg-[#a3004a] text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors inline-flex items-center gap-2">
-                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
-                                Add Magazine
-                            </button>
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+    <!-- Magazines Tab Content (Coming Soon Placeholder) -->
+    <div x-show="tab === 'magazines'" style="display: none;" class="p-12 text-center">
+        <div class="inline-flex p-4 rounded-full bg-[#1e1e24] border border-[#3f3f46] text-[#d40060] mb-4 shadow-lg">
+            <svg class="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z"></path></svg>
         </div>
+        <h3 class="text-xl font-bold text-white mb-2">Magazine Subscriptions Coming Soon</h3>
+        <p class="text-sm text-[#a1a1aa] max-w-md mx-auto mb-6">
+            Periodical tracking and automated magazine issue downloads are scheduled for an upcoming release. Manga and Books are currently fully active.
+        </p>
     </div>
 
 </div>

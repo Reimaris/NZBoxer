@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from fastapi import BackgroundTasks, FastAPI, Form, Request, Response
+from fastapi import BackgroundTasks, FastAPI, Form, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -51,7 +51,11 @@ try:
 except PermissionError:
     file_handler = None
     import sys
-    print(f"WARNING: Permission denied creating log file {log_file}. Falling back to console logging.", file=sys.stderr)
+
+    print(
+        f"WARNING: Permission denied creating log file {log_file}. Falling back to console logging.",
+        file=sys.stderr,
+    )
 
 root_logger = logging.getLogger()
 root_logger.setLevel(getattr(logging, settings.log_level.upper(), logging.INFO))
@@ -140,6 +144,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                 settings.scan_interval_multiplier,
             )
             from app.core.automation import run_print_automation_cycle
+
             await run_automation_cycle()
             await run_print_automation_cycle()
         else:
@@ -535,7 +540,13 @@ async def manual_search_print(
 
     base_title = query.strip()
     vol_clean = (
-        volume.strip().lower().replace("volume", "").replace("vol", "").replace("v", "").replace("#", "").strip()
+        volume.strip()
+        .lower()
+        .replace("volume", "")
+        .replace("vol", "")
+        .replace("v", "")
+        .replace("#", "")
+        .strip()
         if volume.strip()
         else ""
     )
@@ -560,7 +571,11 @@ async def manual_search_print(
         search_queries.append(base_title)
 
     # Categories to query: primary + generic fallback
-    cat_ids = [7030, 7000] if media_type == "manga" else ([7010, 7000] if media_type == "magazine" else [7020, 7000])
+    cat_ids = (
+        [7030, 7000]
+        if media_type == "manga"
+        else ([7010, 7000] if media_type == "magazine" else [7020, 7000])
+    )
 
     PRINT_CATEGORY_NAMES: dict[int, str] = {
         7000: "EBooks (General)",
@@ -619,23 +634,29 @@ async def manual_search_print(
         if format_filter != "any" and detected_fmt != format_filter.lower():
             continue
 
-        scoring_res = score_print_release(parsed_format=detected_fmt, media_type=media_type)
+        scoring_res = score_print_release(
+            parsed_format=detected_fmt, media_type=media_type
+        )
         score_val = scoring_res.get("score", 0)
 
         # Priority boost for exact volume single releases vs packs
         if vol_clean:
             score_val += 500 if is_exact_vol else 200
 
-        valid_results.append({
-            "title": title,
-            "link": item.get("link", ""),
-            "size": item.get("size", 0),
-            "pub_date": item.get("pub_date", ""),
-            "format": detected_fmt,
-            "score": score_val,
-            "category_id": item_cat_id,
-            "category_name": PRINT_CATEGORY_NAMES.get(item_cat_id, f"Cat {item_cat_id}"),
-        })
+        valid_results.append(
+            {
+                "title": title,
+                "link": item.get("link", ""),
+                "size": item.get("size", 0),
+                "pub_date": item.get("pub_date", ""),
+                "format": detected_fmt,
+                "score": score_val,
+                "category_id": item_cat_id,
+                "category_name": PRINT_CATEGORY_NAMES.get(
+                    item_cat_id, f"Cat {item_cat_id}"
+                ),
+            }
+        )
 
     valid_results.sort(key=lambda x: x["score"], reverse=True)
 
@@ -747,7 +768,9 @@ async def retry_item(item_id: int):
             rd = item.release_date
             if rd and rd.tzinfo is None:
                 rd = rd.replace(tzinfo=timezone.utc)
-            if (rd and rd > datetime.now(timezone.utc)) or (not rd and item.year and item.year > datetime.now().year):
+            if (rd and rd > datetime.now(timezone.utc)) or (
+                not rd and item.year and item.year > datetime.now().year
+            ):
                 item.status = MediaStatus.FUTURE
             else:
                 item.status = MediaStatus.SEARCHING
@@ -761,7 +784,11 @@ async def retry_item(item_id: int):
                 if item.status == MediaStatus.FUTURE:
                     season.status = SeasonStatus.FUTURE
                 else:
-                    season.status = SeasonStatus.SEARCHING if season.monitored else SeasonStatus.PENDING
+                    season.status = (
+                        SeasonStatus.SEARCHING
+                        if season.monitored
+                        else SeasonStatus.PENDING
+                    )
                 season.fail_count = 0
                 season.last_error = None
 
@@ -809,7 +836,11 @@ async def confirm_grab_item(item_id: int):
         if not torbox_result or (
             not torbox_result.get("hash") and not torbox_result.get("id")
         ):
-            err_msg = torbox_result.get("error") if isinstance(torbox_result, dict) and torbox_result.get("error") else "Error sending to TorBox."
+            err_msg = (
+                torbox_result.get("error")
+                if isinstance(torbox_result, dict) and torbox_result.get("error")
+                else "Error sending to TorBox."
+            )
             return HTMLResponse(
                 content=f'<div class="text-red-500">{err_msg}</div>',
                 status_code=500,
@@ -862,7 +893,9 @@ async def manual_push_to_torbox(magnet: str = Form(...)):
                 content='<span class="text-emerald-400 font-medium text-xs px-2 py-1.5 bg-emerald-500/10 border border-emerald-500/20 rounded-md">Sent to TorBox!</span>'
             )
         else:
-            err_msg = result.get("error", "Failed to send") if result else "Failed to send"
+            err_msg = (
+                result.get("error", "Failed to send") if result else "Failed to send"
+            )
             # Return 400 so the frontend can display the error without triggering a generic 500
             return HTMLResponse(
                 content=f'<span class="text-red-400 font-medium text-xs px-2 py-1.5 bg-red-500/10 border border-red-500/20 rounded-md" title="{err_msg}">{err_msg}</span>',
@@ -983,7 +1016,6 @@ async def get_status():
 # ---------------------------------------------------------------------------
 
 
-
 @app.get("/dashboard/print", response_class=HTMLResponse)
 async def print_dashboard(request: Request):
     """Main dashboard displaying Print Media (Manga, Books, Magazines)."""
@@ -994,9 +1026,17 @@ async def print_dashboard(request: Request):
     from app.db.models import BookItem, MagazineSubscription, MangaItem, MediaStatus
 
     async with async_session_factory() as session:
-        manga_stmt = select(MangaItem).options(selectinload(MangaItem.volumes)).order_by(MangaItem.title)
+        manga_stmt = (
+            select(MangaItem)
+            .options(selectinload(MangaItem.volumes))
+            .order_by(MangaItem.title)
+        )
         book_stmt = select(BookItem).order_by(BookItem.title)
-        mag_stmt = select(MagazineSubscription).options(selectinload(MagazineSubscription.issues)).order_by(MagazineSubscription.title)
+        mag_stmt = (
+            select(MagazineSubscription)
+            .options(selectinload(MagazineSubscription.issues))
+            .order_by(MagazineSubscription.title)
+        )
 
         mangas = (await session.execute(manga_stmt)).scalars().all()
         books = (await session.execute(book_stmt)).scalars().all()
@@ -1004,20 +1044,44 @@ async def print_dashboard(request: Request):
 
         manga_stats = {
             "total": len(mangas),
-            "wanted": sum(1 for m in mangas if m.status in [MediaStatus.PENDING, MediaStatus.SEARCHING]),
-            "completed": sum(1 for m in mangas if m.status in [MediaStatus.DOWNLOADED, MediaStatus.COMPLETED]),
+            "wanted": sum(
+                1
+                for m in mangas
+                if m.status in [MediaStatus.PENDING, MediaStatus.SEARCHING]
+            ),
+            "completed": sum(
+                1
+                for m in mangas
+                if m.status in [MediaStatus.DOWNLOADED, MediaStatus.COMPLETED]
+            ),
             "ignored": sum(1 for m in mangas if m.status == MediaStatus.IGNORED),
         }
         book_stats = {
             "total": len(books),
-            "wanted": sum(1 for b in books if b.status in [MediaStatus.PENDING, MediaStatus.SEARCHING]),
-            "completed": sum(1 for b in books if b.status in [MediaStatus.DOWNLOADED, MediaStatus.COMPLETED]),
+            "wanted": sum(
+                1
+                for b in books
+                if b.status in [MediaStatus.PENDING, MediaStatus.SEARCHING]
+            ),
+            "completed": sum(
+                1
+                for b in books
+                if b.status in [MediaStatus.DOWNLOADED, MediaStatus.COMPLETED]
+            ),
             "ignored": sum(1 for b in books if b.status == MediaStatus.IGNORED),
         }
         magazine_stats = {
             "total": len(magazines),
-            "wanted": sum(1 for m in magazines if m.status in [MediaStatus.PENDING, MediaStatus.SEARCHING]),
-            "completed": sum(1 for m in magazines if m.status in [MediaStatus.DOWNLOADED, MediaStatus.COMPLETED]),
+            "wanted": sum(
+                1
+                for m in magazines
+                if m.status in [MediaStatus.PENDING, MediaStatus.SEARCHING]
+            ),
+            "completed": sum(
+                1
+                for m in magazines
+                if m.status in [MediaStatus.DOWNLOADED, MediaStatus.COMPLETED]
+            ),
             "ignored": sum(1 for m in magazines if m.status == MediaStatus.IGNORED),
         }
 
@@ -1078,21 +1142,70 @@ async def add_print_media(
 ):
     """Add a new Manga, Book, or Magazine subscription to database."""
     from app.db.database import async_session_factory
-    from app.db.models import BookItem, MagazineSubscription, MangaItem, MediaStatus
+    from app.db.models import (
+        BookItem,
+        EpisodeStatus,
+        MagazineSubscription,
+        MangaItem,
+        MangaVolume,
+        MediaStatus,
+    )
+    from app.services.anilist import get_manga_details, search_manga
+
+    clean_title = title.strip()
+    clean_anilist = anilist_id.strip() if anilist_id else ""
 
     async with async_session_factory() as session:
         if media_type == "manga":
             year_val = int(start_year) if start_year.isdigit() else None
+            cover_img = None
+            desc = None
+            total_volumes = None
+
+            # Attempt metadata fetch from AniList
+            if clean_anilist and clean_anilist.isdigit():
+                anilist_data = await get_manga_details(int(clean_anilist))
+                if anilist_data:
+                    cover_img = anilist_data.get("coverImage", {}).get("large")
+                    desc = anilist_data.get("description")
+                    total_volumes = anilist_data.get("volumes")
+                    if not year_val and anilist_data.get("startDate", {}).get("year"):
+                        year_val = anilist_data.get("startDate", {}).get("year")
+            else:
+                search_results = await search_manga(clean_title)
+                if search_results:
+                    top_match = search_results[0]
+                    clean_anilist = str(top_match.get("id", ""))
+                    cover_img = top_match.get("coverImage", {}).get("large")
+                    desc = top_match.get("description")
+                    total_volumes = top_match.get("volumes")
+                    if not year_val and top_match.get("startDate", {}).get("year"):
+                        year_val = top_match.get("startDate", {}).get("year")
+
             manga = MangaItem(
-                title=title.strip(),
-                anilist_id=anilist_id.strip() if anilist_id else None,
+                title=clean_title,
+                anilist_id=clean_anilist if clean_anilist else None,
                 start_year=year_val,
+                cover_image=cover_img,
+                description=desc,
                 status=MediaStatus.SEARCHING,
             )
             session.add(manga)
+            await session.flush()
+
+            # Initialize volume rows in unmonitored (IGNORED) state
+            num_vols = total_volumes if (total_volumes and total_volumes > 0) else 1
+            for v_num in range(1, num_vols + 1):
+                vol = MangaVolume(
+                    manga_id=manga.id,
+                    volume_number=v_num,
+                    status=EpisodeStatus.IGNORED,
+                )
+                session.add(vol)
+
         elif media_type == "book":
             book = BookItem(
-                title=title.strip(),
+                title=clean_title,
                 author=author.strip() if author else None,
                 isbn=isbn.strip() if isbn else None,
                 status=MediaStatus.SEARCHING,
@@ -1100,15 +1213,224 @@ async def add_print_media(
             session.add(book)
         elif media_type == "magazine":
             magazine = MagazineSubscription(
-                title=title.strip(),
+                title=clean_title,
                 publisher=publisher.strip() if publisher else None,
-                status=MediaStatus.SEARCHING,
+                status=MediaStatus.PENDING,
             )
             session.add(magazine)
 
         await session.commit()
 
     return Response(headers={"HX-Redirect": "/dashboard/print"})
+
+
+@app.get("/dashboard/print/manga/{manga_id}/volumes", response_class=HTMLResponse)
+async def get_manga_volumes_partial(request: Request, manga_id: int):
+    """Render the volume management drawer partial for a specific manga."""
+    from sqlalchemy import select
+    from sqlalchemy.orm import selectinload
+
+    from app.db.database import async_session_factory
+    from app.db.models import MangaItem
+
+    async with async_session_factory() as session:
+        stmt = (
+            select(MangaItem)
+            .options(selectinload(MangaItem.volumes))
+            .where(MangaItem.id == manga_id)
+        )
+        manga = (await session.execute(stmt)).scalar_one_or_none()
+        if not manga:
+            raise HTTPException(status_code=404, detail="Manga not found")
+
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/manga_volumes.html",
+        context={"manga": manga},
+    )
+
+
+@app.post("/api/print/manga/{manga_id}/monitor", response_class=HTMLResponse)
+async def set_manga_monitoring(
+    request: Request,
+    manga_id: int,
+    mode: str = "all",
+    start_volume: int = Form(1),
+):
+    """Bulk configure monitoring status for manga volumes ('all', 'from_volume', 'none')."""
+    from sqlalchemy import select
+    from sqlalchemy.orm import selectinload
+
+    from app.db.database import async_session_factory
+    from app.db.models import EpisodeStatus, MangaItem
+
+    # Support query parameter fallback if sent via GET/button query string
+    query_mode = request.query_params.get("mode")
+    if query_mode:
+        mode = query_mode
+
+    async with async_session_factory() as session:
+        stmt = (
+            select(MangaItem)
+            .options(selectinload(MangaItem.volumes))
+            .where(MangaItem.id == manga_id)
+        )
+        manga = (await session.execute(stmt)).scalar_one_or_none()
+        if not manga:
+            raise HTTPException(status_code=404, detail="Manga not found")
+
+        for vol in manga.volumes:
+            if mode == "all":
+                vol.status = EpisodeStatus.SEARCHING
+            elif mode == "none":
+                vol.status = EpisodeStatus.IGNORED
+            elif mode == "from_volume":
+                if vol.volume_number >= start_volume:
+                    vol.status = EpisodeStatus.SEARCHING
+                else:
+                    vol.status = EpisodeStatus.IGNORED
+
+        await session.commit()
+        await session.refresh(manga)
+
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/manga_volumes.html",
+        context={"manga": manga},
+    )
+
+
+@app.post(
+    "/api/print/manga/volume/{volume_id}/toggle-status", response_class=HTMLResponse
+)
+async def toggle_manga_volume_status(request: Request, volume_id: int):
+    """Toggle an individual manga volume between SEARCHING (Wanted) and IGNORED."""
+    from sqlalchemy import select
+    from sqlalchemy.orm import selectinload
+
+    from app.db.database import async_session_factory
+    from app.db.models import EpisodeStatus, MangaItem, MangaVolume
+
+    async with async_session_factory() as session:
+        vol_stmt = select(MangaVolume).where(MangaVolume.id == volume_id)
+        volume = (await session.execute(vol_stmt)).scalar_one_or_none()
+        if not volume:
+            raise HTTPException(status_code=404, detail="Volume not found")
+
+        if volume.status in [EpisodeStatus.SEARCHING, EpisodeStatus.PENDING]:
+            volume.status = EpisodeStatus.IGNORED
+        else:
+            volume.status = EpisodeStatus.SEARCHING
+
+        manga_id = volume.manga_id
+        await session.commit()
+
+        # Reload manga with all volumes
+        manga_stmt = (
+            select(MangaItem)
+            .options(selectinload(MangaItem.volumes))
+            .where(MangaItem.id == manga_id)
+        )
+        manga = (await session.execute(manga_stmt)).scalar_one_or_none()
+
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/manga_volumes.html",
+        context={"manga": manga},
+    )
+
+
+@app.post("/api/print/manga/{manga_id}/add-volume", response_class=HTMLResponse)
+async def add_manga_volume(request: Request, manga_id: int):
+    """Add a new volume to the manga series."""
+    from sqlalchemy import select
+    from sqlalchemy.orm import selectinload
+
+    from app.db.database import async_session_factory
+    from app.db.models import EpisodeStatus, MangaItem, MangaVolume
+
+    async with async_session_factory() as session:
+        stmt = (
+            select(MangaItem)
+            .options(selectinload(MangaItem.volumes))
+            .where(MangaItem.id == manga_id)
+        )
+        manga = (await session.execute(stmt)).scalar_one_or_none()
+        if not manga:
+            raise HTTPException(status_code=404, detail="Manga not found")
+
+        max_vol = max((v.volume_number for v in manga.volumes), default=0)
+        new_vol = MangaVolume(
+            manga_id=manga.id,
+            volume_number=max_vol + 1,
+            status=EpisodeStatus.IGNORED,
+        )
+        session.add(new_vol)
+        await session.commit()
+        await session.refresh(manga)
+
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/manga_volumes.html",
+        context={"manga": manga},
+    )
+
+
+@app.delete("/api/print/manga/{manga_id}")
+async def delete_manga(manga_id: int):
+    """Delete a tracked Manga series and all its volumes."""
+    from sqlalchemy import delete
+
+    from app.db.database import async_session_factory
+    from app.db.models import MangaItem, MangaVolume
+
+    async with async_session_factory() as session:
+        vols_stmt = delete(MangaVolume).where(MangaVolume.manga_id == manga_id)
+        await session.execute(vols_stmt)
+        stmt = delete(MangaItem).where(MangaItem.id == manga_id)
+        await session.execute(stmt)
+        await session.commit()
+
+    return Response(content="", status_code=200)
+
+
+@app.post("/api/print/book/{book_id}/status")
+async def update_book_status(book_id: int, status: str = Form(...)):
+    """Update status of a book (e.g. searching, completed, ignored)."""
+    from sqlalchemy import select
+
+    from app.db.database import async_session_factory
+    from app.db.models import BookItem, MediaStatus
+
+    status_enum = MediaStatus(status.lower())
+
+    async with async_session_factory() as session:
+        stmt = select(BookItem).where(BookItem.id == book_id)
+        book = (await session.execute(stmt)).scalar_one_or_none()
+        if not book:
+            raise HTTPException(status_code=404, detail="Book not found")
+
+        book.status = status_enum
+        await session.commit()
+
+    return Response(headers={"HX-Redirect": "/dashboard/print"})
+
+
+@app.delete("/api/print/book/{book_id}")
+async def delete_book(book_id: int):
+    """Delete a tracked book."""
+    from sqlalchemy import delete
+
+    from app.db.database import async_session_factory
+    from app.db.models import BookItem
+
+    async with async_session_factory() as session:
+        stmt = delete(BookItem).where(BookItem.id == book_id)
+        await session.execute(stmt)
+        await session.commit()
+
+    return Response(content="", status_code=200)
+
 
 @app.get("/settings", response_class=HTMLResponse)
 async def get_settings_page(request: Request):

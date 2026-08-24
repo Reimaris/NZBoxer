@@ -290,10 +290,18 @@ async def fetch_nzb_bytes(guid_or_url: str) -> tuple[bytes, str]:
         params = None
         # If url doesn't have apikey, append it if it's treasure-maps
         if "treasure-maps.com" in url and "apikey=" not in url:
-            url += f"&apikey={settings.treasure_maps_api_key}" if "?" in url else f"?apikey={settings.treasure_maps_api_key}"
+            url += (
+                f"&apikey={settings.treasure_maps_api_key}"
+                if "?" in url
+                else f"?apikey={settings.treasure_maps_api_key}"
+            )
     else:
         url = "https://treasure-maps.com/api"
-        params = {"t": "get", "id": guid_or_url, "apikey": settings.treasure_maps_api_key}
+        params = {
+            "t": "get",
+            "id": guid_or_url,
+            "apikey": settings.treasure_maps_api_key,
+        }
 
     await _limiter.wait()
     async with httpx.AsyncClient(
@@ -305,14 +313,18 @@ async def fetch_nzb_bytes(guid_or_url: str) -> tuple[bytes, str]:
 
             content = response.content
             if not content or b"<nzb" not in content.lower():
-                logger.error("Indexer returned response that does not appear to be an NZB XML document")
-                raise IndexerError("Received response from indexer is not a valid NZB XML document")
+                logger.error(
+                    "Indexer returned response that does not appear to be an NZB XML document"
+                )
+                raise IndexerError(
+                    "Received response from indexer is not a valid NZB XML document"
+                )
 
             # Extract filename from Content-Disposition header if available
             filename = f"{guid_or_url if not guid_or_url.startswith('http') else 'download'}.nzb"
             cd = response.headers.get("content-disposition", "")
             if "filename=" in cd:
-                fname = cd.split("filename=")[-1].strip('";\' ')
+                fname = cd.split("filename=")[-1].strip("\";' ")
                 if fname:
                     filename = fname
 
@@ -328,4 +340,3 @@ async def get_download_url(guid: str) -> str:
     params = {"t": "get", "id": guid, "apikey": settings.treasure_maps_api_key}
     request = httpx.Request("GET", url, params=params)
     return str(request.url)
-

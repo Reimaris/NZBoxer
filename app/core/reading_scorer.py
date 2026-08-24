@@ -76,7 +76,15 @@ def match_volume_or_issue(title: str, target_vol: int | str) -> tuple[bool, bool
       - is_exact_single: True if it is specifically the single volume release (not a multi-volume pack).
     """
     if isinstance(target_vol, str):
-        clean_v = target_vol.strip().lower().replace("volume", "").replace("vol", "").replace("v", "").replace("#", "").strip()
+        clean_v = (
+            target_vol.strip()
+            .lower()
+            .replace("volume", "")
+            .replace("vol", "")
+            .replace("v", "")
+            .replace("#", "")
+            .strip()
+        )
         if not clean_v.isdigit():
             return target_vol.strip().lower() in title.lower(), True
         v_int = int(clean_v)

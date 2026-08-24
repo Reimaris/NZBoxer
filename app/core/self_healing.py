@@ -326,7 +326,9 @@ async def run_download_check_cycle() -> None:
                     target.status = final_status
                     changed += 1
                 else:
-                    logger.info("    ⏳ %s → still downloading (TorBox: %s)", title, status)
+                    logger.info(
+                        "    ⏳ %s → still downloading (TorBox: %s)", title, status
+                    )
                 return False
 
             for movie in movies:

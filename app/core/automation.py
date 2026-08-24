@@ -25,7 +25,9 @@ from app.core.self_healing import run_download_check_cycle, run_self_healing_cyc
 from app.db.database import async_session_factory
 from app.db.grab_tracker import can_grab_today, increment_today_grab_count
 from app.db.models import (
+    BookItem,
     DownloadHistory,
+    MangaItem,
     MediaItem,
     MediaStatus,
     MediaType,
@@ -52,7 +54,8 @@ async def sync_all_providers() -> None:
                 if provider.type == "simkl":
                     if not provider.client_id or not provider.access_token:
                         logger.warning(
-                            "Provider %s lacks Simkl credentials, skipping.", provider.name
+                            "Provider %s lacks Simkl credentials, skipping.",
+                            provider.name,
                         )
                         continue
 
@@ -290,7 +293,9 @@ async def _sync_items(
                         item.release_date = show_release_date
 
                     # Determine status
-                    if item.release_date and item.release_date > datetime.now(timezone.utc):
+                    if item.release_date and item.release_date > datetime.now(
+                        timezone.utc
+                    ):
                         item.status = MediaStatus.FUTURE
                     elif item.year and item.year > datetime.now().year:
                         item.status = MediaStatus.FUTURE
@@ -367,7 +372,11 @@ async def _sync_items(
             item.provider_id = provider_id
 
             # Sync status based on release date / year for existing items
-            if item.status in (MediaStatus.PENDING, MediaStatus.SEARCHING, MediaStatus.FUTURE):
+            if item.status in (
+                MediaStatus.PENDING,
+                MediaStatus.SEARCHING,
+                MediaStatus.FUTURE,
+            ):
                 rd = item.release_date
                 if rd and rd.tzinfo is None:
                     rd = rd.replace(tzinfo=timezone.utc)
@@ -469,7 +478,13 @@ async def run_automation_cycle(force: bool = False) -> None:
                 select(Season)
                 .where(
                     Season.monitored == True,
-                    Season.status.in_([SeasonStatus.SEARCHING, SeasonStatus.PENDING, SeasonStatus.FUTURE]),
+                    Season.status.in_(
+                        [
+                            SeasonStatus.SEARCHING,
+                            SeasonStatus.PENDING,
+                            SeasonStatus.FUTURE,
+                        ]
+                    ),
                 )
                 .options(selectinload(Season.media_item))
             )
@@ -783,9 +798,7 @@ async def _process_season(session: AsyncSession, season: Season) -> None:
     missing_episodes = episodes_res.scalars().all()
 
     if not missing_episodes:
-        logger.info(
-            "    ✅ No pending episodes for S%02d.", season.season_number
-        )
+        logger.info("    ✅ No pending episodes for S%02d.", season.season_number)
         return
 
     logger.info("    📺 Suche %d ausstehende Episoden.", len(missing_episodes))
@@ -961,15 +974,30 @@ async def _evaluate_and_download(
             if movie:
                 target.status = MediaStatus.COMPLETED
                 from sqlalchemy import delete
-                await session.execute(delete(BlacklistedRelease).where(BlacklistedRelease.media_item_id == movie.id))
+
+                await session.execute(
+                    delete(BlacklistedRelease).where(
+                        BlacklistedRelease.media_item_id == movie.id
+                    )
+                )
             elif season:
                 target.status = SeasonStatus.COMPLETED
                 from sqlalchemy import delete
-                await session.execute(delete(BlacklistedRelease).where(BlacklistedRelease.media_item_id == season.media_item_id))
+
+                await session.execute(
+                    delete(BlacklistedRelease).where(
+                        BlacklistedRelease.media_item_id == season.media_item_id
+                    )
+                )
             elif episode:
                 target.status = EpisodeStatus.COMPLETED
                 from sqlalchemy import delete
-                await session.execute(delete(BlacklistedRelease).where(BlacklistedRelease.media_item_id == episode.season.media_item_id))
+
+                await session.execute(
+                    delete(BlacklistedRelease).where(
+                        BlacklistedRelease.media_item_id == episode.season.media_item_id
+                    )
+                )
             target.last_error = "No indexer results found, keeping existing release (Status: COMPLETED)."
             logger.info("    ❌ %s", target.last_error)
         else:
@@ -977,7 +1005,10 @@ async def _evaluate_and_download(
             target.empty_search_count += 1
 
             target.last_error = f"Empty search count: {target.empty_search_count}"
-            logger.info("    ❌ No search results found (Empty Search Count: %d)", target.empty_search_count)
+            logger.info(
+                "    ❌ No search results found (Empty Search Count: %d)",
+                target.empty_search_count,
+            )
 
         await session.commit()
         return False
@@ -1140,22 +1171,42 @@ async def _evaluate_and_download(
             if movie:
                 target.status = MediaStatus.COMPLETED
                 from sqlalchemy import delete
-                await session.execute(delete(BlacklistedRelease).where(BlacklistedRelease.media_item_id == movie.id))
+
+                await session.execute(
+                    delete(BlacklistedRelease).where(
+                        BlacklistedRelease.media_item_id == movie.id
+                    )
+                )
             elif season:
                 target.status = SeasonStatus.COMPLETED
                 from sqlalchemy import delete
-                await session.execute(delete(BlacklistedRelease).where(BlacklistedRelease.media_item_id == season.media_item_id))
+
+                await session.execute(
+                    delete(BlacklistedRelease).where(
+                        BlacklistedRelease.media_item_id == season.media_item_id
+                    )
+                )
             elif episode:
                 target.status = EpisodeStatus.COMPLETED
                 from sqlalchemy import delete
-                await session.execute(delete(BlacklistedRelease).where(BlacklistedRelease.media_item_id == episode.season.media_item_id))
-            target.last_error = "Search yielded no hits, keeping existing release (Status: COMPLETED)."
+
+                await session.execute(
+                    delete(BlacklistedRelease).where(
+                        BlacklistedRelease.media_item_id == episode.season.media_item_id
+                    )
+                )
+            target.last_error = (
+                "Search yielded no hits, keeping existing release (Status: COMPLETED)."
+            )
             logger.info("    ❌ %s", target.last_error)
         else:
             target.fail_count += 1
             target.empty_search_count += 1
             target.last_error = f"Empty search count: {target.empty_search_count}"
-            logger.info("    ❌ No matching releases found (Empty Search Count: %d)", target.empty_search_count)
+            logger.info(
+                "    ❌ No matching releases found (Empty Search Count: %d)",
+                target.empty_search_count,
+            )
 
         await session.commit()
         return False
@@ -1235,15 +1286,30 @@ async def _evaluate_and_download(
         if movie:
             target.status = MediaStatus.COMPLETED
             from sqlalchemy import delete
-            await session.execute(delete(BlacklistedRelease).where(BlacklistedRelease.media_item_id == movie.id))
+
+            await session.execute(
+                delete(BlacklistedRelease).where(
+                    BlacklistedRelease.media_item_id == movie.id
+                )
+            )
         elif season:
             target.status = SeasonStatus.COMPLETED
             from sqlalchemy import delete
-            await session.execute(delete(BlacklistedRelease).where(BlacklistedRelease.media_item_id == season.media_item_id))
+
+            await session.execute(
+                delete(BlacklistedRelease).where(
+                    BlacklistedRelease.media_item_id == season.media_item_id
+                )
+            )
         elif episode:
             target.status = EpisodeStatus.COMPLETED
             from sqlalchemy import delete
-            await session.execute(delete(BlacklistedRelease).where(BlacklistedRelease.media_item_id == episode.season.media_item_id))
+
+            await session.execute(
+                delete(BlacklistedRelease).where(
+                    BlacklistedRelease.media_item_id == episode.season.media_item_id
+                )
+            )
 
         await session.commit()
         return False
@@ -1256,7 +1322,9 @@ async def _evaluate_and_download(
         # Check hard daily grab limit (400 grabs/day)
         if not await can_grab_today(session, limit=400):
             target.fail_count += 1
-            target.last_error = "⚠️ Daily grab limit of 400 NZB downloads reached. Skipping grab."
+            target.last_error = (
+                "⚠️ Daily grab limit of 400 NZB downloads reached. Skipping grab."
+            )
             logger.warning(
                 "    ⚠️ Daily grab limit of 400 reached. Skipping grab for '%s'.",
                 best_candidate["title"],
@@ -1279,7 +1347,9 @@ async def _evaluate_and_download(
         )
 
         try:
-            nzb_bytes, filename = await treasure_maps.fetch_nzb_bytes(best_candidate["guid"])
+            nzb_bytes, filename = await treasure_maps.fetch_nzb_bytes(
+                best_candidate["guid"]
+            )
             torbox_result = await torbox.send_nzb_file(nzb_bytes, filename=filename)
         except treasure_maps.IndexerError as e:
             target.fail_count += 1
@@ -1292,7 +1362,11 @@ async def _evaluate_and_download(
             not torbox_result.get("hash") and not torbox_result.get("id")
         ):
             target.fail_count += 1
-            target.last_error = torbox_result.get("error") if isinstance(torbox_result, dict) and torbox_result.get("error") else "Error sending to TorBox."
+            target.last_error = (
+                torbox_result.get("error")
+                if isinstance(torbox_result, dict) and torbox_result.get("error")
+                else "Error sending to TorBox."
+            )
             logger.error("    ❌ %s", target.last_error)
             await session.commit()
             return False
@@ -1521,7 +1595,9 @@ async def manual_search_movie(session: AsyncSession, item_id: int) -> bool:
         rd = media_item.release_date
         if rd and rd.tzinfo is None:
             rd = rd.replace(tzinfo=timezone.utc)
-        if (rd and rd > datetime.now(timezone.utc)) or (not rd and media_item.year and media_item.year > datetime.now().year):
+        if (rd and rd > datetime.now(timezone.utc)) or (
+            not rd and media_item.year and media_item.year > datetime.now().year
+        ):
             media_item.status = MediaStatus.FUTURE
         else:
             media_item.status = MediaStatus.SEARCHING
@@ -1536,32 +1612,497 @@ async def manual_search_movie(session: AsyncSession, item_id: int) -> bool:
     await session.refresh(media_item)
     return media_item.status in [MediaStatus.DOWNLOADED, MediaStatus.COMPLETED]
 
+
+async def process_print_book(session: AsyncSession, book: BookItem) -> bool:
+    """Process an individual BookItem: search indexers, evaluate, score, and dispatch to TorBox."""
+    from datetime import datetime, timezone
+
+    from app.config import settings
+    from app.core.fake_detector import is_indexer_metadata_fake, is_nzb_content_fake
+    from app.core.reading_scorer import detect_print_format, score_print_release
+    from app.db.grab_tracker import can_grab_today, increment_today_grab_count
+    from app.db.models import MediaStatus
+    from app.services import torbox, treasure_maps
+
+    logger.info("  📖 Searching indexers for Book: %s", book.title)
+
+    # Categories 7000 (General Books), 7020 (E-Books)
+    cat_ids = [7000, 7020]
+    queries = []
+    if book.author:
+        queries.append(f"{book.title} {book.author}".strip())
+    queries.append(book.title.strip())
+
+    results: list[dict] = []
+    seen_guids: set[str] = set()
+
+    for q in queries:
+        for cid in cat_ids:
+            try:
+                raw_res = await treasure_maps.search_raw(query=q, category=cid)
+                for r in raw_res:
+                    guid = r.get("guid") or r.get("link", "")
+                    if guid and guid not in seen_guids:
+                        seen_guids.add(guid)
+                        results.append(r)
+            except Exception as e:
+                logger.warning("  ⚠️ Indexer search failed for query '%s': %s", q, e)
+
+    if not results:
+        book.empty_search_count += 1
+        book.last_searched_at = datetime.now(timezone.utc)
+        book.last_error = "No results found on indexer."
+        logger.info("  ℹ️ No results found for Book: %s", book.title)
+        await session.commit()
+        return False
+
+    # Filter and score candidates
+    blacklisted_formats = [
+        f.strip().lower()
+        for f in settings.book_blacklisted_formats.split(",")
+        if f.strip()
+    ]
+    candidates: list[dict] = []
+
+    for item in results:
+        is_fake, fake_reason = is_indexer_metadata_fake(item, media_type="book")
+        if is_fake:
+            continue
+
+        fmt = detect_print_format(
+            title=item.get("title", ""),
+            description=item.get("description", ""),
+            category_id=item.get("category_id"),
+            media_type="book",
+        )
+
+        if fmt in blacklisted_formats:
+            logger.info(
+                "  ⚠️ Skipping release with blacklisted format '%s': %s",
+                fmt,
+                item.get("title"),
+            )
+            continue
+
+        scored = score_print_release(fmt, media_type="book")
+        candidates.append(
+            {
+                "item": item,
+                "format": fmt,
+                "score": scored["score"],
+                "title": item.get("title", ""),
+                "guid": item.get("guid") or item.get("link", ""),
+            }
+        )
+
+    if not candidates:
+        book.empty_search_count += 1
+        book.last_searched_at = datetime.now(timezone.utc)
+        book.last_error = (
+            "All results were excluded by fake detection or format blacklists."
+        )
+        await session.commit()
+        return False
+
+    candidates.sort(key=lambda c: c["score"], reverse=True)
+    best_candidate = candidates[0]
+
+    logger.info(
+        "  🏆 Best candidate for Book '%s': %s (Score: %s, Format: %s)",
+        book.title,
+        best_candidate["title"],
+        best_candidate["score"],
+        best_candidate["format"],
+    )
+
+    if not await can_grab_today(session, limit=400):
+        book.last_error = "Daily grab limit of 400 reached."
+        logger.warning(
+            "  ⚠️ Daily grab limit reached. Skipping grab for Book '%s'.", book.title
+        )
+        await session.commit()
+        return False
+
+    try:
+        nzb_bytes, filename = await treasure_maps.fetch_nzb_bytes(
+            best_candidate["guid"]
+        )
+        is_fake_content, fake_content_reason = is_nzb_content_fake(
+            nzb_bytes, media_type="book"
+        )
+        if is_fake_content:
+            logger.warning(
+                "  ❌ Fake NZB content detected for Book '%s': %s",
+                book.title,
+                fake_content_reason,
+            )
+            book.last_error = f"Fake content: {fake_content_reason}"
+            await session.commit()
+            return False
+
+        torbox_res = await torbox.send_nzb_file(
+            nzb_bytes, filename=filename or f"{book.title}.nzb"
+        )
+    except Exception as e:
+        book.last_error = f"NZB fetch or dispatch error: {e}"
+        logger.error("  ❌ %s", book.last_error)
+        await session.commit()
+        return False
+
+    if not torbox_res or (not torbox_res.get("hash") and not torbox_res.get("id")):
+        err_val = (
+            torbox_res.get("error") if isinstance(torbox_res, dict) else "TorBox error"
+        )
+        book.last_error = str(err_val) if err_val else "TorBox error"
+        logger.error("  ❌ Failed to send book to TorBox: %s", book.last_error)
+        await session.commit()
+        return False
+
+    await increment_today_grab_count(session)
+    book.status = MediaStatus.DOWNLOADING
+    book.empty_search_count = 0
+    book.last_error = None
+    book.last_searched_at = datetime.now(timezone.utc)
+    await session.commit()
+    logger.info("  📥 Book '%s' dispatched to TorBox successfully.", book.title)
+    return True
+
+
+async def process_print_manga(session: AsyncSession, manga: MangaItem) -> bool:
+    """
+    Process Manga series using Pack-First search cascade:
+    1. Check for complete packs or volume batches covering wanted volumes.
+    2. If pack grabbed, SUPPRESS all individual searches for included volumes.
+    3. If no pack found, fall back to searching individual wanted volumes.
+    """
+    import re
+    from datetime import datetime, timezone
+
+    from sqlalchemy import select
+    from sqlalchemy.orm import selectinload
+
+    from app.config import settings
+    from app.core.fake_detector import is_indexer_metadata_fake, is_nzb_content_fake
+    from app.core.reading_scorer import (
+        detect_print_format,
+        match_volume_or_issue,
+        score_print_release,
+    )
+    from app.db.grab_tracker import can_grab_today, increment_today_grab_count
+    from app.db.models import EpisodeStatus, MangaItem, MediaStatus
+    from app.services import torbox, treasure_maps
+
+    stmt = (
+        select(MangaItem)
+        .options(selectinload(MangaItem.volumes))
+        .where(MangaItem.id == manga.id)
+    )
+    manga_obj = (await session.execute(stmt)).scalar_one_or_none()
+    if not manga_obj:
+        return False
+    manga = manga_obj
+
+    wanted_vols = [
+        v
+        for v in manga.volumes
+        if v.status in [EpisodeStatus.PENDING, EpisodeStatus.SEARCHING]
+    ]
+    if not wanted_vols:
+        return False
+
+    wanted_numbers = {v.volume_number for v in wanted_vols}
+    blacklisted_formats = [
+        f.strip().lower()
+        for f in settings.manga_blacklisted_formats.split(",")
+        if f.strip()
+    ]
+    cat_ids = [7030, 7000]  # Comics / Manga
+
+    logger.info(
+        "  📚 Processing Manga: %s (%d wanted volumes: %s)",
+        manga.title,
+        len(wanted_vols),
+        sorted(wanted_numbers),
+    )
+
+    # -----------------------------------------------------------------------
+    # Step 1: Pack-First Search Cascade
+    # -----------------------------------------------------------------------
+    pack_queries = [
+        f"{manga.title} Complete",
+        f"{manga.title} Vol 01-{max(wanted_numbers):02d}",
+        f"{manga.title} Vol 1-{max(wanted_numbers)}",
+        f"{manga.title}",
+    ]
+
+    pack_results: list[dict] = []
+    seen_guids: set[str] = set()
+
+    for pq in pack_queries:
+        for cid in cat_ids:
+            try:
+                raw_res = await treasure_maps.search_raw(query=pq, category=cid)
+                for r in raw_res:
+                    guid = r.get("guid") or r.get("link", "")
+                    if guid and guid not in seen_guids:
+                        seen_guids.add(guid)
+                        pack_results.append(r)
+            except Exception as e:
+                logger.warning(
+                    "  ⚠️ Indexer pack search failed for query '%s': %s", pq, e
+                )
+
+    best_pack: dict | None = None
+    best_pack_covered_vols: set[int] = set()
+
+    for item in pack_results:
+        item_title = item.get("title", "")
+        is_fake, _ = is_indexer_metadata_fake(item, media_type="manga")
+        if is_fake:
+            continue
+
+        fmt = detect_print_format(
+            title=item_title,
+            description=item.get("description", ""),
+            category_id=item.get("category_id"),
+            media_type="manga",
+        )
+        if fmt in blacklisted_formats:
+            continue
+
+        # Check if release is a multi-volume pack or complete series
+        is_complete = bool(
+            re.search(r"\b(complete|all\s+volumes|series)\b", item_title, re.IGNORECASE)
+        )
+        range_match = re.search(
+            r"(?:vol(?:ume)?|v)?\.?\s*0*(\d+)\s*(?:-|–|to)\s*(?:vol(?:ume)?|v)?\.?\s*0*(\d+)",
+            item_title,
+            re.IGNORECASE,
+        )
+
+        covered: set[int] = set()
+        if is_complete:
+            covered = set(wanted_numbers)
+        elif range_match:
+            try:
+                start_v, end_v = int(range_match.group(1)), int(range_match.group(2))
+                covered = {
+                    v_num for v_num in wanted_numbers if start_v <= v_num <= end_v
+                }
+            except (ValueError, IndexError):
+                pass
+
+        # We consider it a qualifying pack if it covers at least 2 wanted volumes or all wanted volumes
+        if len(covered) >= 2 or (
+            len(covered) == len(wanted_numbers) and len(wanted_numbers) > 0
+        ):
+            scored = score_print_release(fmt, media_type="manga")
+            pack_score = scored["score"] + (
+                len(covered) * 50
+            )  # bonus for volume coverage
+
+            if not best_pack or pack_score > best_pack["score"]:
+                best_pack = {
+                    "item": item,
+                    "format": fmt,
+                    "score": pack_score,
+                    "title": item_title,
+                    "guid": item.get("guid") or item.get("link", ""),
+                }
+                best_pack_covered_vols = covered
+
+    # If a qualifying pack was found, grab it and SUPPRESS individual searches
+    if best_pack and best_pack_covered_vols:
+        logger.info(
+            "  📦 Found qualifying Manga Pack for '%s': %s (Covers %d volumes: %s)",
+            manga.title,
+            best_pack["title"],
+            len(best_pack_covered_vols),
+            sorted(best_pack_covered_vols),
+        )
+
+        if await can_grab_today(session, limit=400):
+            try:
+                nzb_bytes, filename = await treasure_maps.fetch_nzb_bytes(
+                    best_pack["guid"]
+                )
+                is_fake_content, _ = is_nzb_content_fake(nzb_bytes, media_type="manga")
+                if not is_fake_content:
+                    torbox_res = await torbox.send_nzb_file(
+                        nzb_bytes, filename=filename or f"{manga.title}_Pack.nzb"
+                    )
+                    if torbox_res and (torbox_res.get("hash") or torbox_res.get("id")):
+                        await increment_today_grab_count(session)
+
+                        # CRITICAL: Suppress individual searches by marking all covered volumes DOWNLOADING
+                        for vol in manga.volumes:
+                            if vol.volume_number in best_pack_covered_vols:
+                                vol.status = EpisodeStatus.DOWNLOADING
+                                vol.last_searched_at = datetime.now(timezone.utc)
+                                vol.empty_search_count = 0
+
+                        manga.status = MediaStatus.DOWNLOADING
+                        manga.last_searched_at = datetime.now(timezone.utc)
+                        await session.commit()
+                        logger.info(
+                            "  🚀 Grabbed Manga Pack! Suppressed individual searches for volumes: %s",
+                            sorted(best_pack_covered_vols),
+                        )
+                        return True
+            except Exception as e:
+                logger.error("  ❌ Failed to grab Manga Pack: %s", e)
+
+    # -----------------------------------------------------------------------
+    # Step 2: Individual Volume Fallback Search
+    # -----------------------------------------------------------------------
+    logger.info(
+        "  🔍 Falling back to individual volume searches for Manga: %s", manga.title
+    )
+    any_volume_grabbed = False
+
+    for vol in wanted_vols:
+        n = vol.volume_number
+        vol_queries = [
+            f"{manga.title} v{n:02d}",
+            f"{manga.title} vol {n}",
+            f"{manga.title} Volume {n}",
+            f"{manga.title} {n:02d}",
+        ]
+
+        vol_results: list[dict] = []
+        vol_seen_guids: set[str] = set()
+
+        for vq in vol_queries:
+            for cid in cat_ids:
+                try:
+                    raw_res = await treasure_maps.search_raw(query=vq, category=cid)
+                    for r in raw_res:
+                        guid = r.get("guid") or r.get("link", "")
+                        if guid and guid not in vol_seen_guids:
+                            vol_seen_guids.add(guid)
+                            vol_results.append(r)
+                except Exception as e:
+                    logger.warning("  ⚠️ Volume search failed for query '%s': %s", vq, e)
+
+        candidates: list[dict] = []
+        for item in vol_results:
+            item_title = item.get("title", "")
+            is_fake, _ = is_indexer_metadata_fake(item, media_type="manga")
+            if is_fake:
+                continue
+
+            is_match, _ = match_volume_or_issue(item_title, n)
+            if not is_match:
+                continue
+
+            fmt = detect_print_format(
+                title=item_title,
+                description=item.get("description", ""),
+                category_id=item.get("category_id"),
+                media_type="manga",
+            )
+            if fmt in blacklisted_formats:
+                continue
+
+            scored = score_print_release(fmt, media_type="manga")
+            candidates.append(
+                {
+                    "item": item,
+                    "format": fmt,
+                    "score": scored["score"],
+                    "title": item_title,
+                    "guid": item.get("guid") or item.get("link", ""),
+                }
+            )
+
+        vol.last_searched_at = datetime.now(timezone.utc)
+
+        if not candidates:
+            vol.empty_search_count += 1
+            continue
+
+        candidates.sort(key=lambda c: c["score"], reverse=True)
+        best_vol_cand = candidates[0]
+
+        if not await can_grab_today(session, limit=400):
+            logger.warning("  ⚠️ Daily grab limit reached. Stopping volume grabs.")
+            break
+
+        try:
+            nzb_bytes, filename = await treasure_maps.fetch_nzb_bytes(
+                best_vol_cand["guid"]
+            )
+            is_fake_content, _ = is_nzb_content_fake(nzb_bytes, media_type="manga")
+            if is_fake_content:
+                continue
+
+            torbox_res = await torbox.send_nzb_file(
+                nzb_bytes, filename=filename or f"{manga.title}_Vol_{n}.nzb"
+            )
+            if torbox_res and (torbox_res.get("hash") or torbox_res.get("id")):
+                await increment_today_grab_count(session)
+                vol.status = EpisodeStatus.DOWNLOADING
+                vol.empty_search_count = 0
+                any_volume_grabbed = True
+                logger.info(
+                    "  📥 Manga Volume %d for '%s' dispatched to TorBox.",
+                    n,
+                    manga.title,
+                )
+        except Exception as e:
+            logger.error(
+                "  ❌ Failed to grab Volume %d for '%s': %s", n, manga.title, e
+            )
+
+    await session.commit()
+    return any_volume_grabbed
+
+
 async def run_print_automation_cycle(force: bool = False) -> None:
     """
-    Background job for Print Media.
-    Searches for Manga, Books, and Magazines that are in SEARCHING state.
+    Background job for Print Media (Books & Manga).
+    - Processes Books (Immediate Wanted search & grab).
+    - Processes Manga (Pack-First search cascade with individual volume search suppression).
     """
     logger.info("=== Start Print Media Automation Cycle ===")
 
+    from sqlalchemy import select
+    from sqlalchemy.orm import selectinload
+
     from app.db.database import async_session_factory
-    from app.db.models import BookItem, MagazineSubscription, MangaItem, MediaStatus
+    from app.db.models import BookItem, MangaItem, MediaStatus
 
     async with async_session_factory() as session:
-        # Simple stub to query pending items
-        stmt_manga = select(MangaItem).where(MangaItem.status.in_([MediaStatus.PENDING, MediaStatus.SEARCHING]))
-        mangas = (await session.execute(stmt_manga)).scalars().all()
-        for manga in mangas:
-            logger.info(f"    -> Processing Manga: {manga.title}")
-            # Real search logic and reading_scorer integration goes here
-        
-        stmt_books = select(BookItem).where(BookItem.status.in_([MediaStatus.PENDING, MediaStatus.SEARCHING]))
+        # 1. Process Books in SEARCHING / PENDING state
+        stmt_books = select(BookItem).where(
+            BookItem.status.in_([MediaStatus.PENDING, MediaStatus.SEARCHING])
+        )
         books = (await session.execute(stmt_books)).scalars().all()
         for book in books:
-            logger.info(f"    -> Processing Book: {book.title}")
+            try:
+                await process_print_book(session, book)
+            except Exception as e:
+                logger.error("Error processing Book '%s': %s", book.title, e)
 
-        stmt_mags = select(MagazineSubscription).where(MagazineSubscription.status.in_([MediaStatus.PENDING, MediaStatus.SEARCHING]))
-        mags = (await session.execute(stmt_mags)).scalars().all()
-        for mag in mags:
-            logger.info(f"    -> Processing Magazine: {mag.title}")
-            
+        # 2. Process Manga with wanted volumes
+        stmt_manga = (
+            select(MangaItem)
+            .options(selectinload(MangaItem.volumes))
+            .where(
+                MangaItem.status.in_(
+                    [
+                        MediaStatus.PENDING,
+                        MediaStatus.SEARCHING,
+                        MediaStatus.DOWNLOADING,
+                    ]
+                )
+            )
+        )
+        mangas = (await session.execute(stmt_manga)).scalars().all()
+        for manga in mangas:
+            try:
+                await process_print_manga(session, manga)
+            except Exception as e:
+                logger.error("Error processing Manga '%s': %s", manga.title, e)
+
     logger.info("=== End Print Media Automation Cycle ===")

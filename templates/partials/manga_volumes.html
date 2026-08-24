@@ -1,0 +1,96 @@
+<!-- Manga Volume Management Drawer Partial -->
+<div class="bg-[#18181d] border-t border-b border-[#3f3f46] p-4 text-white animate-fade-in" id="manga-volumes-{{ manga.id }}">
+    <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4 pb-3 border-b border-[#2d2d35]">
+        <div>
+            <h4 class="font-bold text-sm text-gray-200 flex items-center gap-2">
+                <span>📚 Volumes for <span class="text-[#d40060]">{{ manga.title }}</span></span>
+                <span class="text-xs font-normal text-[#a1a1aa]">({{ manga.volumes|length }} volumes tracked)</span>
+            </h4>
+        </div>
+        
+        <!-- Bulk Monitoring Controls -->
+        <div class="flex flex-wrap items-center gap-2">
+            <button hx-post="/api/print/manga/{{ manga.id }}/monitor?mode=all" 
+                    hx-target="#manga-volumes-{{ manga.id }}" 
+                    hx-swap="outerHTML"
+                    class="px-2.5 py-1 text-xs font-medium bg-[#2a2a34] hover:bg-[#3f3f46] text-gray-200 rounded border border-[#3f3f46] transition-colors">
+                ✓ Monitor All
+            </button>
+
+            <form hx-post="/api/print/manga/{{ manga.id }}/monitor?mode=from_volume" 
+                  hx-target="#manga-volumes-{{ manga.id }}" 
+                  hx-swap="outerHTML" 
+                  class="flex items-center gap-1">
+                <input type="number" name="start_volume" min="1" max="{{ manga.volumes|length or 999 }}" placeholder="Vol #" required
+                       class="w-16 px-2 py-1 text-xs bg-[#111115] border border-[#3f3f46] rounded text-white focus:outline-none focus:border-[#d40060]">
+                <button type="submit" class="px-2.5 py-1 text-xs font-medium bg-[#2a2a34] hover:bg-[#3f3f46] text-gray-200 rounded border border-[#3f3f46] transition-colors">
+                    ▶ Monitor From
+                </button>
+            </form>
+
+            <button hx-post="/api/print/manga/{{ manga.id }}/monitor?mode=none" 
+                    hx-target="#manga-volumes-{{ manga.id }}" 
+                    hx-swap="outerHTML"
+                    class="px-2.5 py-1 text-xs font-medium bg-[#2a2a34] hover:bg-[#3f3f46] text-[#a1a1aa] hover:text-white rounded border border-[#3f3f46] transition-colors">
+                ✗ Unmonitor All
+            </button>
+
+            <!-- Add Single Volume Button if needed -->
+            <form hx-post="/api/print/manga/{{ manga.id }}/add-volume"
+                  hx-target="#manga-volumes-{{ manga.id }}"
+                  hx-swap="outerHTML"
+                  class="flex items-center gap-1 ml-2">
+                <button type="submit" title="Add next volume" class="px-2.5 py-1 text-xs font-medium bg-emerald-950 hover:bg-emerald-900 text-emerald-300 rounded border border-emerald-800 transition-colors">
+                    + Add Vol {{ (manga.volumes|length) + 1 }}
+                </button>
+            </form>
+        </div>
+    </div>
+
+    {% if manga.volumes %}
+    <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2.5 max-h-80 overflow-y-auto pr-1">
+        {% for vol in manga.volumes|sort(attribute='volume_number') %}
+        <div class="bg-[#1e1e24] border border-[#3f3f46] rounded-lg p-2.5 flex flex-col justify-between hover:border-[#52525b] transition-colors">
+            <div class="flex items-center justify-between mb-1.5">
+                <span class="font-bold text-xs text-white">Vol {{ vol.volume_number }}</span>
+                
+                <!-- Status Badge -->
+                <span class="text-[10px] font-semibold px-1.5 py-0.5 rounded
+                    {% if vol.status.value == 'COMPLETED' or vol.status.value == 'DOWNLOADED' %}bg-emerald-950 text-emerald-400 border border-emerald-800
+                    {% elif vol.status.value == 'SEARCHING' %}bg-yellow-950 text-yellow-400 border border-yellow-800 animate-pulse
+                    {% elif vol.status.value == 'DOWNLOADING' %}bg-blue-950 text-blue-400 border border-blue-800 animate-pulse
+                    {% elif vol.status.value == 'IGNORED' %}bg-slate-900 text-slate-500 border border-slate-700
+                    {% else %}bg-[#111115] text-[#a1a1aa] border border-[#3f3f46]{% endif %}">
+                    {% if vol.status.value == 'SEARCHING' %}WANTED{% else %}{{ vol.status.value }}{% endif %}
+                </span>
+            </div>
+
+            <div class="flex items-center justify-between mt-2 pt-2 border-t border-[#2a2a32] text-[11px]">
+                <!-- Status Toggle -->
+                <button hx-post="/api/print/manga/volume/{{ vol.id }}/toggle-status" 
+                        hx-target="#manga-volumes-{{ manga.id }}" 
+                        hx-swap="outerHTML"
+                        class="text-xs text-[#a1a1aa] hover:text-white transition-colors underline">
+                    {% if vol.status.value == 'SEARCHING' %}Unmonitor{% else %}Monitor{% endif %}
+                </button>
+
+                <!-- Search Link -->
+                <a href="/dashboard/print/manual-search?query={{ manga.title }}&media_type=manga&volume_number={{ vol.volume_number }}" 
+                   class="text-[#d40060] hover:text-white font-semibold transition-colors">
+                    Search 🔍
+                </a>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="py-6 text-center text-[#a1a1aa] text-xs">
+        <p class="mb-2">No volumes recorded for this series yet.</p>
+        <form hx-post="/api/print/manga/{{ manga.id }}/add-volume" hx-target="#manga-volumes-{{ manga.id }}" hx-swap="outerHTML">
+            <button type="submit" class="px-3 py-1.5 bg-[#d40060] text-white rounded text-xs font-semibold hover:bg-[#a3004a]">
+                + Add Volume 1
+            </button>
+        </form>
+    </div>
+    {% endif %}
+</div>

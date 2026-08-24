@@ -77,7 +77,11 @@ async def send_nzb_link(nzb_url: str) -> dict[str, str | int | None]:
                         is_retriable = False
                     try:
                         err_json = e.response.json()
-                        err_detail = err_json.get("detail") or err_json.get("error") or e.response.text
+                        err_detail = (
+                            err_json.get("detail")
+                            or err_json.get("error")
+                            or e.response.text
+                        )
                     except Exception:
                         err_detail = e.response.text
 
@@ -240,7 +244,11 @@ async def send_magnet_link(magnet_url: str) -> dict[str, str | int | None]:
                         is_retriable = False
                     try:
                         err_json = e.response.json()
-                        err_detail = err_json.get("detail") or err_json.get("error") or e.response.text
+                        err_detail = (
+                            err_json.get("detail")
+                            or err_json.get("error")
+                            or e.response.text
+                        )
                     except Exception:
                         err_detail = e.response.text
 
@@ -319,22 +327,23 @@ async def check_download_status(download_id: str | int) -> dict[str, Any]:
         except httpx.HTTPError as e:
             return {"status": "error", "detail": str(e)}
 
+
 async def delete_download(download_id: int) -> dict:
     """Deletes a download from TorBox."""
     if not settings.torbox_api_key:
         return {"success": False, "detail": "No API key configured"}
-        
+
     headers = {
         "Authorization": f"Bearer {settings.torbox_api_key}",
         "User-Agent": DEFAULT_USER_AGENT,
     }
-        
+
     async with httpx.AsyncClient(timeout=10.0) as client:
         try:
             response = await client.post(
                 "https://api.torbox.app/v1/api/usenet/controlusenetdownload",
                 headers=headers,
-                json={"usenet_id": download_id, "operation": "delete"}
+                json={"usenet_id": download_id, "operation": "delete"},
             )
             response.raise_for_status()
             return response.json()
@@ -342,16 +351,17 @@ async def delete_download(download_id: int) -> dict:
             logger.error(f"Failed to delete TorBox download {download_id}: {e}")
             return {"success": False, "detail": str(e)}
 
+
 async def download_file_payload(download_id: int, file_id: int) -> bytes | None:
     """Directly requests the payload file stream from TorBox."""
     if not settings.torbox_api_key:
         return None
-        
+
     headers = {
         "Authorization": f"Bearer {settings.torbox_api_key}",
         "User-Agent": DEFAULT_USER_AGENT,
     }
-        
+
     async with httpx.AsyncClient(timeout=30.0) as client:
         try:
             # TorBox typically requires getting the download link first
@@ -362,15 +372,17 @@ async def download_file_payload(download_id: int, file_id: int) -> bytes | None:
             res_json = response.json()
             if not res_json.get("success"):
                 return None
-                
+
             dl_url = res_json.get("data")
             if not dl_url:
                 return None
-                
+
             # Now download the actual file bytes
             file_response = await client.get(dl_url)
             file_response.raise_for_status()
             return file_response.content
         except httpx.HTTPError as e:
-            logger.error(f"Failed to fetch file payload {file_id} from {download_id}: {e}")
+            logger.error(
+                f"Failed to fetch file payload {file_id} from {download_id}: {e}"
+            )
             return None

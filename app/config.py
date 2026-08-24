@@ -53,6 +53,12 @@ class Settings:
     sh_retry_wait_hours: float = float(os.getenv("SH_RETRY_WAIT_HOURS", "24.0"))
     dry_run: bool = os.getenv("DRY_RUN", "False").lower() == "true"
 
+    # Print Media Configuration
+    reading_download_dir: str = os.getenv("READING_DOWNLOAD_DIR", "downloads")
+    manga_blacklisted_formats: str = os.getenv("MANGA_BLACKLISTED_FORMATS", "")
+    book_blacklisted_formats: str = os.getenv("BOOK_BLACKLISTED_FORMATS", "")
+    magazine_blacklisted_formats: str = os.getenv("MAGAZINE_BLACKLISTED_FORMATS", "")
+
     # --- App ---
     app_env: str = os.getenv("APP_ENV", "development")
     log_level: str = os.getenv("LOG_LEVEL", "INFO")
@@ -134,6 +140,19 @@ async def reload_settings_from_db(session: AsyncSession) -> None:
         if hasattr(db_settings.automation_state, "value")
         else db_settings.automation_state
     )
+    if (
+        hasattr(db_settings, "reading_download_dir")
+        and db_settings.reading_download_dir
+    ):
+        settings.reading_download_dir = db_settings.reading_download_dir
+    if hasattr(db_settings, "manga_blacklisted_formats"):
+        settings.manga_blacklisted_formats = db_settings.manga_blacklisted_formats or ""
+    if hasattr(db_settings, "book_blacklisted_formats"):
+        settings.book_blacklisted_formats = db_settings.book_blacklisted_formats or ""
+    if hasattr(db_settings, "magazine_blacklisted_formats"):
+        settings.magazine_blacklisted_formats = (
+            db_settings.magazine_blacklisted_formats or ""
+        )
 
     # Overwrite scoring config cache
     if db_settings.scoring_settings:
