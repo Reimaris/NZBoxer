@@ -1624,9 +1624,7 @@ async def save_global_settings(
             db_settings.reading_download_dir = reading_download_dir
             db_settings.manga_blacklisted_formats = manga_blacklisted_formats
             db_settings.book_blacklisted_formats = book_blacklisted_formats
-            db_settings.magazine_blacklisted_formats = (
-                magazine_blacklisted_formats
-            )
+            db_settings.magazine_blacklisted_formats = magazine_blacklisted_formats
 
             sc: dict[str, Any] = copy.deepcopy(
                 db_settings.scoring_settings or DEFAULT_SCORING_CONFIG
@@ -1815,9 +1813,7 @@ async def save_provider(
                 Provider, provider_id, options=[selectinload(Provider.profiles)]
             )
             if not provider:
-                provider = Provider(
-                    type=provider_type, category=resolved_category
-                )
+                provider = Provider(type=provider_type, category=resolved_category)
                 session.add(provider)
             else:
                 provider.type = provider_type
@@ -1938,11 +1934,13 @@ async def toggle_provider_active(provider_id: int):
     async with async_session_factory() as session:
         provider = await session.get(Provider, provider_id)
         if provider:
-            if provider.category == ProviderCategory.DOWNLOADER.value:
+            is_downloader = (
+                provider.category == ProviderCategory.DOWNLOADER.value
+                or provider.category == ProviderCategory.DOWNLOADER
+            )
+            if is_downloader:
                 if not provider.is_active:
-                    await provider_service.set_active_downloader(
-                        session, provider.id
-                    )
+                    await provider_service.set_active_downloader(session, provider.id)
                 else:
                     provider.is_active = False
                     await session.commit()

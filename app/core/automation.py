@@ -1049,7 +1049,9 @@ async def _process_season(session: AsyncSession, season: Season) -> None:
 
                 # Additional fallback for Anime Absolute Episode Numbering
                 if not ep_results and season.media_item.media_type == MediaType.ANIME:
-                    ep_title_search = f"{season.media_item.title} {ep.episode_number:02d}"
+                    ep_title_search = (
+                        f"{season.media_item.title} {ep.episode_number:02d}"
+                    )
                     abs_res = await treasure_maps.search_show(
                         title=ep_title_search,
                         category=cat_id,
@@ -1905,7 +1907,12 @@ async def process_print_book(session: AsyncSession, book: BookItem) -> bool:
                             r["_indexer_key"] = indexer.api_key
                             results.append(r)
                 except Exception as e:
-                    logger.warning("  ⚠️ Indexer '%s' search failed for query '%s': %s", indexer.name, q, e)
+                    logger.warning(
+                        "  ⚠️ Indexer '%s' search failed for query '%s': %s",
+                        indexer.name,
+                        q,
+                        e,
+                    )
 
     if not results:
         book.empty_search_count += 1
@@ -2135,7 +2142,10 @@ async def process_print_manga(session: AsyncSession, manga: MangaItem) -> bool:
                             pack_results.append(r)
                 except Exception as e:
                     logger.warning(
-                        "  ⚠️ Indexer '%s' pack search failed for query '%s': %s", indexer.name, pq, e
+                        "  ⚠️ Indexer '%s' pack search failed for query '%s': %s",
+                        indexer.name,
+                        pq,
+                        e,
                     )
 
     best_pack: dict | None = None
@@ -2220,7 +2230,9 @@ async def process_print_manga(session: AsyncSession, manga: MangaItem) -> bool:
                 is_fake_content, _ = is_nzb_content_fake(nzb_bytes, media_type="manga")
                 if not is_fake_content:
                     torbox_res = await torbox.send_nzb_file(
-                        nzb_bytes, filename=filename or f"{manga.title}_Pack.nzb", session=session
+                        nzb_bytes,
+                        filename=filename or f"{manga.title}_Pack.nzb",
+                        session=session,
                     )
                     if torbox_res and (torbox_res.get("hash") or torbox_res.get("id")):
                         await increment_today_grab_count(session)
@@ -2290,7 +2302,9 @@ async def process_print_manga(session: AsyncSession, manga: MangaItem) -> bool:
                                 r["_indexer_key"] = indexer.api_key
                                 vol_results.append(r)
                     except Exception as e:
-                        logger.warning("  ⚠️ Volume search failed for query '%s': %s", vq, e)
+                        logger.warning(
+                            "  ⚠️ Volume search failed for query '%s': %s", vq, e
+                        )
 
         candidates: list[dict] = []
         for item in vol_results:
@@ -2350,7 +2364,9 @@ async def process_print_manga(session: AsyncSession, manga: MangaItem) -> bool:
                 continue
 
             torbox_res = await torbox.send_nzb_file(
-                nzb_bytes, filename=filename or f"{manga.title}_Vol_{n}.nzb", session=session
+                nzb_bytes,
+                filename=filename or f"{manga.title}_Vol_{n}.nzb",
+                session=session,
             )
             if torbox_res and (torbox_res.get("hash") or torbox_res.get("id")):
                 await increment_today_grab_count(session)
