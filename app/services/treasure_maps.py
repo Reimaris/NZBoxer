@@ -389,7 +389,9 @@ async def fetch_nzb_bytes(
 
     await _limiter.wait()
     async with httpx.AsyncClient(
-        headers={"User-Agent": DEFAULT_USER_AGENT}, timeout=30.0
+        headers={"User-Agent": DEFAULT_USER_AGENT},
+        timeout=30.0,
+        follow_redirects=True,
     ) as client:
         try:
             response = await client.get(url, params=params)
