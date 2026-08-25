@@ -183,7 +183,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 app = FastAPI(
     title="NZBoxer",
     description="Autonomous Media Processing System",
-    version="2.1.1",
+    version="2.1.2",
     lifespan=lifespan,
 )
 
