@@ -61,6 +61,8 @@ class AutomationState:
             return False
 
         with self._lock:
+            if self._state == target_state:
+                return True
             if self._state != AutomationStatus.IDLE:
                 return False
             self._state = target_state

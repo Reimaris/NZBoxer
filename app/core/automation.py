@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.config import scoring_config
+from app.core.automation_state import AutomationStatus, automation_state_manager
 from app.core.logging_config import log_process_end, log_process_start
 from app.core.parser import parse_release_name
 from app.core.scorer import score_release
@@ -456,6 +457,7 @@ async def run_automation_cycle(force: bool = False) -> None:
     Args:
         force: If True, bypass the per-provider cycle skip throttle and always run.
     """
+    automation_state_manager.set_running(AutomationStatus.RUNNING_VIDEO)
     log_process_start(logger, "Automation Cycle")
     try:
         if force:
@@ -469,8 +471,16 @@ async def run_automation_cycle(force: bool = False) -> None:
         await run_self_healing_cycle()
         await run_download_check_cycle()
 
+        if automation_state_manager.is_aborting():
+            logger.info("🛑 Automation cycle abort requested early. Halting.")
+            return
+
         # 1. Sync watchlist first
         await sync_simkl_watchlist()
+
+        if automation_state_manager.is_aborting():
+            logger.info("🛑 Automation cycle abort requested after sync. Halting.")
+            return
 
         async with async_session_factory() as session:
             # 1.5 Sync episodes for monitored seasons
@@ -490,6 +500,11 @@ async def run_automation_cycle(force: bool = False) -> None:
             )
             seasons_result = await session.execute(stmt_s)
             for season in seasons_result.scalars():
+                if automation_state_manager.is_aborting():
+                    logger.info(
+                        "🛑 Automation cycle abort requested. Halting season sync."
+                    )
+                    return
                 if season.media_item and season.media_item.tmdb_id:
                     await _sync_season_episodes(session, season)
 
@@ -612,11 +627,16 @@ async def run_automation_cycle(force: bool = False) -> None:
 
                 movies_result = await session.execute(stmt_movies)
                 for movie in movies_result.scalars():
+                    if automation_state_manager.is_aborting():
+                        logger.info(
+                            "🛑 Automation cycle abort requested. Stopping movie processing."
+                        )
+                        break
                     await _process_movie(session, movie)
             else:
                 logger.info("⏩ Skipping movie search in this cycle.")
 
-            if active_shows_provider_ids:
+            if active_shows_provider_ids and not automation_state_manager.is_aborting():
                 # 3. Process Shows (Seasons)
                 season_stmt = (
                     select(Season)
@@ -639,13 +659,20 @@ async def run_automation_cycle(force: bool = False) -> None:
 
                 seasons_result = await session.execute(season_stmt)
                 for season in seasons_result.scalars():
+                    if automation_state_manager.is_aborting():
+                        logger.info(
+                            "🛑 Automation cycle abort requested. Stopping season processing."
+                        )
+                        break
                     await _process_season(session, season)
             else:
                 logger.info("⏩ Skipping series search in this cycle.")
 
         # 4. Download-Check: update status for items already sent to TorBox
-        await run_download_check_cycle()
+        if not automation_state_manager.is_aborting():
+            await run_download_check_cycle()
     finally:
+        automation_state_manager.reset()
         log_process_end(logger, "Automation Cycle")
 
 
@@ -1029,6 +1056,11 @@ async def _process_season(session: AsyncSession, season: Season) -> None:
         profile.episode_block_size if profile and profile.episode_block_size else 5
     )
     for ep in missing_episodes[:block_size]:
+        if automation_state_manager.is_aborting():
+            logger.info(
+                "🛑 Automation cycle abort requested. Stopping episode processing."
+            )
+            break
         try:
             logger.info(
                 "    📺 Suche Episode: S%02dE%02d",
@@ -2318,6 +2350,11 @@ async def process_print_manga(session: AsyncSession, manga: MangaItem) -> bool:
     any_volume_grabbed = False
 
     for vol in wanted_vols:
+        if automation_state_manager.is_aborting():
+            logger.info(
+                "🛑 Print automation cycle abort requested. Stopping volume processing."
+            )
+            break
         n = vol.volume_number
         vol_queries = [
             f"{manga.title} v{n:02d}",
@@ -2465,48 +2502,61 @@ async def run_print_automation_cycle(force: bool = False) -> None:
     - Processes Books (Immediate Wanted search & grab).
     - Processes Manga (Pack-First search cascade with individual volume search suppression).
     """
+    automation_state_manager.set_running(AutomationStatus.RUNNING_PRINT)
     logger.info("=== Start Print Media Automation Cycle ===")
+    try:
+        from sqlalchemy import select
+        from sqlalchemy.orm import selectinload
 
-    from sqlalchemy import select
-    from sqlalchemy.orm import selectinload
+        from app.db.database import async_session_factory
+        from app.db.models import BookItem, MangaItem, MediaStatus
 
-    from app.db.database import async_session_factory
-    from app.db.models import BookItem, MangaItem, MediaStatus
-
-    async with async_session_factory() as session:
-        # 1. Process Books in SEARCHING / PENDING state
-        stmt_books = select(BookItem).where(
-            BookItem.status.in_(
-                [MediaStatus.PENDING, MediaStatus.SEARCHING, MediaStatus.DOWNLOADED]
-            )
-        )
-        books = (await session.execute(stmt_books)).scalars().all()
-        for book in books:
-            try:
-                await process_print_book(session, book)
-            except Exception as e:
-                logger.error("Error processing Book '%s': %s", book.title, e)
-
-        # 2. Process Manga with wanted volumes
-        stmt_manga = (
-            select(MangaItem)
-            .options(selectinload(MangaItem.volumes))
-            .where(
-                MangaItem.status.in_(
-                    [
-                        MediaStatus.PENDING,
-                        MediaStatus.SEARCHING,
-                        MediaStatus.DOWNLOADING,
-                        MediaStatus.DOWNLOADED,
-                    ]
+        async with async_session_factory() as session:
+            # 1. Process Books in SEARCHING / PENDING state
+            stmt_books = select(BookItem).where(
+                BookItem.status.in_(
+                    [MediaStatus.PENDING, MediaStatus.SEARCHING, MediaStatus.DOWNLOADED]
                 )
             )
-        )
-        mangas = (await session.execute(stmt_manga)).scalars().all()
-        for manga in mangas:
-            try:
-                await process_print_manga(session, manga)
-            except Exception as e:
-                logger.error("Error processing Manga '%s': %s", manga.title, e)
+            books = (await session.execute(stmt_books)).scalars().all()
+            for book in books:
+                if automation_state_manager.is_aborting():
+                    logger.info(
+                        "🛑 Print automation cycle abort requested. Stopping book processing."
+                    )
+                    break
+                try:
+                    await process_print_book(session, book)
+                except Exception as e:
+                    logger.error("Error processing Book '%s': %s", book.title, e)
 
-    logger.info("=== End Print Media Automation Cycle ===")
+            # 2. Process Manga with wanted volumes
+            if not automation_state_manager.is_aborting():
+                stmt_manga = (
+                    select(MangaItem)
+                    .options(selectinload(MangaItem.volumes))
+                    .where(
+                        MangaItem.status.in_(
+                            [
+                                MediaStatus.PENDING,
+                                MediaStatus.SEARCHING,
+                                MediaStatus.DOWNLOADING,
+                                MediaStatus.DOWNLOADED,
+                            ]
+                        )
+                    )
+                )
+                mangas = (await session.execute(stmt_manga)).scalars().all()
+                for manga in mangas:
+                    if automation_state_manager.is_aborting():
+                        logger.info(
+                            "🛑 Print automation cycle abort requested. Stopping manga processing."
+                        )
+                        break
+                    try:
+                        await process_print_manga(session, manga)
+                    except Exception as e:
+                        logger.error("Error processing Manga '%s': %s", manga.title, e)
+    finally:
+        automation_state_manager.reset()
+        logger.info("=== End Print Media Automation Cycle ===")
