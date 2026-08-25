@@ -182,8 +182,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 # FastAPI App
 app = FastAPI(
     title="NZBoxer",
-    description="Automated Usenet media manager for TorBox, Simkl, and AniList",
-    version="2.1.0",
+    description="Autonomous Media Processing System",
+    version="2.1.1",
     lifespan=lifespan,
 )
 
