@@ -1844,6 +1844,40 @@ async def manual_search_movie(session: AsyncSession, item_id: int) -> bool:
     return media_item.status in [MediaStatus.DOWNLOADED, MediaStatus.COMPLETED]
 
 
+async def _handle_print_upgrade_failure(
+    session: AsyncSession,
+    target: Any,
+    reason_msg: str,
+) -> None:
+    from app.config import settings
+    from app.db.models import EpisodeStatus, MediaStatus
+
+    if getattr(target, "status", None) not in (
+        MediaStatus.DOWNLOADED,
+        EpisodeStatus.DOWNLOADED,
+    ):
+        target.empty_search_count += 1
+        target.last_error = reason_msg
+        await session.commit()
+        return
+
+    target.upgrade_attempts_count += 1
+
+    if target.upgrade_attempts_count >= settings.max_upgrade_attempts:
+        if hasattr(target, "manga_id"):  # MangaVolume
+            target.status = EpisodeStatus.COMPLETED
+        else:
+            target.status = MediaStatus.COMPLETED
+        target.last_error = (
+            f"{reason_msg} Max upgrade attempts reached. (Status: COMPLETED)"
+        )
+    else:
+        target.last_error = f"{reason_msg} Attempt {target.upgrade_attempts_count}/{settings.max_upgrade_attempts}."
+
+    logger.info("    ❌ %s", target.last_error)
+    await session.commit()
+
+
 async def process_print_book(session: AsyncSession, book: BookItem) -> bool:
     """Process an individual BookItem: search indexers, evaluate, score, and dispatch to TorBox."""
     from datetime import datetime, timezone
@@ -1854,6 +1888,14 @@ async def process_print_book(session: AsyncSession, book: BookItem) -> bool:
     from app.db.grab_tracker import can_grab_today, increment_today_grab_count
     from app.db.models import MediaStatus
     from app.services import torbox, treasure_maps
+
+    if (
+        book.status == MediaStatus.DOWNLOADED
+        and book.best_score is not None
+        and book.best_score >= 1000
+    ):
+        # Already at top tier, no need to search for upgrade
+        return False
 
     logger.info("  📖 Searching indexers for Book: %s", book.title)
 
@@ -1909,11 +1951,11 @@ async def process_print_book(session: AsyncSession, book: BookItem) -> bool:
                     )
 
     if not results:
-        book.empty_search_count += 1
         book.last_searched_at = datetime.now(timezone.utc)
-        book.last_error = "No results found on indexer."
+        await _handle_print_upgrade_failure(
+            session, book, "No results found on indexer."
+        )
         logger.info("  ℹ️ No results found for Book: %s", book.title)
-        await session.commit()
         return False
 
     # Filter and score candidates
@@ -1956,12 +1998,12 @@ async def process_print_book(session: AsyncSession, book: BookItem) -> bool:
         )
 
     if not candidates:
-        book.empty_search_count += 1
         book.last_searched_at = datetime.now(timezone.utc)
-        book.last_error = (
-            "All results were excluded by fake detection or format blacklists."
+        await _handle_print_upgrade_failure(
+            session,
+            book,
+            "All results were excluded by fake detection or format blacklists.",
         )
-        await session.commit()
         return False
 
     candidates.sort(key=lambda c: c["score"], reverse=True)
@@ -1974,6 +2016,16 @@ async def process_print_book(session: AsyncSession, book: BookItem) -> bool:
         best_candidate["score"],
         best_candidate["format"],
     )
+
+    if book.status == MediaStatus.DOWNLOADED and book.best_score is not None:
+        if best_candidate["score"] <= book.best_score:
+            book.last_searched_at = datetime.now(timezone.utc)
+            await _handle_print_upgrade_failure(
+                session,
+                book,
+                f"Best release score {best_candidate['score']} is not higher than current best {book.best_score}.",
+            )
+            return False
 
     if not await can_grab_today(session, limit=400):
         book.last_error = "Daily grab limit of 400 reached."
@@ -2025,6 +2077,8 @@ async def process_print_book(session: AsyncSession, book: BookItem) -> bool:
 
     await increment_today_grab_count(session)
     book.status = MediaStatus.DOWNLOADING
+    book.best_score = best_candidate["score"]
+    book.upgrade_attempts_count = 0
     book.empty_search_count = 0
     book.last_error = None
     book.last_searched_at = datetime.now(timezone.utc)
@@ -2067,11 +2121,15 @@ async def process_print_manga(session: AsyncSession, manga: MangaItem) -> bool:
         return False
     manga = manga_obj
 
-    wanted_vols = [
-        v
-        for v in manga.volumes
-        if v.status in [EpisodeStatus.PENDING, EpisodeStatus.SEARCHING]
-    ]
+    wanted_vols = []
+    for v in manga.volumes:
+        if v.status in [EpisodeStatus.PENDING, EpisodeStatus.SEARCHING]:
+            wanted_vols.append(v)
+        elif v.status == EpisodeStatus.DOWNLOADED:
+            # Check if it's already top tier (score >= 1000)
+            if getattr(v, "best_score", None) is not None and v.best_score >= 1000:
+                continue
+            wanted_vols.append(v)
     if not wanted_vols:
         return False
 
@@ -2235,6 +2293,8 @@ async def process_print_manga(session: AsyncSession, manga: MangaItem) -> bool:
                         for vol in manga.volumes:
                             if vol.volume_number in best_pack_covered_vols:
                                 vol.status = EpisodeStatus.DOWNLOADING
+                                vol.best_score = best_pack["score"]
+                                vol.upgrade_attempts_count = 0
                                 vol.last_searched_at = datetime.now(timezone.utc)
                                 vol.empty_search_count = 0
 
@@ -2334,11 +2394,27 @@ async def process_print_manga(session: AsyncSession, manga: MangaItem) -> bool:
         vol.last_searched_at = datetime.now(timezone.utc)
 
         if not candidates:
-            vol.empty_search_count += 1
+            await _handle_print_upgrade_failure(
+                session,
+                vol,
+                "All results were excluded by fake detection or format blacklists.",
+            )
             continue
 
         candidates.sort(key=lambda c: c["score"], reverse=True)
         best_vol_cand = candidates[0]
+
+        if (
+            vol.status == EpisodeStatus.DOWNLOADED
+            and getattr(vol, "best_score", None) is not None
+        ):
+            if best_vol_cand["score"] <= vol.best_score:
+                await _handle_print_upgrade_failure(
+                    session,
+                    vol,
+                    f"Best release score {best_vol_cand['score']} is not higher than current best {vol.best_score}.",
+                )
+                continue
 
         if not await can_grab_today(session, limit=400):
             logger.warning("  ⚠️ Daily grab limit reached. Stopping volume grabs.")
@@ -2365,6 +2441,8 @@ async def process_print_manga(session: AsyncSession, manga: MangaItem) -> bool:
             if torbox_res and (torbox_res.get("hash") or torbox_res.get("id")):
                 await increment_today_grab_count(session)
                 vol.status = EpisodeStatus.DOWNLOADING
+                vol.best_score = best_vol_cand["score"]
+                vol.upgrade_attempts_count = 0
                 vol.empty_search_count = 0
                 any_volume_grabbed = True
                 logger.info(
@@ -2398,7 +2476,9 @@ async def run_print_automation_cycle(force: bool = False) -> None:
     async with async_session_factory() as session:
         # 1. Process Books in SEARCHING / PENDING state
         stmt_books = select(BookItem).where(
-            BookItem.status.in_([MediaStatus.PENDING, MediaStatus.SEARCHING])
+            BookItem.status.in_(
+                [MediaStatus.PENDING, MediaStatus.SEARCHING, MediaStatus.DOWNLOADED]
+            )
         )
         books = (await session.execute(stmt_books)).scalars().all()
         for book in books:
@@ -2417,6 +2497,7 @@ async def run_print_automation_cycle(force: bool = False) -> None:
                         MediaStatus.PENDING,
                         MediaStatus.SEARCHING,
                         MediaStatus.DOWNLOADING,
+                        MediaStatus.DOWNLOADED,
                     ]
                 )
             )

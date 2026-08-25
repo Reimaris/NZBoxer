@@ -353,12 +353,28 @@ async def init_db(database_url: str) -> None:
                 )
             except Exception:
                 pass
-            
-            for tbl in ["media_items", "seasons", "episodes", "book_items", "manga_volumes"]:
+
+            for tbl in [
+                "media_items",
+                "seasons",
+                "episodes",
+                "book_items",
+                "manga_volumes",
+            ]:
                 try:
                     await session.execute(
                         __import__("sqlalchemy").text(
                             f"ALTER TABLE {tbl} ADD COLUMN upgrade_attempts_count INTEGER NOT NULL DEFAULT 0;"
+                        )
+                    )
+                except Exception:
+                    pass
+
+            for tbl in ["book_items", "manga_volumes"]:
+                try:
+                    await session.execute(
+                        __import__("sqlalchemy").text(
+                            f"ALTER TABLE {tbl} ADD COLUMN best_score FLOAT;"
                         )
                     )
                 except Exception:

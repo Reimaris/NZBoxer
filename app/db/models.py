@@ -871,8 +871,11 @@ class MangaItem(Base):
     start_year: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     # Tracking & Errors
+    best_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     empty_search_count: Mapped[int] = mapped_column(Integer, default=0)
-    upgrade_attempts_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    upgrade_attempts_count: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0"
+    )
     last_searched_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
@@ -901,8 +904,11 @@ class MangaVolume(Base):
         Enum(EpisodeStatus), default=EpisodeStatus.PENDING
     )
 
+    best_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     empty_search_count: Mapped[int] = mapped_column(Integer, default=0)
-    upgrade_attempts_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    upgrade_attempts_count: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0"
+    )
     last_searched_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
@@ -923,8 +929,11 @@ class BookItem(Base):
         Enum(MediaStatus), default=MediaStatus.PENDING
     )
 
+    best_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     empty_search_count: Mapped[int] = mapped_column(Integer, default=0)
-    upgrade_attempts_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    upgrade_attempts_count: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0"
+    )
     last_searched_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
@@ -944,8 +953,11 @@ class MagazineSubscription(Base):
         Enum(MediaStatus), default=MediaStatus.PENDING
     )
 
+    best_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     empty_search_count: Mapped[int] = mapped_column(Integer, default=0)
-    upgrade_attempts_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    upgrade_attempts_count: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0"
+    )
     last_searched_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
