@@ -213,29 +213,38 @@ async def run_download_check_cycle() -> None:
             import httpx
 
             headers = {"Authorization": f"Bearer {tb_key}"}
+            tb_items: dict[str, dict] = {}
+
             async with httpx.AsyncClient(timeout=15.0) as client:
+                # Fetch Usenet
                 resp = await client.get(
                     "https://api.torbox.app/v1/api/usenet/mylist", headers=headers
                 )
-                resp.raise_for_status()
-                tb_data = resp.json()
+                if resp.status_code == 200:
+                    tb_data = resp.json()
+                    if tb_data.get("success"):
+                        for item in tb_data.get("data", []) or []:
+                            tb_items[str(item.get("id", ""))] = item
+                
+                # Fetch Torrents
+                resp_t = await client.get(
+                    "https://api.torbox.app/v1/api/torrents/mylist", headers=headers
+                )
+                if resp_t.status_code == 200:
+                    tb_data_t = resp_t.json()
+                    if tb_data_t.get("success"):
+                        for item in tb_data_t.get("data", []) or []:
+                            tb_items[str(item.get("id", ""))] = item
+
         except Exception as e:
             logger.error("❌ Konnte TorBox-Liste nicht abrufen: %s", e)
             return
-
-        if not tb_data.get("success"):
-            logger.error("❌ TorBox API Error: %s", tb_data.get("detail"))
-            return
-
-        tb_items: dict[str, dict] = {}
-        for item in tb_data.get("data", []) or []:
-            tb_items[str(item.get("id", ""))] = item
 
         async with async_session_factory() as session:
             from app.config import scoring_config
 
             cutoffs = scoring_config.get("cutoffs", {})
-            target_score = cutoffs.get("target_score", 2500)
+            target_score = cutoffs.get("target_score", 8000)
 
             stmt = (
                 select(MediaItem)
@@ -265,11 +274,34 @@ async def run_download_check_cycle() -> None:
             episodes = (await session.execute(stmt_e)).scalars().all()
 
             def _get_tb_status(history: DownloadHistory) -> tuple[str, dict]:
-                if not history.torbox_id:
-                    return "no_id", {}
-                tb = tb_items.get(str(history.torbox_id), {})
+                tb = None
+                if history.torbox_id:
+                    tb = tb_items.get(str(history.torbox_id))
+                
+                if not tb and history.torbox_hash:
+                    for tb_item in tb_items.values():
+                        if str(tb_item.get("hash", "")).lower() == history.torbox_hash.lower():
+                            history.torbox_id = str(tb_item.get("id"))
+                            tb = tb_item
+                            break
+
+                if not tb and history.nzb_title:
+                    for tb_item in tb_items.values():
+                        tb_name = str(tb_item.get("name") or tb_item.get("title") or "")
+                        # Often TorBox normalizes the name slightly, check substring
+                        if tb_name and history.nzb_title.lower() in tb_name.lower():
+                            history.torbox_id = str(tb_item.get("id"))
+                            tb = tb_item
+                            break
+                        # Inverse substring just in case
+                        if tb_name and tb_name.lower() in history.nzb_title.lower():
+                            history.torbox_id = str(tb_item.get("id"))
+                            tb = tb_item
+                            break
+
                 if not tb:
-                    return "not_found", {}
+                    return "no_id" if not history.torbox_id else "not_found", {}
+                
                 return tb.get("download_state", "unknown"), tb
 
             changed = 0
