@@ -1149,6 +1149,86 @@ async def _process_season(session: AsyncSession, season: Season) -> None:
         await session.commit()
 
 
+async def _handle_upgrade_failure(
+    session,
+    target,
+    movie,
+    season,
+    episode,
+    is_manual,
+    reason_msg,
+) -> None:
+    import logging
+
+    from app.config import settings
+    from app.db.models import (
+        BlacklistedRelease,
+        EpisodeStatus,
+        MediaStatus,
+        SeasonStatus,
+    )
+
+    logger = logging.getLogger(__name__)
+
+    target.fail_count = 0
+    if not is_manual:
+        target.upgrade_attempts_count += 1
+
+    if target.upgrade_attempts_count >= settings.max_upgrade_attempts:
+        if movie:
+            target.status = MediaStatus.COMPLETED
+            from sqlalchemy import delete
+
+            await session.execute(
+                delete(BlacklistedRelease).where(
+                    BlacklistedRelease.media_item_id == movie.id
+                )
+            )
+        elif season:
+            target.status = SeasonStatus.COMPLETED
+            from sqlalchemy import delete
+
+            await session.execute(
+                delete(BlacklistedRelease).where(
+                    BlacklistedRelease.media_item_id == season.media_item_id
+                )
+            )
+        elif episode:
+            target.status = EpisodeStatus.COMPLETED
+            from sqlalchemy import delete
+
+            await session.execute(
+                delete(BlacklistedRelease).where(
+                    BlacklistedRelease.media_item_id == episode.season.media_item_id
+                )
+            )
+        target.last_error = (
+            f"{reason_msg} Max upgrade attempts reached. (Status: COMPLETED)"
+        )
+    else:
+        # Revert to downloaded if it wasn't already completed?
+        # Actually, it's either DOWNLOADED or COMPLETED.
+        # If it was DOWNLOADED, we keep it as DOWNLOADED.
+        # If it was COMPLETED (e.g. manual search on completed), we keep it as COMPLETED.
+        # wait! If it's manual, we don't increment, and we keep it what it was.
+        # If it wasn't manual, it was DOWNLOADED. So we can just set it to DOWNLOADED safely,
+        # UNLESS it's manual and it was COMPLETED.
+        if is_manual:
+            # Do not change the status, it stays whatever it was
+            target.last_error = f"{reason_msg} (Manual search, state unchanged)"
+        else:
+            if movie:
+                target.status = MediaStatus.DOWNLOADED
+            elif season:
+                target.status = SeasonStatus.DOWNLOADED
+            elif episode:
+                target.status = EpisodeStatus.DOWNLOADED
+            target.last_error = f"{reason_msg} Attempt {target.upgrade_attempts_count}/{settings.max_upgrade_attempts}."
+
+    logger.info("    ❌ %s", target.last_error)
+    await session.commit()
+
+
 async def _evaluate_and_download(
     session: AsyncSession,
     search_results: list[dict[str, Any]],
@@ -1164,6 +1244,7 @@ async def _evaluate_and_download(
     indexer_url: str | None = None,
     indexer_key: str | None = None,
     early_exit_on_cutoff: bool = False,
+    is_manual: bool = False,
 ) -> bool:
     from app.db.models import (
         BlacklistedRelease,
@@ -1184,43 +1265,15 @@ async def _evaluate_and_download(
             return False
 
         if target.best_score is not None:
-            from app.db.models import (
-                BlacklistedRelease,
-                EpisodeStatus,
-                MediaStatus,
-                SeasonStatus,
+            await _handle_upgrade_failure(
+                session,
+                target,
+                movie,
+                season,
+                episode,
+                is_manual,
+                "No indexer results found.",
             )
-
-            target.fail_count = 0
-            if movie:
-                target.status = MediaStatus.COMPLETED
-                from sqlalchemy import delete
-
-                await session.execute(
-                    delete(BlacklistedRelease).where(
-                        BlacklistedRelease.media_item_id == movie.id
-                    )
-                )
-            elif season:
-                target.status = SeasonStatus.COMPLETED
-                from sqlalchemy import delete
-
-                await session.execute(
-                    delete(BlacklistedRelease).where(
-                        BlacklistedRelease.media_item_id == season.media_item_id
-                    )
-                )
-            elif episode:
-                target.status = EpisodeStatus.COMPLETED
-                from sqlalchemy import delete
-
-                await session.execute(
-                    delete(BlacklistedRelease).where(
-                        BlacklistedRelease.media_item_id == episode.season.media_item_id
-                    )
-                )
-            target.last_error = "No indexer results found, keeping existing release (Status: COMPLETED)."
-            logger.info("    ❌ %s", target.last_error)
         else:
             target.fail_count += 1
             target.empty_search_count += 1
@@ -1382,45 +1435,15 @@ async def _evaluate_and_download(
             return False
 
         if target.best_score is not None:
-            from app.db.models import (
-                BlacklistedRelease,
-                EpisodeStatus,
-                MediaStatus,
-                SeasonStatus,
+            await _handle_upgrade_failure(
+                session,
+                target,
+                movie,
+                season,
+                episode,
+                is_manual,
+                "No matching releases found.",
             )
-
-            target.fail_count = 0
-            if movie:
-                target.status = MediaStatus.COMPLETED
-                from sqlalchemy import delete
-
-                await session.execute(
-                    delete(BlacklistedRelease).where(
-                        BlacklistedRelease.media_item_id == movie.id
-                    )
-                )
-            elif season:
-                target.status = SeasonStatus.COMPLETED
-                from sqlalchemy import delete
-
-                await session.execute(
-                    delete(BlacklistedRelease).where(
-                        BlacklistedRelease.media_item_id == season.media_item_id
-                    )
-                )
-            elif episode:
-                target.status = EpisodeStatus.COMPLETED
-                from sqlalchemy import delete
-
-                await session.execute(
-                    delete(BlacklistedRelease).where(
-                        BlacklistedRelease.media_item_id == episode.season.media_item_id
-                    )
-                )
-            target.last_error = (
-                "Search yielded no hits, keeping existing release (Status: COMPLETED)."
-            )
-            logger.info("    ❌ %s", target.last_error)
         else:
             target.fail_count += 1
             target.empty_search_count += 1
@@ -1504,46 +1527,15 @@ async def _evaluate_and_download(
         if early_exit_on_cutoff:
             return False
 
-        target.fail_count = 0
-        target.last_error = f"Bestes Release (Score {best_candidate['score']}) liegt unter dem Upgrade-Schwellenwert."
-        logger.info("    ❌ %s", target.last_error)
-
-        from app.db.models import (
-            BlacklistedRelease,
-            EpisodeStatus,
-            MediaStatus,
-            SeasonStatus,
+        await _handle_upgrade_failure(
+            session,
+            target,
+            movie,
+            season,
+            episode,
+            is_manual,
+            f"Bestes Release (Score {best_candidate['score']}) liegt unter dem Upgrade-Schwellenwert.",
         )
-
-        if movie:
-            target.status = MediaStatus.COMPLETED
-            from sqlalchemy import delete
-
-            await session.execute(
-                delete(BlacklistedRelease).where(
-                    BlacklistedRelease.media_item_id == movie.id
-                )
-            )
-        elif season:
-            target.status = SeasonStatus.COMPLETED
-            from sqlalchemy import delete
-
-            await session.execute(
-                delete(BlacklistedRelease).where(
-                    BlacklistedRelease.media_item_id == season.media_item_id
-                )
-            )
-        elif episode:
-            target.status = EpisodeStatus.COMPLETED
-            from sqlalchemy import delete
-
-            await session.execute(
-                delete(BlacklistedRelease).where(
-                    BlacklistedRelease.media_item_id == episode.season.media_item_id
-                )
-            )
-
-        await session.commit()
         return False
 
     from app.config import settings
@@ -1647,6 +1639,7 @@ async def _evaluate_and_download(
             target.status = new_status
             target.fail_count = 0
             target.last_error = None
+            target.upgrade_attempts_count = 0
 
             # If target_episodes is passed (e.g. season pack downloaded), update all of them
             if target_episodes:
@@ -1654,6 +1647,7 @@ async def _evaluate_and_download(
                     ep.status = new_status
                     ep.fail_count = 0
                     ep.last_error = None
+                    ep.upgrade_attempts_count = 0
 
             await session.commit()
 
@@ -1843,7 +1837,7 @@ async def manual_search_movie(session: AsyncSession, item_id: int) -> bool:
         return False
 
     await _evaluate_and_download(
-        session, results, movie=media_item, reject_words=reject_words
+        session, results, movie=media_item, reject_words=reject_words, is_manual=True
     )
 
     await session.refresh(media_item)
