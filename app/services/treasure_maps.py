@@ -40,7 +40,7 @@ async def resolve_indexer(
         indexers = await get_active_indexers(session)
         if indexers and indexers[0].api_key:
             return (
-                indexers[0].api_url or "https://treasure-maps.com/api",
+                indexers[0].api_url or "https://treasuremaps.net/api",
                 indexers[0].api_key or "",
             )
     else:
@@ -51,14 +51,14 @@ async def resolve_indexer(
                 indexers = await get_active_indexers(db)
                 if indexers and indexers[0].api_key:
                     return (
-                        indexers[0].api_url or "https://treasure-maps.com/api",
+                        indexers[0].api_url or "https://treasuremaps.net/api",
                         indexers[0].api_key or "",
                     )
         except Exception:
             pass
 
     return (
-        api_url or "https://treasure-maps.com/api",
+        api_url or "https://treasuremaps.net/api",
         api_key or settings.treasure_maps_api_key or "",
     )
 
@@ -364,7 +364,9 @@ async def fetch_nzb_bytes(
         url = guid_or_url
         params = None
         # If url doesn't have apikey, append it if it's treasure-maps
-        if ("treasure-maps.com" in url or "api" in url) and "apikey=" not in url:
+        if (
+            ("treasuremaps.net" in url or "treasure-maps.com" in url) or "api" in url
+        ) and "apikey=" not in url:
             url += (
                 f"&apikey={resolved_key}" if "?" in url else f"?apikey={resolved_key}"
             )

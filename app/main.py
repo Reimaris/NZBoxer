@@ -2118,6 +2118,7 @@ async def run_system_check(request: Request):
     import httpx
     from sqlalchemy import select
 
+    from app.config import DEFAULT_USER_AGENT
     from app.db.models import NotificationChannel, Provider, SystemSettings
 
     results = {}
@@ -2130,20 +2131,34 @@ async def run_system_check(request: Request):
             (await session.execute(select(NotificationChannel))).scalars().all()
         )
 
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        active_providers = {p.type: p for p in providers if p.is_active}
+        all_providers = {p.type: p for p in providers}
+
+        def get_prov(p_type: str) -> Provider | None:
+            return active_providers.get(p_type) or all_providers.get(p_type)
+
+        async with httpx.AsyncClient(
+            timeout=10.0, headers={"User-Agent": DEFAULT_USER_AGENT}
+        ) as client:
             # 1. TMDB
-            if db_settings and db_settings.tmdb_api_key:
+            tmdb_p = get_prov("tmdb")
+            tmdb_key = (
+                tmdb_p.api_key
+                if tmdb_p and tmdb_p.api_key
+                else (db_settings.tmdb_api_key if db_settings else "")
+            ) or ""
+            if tmdb_key:
                 try:
-                    h = {}
-                    p = {}
-                    if db_settings.tmdb_api_key.startswith("ey"):
-                        h["Authorization"] = f"Bearer {db_settings.tmdb_api_key}"
+                    headers = {}
+                    params = {}
+                    if tmdb_key.startswith("ey"):
+                        headers["Authorization"] = f"Bearer {tmdb_key}"
                     else:
-                        p["api_key"] = db_settings.tmdb_api_key
+                        params["api_key"] = tmdb_key
                     r = await client.get(
                         "https://api.themoviedb.org/3/configuration",
-                        params=p,
-                        headers=h,
+                        params=params,
+                        headers=headers,
                     )
                     results["tmdb"] = {
                         "ok": r.status_code == 200,
@@ -2157,13 +2172,24 @@ async def run_system_check(request: Request):
                 results["tmdb"] = {"ok": False, "msg": "API Key fehlt"}
 
             # 2. Treasure Maps
-            if db_settings and db_settings.treasure_maps_api_key:
+            tm_p = get_prov("treasure_maps")
+            tm_key = (
+                tm_p.api_key
+                if tm_p and tm_p.api_key
+                else (db_settings.treasure_maps_api_key if db_settings else "")
+            ) or ""
+            tm_url = (
+                tm_p.api_url
+                if tm_p and tm_p.api_url
+                else "https://treasuremaps.net/api"
+            ) or "https://treasuremaps.net/api"
+            if tm_key:
                 try:
                     r = await client.get(
-                        "https://treasure-maps.com/api",
+                        tm_url,
                         params={
                             "t": "caps",
-                            "apikey": db_settings.treasure_maps_api_key,
+                            "apikey": tm_key,
                         },
                     )
                     results["treasure_maps"] = {
@@ -2178,13 +2204,28 @@ async def run_system_check(request: Request):
                 results["treasure_maps"] = {"ok": False, "msg": "API Key fehlt"}
 
             # 3. TorBox
-            if db_settings and db_settings.torbox_api_key:
+            tb_p = get_prov("torbox")
+            tb_key = (
+                tb_p.api_key
+                if tb_p and tb_p.api_key
+                else (db_settings.torbox_api_key if db_settings else "")
+            ) or ""
+            tb_url = (
+                tb_p.api_url
+                if tb_p and tb_p.api_url
+                else "https://api.torbox.app/v1/api"
+            ) or "https://api.torbox.app/v1/api"
+            if tb_key:
                 try:
+                    base_url = tb_url.rstrip("/")
+                    endpoint = (
+                        f"{base_url}/user/me"
+                        if base_url.endswith("/api")
+                        else f"{base_url}/api/user/me"
+                    )
                     r = await client.get(
-                        "https://api.torbox.app/v1/api/user/me",
-                        headers={
-                            "Authorization": f"Bearer {db_settings.torbox_api_key}"
-                        },
+                        endpoint,
+                        headers={"Authorization": f"Bearer {tb_key}"},
                     )
                     results["torbox"] = {
                         "ok": r.status_code == 200,
@@ -2197,14 +2238,15 @@ async def run_system_check(request: Request):
             else:
                 results["torbox"] = {"ok": False, "msg": "API Key fehlt"}
 
-            # 4. Simkl (check first provider)
-            if providers and providers[0].access_token and providers[0].client_id:
+            # 4. Simkl
+            simkl_p = get_prov("simkl")
+            if simkl_p and simkl_p.access_token and simkl_p.client_id:
                 try:
                     r = await client.get(
                         "https://api.simkl.com/users/settings",
                         headers={
-                            "Authorization": f"Bearer {providers[0].access_token}",
-                            "simkl-api-key": providers[0].client_id,
+                            "Authorization": f"Bearer {simkl_p.access_token}",
+                            "simkl-api-key": simkl_p.client_id,
                         },
                     )
                     results["simkl"] = {
@@ -2219,10 +2261,13 @@ async def run_system_check(request: Request):
                 results["simkl"] = {"ok": False, "msg": "Kein konfigurierter Provider"}
 
             # 5. Telegram
-            if notifications and notifications[0].bot_token:
+            tg = next(
+                (n for n in notifications if n.type == "telegram" and n.bot_token), None
+            )
+            if tg and tg.bot_token:
                 try:
                     r = await client.get(
-                        f"https://api.telegram.org/bot{notifications[0].bot_token}/getMe"
+                        f"https://api.telegram.org/bot{tg.bot_token}/getMe"
                     )
                     results["telegram"] = {
                         "ok": r.status_code == 200,

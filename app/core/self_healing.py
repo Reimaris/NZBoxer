@@ -17,7 +17,6 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
-from app.config import settings
 from app.core.logging_config import log_process_end, log_process_start
 from app.db.database import async_session_factory
 from app.db.models import (
@@ -41,7 +40,8 @@ async def run_self_healing_cycle() -> None:
     """Checks all active downloads in TorBox for failures."""
     log_process_start(logger, "Self-Healing Engine")
     try:
-        if not settings.torbox_api_key:
+        tb_key = await torbox.resolve_api_key()
+        if not tb_key:
             logger.debug("TorBox API key missing. Skipping self-healing cycle.")
             return
 
@@ -202,7 +202,8 @@ async def run_download_check_cycle() -> None:
     """
     log_process_start(logger, "Download Check Engine")
     try:
-        if not settings.torbox_api_key:
+        tb_key = await torbox.resolve_api_key()
+        if not tb_key:
             logger.debug("TorBox API key missing. Skipping download check.")
             return
 
@@ -211,7 +212,7 @@ async def run_download_check_cycle() -> None:
         try:
             import httpx
 
-            headers = {"Authorization": f"Bearer {settings.torbox_api_key}"}
+            headers = {"Authorization": f"Bearer {tb_key}"}
             async with httpx.AsyncClient(timeout=15.0) as client:
                 resp = await client.get(
                     "https://api.torbox.app/v1/api/usenet/mylist", headers=headers
