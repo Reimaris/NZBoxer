@@ -15,11 +15,11 @@
                  }
                  this.step = 2;
              },
-             enable_movies: {{ 'true' if (provider and provider.profiles|selectattr('media_type.value','equalto','movie')|list|length > 0) else 'false' }},
-             enable_series: {{ 'true' if (provider and provider.profiles|selectattr('media_type.value','equalto','show')|list|length > 0) else 'false' }},
-             enable_anime: {{ 'true' if (provider and provider.profiles|selectattr('media_type.value','equalto','anime')|list|length > 0) else 'false' }},
-             enable_manga: true,
-             enable_books: true
+             enable_movies: {{ 'true' if (provider and (provider.profiles|selectattr('media_type','in',['movies', 'movie'])|list|length > 0)) else 'false' }},
+             enable_series: {{ 'true' if (provider and (provider.profiles|selectattr('media_type','in',['shows', 'show', 'series'])|list|length > 0)) else 'false' }},
+             enable_anime: {{ 'true' if (provider and (provider.profiles|selectattr('media_type','in',['anime'])|list|length > 0)) else 'false' }},
+             enable_manga: {{ 'true' if (provider and (provider.profiles|selectattr('media_type','in',['shows', 'show', 'series', 'manga'])|list|length > 0)) else 'true' }},
+             enable_books: {{ 'true' if (provider and (provider.profiles|selectattr('media_type','in',['movies', 'movie', 'books', 'book'])|list|length > 0)) else 'true' }}
          }">
         
         <!-- Header -->
@@ -171,8 +171,8 @@
             <!-- STEP 2: DYNAMIC CONFIGURATION VIEW -->
             <div x-show="step === 2" class="animate-fade-in">
                 <form id="provider-form" hx-post="/settings/provider{% if provider %}/{{ provider.id }}{% endif %}" class="space-y-8">
-                    <input type="hidden" name="provider_type" x-model="providerType">
-                    <input type="hidden" name="category" x-model="providerCategory">
+                    <input type="hidden" name="provider_type" :value="providerType" value="{{ provider.type if provider else '' }}">
+                    <input type="hidden" name="category" :value="providerCategory" value="{{ provider.category if provider else '' }}">
                     
                     <!-- Basic Info (Common to all) -->
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -195,7 +195,7 @@
                     <!-- ========================================== -->
                     <!-- TORBOX CONFIGURATION                       -->
                     <!-- ========================================== -->
-                    <div x-show="providerType === 'torbox'" class="space-y-6">
+                    <fieldset :disabled="providerType !== 'torbox'" x-show="providerType === 'torbox'" class="border-0 p-0 m-0 space-y-6">
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                             <div class="flex flex-col col-span-1 md:col-span-2">
                                 <label class="h-6 text-[#d1d5db] font-medium mb-1 flex items-center justify-between">
@@ -209,12 +209,12 @@
                                 <input type="text" name="api_url" value="{{ provider.api_url if provider and provider.api_url else 'https://api.torbox.app/v1/api' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors font-mono" placeholder="https://api.torbox.app/v1/api">
                             </div>
                         </div>
-                    </div>
+                    </fieldset>
 
                     <!-- ========================================== -->
                     <!-- TREASUREMAPS / INDEXER CONFIGURATION       -->
                     <!-- ========================================== -->
-                    <div x-show="providerType === 'treasure_maps'" class="space-y-6">
+                    <fieldset :disabled="providerType !== 'treasure_maps'" x-show="providerType === 'treasure_maps'" class="border-0 p-0 m-0 space-y-6">
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                             <div class="flex flex-col">
                                 <label class="h-6 text-[#d1d5db] font-medium mb-1 flex items-center justify-between">
@@ -253,12 +253,12 @@
                                 </div>
                             </div>
                         </div>
-                    </div>
+                    </fieldset>
 
                     <!-- ========================================== -->
                     <!-- TMDB CONFIGURATION                         -->
                     <!-- ========================================== -->
-                    <div x-show="providerType === 'tmdb'" class="space-y-6">
+                    <fieldset :disabled="providerType !== 'tmdb'" x-show="providerType === 'tmdb'" class="border-0 p-0 m-0 space-y-6">
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                             <div class="flex flex-col col-span-1 md:col-span-2">
                                 <label class="h-6 text-[#d1d5db] font-medium mb-1 flex items-center justify-between">
@@ -268,24 +268,24 @@
                                 <input type="password" name="api_key" value="{{ provider.api_key if provider and provider.api_key else '' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors font-mono" placeholder="Your TMDB v3 API Key">
                             </div>
                         </div>
-                    </div>
+                    </fieldset>
 
                     <!-- ========================================== -->
                     <!-- OPENLIBRARY CONFIGURATION                  -->
                     <!-- ========================================== -->
-                    <div x-show="providerType === 'openlibrary'" class="space-y-6">
+                    <fieldset :disabled="providerType !== 'openlibrary'" x-show="providerType === 'openlibrary'" class="border-0 p-0 m-0 space-y-6">
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                             <div class="flex flex-col col-span-1 md:col-span-2">
                                 <label class="h-6 text-[#d1d5db] font-medium mb-1 flex items-center">OpenLibrary Base URL</label>
                                 <input type="text" name="api_url" value="{{ provider.api_url if provider and provider.api_url else 'https://openlibrary.org' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors font-mono" placeholder="https://openlibrary.org">
                             </div>
                         </div>
-                    </div>
+                    </fieldset>
 
                     <!-- ========================================== -->
                     <!-- SIMKL CONFIGURATION                        -->
                     <!-- ========================================== -->
-                    <div x-show="providerType === 'simkl'" class="space-y-6">
+                    <fieldset :disabled="providerType !== 'simkl'" x-show="providerType === 'simkl'" class="border-0 p-0 m-0 space-y-6">
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                             <div class="flex flex-col">
                                 <label class="h-6 text-[#d1d5db] font-medium mb-1 flex items-center">Simkl Username</label>
@@ -339,7 +339,7 @@
                             </h3>
                             
                             <!-- 1. Movies Profile -->
-                            {% set m_prof_list = provider.profiles | selectattr("media_type.value", "equalto", "movie") | list if provider else [] %}
+                            {% set m_prof_list = provider.profiles | selectattr("media_type", "in", ["movies", "movie"]) | list if provider else [] %}
                             {% set m_prof = m_prof_list[0] if m_prof_list else none %}
                             <div class="border border-[#3f3f46] rounded-xl bg-[#1e1e24] overflow-hidden">
                                 <div class="bg-[#2a2a32] px-6 py-4 flex items-center justify-between cursor-pointer border-b border-[#3f3f46]" @click="enable_movies = !enable_movies">
@@ -442,7 +442,7 @@
                             </div>
 
                             <!-- 2. TV Shows Profile -->
-                            {% set s_prof_list = provider.profiles | selectattr("media_type.value", "equalto", "show") | list if provider else [] %}
+                            {% set s_prof_list = provider.profiles | selectattr("media_type", "in", ["shows", "show", "series"]) | list if provider else [] %}
                             {% set s_prof = s_prof_list[0] if s_prof_list else none %}
                             <div class="border border-[#3f3f46] rounded-xl bg-[#1e1e24] overflow-hidden">
                                 <div class="bg-[#2a2a32] px-6 py-4 flex items-center justify-between cursor-pointer border-b border-[#3f3f46]" @click="enable_series = !enable_series">
@@ -560,7 +560,7 @@
                             </div>
 
                             <!-- 3. Anime Profile -->
-                            {% set a_prof_list = provider.profiles | selectattr("media_type.value", "equalto", "anime") | list if provider else [] %}
+                            {% set a_prof_list = provider.profiles | selectattr("media_type", "in", ["anime"]) | list if provider else [] %}
                             {% set a_prof = a_prof_list[0] if a_prof_list else none %}
                             <div class="border border-[#3f3f46] rounded-xl bg-[#1e1e24] overflow-hidden">
                                 <div class="bg-[#2a2a32] px-6 py-4 flex items-center justify-between cursor-pointer border-b border-[#3f3f46]" @click="enable_anime = !enable_anime">
@@ -677,12 +677,12 @@
                                 </div>
                             </div>
                         </div>
-                    </div>
+                    </fieldset>
 
                     <!-- ========================================== -->
                     <!-- HARDCOVER CONFIGURATION                    -->
                     <!-- ========================================== -->
-                    <div x-show="providerType === 'hardcover'" class="space-y-6">
+                    <fieldset :disabled="providerType !== 'hardcover'" x-show="providerType === 'hardcover'" class="border-0 p-0 m-0 space-y-6">
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                             <div class="flex flex-col">
                                 <label class="h-6 text-[#d1d5db] font-medium mb-1 flex items-center">Hardcover Username</label>
@@ -698,7 +698,7 @@
                         </div>
 
                         <!-- Hardcover Profile -->
-                        {% set m_prof_list = provider.profiles | selectattr("media_type.value", "equalto", "movie") | list if provider else [] %}
+                        {% set m_prof_list = provider.profiles | selectattr("media_type", "in", ["movies", "movie", "books", "book"]) | list if provider else [] %}
                         {% set m_prof = m_prof_list[0] if m_prof_list else none %}
                         <div class="border border-[#3f3f46] rounded-xl bg-[#1e1e24]">
                             <div class="bg-[#2a2a32] rounded-t-xl px-6 py-4 flex items-center justify-between cursor-pointer">
@@ -718,12 +718,12 @@
                                 </div>
                             </div>
                         </div>
-                    </div>
+                    </fieldset>
 
                     <!-- ========================================== -->
                     <!-- ANILIST CONFIGURATION                      -->
                     <!-- ========================================== -->
-                    <div x-show="providerType === 'anilist'" class="space-y-6">
+                    <fieldset :disabled="providerType !== 'anilist'" x-show="providerType === 'anilist'" class="border-0 p-0 m-0 space-y-6">
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                             <div class="flex flex-col">
                                 <label class="h-6 text-[#d1d5db] font-medium mb-1 flex items-center">AniList Username</label>
@@ -738,9 +738,9 @@
                         </div>
 
                         <!-- AniList Profiles -->
-                        {% set s_prof_list = provider.profiles | selectattr("media_type.value", "equalto", "show") | list if provider else [] %}
+                        {% set s_prof_list = provider.profiles | selectattr("media_type", "in", ["shows", "show", "series", "manga"]) | list if provider else [] %}
                         {% set s_prof = s_prof_list[0] if s_prof_list else none %}
-                        {% set a_prof_list = provider.profiles | selectattr("media_type.value", "equalto", "anime") | list if provider else [] %}
+                        {% set a_prof_list = provider.profiles | selectattr("media_type", "in", ["anime"]) | list if provider else [] %}
                         {% set a_prof = a_prof_list[0] if a_prof_list else none %}
                         <div class="space-y-4">
                             <div class="border border-[#3f3f46] rounded-xl bg-[#1e1e24]">
@@ -781,7 +781,7 @@
                                 </div>
                             </div>
                         </div>
-                    </div>
+                    </fieldset>
 
                     <!-- Form Submit Actions -->
                     <div class="flex justify-end gap-3 pt-4 border-t border-[#3f3f46]">

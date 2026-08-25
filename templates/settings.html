@@ -276,6 +276,7 @@
                 </button>
             </div>
         </div>
+    </form>
 
       <!-- Tab 4: Providers & Profiles -->
     <div x-show="activeTab === 'providers'" class="space-y-8 animate-fade-in" style="display: none;">
@@ -330,9 +331,9 @@
                     <!-- Footer Row -->
                     <div class="flex items-center justify-between gap-2 pt-3 border-t border-[#2a2a32] mt-2">
                         <div class="flex items-center gap-1.5 flex-wrap">
-                            {% set movie_profile = provider.profiles | selectattr("media_type.value", "equalto", "movie") | first %}
-                            {% set show_profile = provider.profiles | selectattr("media_type.value", "equalto", "show") | first %}
-                            {% set anime_profile = provider.profiles | selectattr("media_type.value", "equalto", "anime") | first %}
+                            {% set movie_profile = (provider.profiles | selectattr("media_type", "in", ["movies", "movie"]) | list | first) if provider.profiles else none %}
+                            {% set show_profile = (provider.profiles | selectattr("media_type", "in", ["shows", "show", "series"]) | list | first) if provider.profiles else none %}
+                            {% set anime_profile = (provider.profiles | selectattr("media_type", "in", ["anime"]) | list | first) if provider.profiles else none %}
                             <span class="px-1.5 py-0.5 rounded text-[11px] font-semibold {% if movie_profile %}bg-emerald-500/20 text-emerald-400 border border-emerald-500/30{% else %}bg-[#2a2a32] text-[#71717a]{% endif %}">Movies</span>
                             <span class="px-1.5 py-0.5 rounded text-[11px] font-semibold {% if show_profile %}bg-emerald-500/20 text-emerald-400 border border-emerald-500/30{% else %}bg-[#2a2a32] text-[#71717a]{% endif %}">Shows</span>
                             <span class="px-1.5 py-0.5 rounded text-[11px] font-semibold {% if anime_profile %}bg-emerald-500/20 text-emerald-400 border border-emerald-500/30{% else %}bg-[#2a2a32] text-[#71717a]{% endif %}">Anime</span>

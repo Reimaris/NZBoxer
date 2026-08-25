@@ -1734,7 +1734,7 @@ async def save_provider(
     api_key: str = Form(""),
     api_url: str = Form(""),
     priority: int = Form(1),
-    is_active: bool = Form(True),
+    is_active: bool = Form(False),
     category: str = Form(""),
     movie_category_id: int = Form(2000),
     series_category_id: int = Form(5000),
@@ -1744,6 +1744,8 @@ async def save_provider(
     search_cycle_skip: int = Form(1),
     # Profile settings
     enable_movies: bool = Form(False),
+    enable_books: bool = Form(False),
+    enable_manga: bool = Form(False),
     movies_mode: str = Form(""),
     movies_resolution: str = Form("any"),
     movies_source: str = Form("any"),
@@ -1850,7 +1852,7 @@ async def save_provider(
                 await session.delete(p)
             provider.profiles.clear()
 
-        if enable_movies:
+        if enable_movies or (enable_books and provider_type == "hardcover"):
             pm = ProviderProfile(
                 provider_id=provider.id,
                 media_type="movies",
@@ -1872,7 +1874,7 @@ async def save_provider(
             )
             session.add(pm)
 
-        if enable_series:
+        if enable_series or (enable_manga and provider_type == "anilist"):
             ps = ProviderProfile(
                 provider_id=provider.id,
                 media_type="shows",
