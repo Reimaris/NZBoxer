@@ -430,6 +430,30 @@ async def init_db(database_url: str) -> None:
             except Exception as e:
                 logger.warning("Error migrating legacy provider settings: %s", e)
 
+            # --- Domain migration: treasuremaps.net → treasure-maps.com ---
+            try:
+                from sqlalchemy import func, update
+
+                migrated = await session.execute(
+                    update(Provider)
+                    .where(Provider.api_url.contains("treasuremaps.net"))
+                    .values(
+                        api_url=func.replace(
+                            Provider.api_url,
+                            "treasuremaps.net",
+                            "treasure-maps.com",
+                        )
+                    )
+                )
+                row_count = getattr(migrated, "rowcount", 0)
+                if row_count:
+                    logger.info(
+                        "Migrated %d provider(s) from treasuremaps.net to treasure-maps.com",
+                        row_count,
+                    )
+            except Exception as e:
+                logger.warning("Error migrating indexer domain: %s", e)
+
             await session.commit()
 
     logger.info("Database initialized successfully.")
