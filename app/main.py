@@ -1930,8 +1930,8 @@ async def save_provider(
     )
 
 
-@app.post("/settings/provider/{provider_id}/toggle-active")
-async def toggle_provider_active(provider_id: int):
+@app.post("/settings/provider/{provider_id}/toggle-active", response_class=HTMLResponse)
+async def toggle_provider_active(provider_id: int) -> HTMLResponse:
     from app.db.models import Provider, ProviderCategory
     from app.services import provider_service
 
@@ -1957,8 +1957,8 @@ async def toggle_provider_active(provider_id: int):
     )
 
 
-@app.delete("/settings/provider/{provider_id}")
-async def delete_provider(provider_id: int):
+@app.delete("/settings/provider/{provider_id}", response_class=HTMLResponse)
+async def delete_provider(provider_id: int) -> HTMLResponse:
     from app.db.models import Provider
 
     async with async_session_factory() as session:
@@ -1973,7 +1973,9 @@ async def delete_provider(provider_id: int):
 
 @app.get("/settings/notification/new", response_class=HTMLResponse)
 @app.get("/settings/notification/{notification_id}/edit", response_class=HTMLResponse)
-async def notification_modal(request: Request, notification_id: int | None = None):
+async def notification_modal(
+    request: Request, notification_id: int | None = None
+) -> HTMLResponse:
     from app.db.models import NotificationChannel
 
     async with async_session_factory() as session:
@@ -1996,7 +1998,7 @@ async def save_notification(
     name: str = Form(...),
     bot_token: str = Form(""),
     chat_id: str = Form(""),
-):
+) -> HTMLResponse:
     from app.db.models import NotificationChannel
 
     async with async_session_factory() as session:
@@ -2019,8 +2021,8 @@ async def save_notification(
     )
 
 
-@app.delete("/settings/notification/{notification_id}")
-async def delete_notification(notification_id: int):
+@app.delete("/settings/notification/{notification_id}", response_class=HTMLResponse)
+async def delete_notification(notification_id: int) -> HTMLResponse:
     from app.db.models import NotificationChannel
 
     async with async_session_factory() as session:
