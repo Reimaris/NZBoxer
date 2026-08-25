@@ -1592,6 +1592,7 @@ async def save_global_settings(
     sh_max_time_hours: float = Form(12.0),
     sh_auto_retry: bool = Form(True),
     sh_retry_wait_hours: float = Form(24.0),
+    max_upgrade_attempts: int = Form(10),
     dry_run: bool = Form(False),
     upgrade_threshold: int = Form(500),
     backoff_tier2_skip: int = Form(6),
@@ -1620,6 +1621,7 @@ async def save_global_settings(
             db_settings.sh_max_time_hours = sh_max_time_hours
             db_settings.sh_auto_retry = sh_auto_retry
             db_settings.sh_retry_wait_hours = sh_retry_wait_hours
+            db_settings.max_upgrade_attempts = max_upgrade_attempts
             db_settings.dry_run = dry_run
             db_settings.upgrade_threshold = upgrade_threshold
             db_settings.backoff_tier2_skip = backoff_tier2_skip

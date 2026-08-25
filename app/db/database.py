@@ -344,6 +344,26 @@ async def init_db(database_url: str) -> None:
                 except Exception:
                     pass
 
+            # Upgrade attempts migrations
+            try:
+                await session.execute(
+                    __import__("sqlalchemy").text(
+                        "ALTER TABLE system_settings ADD COLUMN max_upgrade_attempts INTEGER NOT NULL DEFAULT 10;"
+                    )
+                )
+            except Exception:
+                pass
+            
+            for tbl in ["media_items", "seasons", "episodes", "book_items", "manga_volumes"]:
+                try:
+                    await session.execute(
+                        __import__("sqlalchemy").text(
+                            f"ALTER TABLE {tbl} ADD COLUMN upgrade_attempts_count INTEGER NOT NULL DEFAULT 0;"
+                        )
+                    )
+                except Exception:
+                    pass
+
             # Backfill existing providers category
             try:
                 await session.execute(

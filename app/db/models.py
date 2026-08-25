@@ -142,6 +142,9 @@ class SystemSettings(Base):
     sh_retry_wait_hours: Mapped[float] = mapped_column(
         Float, nullable=False, default=24.0
     )
+    max_upgrade_attempts: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=10, server_default="10"
+    )
     dry_run: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="0"
     )
@@ -419,6 +422,9 @@ class MediaItem(Base):
     empty_search_count: Mapped[int] = mapped_column(
         Integer, default=0, server_default="0"
     )
+    upgrade_attempts_count: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0"
+    )
     last_searched_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
@@ -539,6 +545,9 @@ class Season(Base):
     empty_search_count: Mapped[int] = mapped_column(
         Integer, default=0, server_default="0"
     )
+    upgrade_attempts_count: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0"
+    )
     last_searched_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
@@ -640,6 +649,9 @@ class Episode(Base):
 
     # --- Search Automation Tracking ---
     empty_search_count: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0"
+    )
+    upgrade_attempts_count: Mapped[int] = mapped_column(
         Integer, default=0, server_default="0"
     )
     last_searched_at: Mapped[datetime | None] = mapped_column(
@@ -860,6 +872,7 @@ class MangaItem(Base):
 
     # Tracking & Errors
     empty_search_count: Mapped[int] = mapped_column(Integer, default=0)
+    upgrade_attempts_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     last_searched_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
@@ -889,6 +902,7 @@ class MangaVolume(Base):
     )
 
     empty_search_count: Mapped[int] = mapped_column(Integer, default=0)
+    upgrade_attempts_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     last_searched_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
@@ -910,6 +924,7 @@ class BookItem(Base):
     )
 
     empty_search_count: Mapped[int] = mapped_column(Integer, default=0)
+    upgrade_attempts_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     last_searched_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
@@ -930,6 +945,7 @@ class MagazineSubscription(Base):
     )
 
     empty_search_count: Mapped[int] = mapped_column(Integer, default=0)
+    upgrade_attempts_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     last_searched_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )

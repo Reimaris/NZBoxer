@@ -113,6 +113,10 @@
                             <label class="block text-[#d1d5db] font-medium mb-1 text-xs uppercase tracking-wider">Retry Delay (Hours)</label>
                             <input type="number" step="0.1" name="sh_retry_wait_hours" value="{{ db_settings.sh_retry_wait_hours if db_settings else '12.0' }}" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors font-mono text-center">
                         </div>
+                        <div>
+                            <label class="block text-[#d1d5db] font-medium mb-1 text-xs uppercase tracking-wider" title="Number of search cycles for upgrades on titles below cutoff score before automatic search ends.">Max. Upgrade-Versuche</label>
+                            <input type="number" name="max_upgrade_attempts" min="1" max="100" value="{{ db_settings.max_upgrade_attempts if db_settings else '10' }}" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors font-mono text-center">
+                        </div>
                     </div>
                     
                     <div class="mt-6 flex items-center gap-3">

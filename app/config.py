@@ -51,6 +51,7 @@ class Settings:
     sh_max_time_hours: float = float(os.getenv("SH_MAX_TIME_HOURS", "12.0"))
     sh_auto_retry: bool = os.getenv("SH_AUTO_RETRY", "True").lower() == "true"
     sh_retry_wait_hours: float = float(os.getenv("SH_RETRY_WAIT_HOURS", "24.0"))
+    max_upgrade_attempts: int = int(os.getenv("MAX_UPGRADE_ATTEMPTS", "10"))
     dry_run: bool = os.getenv("DRY_RUN", "False").lower() == "true"
 
     # Print Media Configuration
@@ -117,6 +118,7 @@ async def reload_settings_from_db(session: AsyncSession) -> None:
             sh_max_time_hours=settings.sh_max_time_hours,
             sh_auto_retry=settings.sh_auto_retry,
             sh_retry_wait_hours=settings.sh_retry_wait_hours,
+            max_upgrade_attempts=settings.max_upgrade_attempts,
             dry_run=settings.dry_run,
             automation_state=settings.automation_state,
             scoring_settings=scoring_config,
@@ -134,6 +136,7 @@ async def reload_settings_from_db(session: AsyncSession) -> None:
     settings.sh_max_time_hours = db_settings.sh_max_time_hours
     settings.sh_auto_retry = db_settings.sh_auto_retry
     settings.sh_retry_wait_hours = db_settings.sh_retry_wait_hours
+    settings.max_upgrade_attempts = db_settings.max_upgrade_attempts
     settings.dry_run = db_settings.dry_run
     settings.automation_state = (
         db_settings.automation_state.value
