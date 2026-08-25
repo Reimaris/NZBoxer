@@ -1924,8 +1924,10 @@ async def save_provider(
 
         await session.commit()
 
-    # Reload page
-    return HTMLResponse(content="<script>window.location.reload();</script>")
+    # Reload page preserving providers tab
+    return HTMLResponse(
+        content="<script>window.location.hash = 'providers'; window.location.reload();</script>"
+    )
 
 
 @app.post("/settings/provider/{provider_id}/toggle-active")
@@ -1950,7 +1952,9 @@ async def toggle_provider_active(provider_id: int):
                 provider.is_active = not provider.is_active
                 await session.commit()
 
-    return HTMLResponse(content="<script>window.location.reload();</script>")
+    return HTMLResponse(
+        content="<script>window.location.hash = 'providers'; window.location.reload();</script>"
+    )
 
 
 @app.delete("/settings/provider/{provider_id}")
@@ -1962,7 +1966,9 @@ async def delete_provider(provider_id: int):
         if provider:
             await session.delete(provider)
             await session.commit()
-    return HTMLResponse(content="<script>window.location.reload();</script>")
+    return HTMLResponse(
+        content="<script>window.location.hash = 'providers'; window.location.reload();</script>"
+    )
 
 
 @app.get("/settings/notification/new", response_class=HTMLResponse)
@@ -2008,7 +2014,9 @@ async def save_notification(
         notification.chat_id = chat_id
         await session.commit()
 
-    return HTMLResponse(content="<script>window.location.reload();</script>")
+    return HTMLResponse(
+        content="<script>window.location.hash = 'notifications'; window.location.reload();</script>"
+    )
 
 
 @app.delete("/settings/notification/{notification_id}")
@@ -2020,7 +2028,9 @@ async def delete_notification(notification_id: int):
         if notification:
             await session.delete(notification)
             await session.commit()
-    return HTMLResponse(content="<script>window.location.reload();</script>")
+    return HTMLResponse(
+        content="<script>window.location.hash = 'notifications'; window.location.reload();</script>"
+    )
 
 
 @app.post("/simkl/auth/start")
