@@ -2336,12 +2336,65 @@ async def manual_sync(background_tasks: BackgroundTasks):
     )
 
 
-@app.post("/search", response_class=HTMLResponse)
-async def manual_search_full(background_tasks: BackgroundTasks):
-    """Trigger manual full automation cycle."""
-    from app.core.automation import run_automation_cycle, run_print_automation_cycle
+@app.post("/api/automation/run/video", response_class=HTMLResponse)
+async def run_video_automation_endpoint(background_tasks: BackgroundTasks):
+    """Trigger manual video automation cycle."""
+    from app.core.automation import run_automation_cycle
+    from app.core.automation_state import AutomationStatus, automation_state_manager
+
+    if not automation_state_manager.set_running(AutomationStatus.RUNNING_VIDEO):
+        return HTMLResponse(
+            content="""
+            <div class="bg-amber-600 text-white px-4 py-3 rounded-md shadow-lg border border-amber-700 flex items-center justify-between animate-fade-in-down mb-4">
+                <div class="flex items-center gap-3">
+                    <svg class="w-5 h-5 text-amber-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+                    <span class="text-sm font-medium">Ein Suchlauf ist bereits aktiv oder wird beendet!</span>
+                </div>
+                <button onclick="this.parentElement.remove()" class="text-gray-200 hover:text-white">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
+            </div>
+            """
+        )
 
     background_tasks.add_task(run_automation_cycle, force=True)
+
+    return HTMLResponse(
+        content="""
+        <div class="bg-[#d40060] text-white px-4 py-3 rounded-md shadow-lg border border-[#a3004a] flex items-center justify-between animate-fade-in-down mb-4">
+            <div class="flex items-center gap-3">
+                <svg class="w-5 h-5 text-pink-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                <span class="text-sm font-medium">Videomedien-Suchlauf im Hintergrund gestartet!</span>
+            </div>
+            <button onclick="this.parentElement.remove()" class="text-gray-300 hover:text-white">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+            </button>
+        </div>
+        """
+    )
+
+
+@app.post("/api/automation/run/print", response_class=HTMLResponse)
+async def run_print_automation_endpoint(background_tasks: BackgroundTasks):
+    """Trigger manual print automation cycle."""
+    from app.core.automation import run_print_automation_cycle
+    from app.core.automation_state import AutomationStatus, automation_state_manager
+
+    if not automation_state_manager.set_running(AutomationStatus.RUNNING_PRINT):
+        return HTMLResponse(
+            content="""
+            <div class="bg-amber-600 text-white px-4 py-3 rounded-md shadow-lg border border-amber-700 flex items-center justify-between animate-fade-in-down mb-4">
+                <div class="flex items-center gap-3">
+                    <svg class="w-5 h-5 text-amber-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+                    <span class="text-sm font-medium">Ein Suchlauf ist bereits aktiv oder wird beendet!</span>
+                </div>
+                <button onclick="this.parentElement.remove()" class="text-gray-200 hover:text-white">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
+            </div>
+            """
+        )
+
     background_tasks.add_task(run_print_automation_cycle, force=True)
 
     return HTMLResponse(
@@ -2349,11 +2402,11 @@ async def manual_search_full(background_tasks: BackgroundTasks):
         <div class="bg-[#d40060] text-white px-4 py-3 rounded-md shadow-lg border border-[#a3004a] flex items-center justify-between animate-fade-in-down mb-4">
             <div class="flex items-center gap-3">
                 <svg class="w-5 h-5 text-pink-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
-                <span class="text-sm font-medium">Suchlauf (Automatisierungszyklus) im Hintergrund gestartet!</span>
+                <span class="text-sm font-medium">Printmedien-Suchlauf im Hintergrund gestartet!</span>
             </div>
             <button onclick="this.parentElement.remove()" class="text-gray-300 hover:text-white">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
             </button>
         </div>
-    """
+        """
     )
