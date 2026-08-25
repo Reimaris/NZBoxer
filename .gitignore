@@ -22,18 +22,19 @@ file:testdb*
 *.log
 config/logs/*.log
 logs/*.log
-AGENT_INSTRUCTIONS.md
-docs/agent_memory/
-tests/
-
 # Agent Configuration and Memory
 AGENT_INSTRUCTIONS.md
 .agents/
 docs/agent_memory/
 context.md
+usage.md
+
+# Testing and scratch
+tests/
+test_*.py
+TESTING_CHECKLIST.md
+.scratch/
 
 # Docker Local Overrides
 compose.override.yaml
 compose.dev.yaml
-TESTING_CHECKLIST.md
-.scratch/
