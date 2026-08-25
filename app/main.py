@@ -2448,3 +2448,16 @@ async def abort_automation_endpoint():
         </div>
         """
     )
+
+
+@app.get("/api/automation/status", response_class=HTMLResponse)
+async def automation_status_endpoint(request: Request):
+    """Return top-nav status badge partial for the current automation state."""
+    from app.core.automation_state import automation_state_manager
+
+    state = automation_state_manager.get_state()
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/automation_status.html",
+        context={"state": state},
+    )

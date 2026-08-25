@@ -61,6 +61,9 @@
                             v{{ app_version }}
                         </span>
                     </div>
+
+                    <!-- Global Automation Activity Indicator & Abort Button -->
+                    <div id="automation-nav-status" hx-get="/api/automation/status" hx-trigger="load, every 2s" hx-swap="innerHTML" class="ml-2 flex items-center"></div>
                 </div>
 
                 <!-- Right side: Navigation Links -->
