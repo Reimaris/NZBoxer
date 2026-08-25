@@ -104,7 +104,7 @@ def relative_date(dt: datetime | None) -> str:
         return "Heute"
 
 
-APP_VERSION = "2.1.2"
+APP_VERSION = "2.1.3"
 
 templates.env.filters["relative_date"] = relative_date
 templates.env.globals["settings"] = settings
@@ -2184,8 +2184,8 @@ async def run_system_check(request: Request):
             tm_url = (
                 tm_p.api_url
                 if tm_p and tm_p.api_url
-                else "https://treasuremaps.net/api"
-            ) or "https://treasuremaps.net/api"
+                else "https://treasure-maps.com/api"
+            ) or "https://treasure-maps.com/api"
             if tm_key:
                 try:
                     r = await client.get(

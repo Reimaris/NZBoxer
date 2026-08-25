@@ -40,7 +40,7 @@ async def resolve_indexer(
         indexers = await get_active_indexers(session)
         if indexers and indexers[0].api_key:
             return (
-                indexers[0].api_url or "https://treasuremaps.net/api",
+                indexers[0].api_url or "https://treasure-maps.com/api",
                 indexers[0].api_key or "",
             )
     else:
@@ -51,14 +51,14 @@ async def resolve_indexer(
                 indexers = await get_active_indexers(db)
                 if indexers and indexers[0].api_key:
                     return (
-                        indexers[0].api_url or "https://treasuremaps.net/api",
+                        indexers[0].api_url or "https://treasure-maps.com/api",
                         indexers[0].api_key or "",
                     )
         except Exception:
             pass
 
     return (
-        api_url or "https://treasuremaps.net/api",
+        api_url or "https://treasure-maps.com/api",
         api_key or settings.treasure_maps_api_key or "",
     )
 
@@ -259,6 +259,15 @@ async def _execute_search(url: str, params: dict[str, Any]) -> list[dict[str, An
         try:
             response = await client.get(url, params=params)
             response.raise_for_status()
+
+            content_type = response.headers.get("content-type", "")
+            if "json" not in content_type.lower():
+                logger.error(
+                    "Indexer returned non-JSON response (Content-Type: %s). Domain may be parked or blocking requests. Snippet: %s",
+                    content_type,
+                    response.text[:200],
+                )
+                return []
 
             data = response.json()
 

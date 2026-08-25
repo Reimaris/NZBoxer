@@ -422,7 +422,7 @@ async def init_db(database_url: str) -> None:
                             type="treasure_maps",
                             name="Treasure Maps Indexer",
                             api_key=db_settings.treasure_maps_api_key,
-                            api_url="https://treasuremaps.net/api",
+                            api_url="https://treasure-maps.com/api",
                             priority=1,
                             is_active=True,
                         )

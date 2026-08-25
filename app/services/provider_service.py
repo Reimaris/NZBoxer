@@ -73,7 +73,7 @@ async def get_active_indexers(db: AsyncSession) -> Sequence[Provider]:
                 name="TreasureMaps",
                 type="treasure_maps",
                 category=ProviderCategory.INDEXER.value,
-                api_url="https://treasuremaps.net/api",
+                api_url="https://treasure-maps.com/api",
                 api_key=api_key,
                 priority=1,
                 is_active=True,
