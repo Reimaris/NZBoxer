@@ -359,7 +359,9 @@ async def init_db(database_url: str) -> None:
                 "seasons",
                 "episodes",
                 "book_items",
+                "manga_items",
                 "manga_volumes",
+                "magazine_subscriptions",
             ]:
                 try:
                     await session.execute(
@@ -370,7 +372,7 @@ async def init_db(database_url: str) -> None:
                 except Exception:
                     pass
 
-            for tbl in ["book_items", "manga_volumes"]:
+            for tbl in ["book_items", "manga_items", "manga_volumes", "magazine_subscriptions"]:
                 try:
                     await session.execute(
                         __import__("sqlalchemy").text(
