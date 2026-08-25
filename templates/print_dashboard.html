@@ -158,12 +158,19 @@
                         </td>
                         <td class="py-3 px-4 align-middle">
                             <span class="px-2.5 py-1 rounded-full text-xs font-semibold uppercase tracking-wider
-                                {% if item.status.value == 'COMPLETED' or item.status.value == 'DOWNLOADED' %}bg-emerald-950 text-emerald-400 border border-emerald-800
-                                {% elif item.status.value == 'SEARCHING' %}bg-yellow-950 text-yellow-400 border border-yellow-800 animate-pulse
-                                {% elif item.status.value == 'IGNORED' %}bg-slate-900 text-slate-500 border border-slate-700
+                                {% if item.status.name == 'COMPLETED' or item.status.name == 'DOWNLOADED' %}bg-emerald-950 text-emerald-400 border border-emerald-800
+                                {% elif item.status.name == 'SEARCHING' %}bg-yellow-950 text-yellow-400 border border-yellow-800 animate-pulse
+                                {% elif item.status.name == 'IGNORED' %}bg-slate-900 text-slate-500 border border-slate-700
                                 {% else %}bg-[#1e1e24] text-[#a1a1aa] border border-[#3f3f46]{% endif %}">
-                                {% if item.status.value == 'SEARCHING' %}WANTED{% else %}{{ item.status.value }}{% endif %}
+                                {% if item.status.name == 'SEARCHING' %}WANTED{% else %}{{ item.status.name }}{% endif %}
                             </span>
+                            <div class="mt-1 flex flex-col gap-1 items-start">
+                                {% if item.status.value == 'downloaded' %}
+                                <span class="bg-blue-900 text-blue-200 text-[10px] font-bold px-1.5 py-0.5 rounded border border-blue-700 w-fit">Upgrade: {{ item.upgrade_attempts_count }}/{{ max_upgrade_attempts }}</span>
+                                {% elif item.status.value == 'completed' and item.best_score and item.best_score < 1000 %}
+                                <span class="bg-[#1e1e24] text-gray-400 text-[10px] font-bold px-1.5 py-0.5 rounded border border-[#3f3f46] w-fit">Cutoff nicht erreicht ({{ item.upgrade_attempts_count }}/{{ max_upgrade_attempts }} Versuche)</span>
+                                {% endif %}
+                            </div>
                         </td>
                         <td class="py-3 px-4 text-right align-middle" @click.stop>
                             <div class="flex items-center justify-end gap-2">
@@ -242,6 +249,13 @@
                                     <option value="ignored" {% if item.status.value == 'IGNORED' %}selected{% endif %}>IGNORED</option>
                                 </select>
                             </form>
+                            <div class="mt-1 flex flex-col gap-1 items-start">
+                                {% if item.status.value == 'downloaded' %}
+                                <span class="bg-blue-900 text-blue-200 text-[10px] font-bold px-1.5 py-0.5 rounded border border-blue-700 w-fit">Upgrade: {{ item.upgrade_attempts_count }}/{{ max_upgrade_attempts }}</span>
+                                {% elif item.status.value == 'completed' and item.best_score and item.best_score < 1000 %}
+                                <span class="bg-[#1e1e24] text-gray-400 text-[10px] font-bold px-1.5 py-0.5 rounded border border-[#3f3f46] w-fit">Cutoff nicht erreicht ({{ item.upgrade_attempts_count }}/{{ max_upgrade_attempts }} Versuche)</span>
+                                {% endif %}
+                            </div>
                         </td>
                         <td class="py-3 px-4 text-right align-middle">
                             <div class="flex items-center justify-end gap-2">

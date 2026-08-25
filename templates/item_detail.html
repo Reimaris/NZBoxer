@@ -119,7 +119,12 @@
                         <div class="flex items-center gap-3">
                             <svg class="w-5 h-5 text-indigo-400 transform transition-transform duration-200" :class="{'rotate-90': open}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
                             <span class="font-bold text-slate-100 text-lg">Season {{ season.season_number }}</span>
-                            <span class="text-xs text-slate-400 bg-slate-800 px-2 py-0.5 rounded border border-slate-700 capitalize">{{ season.status.value }}</span>
+                                                        <span class="text-xs text-slate-400 bg-slate-800 px-2 py-0.5 rounded border border-slate-700 capitalize">{{ season.status.value }}</span>
+                            {% if season.status.value == 'downloaded' %}
+                            <span class="bg-blue-900 text-blue-200 text-[10px] font-bold px-2 py-0.5 rounded border border-blue-700 w-fit">Upgrade: {{ season.upgrade_attempts_count }}/{{ max_upgrade_attempts }}</span>
+                            {% elif season.status.value == 'completed' and season.best_score and season.best_score < 8000 %}
+                            <span class="bg-[#1e1e24] text-gray-400 text-[10px] font-bold px-2 py-0.5 rounded border border-[#3f3f46] w-fit">Cutoff nicht erreicht ({{ season.upgrade_attempts_count }}/{{ max_upgrade_attempts }} Versuche)</span>
+                            {% endif %}
                             {% if season.fail_count > 0 %}
                             <span class="bg-red-900 text-white text-[10px] font-bold px-1.5 py-0.5 rounded border border-red-700 cursor-help" title="{{ season.last_error }}">❌ {{ season.fail_count }} Fails</span>
                             {% endif %}
@@ -154,6 +159,11 @@
                                         {% else %}bg-slate-800 text-slate-400 border border-slate-700{% endif %}">
                                         {{ ep.status.value }}
                                     </span>
+                                    {% if ep.status.value == 'downloaded' %}
+                                    <span class="bg-blue-900 text-blue-200 text-[9px] font-bold px-1.5 py-0.5 rounded border border-blue-700">Upgrade: {{ ep.upgrade_attempts_count }}/{{ max_upgrade_attempts }}</span>
+                                    {% elif ep.status.value == 'completed' and ep.best_score and ep.best_score < 8000 %}
+                                    <span class="bg-[#1e1e24] text-gray-400 text-[9px] font-bold px-1.5 py-0.5 rounded border border-[#3f3f46]">Cutoff nicht erreicht ({{ ep.upgrade_attempts_count }}/{{ max_upgrade_attempts }})</span>
+                                    {% endif %}
                                     {% if ep.fail_count > 0 %}
                                     <span class="text-red-400 font-bold" title="{{ ep.last_error }}">❌</span>
                                     {% endif %}

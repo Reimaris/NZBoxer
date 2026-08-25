@@ -278,6 +278,7 @@ async def dashboard(request: Request):
             "movies_wanted": movie_stats["wanted"],
             "series_wanted": series_stats["wanted"],
             "anime_wanted": anime_stats["wanted"],
+            "max_upgrade_attempts": settings.max_upgrade_attempts,
         },
     )
 
@@ -692,7 +693,9 @@ async def item_detail(request: Request, item_id: int):
         return HTMLResponse(content="Item not found", status_code=404)
 
     return templates.TemplateResponse(
-        request=request, name="item_detail.html", context={"item": item}
+        request=request,
+        name="item_detail.html",
+        context={"item": item, "max_upgrade_attempts": settings.max_upgrade_attempts},
     )
 
 
@@ -1098,6 +1101,7 @@ async def print_dashboard(request: Request):
             "manga_stats": manga_stats,
             "book_stats": book_stats,
             "magazine_stats": magazine_stats,
+            "max_upgrade_attempts": settings.max_upgrade_attempts,
         },
     )
 
@@ -1255,7 +1259,7 @@ async def get_manga_volumes_partial(request: Request, manga_id: int):
     return templates.TemplateResponse(
         request=request,
         name="partials/manga_volumes.html",
-        context={"manga": manga},
+        context={"manga": manga, "max_upgrade_attempts": settings.max_upgrade_attempts},
     )
 
 
@@ -1305,7 +1309,7 @@ async def set_manga_monitoring(
     return templates.TemplateResponse(
         request=request,
         name="partials/manga_volumes.html",
-        context={"manga": manga},
+        context={"manga": manga, "max_upgrade_attempts": settings.max_upgrade_attempts},
     )
 
 
@@ -1345,7 +1349,7 @@ async def toggle_manga_volume_status(request: Request, volume_id: int):
     return templates.TemplateResponse(
         request=request,
         name="partials/manga_volumes.html",
-        context={"manga": manga},
+        context={"manga": manga, "max_upgrade_attempts": settings.max_upgrade_attempts},
     )
 
 
@@ -1381,7 +1385,7 @@ async def add_manga_volume(request: Request, manga_id: int):
     return templates.TemplateResponse(
         request=request,
         name="partials/manga_volumes.html",
-        context={"manga": manga},
+        context={"manga": manga, "max_upgrade_attempts": settings.max_upgrade_attempts},
     )
 
 

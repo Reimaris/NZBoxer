@@ -13,7 +13,7 @@ Tracer-bullet tickets published to `.scratch/bounded-upgrade-cycles/issues/`:
 - [x] **[01-data-model-migration-settings.md](file:///home/richard/Dokumente/Coding/NZBoxer_dev/.scratch/bounded-upgrade-cycles/issues/01-data-model-migration-settings.md)**: Data Model Migration & Configurable Max Upgrade Attempts Setting (Completed ✅)
 - [x] **[02-video-automation-upgrade-exhaustion.md](file:///home/richard/Dokumente/Coding/NZBoxer_dev/.scratch/bounded-upgrade-cycles/issues/02-video-automation-upgrade-exhaustion.md)**: Target Cutoff Standardization & Video Automation Upgrade Attempt Exhaustion (Completed ✅)
 - [x] **[03-print-automation-upgrade-exhaustion.md](file:///home/richard/Dokumente/Coding/NZBoxer_dev/.scratch/bounded-upgrade-cycles/issues/03-print-automation-upgrade-exhaustion.md)**: Print Media Upgrade Attempt Exhaustion (Completed ✅)
-- [ ] **[04-dashboard-progress-and-sublabels.md](file:///home/richard/Dokumente/Coding/NZBoxer_dev/.scratch/bounded-upgrade-cycles/issues/04-dashboard-progress-and-sublabels.md)**: Dashboard Attempt Progress Badges & Cutoff-Unmet Sub-Labels (Ready 🟢)
+- [x] **[04-dashboard-progress-and-sublabels.md](file:///home/richard/Dokumente/Coding/NZBoxer_dev/.scratch/bounded-upgrade-cycles/issues/04-dashboard-progress-and-sublabels.md)**: Dashboard Attempt Progress Badges & Cutoff-Unmet Sub-Labels (Completed ✅)
 
 ### 📋 Completed Milestone: Multi-Category Provider Architecture
  
