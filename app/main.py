@@ -104,8 +104,11 @@ def relative_date(dt: datetime | None) -> str:
         return "Heute"
 
 
+APP_VERSION = "2.1.2"
+
 templates.env.filters["relative_date"] = relative_date
 templates.env.globals["settings"] = settings
+templates.env.globals["app_version"] = APP_VERSION
 
 
 @asynccontextmanager
@@ -183,7 +186,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 app = FastAPI(
     title="NZBoxer",
     description="Autonomous Media Processing System",
-    version="2.1.2",
+    version=APP_VERSION,
     lifespan=lifespan,
 )
 
