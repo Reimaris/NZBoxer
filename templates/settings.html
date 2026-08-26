@@ -91,7 +91,17 @@
                 <div class="p-6 space-y-6">
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
                         <div>
-                            <label class="block text-[#d1d5db] font-medium mb-1 text-xs uppercase tracking-wider">Video Search Interval</label>
+                            <label class="flex items-center gap-1.5 text-[#d1d5db] font-medium mb-1 text-xs uppercase tracking-wider">
+                                <span>Video Search Interval</span>
+                                <div class="relative inline-flex items-center group">
+                                    <svg class="w-3.5 h-3.5 text-[#71717a] group-hover:text-[#d1d5db] transition-colors cursor-help" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                    </svg>
+                                    <div class="opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 absolute bottom-full left-0 mb-2 w-64 bg-[#2a2a32] border border-[#3f3f46] text-gray-200 text-[11px] normal-case tracking-normal font-normal rounded-lg p-2.5 shadow-2xl z-30 pointer-events-none leading-relaxed">
+                                        Wall-clock aligned interval for automated Video releases (Movies & Series) querying active Usenet Indexers.
+                                    </div>
+                                </div>
+                            </label>
                             <select name="video_search_interval" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors">
                                 <option value="15" {% if db_settings and db_settings.video_search_interval == 15 %}selected{% endif %}>Every 15 minutes</option>
                                 <option value="30" {% if db_settings and db_settings.video_search_interval == 30 %}selected{% endif %}>Every 30 minutes</option>
@@ -104,7 +114,17 @@
                             </select>
                         </div>
                         <div>
-                            <label class="block text-[#d1d5db] font-medium mb-1 text-xs uppercase tracking-wider">Print Search Interval</label>
+                            <label class="flex items-center gap-1.5 text-[#d1d5db] font-medium mb-1 text-xs uppercase tracking-wider">
+                                <span>Print Search Interval</span>
+                                <div class="relative inline-flex items-center group">
+                                    <svg class="w-3.5 h-3.5 text-[#71717a] group-hover:text-[#d1d5db] transition-colors cursor-help" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                    </svg>
+                                    <div class="opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 absolute bottom-full left-0 mb-2 w-64 bg-[#2a2a32] border border-[#3f3f46] text-gray-200 text-[11px] normal-case tracking-normal font-normal rounded-lg p-2.5 shadow-2xl z-30 pointer-events-none leading-relaxed">
+                                        Wall-clock aligned interval for automated Print releases (Manga & Books) querying active Usenet Indexers.
+                                    </div>
+                                </div>
+                            </label>
                             <select name="print_search_interval" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors">
                                 <option value="15" {% if db_settings and db_settings.print_search_interval == 15 %}selected{% endif %}>Every 15 minutes</option>
                                 <option value="30" {% if db_settings and db_settings.print_search_interval == 30 %}selected{% endif %}>Every 30 minutes</option>
@@ -117,7 +137,17 @@
                             </select>
                         </div>
                         <div>
-                            <label class="block text-[#d1d5db] font-medium mb-1 text-xs uppercase tracking-wider" title="Number of search cycles for upgrades on titles below cutoff score before automatic search ends.">Max Upgrade Attempts</label>
+                            <label class="flex items-center gap-1.5 text-[#d1d5db] font-medium mb-1 text-xs uppercase tracking-wider">
+                                <span>Max Upgrade Attempts</span>
+                                <div class="relative inline-flex items-center group">
+                                    <svg class="w-3.5 h-3.5 text-[#71717a] group-hover:text-[#d1d5db] transition-colors cursor-help" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                    </svg>
+                                    <div class="opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 absolute bottom-full right-0 mb-2 w-64 bg-[#2a2a32] border border-[#3f3f46] text-gray-200 text-[11px] normal-case tracking-normal font-normal rounded-lg p-2.5 shadow-2xl z-30 pointer-events-none leading-relaxed">
+                                        Maximum number of scheduled search cycles to seek higher-tier format or score upgrades for grabbed items before marking them completed.
+                                    </div>
+                                </div>
+                            </label>
                             <input type="number" name="max_upgrade_attempts" min="1" max="100" value="{{ db_settings.max_upgrade_attempts if db_settings else '10' }}" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors font-mono text-center">
                         </div>
                     </div>
@@ -130,6 +160,14 @@
                                 🧪 Dry Run Mode (Searches and scores without pushing to TorBox)
                             </span>
                         </label>
+                        <div class="relative inline-flex items-center group">
+                            <svg class="w-3.5 h-3.5 text-[#71717a] group-hover:text-[#d1d5db] transition-colors cursor-help" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                            </svg>
+                            <div class="opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 absolute bottom-full left-0 mb-2 w-64 bg-[#2a2a32] border border-[#3f3f46] text-gray-200 text-[11px] normal-case tracking-normal font-normal rounded-lg p-2.5 shadow-2xl z-30 pointer-events-none leading-relaxed">
+                                When enabled, NZBoxer performs full search queries and release scoring but skips dispatching NZB payloads to TorBox.
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -145,7 +183,17 @@
                 <div class="p-6 space-y-6">
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
                         <div>
-                            <label class="block text-[#d1d5db] font-medium mb-1 text-xs uppercase tracking-wider">Self-Healing Interval</label>
+                            <label class="flex items-center gap-1.5 text-[#d1d5db] font-medium mb-1 text-xs uppercase tracking-wider">
+                                <span>Self-Healing Interval</span>
+                                <div class="relative inline-flex items-center group">
+                                    <svg class="w-3.5 h-3.5 text-[#71717a] group-hover:text-[#d1d5db] transition-colors cursor-help" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                    </svg>
+                                    <div class="opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 absolute bottom-full left-0 mb-2 w-64 bg-[#2a2a32] border border-[#3f3f46] text-gray-200 text-[11px] normal-case tracking-normal font-normal rounded-lg p-2.5 shadow-2xl z-30 pointer-events-none leading-relaxed">
+                                        Frequency of background maintenance checks for monitoring TorBox download progress, repairing stalled downloads, and verifying grabbed files.
+                                    </div>
+                                </div>
+                            </label>
                             <select name="self_healing_interval" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors">
                                 <option value="15" {% if db_settings and db_settings.self_healing_interval == 15 %}selected{% endif %}>Every 15 minutes</option>
                                 <option value="30" {% if db_settings and db_settings.self_healing_interval == 30 %}selected{% endif %}>Every 30 minutes</option>
@@ -158,22 +206,62 @@
                             </select>
                         </div>
                         <div>
-                            <label class="block text-[#d1d5db] font-medium mb-1 text-xs uppercase tracking-wider">Auto Retry</label>
+                            <label class="flex items-center gap-1.5 text-[#d1d5db] font-medium mb-1 text-xs uppercase tracking-wider">
+                                <span>Auto Retry</span>
+                                <div class="relative inline-flex items-center group">
+                                    <svg class="w-3.5 h-3.5 text-[#71717a] group-hover:text-[#d1d5db] transition-colors cursor-help" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                    </svg>
+                                    <div class="opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 absolute bottom-full left-0 mb-2 w-64 bg-[#2a2a32] border border-[#3f3f46] text-gray-200 text-[11px] normal-case tracking-normal font-normal rounded-lg p-2.5 shadow-2xl z-30 pointer-events-none leading-relaxed">
+                                        Automatically re-queues and retries failed or stalled downloads when TorBox encounters errors or inactivity.
+                                    </div>
+                                </div>
+                            </label>
                             <select name="sh_auto_retry" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors">
                                 <option value="True" {% if db_settings and db_settings.sh_auto_retry %}selected{% endif %}>Enabled</option>
                                 <option value="False" {% if db_settings and not db_settings.sh_auto_retry %}selected{% endif %}>Disabled</option>
                             </select>
                         </div>
                         <div>
-                            <label class="block text-[#d1d5db] font-medium mb-1 text-xs uppercase tracking-wider">Max Retries</label>
+                            <label class="flex items-center gap-1.5 text-[#d1d5db] font-medium mb-1 text-xs uppercase tracking-wider">
+                                <span>Max Retries</span>
+                                <div class="relative inline-flex items-center group">
+                                    <svg class="w-3.5 h-3.5 text-[#71717a] group-hover:text-[#d1d5db] transition-colors cursor-help" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                    </svg>
+                                    <div class="opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 absolute bottom-full right-0 mb-2 w-64 bg-[#2a2a32] border border-[#3f3f46] text-gray-200 text-[11px] normal-case tracking-normal font-normal rounded-lg p-2.5 shadow-2xl z-30 pointer-events-none leading-relaxed">
+                                        Maximum number of consecutive self-healing retry attempts allowed for an item before marking it failed or manual grab.
+                                    </div>
+                                </div>
+                            </label>
                             <input type="number" name="sh_max_retries" value="{{ db_settings.sh_max_retries if db_settings else '5' }}" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors font-mono text-center">
                         </div>
                         <div>
-                            <label class="block text-[#d1d5db] font-medium mb-1 text-xs uppercase tracking-wider">Max Wait (Hours)</label>
+                            <label class="flex items-center gap-1.5 text-[#d1d5db] font-medium mb-1 text-xs uppercase tracking-wider">
+                                <span>Max Wait (Hours)</span>
+                                <div class="relative inline-flex items-center group">
+                                    <svg class="w-3.5 h-3.5 text-[#71717a] group-hover:text-[#d1d5db] transition-colors cursor-help" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                    </svg>
+                                    <div class="opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 absolute bottom-full left-0 mb-2 w-64 bg-[#2a2a32] border border-[#3f3f46] text-gray-200 text-[11px] normal-case tracking-normal font-normal rounded-lg p-2.5 shadow-2xl z-30 pointer-events-none leading-relaxed">
+                                        Maximum time in hours a download may remain in progress without progress updates before being flagged as stalled.
+                                    </div>
+                                </div>
+                            </label>
                             <input type="number" step="0.1" name="sh_max_time_hours" value="{{ db_settings.sh_max_time_hours if db_settings else '24.0' }}" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors font-mono text-center">
                         </div>
                         <div>
-                            <label class="block text-[#d1d5db] font-medium mb-1 text-xs uppercase tracking-wider">Retry Delay (Hours)</label>
+                            <label class="flex items-center gap-1.5 text-[#d1d5db] font-medium mb-1 text-xs uppercase tracking-wider">
+                                <span>Retry Delay (Hours)</span>
+                                <div class="relative inline-flex items-center group">
+                                    <svg class="w-3.5 h-3.5 text-[#71717a] group-hover:text-[#d1d5db] transition-colors cursor-help" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                    </svg>
+                                    <div class="opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 absolute bottom-full left-0 mb-2 w-64 bg-[#2a2a32] border border-[#3f3f46] text-gray-200 text-[11px] normal-case tracking-normal font-normal rounded-lg p-2.5 shadow-2xl z-30 pointer-events-none leading-relaxed">
+                                        Cooldown delay in hours before self-healing attempts a new indexer search for a release that previously failed.
+                                    </div>
+                                </div>
+                            </label>
                             <input type="number" step="0.1" name="sh_retry_wait_hours" value="{{ db_settings.sh_retry_wait_hours if db_settings else '12.0' }}" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors font-mono text-center">
                         </div>
                     </div>
@@ -187,12 +275,32 @@
                 </div>
                 <div class="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
-                        <label class="block text-[#d1d5db] font-medium mb-1 text-xs uppercase tracking-wider">Backoff Tier 2 Skip (Cycles)</label>
-                        <input type="number" name="backoff_tier2_skip" value="{{ db_settings.backoff_tier2_skip if db_settings else '6' }}" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors">
+                        <label class="flex items-center gap-1.5 text-[#d1d5db] font-medium mb-1 text-xs uppercase tracking-wider">
+                            <span>Backoff Tier 2 Skip (Cycles)</span>
+                            <div class="relative inline-flex items-center group">
+                                <svg class="w-3.5 h-3.5 text-[#71717a] group-hover:text-[#d1d5db] transition-colors cursor-help" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                </svg>
+                                <div class="opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 absolute bottom-full left-0 mb-2 w-64 bg-[#2a2a32] border border-[#3f3f46] text-gray-200 text-[11px] normal-case tracking-normal font-normal rounded-lg p-2.5 shadow-2xl z-30 pointer-events-none leading-relaxed">
+                                    Number of search cycles to skip for items that returned zero indexer results in moderate-dormancy tier.
+                                </div>
+                            </div>
+                        </label>
+                        <input type="number" name="backoff_tier2_skip" value="{{ db_settings.backoff_tier2_skip if db_settings else '6' }}" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors font-mono text-center">
                     </div>
                     <div>
-                        <label class="block text-[#d1d5db] font-medium mb-1 text-xs uppercase tracking-wider">Backoff Tier 3 Skip (Cycles)</label>
-                        <input type="number" name="backoff_tier3_skip" value="{{ db_settings.backoff_tier3_skip if db_settings else '24' }}" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors">
+                        <label class="flex items-center gap-1.5 text-[#d1d5db] font-medium mb-1 text-xs uppercase tracking-wider">
+                            <span>Backoff Tier 3 Skip (Cycles)</span>
+                            <div class="relative inline-flex items-center group">
+                                <svg class="w-3.5 h-3.5 text-[#71717a] group-hover:text-[#d1d5db] transition-colors cursor-help" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                </svg>
+                                <div class="opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 absolute bottom-full right-0 mb-2 w-64 bg-[#2a2a32] border border-[#3f3f46] text-gray-200 text-[11px] normal-case tracking-normal font-normal rounded-lg p-2.5 shadow-2xl z-30 pointer-events-none leading-relaxed">
+                                    Number of search cycles to skip for long-dormant items returning zero indexer results to preserve API quotas.
+                                </div>
+                            </div>
+                        </label>
+                        <input type="number" name="backoff_tier3_skip" value="{{ db_settings.backoff_tier3_skip if db_settings else '24' }}" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors font-mono text-center">
                     </div>
                 </div>
             </div>
