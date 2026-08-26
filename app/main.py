@@ -112,7 +112,7 @@ def relative_date(dt: datetime | None) -> str:
         return "Heute"
 
 
-APP_VERSION = "2.1.3"
+APP_VERSION = "2.2.0"
 
 templates.env.filters["relative_date"] = relative_date
 templates.env.globals["settings"] = settings
