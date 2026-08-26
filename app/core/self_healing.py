@@ -225,7 +225,7 @@ async def run_download_check_cycle() -> None:
                     if tb_data.get("success"):
                         for item in tb_data.get("data", []) or []:
                             tb_items[str(item.get("id", ""))] = item
-                
+
                 # Fetch Torrents
                 resp_t = await client.get(
                     "https://api.torbox.app/v1/api/torrents/mylist", headers=headers
@@ -277,10 +277,13 @@ async def run_download_check_cycle() -> None:
                 tb = None
                 if history.torbox_id:
                     tb = tb_items.get(str(history.torbox_id))
-                
+
                 if not tb and history.torbox_hash:
                     for tb_item in tb_items.values():
-                        if str(tb_item.get("hash", "")).lower() == history.torbox_hash.lower():
+                        if (
+                            str(tb_item.get("hash", "")).lower()
+                            == history.torbox_hash.lower()
+                        ):
                             history.torbox_id = str(tb_item.get("id"))
                             tb = tb_item
                             break
@@ -301,7 +304,7 @@ async def run_download_check_cycle() -> None:
 
                 if not tb:
                     return "no_id" if not history.torbox_id else "not_found", {}
-                
+
                 return tb.get("download_state", "unknown"), tb
 
             changed = 0
