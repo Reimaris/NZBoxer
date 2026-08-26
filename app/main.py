@@ -119,6 +119,78 @@ templates.env.globals["settings"] = settings
 templates.env.globals["app_version"] = APP_VERSION
 
 
+async def run_orchestrator_tick(now: datetime | None = None) -> None:
+    """Execute scheduled domain tasks aligned to wall-clock intervals.
+
+    State rules:
+    - DISABLED: Halts immediately (no self-healing, download checks, or searches).
+    - PAUSED: Runs Self-Healing & Download Checks on schedule, but skips Video & Print searches.
+    - ACTIVE: Runs all due domain tasks (Self-Healing/Download Checks, Video Search, Print Search).
+    """
+    from datetime import datetime
+
+    from app.core.automation import run_automation_cycle, run_print_automation_cycle
+    from app.core.automation_state import automation_state_manager
+    from app.core.scheduler_utils import is_interval_due
+    from app.core.self_healing import run_download_check_cycle, run_self_healing_cycle
+
+    current_state = (
+        settings.automation_state.value
+        if hasattr(settings.automation_state, "value")
+        else str(settings.automation_state)
+    ).lower()
+
+    if current_state == "disabled":
+        logger.info("Automation is DISABLED. Skipping orchestrator cycle.")
+        return
+
+    if now is None:
+        now = datetime.now()
+
+    logger.info(
+        "⏰ Orchestrator clock tick at %s (State: %s)",
+        now.strftime("%Y-%m-%d %H:%M:%S"),
+        current_state,
+    )
+
+    # 1. Self-Healing & Download Check (Runs in ACTIVE and PAUSED states)
+    if is_interval_due(settings.self_healing_interval, now):
+        logger.info(
+            "⏰ Running scheduled Self-Healing & Download Check (Interval: %dm)",
+            settings.self_healing_interval,
+        )
+        await run_self_healing_cycle()
+        await run_download_check_cycle()
+
+    if automation_state_manager.is_aborting():
+        logger.info("🛑 Automation abort detected after self-healing. Halting tick.")
+        return
+
+    if current_state == "paused":
+        logger.info("Automation is PAUSED. Skipping Video and Print search automation.")
+        return
+
+    # 2. Video Media Automation (Runs strictly in ACTIVE state)
+    if is_interval_due(settings.video_search_interval, now):
+        logger.info(
+            "⏰ Running scheduled Video Automation (Interval: %dm)",
+            settings.video_search_interval,
+        )
+        await run_automation_cycle()
+
+    if automation_state_manager.is_aborting():
+        logger.info("🛑 Automation abort detected after video cycle. Halting tick.")
+        return
+
+    # 3. Print Media Automation (Runs strictly in ACTIVE state)
+    if is_interval_due(settings.print_search_interval, now):
+        logger.info(
+            "⏰ Running scheduled Print Automation (Interval: %dm)",
+            settings.print_search_interval,
+        )
+        await run_print_automation_cycle()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Application lifecycle manager."""
@@ -130,62 +202,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         await reload_settings_from_db(session)
 
     # 2. Setup and Start APScheduler
-    from datetime import datetime
-
     from apscheduler.triggers.cron import CronTrigger
 
-    from app.core.automation import run_automation_cycle, run_print_automation_cycle
-    from app.core.automation_state import automation_state_manager
-    from app.core.scheduler_utils import is_interval_due
-    from app.core.self_healing import run_download_check_cycle, run_self_healing_cycle
-
-    async def _orchestrator_job():
-        if settings.automation_state == "disabled":
-            logger.info("Automation is DISABLED. Skipping orchestrator cycle.")
-            return
-
-        if settings.automation_state == "paused":
-            logger.info("Automation is PAUSED. Skipping orchestrator cycle.")
-            return
-
-        now = datetime.now()
-        logger.info("⏰ Orchestrator clock tick at %s", now.strftime("%Y-%m-%d %H:%M:%S"))
-
-        # 1. Self-Healing & Download Check
-        if is_interval_due(settings.self_healing_interval, now):
-            logger.info(
-                "⏰ Running scheduled Self-Healing & Download Check (Interval: %dm)",
-                settings.self_healing_interval,
-            )
-            await run_self_healing_cycle()
-            await run_download_check_cycle()
-
-        if automation_state_manager.is_aborting():
-            logger.info("🛑 Automation abort detected after self-healing. Halting tick.")
-            return
-
-        # 2. Video Media Automation
-        if is_interval_due(settings.video_search_interval, now):
-            logger.info(
-                "⏰ Running scheduled Video Automation (Interval: %dm)",
-                settings.video_search_interval,
-            )
-            await run_automation_cycle()
-
-        if automation_state_manager.is_aborting():
-            logger.info("🛑 Automation abort detected after video cycle. Halting tick.")
-            return
-
-        # 3. Print Media Automation
-        if is_interval_due(settings.print_search_interval, now):
-            logger.info(
-                "⏰ Running scheduled Print Automation (Interval: %dm)",
-                settings.print_search_interval,
-            )
-            await run_print_automation_cycle()
-
     scheduler.add_job(
-        _orchestrator_job,
+        run_orchestrator_tick,
         CronTrigger(minute="0,15,30,45"),
         id="orchestrator_job",
         replace_existing=True,
@@ -1531,9 +1551,15 @@ async def export_settings():
                 "treasure_maps_api_key": db_settings.treasure_maps_api_key,
                 "torbox_api_key": db_settings.torbox_api_key,
                 "scan_interval_multiplier": db_settings.scan_interval_multiplier,
-                "self_healing_interval": getattr(db_settings, "self_healing_interval", 15),
-                "video_search_interval": getattr(db_settings, "video_search_interval", 60),
-                "print_search_interval": getattr(db_settings, "print_search_interval", 60),
+                "self_healing_interval": getattr(
+                    db_settings, "self_healing_interval", 15
+                ),
+                "video_search_interval": getattr(
+                    db_settings, "video_search_interval", 60
+                ),
+                "print_search_interval": getattr(
+                    db_settings, "print_search_interval", 60
+                ),
                 "sh_max_retries": db_settings.sh_max_retries,
                 "sh_max_time_hours": db_settings.sh_max_time_hours,
                 "sh_auto_retry": db_settings.sh_auto_retry,

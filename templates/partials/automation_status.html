@@ -1,10 +1,6 @@
 <div class="flex items-center gap-1.5 sm:gap-2">
     <!-- 1. HEAL PILL -->
-    {% if global_state == 'paused' %}
-    <div class="flex items-center gap-1.5 bg-[#18181b] border border-yellow-500/20 rounded-full px-2.5 py-0.5 text-[11px] text-yellow-500/70 font-mono" title="Self-Healing & Downloads">
-        <span class="text-[#71717a] font-sans font-medium">Heal:</span> Paused
-    </div>
-    {% elif global_state == 'disabled' %}
+    {% if global_state == 'disabled' %}
     <div class="flex items-center gap-1.5 bg-[#18181b] border border-red-500/20 rounded-full px-2.5 py-0.5 text-[11px] text-red-500/70 font-mono" title="Self-Healing & Downloads">
         <span class="text-[#71717a] font-sans font-medium">Heal:</span> Disabled
     </div>
