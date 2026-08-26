@@ -80,37 +80,16 @@
         <!-- Tab 1: General & Automation -->
         <div x-show="activeTab === 'general'" class="space-y-8 animate-fade-in">
 
-            <!-- Group: Self Healing -->
+            <!-- Card 1: Search Automation Schedules & Intervals -->
             <div class="bg-[#1e1e24] border border-[#3f3f46] rounded-xl shadow-lg">
                 <div class="bg-[#2a2a32] rounded-t-xl border-b border-[#3f3f46] px-6 py-4 flex items-center justify-between">
                     <h2 class="text-lg font-semibold text-white flex items-center gap-2">
-                        <svg class="w-5 h-5 text-yellow-500" fill="currentColor" viewBox="0 0 20 20"><path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z"></path></svg>
-                        Self-Healing & Search Automation
+                        <svg class="w-5 h-5 text-[#d40060]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                        Search Automation Schedules
                     </h2>
                 </div>
                 <div class="p-6 space-y-6">
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                        <div>
-                            <label class="block text-[#d1d5db] font-medium mb-1 text-xs uppercase tracking-wider">Max Retries</label>
-                            <input type="number" name="sh_max_retries" value="{{ db_settings.sh_max_retries if db_settings else '5' }}" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors font-mono text-center">
-                        </div>
-                        <div>
-                            <label class="block text-[#d1d5db] font-medium mb-1 text-xs uppercase tracking-wider">Max Wait (Hours)</label>
-                            <input type="number" step="0.1" name="sh_max_time_hours" value="{{ db_settings.sh_max_time_hours if db_settings else '24.0' }}" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors font-mono text-center">
-                        </div>
-                        <div>
-                            <label class="block text-[#d1d5db] font-medium mb-1 text-xs uppercase tracking-wider">Self-Healing & Downloads</label>
-                            <select name="self_healing_interval" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors">
-                                <option value="15" {% if db_settings and db_settings.self_healing_interval == 15 %}selected{% endif %}>Every 15 minutes</option>
-                                <option value="30" {% if db_settings and db_settings.self_healing_interval == 30 %}selected{% endif %}>Every 30 minutes</option>
-                                <option value="60" {% if db_settings and db_settings.self_healing_interval == 60 %}selected{% endif %}>Every hour</option>
-                                <option value="120" {% if db_settings and db_settings.self_healing_interval == 120 %}selected{% endif %}>Every 2 hours</option>
-                                <option value="240" {% if db_settings and db_settings.self_healing_interval == 240 %}selected{% endif %}>Every 4 hours</option>
-                                <option value="360" {% if db_settings and db_settings.self_healing_interval == 360 %}selected{% endif %}>Every 6 hours</option>
-                                <option value="720" {% if db_settings and db_settings.self_healing_interval == 720 %}selected{% endif %}>Every 12 hours</option>
-                                <option value="1440" {% if db_settings and db_settings.self_healing_interval == 1440 %}selected{% endif %}>Every 24 hours</option>
-                            </select>
-                        </div>
                         <div>
                             <label class="block text-[#d1d5db] font-medium mb-1 text-xs uppercase tracking-wider">Video Search Interval</label>
                             <select name="video_search_interval" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors">
@@ -138,23 +117,12 @@
                             </select>
                         </div>
                         <div>
-                            <label class="block text-[#d1d5db] font-medium mb-1 text-xs uppercase tracking-wider">Auto Retry</label>
-                            <select name="sh_auto_retry" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors">
-                                <option value="True" {% if db_settings and db_settings.sh_auto_retry %}selected{% endif %}>Enabled</option>
-                                <option value="False" {% if db_settings and not db_settings.sh_auto_retry %}selected{% endif %}>Disabled</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label class="block text-[#d1d5db] font-medium mb-1 text-xs uppercase tracking-wider">Retry Delay (Hours)</label>
-                            <input type="number" step="0.1" name="sh_retry_wait_hours" value="{{ db_settings.sh_retry_wait_hours if db_settings else '12.0' }}" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors font-mono text-center">
-                        </div>
-                        <div>
-                            <label class="block text-[#d1d5db] font-medium mb-1 text-xs uppercase tracking-wider" title="Number of search cycles for upgrades on titles below cutoff score before automatic search ends.">Max. Upgrade-Versuche</label>
+                            <label class="block text-[#d1d5db] font-medium mb-1 text-xs uppercase tracking-wider" title="Number of search cycles for upgrades on titles below cutoff score before automatic search ends.">Max Upgrade Attempts</label>
                             <input type="number" name="max_upgrade_attempts" min="1" max="100" value="{{ db_settings.max_upgrade_attempts if db_settings else '10' }}" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors font-mono text-center">
                         </div>
                     </div>
-                    
-                    <div class="mt-6 flex items-center gap-3">
+
+                    <div class="pt-2 flex items-center gap-3">
                         <label class="relative inline-flex items-center cursor-pointer">
                             <input type="checkbox" name="dry_run" value="true" class="sr-only peer" {% if db_settings and db_settings.dry_run %}checked{% endif %}>
                             <div class="w-11 h-6 bg-[#3f3f46] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#d40060]"></div>
@@ -166,7 +134,53 @@
                 </div>
             </div>
 
-            <!-- Group: Search Backoff -->
+            <!-- Card 2: Self-Healing & Downloads -->
+            <div class="bg-[#1e1e24] border border-[#3f3f46] rounded-xl shadow-lg">
+                <div class="bg-[#2a2a32] rounded-t-xl border-b border-[#3f3f46] px-6 py-4 flex items-center justify-between">
+                    <h2 class="text-lg font-semibold text-white flex items-center gap-2">
+                        <svg class="w-5 h-5 text-yellow-500" fill="currentColor" viewBox="0 0 20 20"><path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z"></path></svg>
+                        Self-Healing & Downloads
+                    </h2>
+                </div>
+                <div class="p-6 space-y-6">
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <div>
+                            <label class="block text-[#d1d5db] font-medium mb-1 text-xs uppercase tracking-wider">Self-Healing Interval</label>
+                            <select name="self_healing_interval" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors">
+                                <option value="15" {% if db_settings and db_settings.self_healing_interval == 15 %}selected{% endif %}>Every 15 minutes</option>
+                                <option value="30" {% if db_settings and db_settings.self_healing_interval == 30 %}selected{% endif %}>Every 30 minutes</option>
+                                <option value="60" {% if db_settings and db_settings.self_healing_interval == 60 %}selected{% endif %}>Every hour</option>
+                                <option value="120" {% if db_settings and db_settings.self_healing_interval == 120 %}selected{% endif %}>Every 2 hours</option>
+                                <option value="240" {% if db_settings and db_settings.self_healing_interval == 240 %}selected{% endif %}>Every 4 hours</option>
+                                <option value="360" {% if db_settings and db_settings.self_healing_interval == 360 %}selected{% endif %}>Every 6 hours</option>
+                                <option value="720" {% if db_settings and db_settings.self_healing_interval == 720 %}selected{% endif %}>Every 12 hours</option>
+                                <option value="1440" {% if db_settings and db_settings.self_healing_interval == 1440 %}selected{% endif %}>Every 24 hours</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-[#d1d5db] font-medium mb-1 text-xs uppercase tracking-wider">Auto Retry</label>
+                            <select name="sh_auto_retry" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors">
+                                <option value="True" {% if db_settings and db_settings.sh_auto_retry %}selected{% endif %}>Enabled</option>
+                                <option value="False" {% if db_settings and not db_settings.sh_auto_retry %}selected{% endif %}>Disabled</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-[#d1d5db] font-medium mb-1 text-xs uppercase tracking-wider">Max Retries</label>
+                            <input type="number" name="sh_max_retries" value="{{ db_settings.sh_max_retries if db_settings else '5' }}" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors font-mono text-center">
+                        </div>
+                        <div>
+                            <label class="block text-[#d1d5db] font-medium mb-1 text-xs uppercase tracking-wider">Max Wait (Hours)</label>
+                            <input type="number" step="0.1" name="sh_max_time_hours" value="{{ db_settings.sh_max_time_hours if db_settings else '24.0' }}" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors font-mono text-center">
+                        </div>
+                        <div>
+                            <label class="block text-[#d1d5db] font-medium mb-1 text-xs uppercase tracking-wider">Retry Delay (Hours)</label>
+                            <input type="number" step="0.1" name="sh_retry_wait_hours" value="{{ db_settings.sh_retry_wait_hours if db_settings else '12.0' }}" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors font-mono text-center">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Card 3: Progressive Search Backoff -->
             <div class="bg-[#1e1e24] border border-[#3f3f46] rounded-xl shadow-lg">
                 <div class="bg-[#2a2a32] rounded-t-xl border-b border-[#3f3f46] px-6 py-4 flex items-center gap-2">
                     <h2 class="text-lg font-semibold text-white">Progressive Search Backoff</h2>
