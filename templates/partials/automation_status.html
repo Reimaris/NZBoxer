@@ -1,68 +1,72 @@
 <div class="flex items-center gap-1.5 sm:gap-2">
     <!-- 1. HEAL PILL -->
-    {% if global_state == 'disabled' %}
-    <div class="flex items-center gap-1.5 bg-[#18181b] border border-red-500/20 rounded-full px-2.5 py-0.5 text-[11px] text-red-500/70 font-mono" title="Self-Healing & Downloads">
-        <span class="text-[#71717a] font-sans font-medium">Heal:</span> Disabled
+    <div class="w-[108px] shrink-0 flex items-center justify-center">
+        {% if global_state == 'disabled' %}
+        <div class="w-full flex items-center justify-center gap-1.5 bg-[#18181b] border border-red-500/20 rounded-full px-2 py-0.5 text-[11px] text-red-500/70 font-mono" title="Self-Healing & Downloads">
+            <span class="text-[#71717a] font-sans font-medium">Heal:</span> Disabled
+        </div>
+        {% else %}
+        <div class="w-full flex items-center justify-center gap-1.5 bg-[#1e1e24] border border-[#3f3f46] rounded-full px-2 py-0.5 text-[11px] text-[#d1d5db] font-mono shadow-sm" title="Next Self-Healing & Download Check">
+            <span class="text-[#a1a1aa] font-sans font-medium">Heal:</span> {{ next_heal }}
+        </div>
+        {% endif %}
     </div>
-    {% else %}
-    <div class="flex items-center gap-1.5 bg-[#1e1e24] border border-[#3f3f46] rounded-full px-2.5 py-0.5 text-[11px] text-[#d1d5db] font-mono shadow-sm" title="Next Self-Healing & Download Check">
-        <span class="text-[#a1a1aa] font-sans font-medium">Heal:</span> {{ next_heal }}
-    </div>
-    {% endif %}
 
     <!-- 2. VIDEO PILL -->
-    {% if state == 'running_video' %}
-    <div class="flex items-center gap-1.5 bg-[#1e1e24] border border-[#d40060]/70 rounded-full px-2.5 py-0.5 text-[11px] text-pink-200 shadow-sm animate-fade-in">
-        <span class="relative flex h-2 w-2">
-            <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-pink-400 opacity-75"></span>
-            <span class="relative inline-flex rounded-full h-2 w-2 bg-[#d40060]"></span>
-        </span>
-        <span class="font-medium font-sans text-white">Video:</span>
-        <span class="text-pink-300 font-sans text-[10px]">Läuft...</span>
-        <button hx-post="/api/automation/abort" hx-target="#automation-nav-status" class="ml-1 px-1.5 py-0.5 bg-red-800 hover:bg-red-700 text-white rounded text-[9px] font-bold uppercase tracking-wider transition-colors shadow-sm cursor-pointer" title="Suchlauf abbrechen">
-            Abbrechen
-        </button>
+    <div class="w-[108px] shrink-0 flex items-center justify-center">
+        {% if state == 'running_video' %}
+        <div class="w-full flex items-center justify-center gap-1 bg-[#1e1e24] border border-[#d40060]/70 rounded-full px-1.5 py-0.5 text-[11px] text-pink-200 shadow-sm animate-fade-in">
+            <span class="relative flex h-1.5 w-1.5 shrink-0">
+                <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-pink-400 opacity-75"></span>
+                <span class="relative inline-flex rounded-full h-1.5 w-1.5 bg-[#d40060]"></span>
+            </span>
+            <span class="font-medium font-sans text-white text-[10px]">Video:</span>
+            <button hx-post="/api/automation/abort" hx-target="#automation-nav-status" class="ml-1 px-1 py-0.5 bg-red-800 hover:bg-red-700 text-white rounded text-[8px] font-bold uppercase tracking-wider transition-colors shadow-sm cursor-pointer" title="Abort search automation">
+                Abort
+            </button>
+        </div>
+        {% elif global_state == 'paused' %}
+        <div class="w-full flex items-center justify-center gap-1.5 bg-[#18181b] border border-yellow-500/20 rounded-full px-2 py-0.5 text-[11px] text-yellow-500/70 font-mono" title="Video Search Automation">
+            <span class="text-[#71717a] font-sans font-medium">Video:</span> Paused
+        </div>
+        {% elif global_state == 'disabled' %}
+        <div class="w-full flex items-center justify-center gap-1.5 bg-[#18181b] border border-red-500/20 rounded-full px-2 py-0.5 text-[11px] text-red-500/70 font-mono" title="Video Search Automation">
+            <span class="text-[#71717a] font-sans font-medium">Video:</span> Disabled
+        </div>
+        {% else %}
+        <div class="w-full flex items-center justify-center gap-1.5 bg-[#1e1e24] border border-[#3f3f46] rounded-full px-2 py-0.5 text-[11px] text-[#d1d5db] font-mono shadow-sm" title="Next Video Search Automation">
+            <span class="text-[#a1a1aa] font-sans font-medium">Video:</span> {{ next_video }}
+        </div>
+        {% endif %}
     </div>
-    {% elif global_state == 'paused' %}
-    <div class="flex items-center gap-1.5 bg-[#18181b] border border-yellow-500/20 rounded-full px-2.5 py-0.5 text-[11px] text-yellow-500/70 font-mono" title="Video Search Automation">
-        <span class="text-[#71717a] font-sans font-medium">Video:</span> Paused
-    </div>
-    {% elif global_state == 'disabled' %}
-    <div class="flex items-center gap-1.5 bg-[#18181b] border border-red-500/20 rounded-full px-2.5 py-0.5 text-[11px] text-red-500/70 font-mono" title="Video Search Automation">
-        <span class="text-[#71717a] font-sans font-medium">Video:</span> Disabled
-    </div>
-    {% else %}
-    <div class="flex items-center gap-1.5 bg-[#1e1e24] border border-[#3f3f46] rounded-full px-2.5 py-0.5 text-[11px] text-[#d1d5db] font-mono shadow-sm" title="Next Video Search Automation">
-        <span class="text-[#a1a1aa] font-sans font-medium">Video:</span> {{ next_video }}
-    </div>
-    {% endif %}
 
     <!-- 3. PRINT PILL -->
-    {% if state == 'running_print' %}
-    <div class="flex items-center gap-1.5 bg-[#1e1e24] border border-[#d40060]/70 rounded-full px-2.5 py-0.5 text-[11px] text-pink-200 shadow-sm animate-fade-in">
-        <span class="relative flex h-2 w-2">
-            <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-pink-400 opacity-75"></span>
-            <span class="relative inline-flex rounded-full h-2 w-2 bg-[#d40060]"></span>
-        </span>
-        <span class="font-medium font-sans text-white">Print:</span>
-        <span class="text-pink-300 font-sans text-[10px]">Läuft...</span>
-        <button hx-post="/api/automation/abort" hx-target="#automation-nav-status" class="ml-1 px-1.5 py-0.5 bg-red-800 hover:bg-red-700 text-white rounded text-[9px] font-bold uppercase tracking-wider transition-colors shadow-sm cursor-pointer" title="Suchlauf abbrechen">
-            Abbrechen
-        </button>
+    <div class="w-[108px] shrink-0 flex items-center justify-center">
+        {% if state == 'running_print' %}
+        <div class="w-full flex items-center justify-center gap-1 bg-[#1e1e24] border border-[#d40060]/70 rounded-full px-1.5 py-0.5 text-[11px] text-pink-200 shadow-sm animate-fade-in">
+            <span class="relative flex h-1.5 w-1.5 shrink-0">
+                <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-pink-400 opacity-75"></span>
+                <span class="relative inline-flex rounded-full h-1.5 w-1.5 bg-[#d40060]"></span>
+            </span>
+            <span class="font-medium font-sans text-white text-[10px]">Print:</span>
+            <button hx-post="/api/automation/abort" hx-target="#automation-nav-status" class="ml-1 px-1 py-0.5 bg-red-800 hover:bg-red-700 text-white rounded text-[8px] font-bold uppercase tracking-wider transition-colors shadow-sm cursor-pointer" title="Abort print automation">
+                Abort
+            </button>
+        </div>
+        {% elif global_state == 'paused' %}
+        <div class="w-full flex items-center justify-center gap-1.5 bg-[#18181b] border border-yellow-500/20 rounded-full px-2 py-0.5 text-[11px] text-yellow-500/70 font-mono" title="Print Search Automation">
+            <span class="text-[#71717a] font-sans font-medium">Print:</span> Paused
+        </div>
+        {% elif global_state == 'disabled' %}
+        <div class="w-full flex items-center justify-center gap-1.5 bg-[#18181b] border border-red-500/20 rounded-full px-2 py-0.5 text-[11px] text-red-500/70 font-mono" title="Print Search Automation">
+            <span class="text-[#71717a] font-sans font-medium">Print:</span> Disabled
+        </div>
+        {% else %}
+        <div class="w-full flex items-center justify-center gap-1.5 bg-[#1e1e24] border border-[#3f3f46] rounded-full px-2 py-0.5 text-[11px] text-[#d1d5db] font-mono shadow-sm" title="Next Print Search Automation">
+            <span class="text-[#a1a1aa] font-sans font-medium">Print:</span> {{ next_print }}
+        </div>
+        {% endif %}
     </div>
-    {% elif global_state == 'paused' %}
-    <div class="flex items-center gap-1.5 bg-[#18181b] border border-yellow-500/20 rounded-full px-2.5 py-0.5 text-[11px] text-yellow-500/70 font-mono" title="Print Search Automation">
-        <span class="text-[#71717a] font-sans font-medium">Print:</span> Paused
-    </div>
-    {% elif global_state == 'disabled' %}
-    <div class="flex items-center gap-1.5 bg-[#18181b] border border-red-500/20 rounded-full px-2.5 py-0.5 text-[11px] text-red-500/70 font-mono" title="Print Search Automation">
-        <span class="text-[#71717a] font-sans font-medium">Print:</span> Disabled
-    </div>
-    {% else %}
-    <div class="flex items-center gap-1.5 bg-[#1e1e24] border border-[#3f3f46] rounded-full px-2.5 py-0.5 text-[11px] text-[#d1d5db] font-mono shadow-sm" title="Next Print Search Automation">
-        <span class="text-[#a1a1aa] font-sans font-medium">Print:</span> {{ next_print }}
-    </div>
-    {% endif %}
 
     <!-- 4. GLOBAL ABORTING INDICATOR -->
     {% if state == 'aborting' %}
@@ -71,7 +75,7 @@
             <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
             <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
         </svg>
-        <span class="font-medium font-sans">Wird abgebrochen...</span>
+        <span class="font-medium font-sans">Aborting...</span>
     </div>
     {% endif %}
 </div>

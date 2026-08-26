@@ -52,13 +52,13 @@
         {% for vol in manga.volumes|sort(attribute='volume_number') %}
         <div class="p-3 bg-[#1e1e24] hover:bg-[#272730] rounded border border-[#3f3f46] flex justify-between items-center text-xs transition-colors shadow-sm">
             <div class="flex items-center gap-2">
-                <span class="font-bold text-[#d40060] font-mono text-sm">Vol {{ "%02d"|format(vol.volume_number) }}</span>
+                <span class="font-bold text-white font-mono text-sm">Vol {{ "%02d"|format(vol.volume_number) }}</span>
             </div>
             <div class="flex items-center gap-2 shrink-0">
                 <!-- Status Badge (Click to toggle status) -->
                 <button hx-post="/api/print/manga/volume/{{ vol.id }}/toggle-status" 
                         hx-target="#manga-volumes-{{ manga.id }}" 
-                        hx-swap="outerHTML"
+                        hx-swap="outerHTML" 
                         title="Click to toggle monitoring status"
                         class="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider transition-opacity hover:opacity-80 cursor-pointer
                     {% if vol.status.value == 'completed' or vol.status.value == 'downloaded' %}bg-emerald-900/60 text-emerald-300 border border-emerald-700
@@ -71,7 +71,7 @@
                 {% if vol.status.value == 'downloaded' %}
                 <span class="bg-blue-900 text-blue-200 text-[9px] font-bold px-1.5 py-0.5 rounded border border-blue-700 mt-1">Upgrade: {{ vol.upgrade_attempts_count }}/{{ max_upgrade_attempts }}</span>
                 {% elif vol.status.value == 'completed' and vol.best_score and vol.best_score < 1000 %}
-                <span class="bg-[#1e1e24] text-gray-400 text-[9px] font-bold px-1.5 py-0.5 rounded border border-[#3f3f46] mt-1">Cutoff nicht erreicht ({{ vol.upgrade_attempts_count }}/{{ max_upgrade_attempts }})</span>
+                <span class="bg-[#1e1e24] text-gray-400 text-[9px] font-bold px-1.5 py-0.5 rounded border border-[#3f3f46] mt-1">Cutoff unmet ({{ vol.upgrade_attempts_count }}/{{ max_upgrade_attempts }})</span>
                 {% endif %}
 
                 <!-- Search Link -->

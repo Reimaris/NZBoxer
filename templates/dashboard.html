@@ -317,7 +317,7 @@
                                 {% if item.status.value == 'downloaded' %}
                                 <span class="bg-blue-900 text-blue-200 text-[10px] font-bold px-2 py-0.5 rounded border border-blue-700 w-fit">Upgrade: {{ item.upgrade_attempts_count }}/{{ max_upgrade_attempts }}</span>
                                 {% elif item.status.value == 'completed' and item.best_score and item.best_score < 8000 %}
-                                <span class="bg-[#1e1e24] text-gray-400 text-[10px] font-bold px-2 py-0.5 rounded border border-[#3f3f46] w-fit">Cutoff nicht erreicht ({{ item.upgrade_attempts_count }}/{{ max_upgrade_attempts }} Versuche)</span>
+                                <span class="bg-[#1e1e24] text-gray-400 text-[10px] font-bold px-2 py-0.5 rounded border border-[#3f3f46] w-fit">Cutoff unmet ({{ item.upgrade_attempts_count }}/{{ max_upgrade_attempts }} attempts)</span>
                                 {% endif %}
                             {% elif item.status.value == 'downloading' %}
                                 <span class="bg-orange-600 animate-pulse text-white text-[11px] font-bold px-2 py-1 rounded uppercase tracking-wider shadow-sm">DOWNLOADING</span>
