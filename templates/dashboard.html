@@ -82,7 +82,60 @@
 </div>
 
 <!-- Main Table Area -->
-<div class="bg-[#24242b] border border-[#3f3f46] rounded-lg shadow overflow-hidden" x-data="{ tab: 'movie', search: '', showStatus: false }">
+<div class="bg-[#24242b] border border-[#3f3f46] rounded-lg shadow overflow-hidden" 
+     x-data="{ 
+        tab: 'movie', 
+        search: '', 
+        showStatus: false,
+        sortCol: 'title',
+        sortDir: 'asc',
+        sortBy(col) {
+            if (this.sortCol === col) {
+                this.sortDir = this.sortDir === 'asc' ? 'desc' : 'asc';
+            } else {
+                this.sortCol = col;
+                this.sortDir = 'asc';
+            }
+            this.applySort();
+        },
+        applySort() {
+            const tbody = document.getElementById('video-table-body');
+            if (!tbody) return;
+            const rows = Array.from(tbody.querySelectorAll('tr[data-sortable=\'true\']'));
+            if (!rows.length) return;
+            const col = this.sortCol;
+            const dir = this.sortDir;
+            const isNumeric = (col === 'year' || col === 'status-rank');
+            
+            rows.sort((a, b) => {
+                const valA = a.getAttribute('data-' + col) || '';
+                const valB = b.getAttribute('data-' + col) || '';
+                
+                const aEmpty = (valA === '');
+                const bEmpty = (valB === '');
+                
+                // Nulls/empty values always sink to the bottom
+                if (aEmpty && bEmpty) return 0;
+                if (aEmpty) return 1;
+                if (bEmpty) return -1;
+                
+                let cmp = 0;
+                if (isNumeric) {
+                    const numA = parseFloat(valA);
+                    const numB = parseFloat(valB);
+                    if (isNaN(numA) && isNaN(numB)) cmp = 0;
+                    else if (isNaN(numA)) return 1;
+                    else if (isNaN(numB)) return -1;
+                    else cmp = numA - numB;
+                } else {
+                    cmp = valA.localeCompare(valB, undefined, { numeric: true, sensitivity: 'base' });
+                }
+                return dir === 'asc' ? cmp : -cmp;
+            });
+            rows.forEach(r => tbody.appendChild(r));
+        }
+     }"
+     x-init="applySort()">
     
     <!-- Table Toolbar: Tabs & Search -->
     <div class="p-4 border-b border-[#3f3f46] flex flex-col md:flex-row justify-between items-center gap-4">
@@ -147,19 +200,80 @@
         <table class="w-full text-left border-collapse whitespace-nowrap">
             <thead class="bg-[#1e1e24] text-[#a1a1aa] font-semibold text-xs uppercase tracking-wider border-b border-[#3f3f46]">
                 <tr>
-                    <th class="px-6 py-3.5">Title</th>
-                    <th class="px-6 py-3.5">Profile</th>
-                    <th class="px-6 py-3.5">Year</th>
-                    <th class="px-6 py-3.5">Release Date</th>
-                    <th class="px-6 py-3.5">Status</th>
-                    <th class="px-6 py-3.5">Last Checked</th>
+                    <th class="px-6 py-3.5 cursor-pointer select-none group hover:text-white transition-colors" @click="sortBy('title')" title="Sort by Title">
+                        <div class="flex items-center gap-1.5">
+                            <span>Title</span>
+                            <span class="text-[10px] transition-colors" :class="sortCol === 'title' ? 'text-[#d40060]' : 'text-[#52525b] group-hover:text-[#a1a1aa]'">
+                                <span x-show="sortCol === 'title' && sortDir === 'desc'">▼</span>
+                                <span x-show="sortCol === 'title' && sortDir === 'asc'">▲</span>
+                                <span x-show="sortCol !== 'title'" class="opacity-0 group-hover:opacity-100">▲</span>
+                            </span>
+                        </div>
+                    </th>
+                    <th class="px-6 py-3.5 cursor-pointer select-none group hover:text-white transition-colors" @click="sortBy('profile')" title="Sort by Profile">
+                        <div class="flex items-center gap-1.5">
+                            <span>Profile</span>
+                            <span class="text-[10px] transition-colors" :class="sortCol === 'profile' ? 'text-[#d40060]' : 'text-[#52525b] group-hover:text-[#a1a1aa]'">
+                                <span x-show="sortCol === 'profile' && sortDir === 'desc'">▼</span>
+                                <span x-show="sortCol === 'profile' && sortDir === 'asc'">▲</span>
+                                <span x-show="sortCol !== 'profile'" class="opacity-0 group-hover:opacity-100">▲</span>
+                            </span>
+                        </div>
+                    </th>
+                    <th class="px-6 py-3.5 cursor-pointer select-none group hover:text-white transition-colors" @click="sortBy('year')" title="Sort by Year">
+                        <div class="flex items-center gap-1.5">
+                            <span>Year</span>
+                            <span class="text-[10px] transition-colors" :class="sortCol === 'year' ? 'text-[#d40060]' : 'text-[#52525b] group-hover:text-[#a1a1aa]'">
+                                <span x-show="sortCol === 'year' && sortDir === 'desc'">▼</span>
+                                <span x-show="sortCol === 'year' && sortDir === 'asc'">▲</span>
+                                <span x-show="sortCol !== 'year'" class="opacity-0 group-hover:opacity-100">▲</span>
+                            </span>
+                        </div>
+                    </th>
+                    <th class="px-6 py-3.5 cursor-pointer select-none group hover:text-white transition-colors" @click="sortBy('release-date')" title="Sort by Release Date">
+                        <div class="flex items-center gap-1.5">
+                            <span>Release Date</span>
+                            <span class="text-[10px] transition-colors" :class="sortCol === 'release-date' ? 'text-[#d40060]' : 'text-[#52525b] group-hover:text-[#a1a1aa]'">
+                                <span x-show="sortCol === 'release-date' && sortDir === 'desc'">▼</span>
+                                <span x-show="sortCol === 'release-date' && sortDir === 'asc'">▲</span>
+                                <span x-show="sortCol !== 'release-date'" class="opacity-0 group-hover:opacity-100">▲</span>
+                            </span>
+                        </div>
+                    </th>
+                    <th class="px-6 py-3.5 cursor-pointer select-none group hover:text-white transition-colors" @click="sortBy('status-rank')" title="Sort by Status">
+                        <div class="flex items-center gap-1.5">
+                            <span>Status</span>
+                            <span class="text-[10px] transition-colors" :class="sortCol === 'status-rank' ? 'text-[#d40060]' : 'text-[#52525b] group-hover:text-[#a1a1aa]'">
+                                <span x-show="sortCol === 'status-rank' && sortDir === 'desc'">▼</span>
+                                <span x-show="sortCol === 'status-rank' && sortDir === 'asc'">▲</span>
+                                <span x-show="sortCol !== 'status-rank'" class="opacity-0 group-hover:opacity-100">▲</span>
+                            </span>
+                        </div>
+                    </th>
+                    <th class="px-6 py-3.5 cursor-pointer select-none group hover:text-white transition-colors" @click="sortBy('last-checked')" title="Sort by Last Checked">
+                        <div class="flex items-center gap-1.5">
+                            <span>Last Checked</span>
+                            <span class="text-[10px] transition-colors" :class="sortCol === 'last-checked' ? 'text-[#d40060]' : 'text-[#52525b] group-hover:text-[#a1a1aa]'">
+                                <span x-show="sortCol === 'last-checked' && sortDir === 'desc'">▼</span>
+                                <span x-show="sortCol === 'last-checked' && sortDir === 'asc'">▲</span>
+                                <span x-show="sortCol !== 'last-checked'" class="opacity-0 group-hover:opacity-100">▲</span>
+                            </span>
+                        </div>
+                    </th>
                     <th class="px-6 py-3.5 text-right">Actions</th>
                 </tr>
             </thead>
-            <tbody class="divide-y divide-[#3f3f46] text-sm">
+            <tbody id="video-table-body" class="divide-y divide-[#3f3f46] text-sm">
                 {% for item in items %}
                 {% set display_category = item.media_type.value %}
                 <tr class="hover:bg-[#2a2a32] transition-colors group" 
+                    data-sortable="true"
+                    data-title="{{ (item.title or '') | lower }}"
+                    data-profile="simkl"
+                    data-year="{{ item.year or '' }}"
+                    data-release-date="{{ item.release_date.strftime('%Y-%m-%d') if item.release_date else '' }}"
+                    data-status-rank="{% if item.status.value == 'manual_grab' %}1{% elif item.status.value == 'downloading' %}2{% elif item.status.value == 'searching' or item.status.value == 'pending' %}3{% elif item.status.value == 'future' %}4{% elif item.status.value == 'downloaded' %}5{% elif item.status.value == 'completed' %}6{% else %}7{% endif %}"
+                    data-last-checked="{{ item.updated_at.strftime('%Y-%m-%d %H:%M:%S') if item.updated_at else '' }}"
                     x-show="tab === '{{ display_category }}' && ('{{ item.title|replace('\'', '\\\'') }}'.toLowerCase().includes(search.toLowerCase()) || ('{{ item.alt_title|replace('\'', '\\\'') if item.alt_title else '' }}'.toLowerCase().includes(search.toLowerCase())) || '{{ item.tvdb_id or '' }}'.includes(search) || '{{ item.tmdb_id or '' }}'.includes(search) || '{{ item.imdb_id or '' }}'.includes(search) || '{{ item.simkl_id or '' }}'.includes(search))" 
                     style="display: none;">
                     

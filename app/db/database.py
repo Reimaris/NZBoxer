@@ -515,9 +515,16 @@ async def init_db(database_url: str) -> None:
                         isinstance(cutoffs, dict)
                         and cutoffs.get("target_score") == 2500
                     ):
-                        default_target = DEFAULT_SCORING_CONFIG["cutoffs"][
-                            "target_score"
-                        ]
+                        raw_cutoffs = (
+                            DEFAULT_SCORING_CONFIG.get("cutoffs")
+                            if isinstance(DEFAULT_SCORING_CONFIG, dict)
+                            else None
+                        )
+                        default_target = (
+                            raw_cutoffs.get("target_score", 8000)
+                            if isinstance(raw_cutoffs, dict)
+                            else 8000
+                        )
                         cutoffs["target_score"] = default_target
                         db_settings.scoring_settings = sc
                         logger.info(

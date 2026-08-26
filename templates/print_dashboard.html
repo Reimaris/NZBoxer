@@ -82,7 +82,127 @@
 </div>
 
 <!-- Main Print Table Area -->
-<div class="bg-[#24242b] border border-[#3f3f46] rounded-lg shadow overflow-hidden" x-data="{ tab: 'manga', search: '', showStatus: false }">
+<div class="bg-[#24242b] border border-[#3f3f46] rounded-lg shadow overflow-hidden" 
+     x-data="{ 
+        tab: 'manga', 
+        search: '', 
+        showStatus: false,
+        mangaSortCol: 'title',
+        mangaSortDir: 'asc',
+        booksSortCol: 'title',
+        booksSortDir: 'asc',
+        
+        sortBy(col) {
+            if (this.tab === 'manga') {
+                this.sortManga(col);
+            } else if (this.tab === 'books') {
+                this.sortBooks(col);
+            }
+        },
+        
+        sortManga(col) {
+            if (this.mangaSortCol === col) {
+                this.mangaSortDir = this.mangaSortDir === 'asc' ? 'desc' : 'asc';
+            } else {
+                this.mangaSortCol = col;
+                this.mangaSortDir = 'asc';
+            }
+            this.applySortManga();
+        },
+        
+        applySortManga() {
+            const tbody = document.getElementById('manga-table-body');
+            if (!tbody) return;
+            const rows = Array.from(tbody.querySelectorAll('tr[data-sortable=\'true\']'));
+            if (!rows.length) return;
+            const col = this.mangaSortCol;
+            const dir = this.mangaSortDir;
+            const isNumeric = (col === 'volumes' || col === 'status-rank');
+            
+            rows.sort((a, b) => {
+                const valA = a.getAttribute('data-' + col) || '';
+                const valB = b.getAttribute('data-' + col) || '';
+                const aEmpty = (valA === '');
+                const bEmpty = (valB === '');
+                if (aEmpty && bEmpty) return 0;
+                if (aEmpty) return 1;
+                if (bEmpty) return -1;
+                
+                let cmp = 0;
+                if (isNumeric) {
+                    const numA = parseFloat(valA);
+                    const numB = parseFloat(valB);
+                    if (isNaN(numA) && isNaN(numB)) cmp = 0;
+                    else if (isNaN(numA)) return 1;
+                    else if (isNaN(numB)) return -1;
+                    else cmp = numA - numB;
+                } else {
+                    cmp = valA.localeCompare(valB, undefined, { numeric: true, sensitivity: 'base' });
+                }
+                return dir === 'asc' ? cmp : -cmp;
+            });
+            
+            rows.forEach(r => {
+                tbody.appendChild(r);
+                const drawerId = r.getAttribute('data-drawer-id');
+                if (drawerId) {
+                    const drawerEl = document.getElementById(drawerId);
+                    if (drawerEl) tbody.appendChild(drawerEl);
+                }
+            });
+        },
+        
+        sortBooks(col) {
+            if (this.booksSortCol === col) {
+                this.booksSortDir = this.booksSortDir === 'asc' ? 'desc' : 'asc';
+            } else {
+                this.booksSortCol = col;
+                this.booksSortDir = 'asc';
+            }
+            this.applySortBooks();
+        },
+        
+        applySortBooks() {
+            const tbody = document.getElementById('books-table-body');
+            if (!tbody) return;
+            const rows = Array.from(tbody.querySelectorAll('tr[data-sortable=\'true\']'));
+            if (!rows.length) return;
+            const col = this.booksSortCol;
+            const dir = this.booksSortDir;
+            const isNumeric = (col === 'score' || col === 'status-rank');
+            
+            rows.sort((a, b) => {
+                const valA = a.getAttribute('data-' + col) || '';
+                const valB = b.getAttribute('data-' + col) || '';
+                const aEmpty = (valA === '');
+                const bEmpty = (valB === '');
+                if (aEmpty && bEmpty) return 0;
+                if (aEmpty) return 1;
+                if (bEmpty) return -1;
+                
+                let cmp = 0;
+                if (isNumeric) {
+                    const numA = parseFloat(valA);
+                    const numB = parseFloat(valB);
+                    if (isNaN(numA) && isNaN(numB)) cmp = 0;
+                    else if (isNaN(numA)) return 1;
+                    else if (isNaN(numB)) return -1;
+                    else cmp = numA - numB;
+                } else {
+                    cmp = valA.localeCompare(valB, undefined, { numeric: true, sensitivity: 'base' });
+                }
+                return dir === 'asc' ? cmp : -cmp;
+            });
+            
+            rows.forEach(r => tbody.appendChild(r));
+        },
+        
+        applySort() {
+            this.applySortManga();
+            this.applySortBooks();
+        }
+     }"
+     x-init="applySort()">
     
     <!-- Table Toolbar: Tabs, Search & Add Action -->
     <div class="p-4 border-b border-[#3f3f46] flex flex-col md:flex-row justify-between items-center gap-4">
@@ -127,15 +247,48 @@
                 <thead>
                     <tr class="border-b border-[#3f3f46] bg-[#1e1e24] text-xs font-semibold text-[#a1a1aa] uppercase tracking-wider">
                         <th class="py-3 px-4 w-12 text-center">#</th>
-                        <th class="py-3 px-4">Title & Details</th>
-                        <th class="py-3 px-4">Volumes</th>
-                        <th class="py-3 px-4">Status</th>
+                        <th class="py-3 px-4 cursor-pointer select-none group hover:text-white transition-colors" @click="sortManga('title')" title="Sort by Title">
+                            <div class="flex items-center gap-1.5">
+                                <span>Title & Details</span>
+                                <span class="text-[10px] transition-colors" :class="mangaSortCol === 'title' ? 'text-[#d40060]' : 'text-[#52525b] group-hover:text-[#a1a1aa]'">
+                                    <span x-show="mangaSortCol === 'title' && mangaSortDir === 'desc'">▼</span>
+                                    <span x-show="mangaSortCol === 'title' && mangaSortDir === 'asc'">▲</span>
+                                    <span x-show="mangaSortCol !== 'title'" class="opacity-0 group-hover:opacity-100">▲</span>
+                                </span>
+                            </div>
+                        </th>
+                        <th class="py-3 px-4 cursor-pointer select-none group hover:text-white transition-colors" @click="sortManga('volumes')" title="Sort by Volumes">
+                            <div class="flex items-center gap-1.5">
+                                <span>Volumes</span>
+                                <span class="text-[10px] transition-colors" :class="mangaSortCol === 'volumes' ? 'text-[#d40060]' : 'text-[#52525b] group-hover:text-[#a1a1aa]'">
+                                    <span x-show="mangaSortCol === 'volumes' && mangaSortDir === 'desc'">▼</span>
+                                    <span x-show="mangaSortCol === 'volumes' && mangaSortDir === 'asc'">▲</span>
+                                    <span x-show="mangaSortCol !== 'volumes'" class="opacity-0 group-hover:opacity-100">▲</span>
+                                </span>
+                            </div>
+                        </th>
+                        <th class="py-3 px-4 cursor-pointer select-none group hover:text-white transition-colors" @click="sortManga('status-rank')" title="Sort by Status">
+                            <div class="flex items-center gap-1.5">
+                                <span>Status</span>
+                                <span class="text-[10px] transition-colors" :class="mangaSortCol === 'status-rank' ? 'text-[#d40060]' : 'text-[#52525b] group-hover:text-[#a1a1aa]'">
+                                    <span x-show="mangaSortCol === 'status-rank' && mangaSortDir === 'desc'">▼</span>
+                                    <span x-show="mangaSortCol === 'status-rank' && mangaSortDir === 'asc'">▲</span>
+                                    <span x-show="mangaSortCol !== 'status-rank'" class="opacity-0 group-hover:opacity-100">▲</span>
+                                </span>
+                            </div>
+                        </th>
                         <th class="py-3 px-4 text-right">Actions</th>
                     </tr>
                 </thead>
-                <tbody class="divide-y divide-[#3f3f46] text-sm" x-data="{ expandedManga: {} }">
+                <tbody id="manga-table-body" class="divide-y divide-[#3f3f46] text-sm" x-data="{ expandedManga: {} }">
                     {% for item in mangas %}
                     <tr class="hover:bg-[#2a2a32] transition-colors cursor-pointer" 
+                        data-sortable="true"
+                        data-title="{{ (item.title or '') | lower }}"
+                        data-year="{{ item.start_year or '' }}"
+                        data-volumes="{{ item.volumes | length }}"
+                        data-status-rank="{% if item.status.value == 'manual_grab' %}1{% elif item.status.value == 'downloading' %}2{% elif item.status.value == 'searching' or item.status.value == 'pending' %}3{% elif item.status.value == 'future' %}4{% elif item.status.value == 'downloaded' %}5{% elif item.status.value == 'completed' %}6{% else %}7{% endif %}"
+                        data-drawer-id="manga-drawer-row-{{ item.id }}"
                         x-show="search === '' || '{{ item.title | lower }}'.includes(search.toLowerCase())"
                         @click="expandedManga[{{ item.id }}] = !expandedManga[{{ item.id }}]; if(expandedManga[{{ item.id }}] && !$el.dataset.loaded) { $el.dataset.loaded = 'true'; htmx.ajax('GET', '/dashboard/print/manga/{{ item.id }}/volumes', '#manga-drawer-{{ item.id }}'); }">
                         <td class="py-3 px-4 text-center text-[#a1a1aa] align-middle">{{ loop.index }}</td>
@@ -226,15 +379,48 @@
                 <thead>
                     <tr class="border-b border-[#3f3f46] bg-[#1e1e24] text-xs font-semibold text-[#a1a1aa] uppercase tracking-wider">
                         <th class="py-3 px-4 w-12 text-center">#</th>
-                        <th class="py-3 px-4">Title & Author</th>
-                        <th class="py-3 px-4">ISBN</th>
-                        <th class="py-3 px-4">Status</th>
+                        <th class="py-3 px-4 cursor-pointer select-none group hover:text-white transition-colors" @click="sortBooks('title')" title="Sort by Title">
+                            <div class="flex items-center gap-1.5">
+                                <span>Title & Author</span>
+                                <span class="text-[10px] transition-colors" :class="booksSortCol === 'title' ? 'text-[#d40060]' : 'text-[#52525b] group-hover:text-[#a1a1aa]'">
+                                    <span x-show="booksSortCol === 'title' && booksSortDir === 'desc'">▼</span>
+                                    <span x-show="booksSortCol === 'title' && booksSortDir === 'asc'">▲</span>
+                                    <span x-show="booksSortCol !== 'title'" class="opacity-0 group-hover:opacity-100">▲</span>
+                                </span>
+                            </div>
+                        </th>
+                        <th class="py-3 px-4 cursor-pointer select-none group hover:text-white transition-colors" @click="sortBooks('isbn')" title="Sort by ISBN">
+                            <div class="flex items-center gap-1.5">
+                                <span>ISBN</span>
+                                <span class="text-[10px] transition-colors" :class="booksSortCol === 'isbn' ? 'text-[#d40060]' : 'text-[#52525b] group-hover:text-[#a1a1aa]'">
+                                    <span x-show="booksSortCol === 'isbn' && booksSortDir === 'desc'">▼</span>
+                                    <span x-show="booksSortCol === 'isbn' && booksSortDir === 'asc'">▲</span>
+                                    <span x-show="booksSortCol !== 'isbn'" class="opacity-0 group-hover:opacity-100">▲</span>
+                                </span>
+                            </div>
+                        </th>
+                        <th class="py-3 px-4 cursor-pointer select-none group hover:text-white transition-colors" @click="sortBooks('status-rank')" title="Sort by Status">
+                            <div class="flex items-center gap-1.5">
+                                <span>Status</span>
+                                <span class="text-[10px] transition-colors" :class="booksSortCol === 'status-rank' ? 'text-[#d40060]' : 'text-[#52525b] group-hover:text-[#a1a1aa]'">
+                                    <span x-show="booksSortCol === 'status-rank' && booksSortDir === 'desc'">▼</span>
+                                    <span x-show="booksSortCol === 'status-rank' && booksSortDir === 'asc'">▲</span>
+                                    <span x-show="booksSortCol !== 'status-rank'" class="opacity-0 group-hover:opacity-100">▲</span>
+                                </span>
+                            </div>
+                        </th>
                         <th class="py-3 px-4 text-right">Actions</th>
                     </tr>
                 </thead>
-                <tbody class="divide-y divide-[#3f3f46] text-sm">
+                <tbody id="books-table-body" class="divide-y divide-[#3f3f46] text-sm">
                     {% for item in books %}
-                    <tr class="hover:bg-[#2a2a32] transition-colors" x-show="search === '' || '{{ item.title | lower }}'.includes(search.toLowerCase()) || '{{ (item.author or '') | lower }}'.includes(search.toLowerCase())">
+                    <tr class="hover:bg-[#2a2a32] transition-colors" 
+                        data-sortable="true"
+                        data-title="{{ (item.title or '') | lower }}"
+                        data-isbn="{{ (item.isbn or '') | lower }}"
+                        data-score="{{ item.best_score or '' }}"
+                        data-status-rank="{% if item.status.value == 'manual_grab' %}1{% elif item.status.value == 'downloading' %}2{% elif item.status.value == 'searching' or item.status.value == 'pending' %}3{% elif item.status.value == 'future' %}4{% elif item.status.value == 'downloaded' %}5{% elif item.status.value == 'completed' %}6{% else %}7{% endif %}"
+                        x-show="search === '' || '{{ item.title | lower }}'.includes(search.toLowerCase()) || '{{ (item.author or '') | lower }}'.includes(search.toLowerCase())">
                         <td class="py-3 px-4 text-center text-[#a1a1aa] align-middle">{{ loop.index }}</td>
                         <td class="py-3 px-4 align-middle">
                             <span class="font-semibold text-white block">{{ item.title }}</span>

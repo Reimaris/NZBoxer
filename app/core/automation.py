@@ -2158,8 +2158,8 @@ async def process_print_manga(session: AsyncSession, manga: MangaItem) -> bool:
         if v.status in [EpisodeStatus.PENDING, EpisodeStatus.SEARCHING]:
             wanted_vols.append(v)
         elif v.status == EpisodeStatus.DOWNLOADED:
-            # Check if it's already top tier (score >= 1000)
-            if getattr(v, "best_score", None) is not None and v.best_score >= 1000:
+            best_score_val = getattr(v, "best_score", None)
+            if best_score_val is not None and best_score_val >= 1000:
                 continue
             wanted_vols.append(v)
     if not wanted_vols:
