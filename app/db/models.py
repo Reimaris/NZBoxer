@@ -294,6 +294,13 @@ class ProviderProfile(Base):
     # Download & Automation Settings
     path: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     mode: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # Kept with default for SQLite DB backwards compatibility
+    search_cycle_skip: Mapped[int] = mapped_column(
+        Integer, default=1, server_default="1"
+    )
+    current_cycle_count: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0"
+    )
     resolution: Mapped[str | None] = mapped_column(
         String(100), default="Automatisch / beste"
     )
