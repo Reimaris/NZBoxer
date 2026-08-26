@@ -314,12 +314,6 @@
                             </div>
 
                             <div class="flex flex-col">
-                                <label class="h-6 text-[#d1d5db] font-medium mb-1 flex items-center gap-1.5">Search Interval Multiplier</label>
-                                {% set cycle_skip = provider.profiles[0].search_cycle_skip if provider and provider.profiles|length > 0 else '1' %}
-                                <input type="number" name="search_cycle_skip" value="{{ cycle_skip }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors font-mono" placeholder="1 = Every cycle">
-                            </div>
-
-                            <div class="flex flex-col">
                                 <label class="h-6 text-[#d1d5db] font-medium mb-1 flex items-center gap-1.5">Notification Channel</label>
                                 {% set global_notif = provider.profiles[0].notification_channel_id if provider and provider.profiles|length > 0 else none %}
                                 <select name="global_notification" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors">

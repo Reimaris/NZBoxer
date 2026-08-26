@@ -134,6 +134,15 @@ class SystemSettings(Base):
         server_default="ACTIVE",
     )
     scan_interval_multiplier: Mapped[int] = mapped_column(Integer, default=1)
+    self_healing_interval: Mapped[int] = mapped_column(
+        Integer, default=15, server_default="15"
+    )
+    video_search_interval: Mapped[int] = mapped_column(
+        Integer, default=60, server_default="60"
+    )
+    print_search_interval: Mapped[int] = mapped_column(
+        Integer, default=60, server_default="60"
+    )
     sh_max_retries: Mapped[int] = mapped_column(Integer, default=3)
     sh_max_time_hours: Mapped[float] = mapped_column(
         Float, nullable=False, default=12.0
@@ -285,8 +294,6 @@ class ProviderProfile(Base):
     # Download & Automation Settings
     path: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     mode: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    search_cycle_skip: Mapped[int] = mapped_column(Integer, default=1)
-    current_cycle_count: Mapped[int] = mapped_column(Integer, default=0)
     resolution: Mapped[str | None] = mapped_column(
         String(100), default="Automatisch / beste"
     )

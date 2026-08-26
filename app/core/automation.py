@@ -587,31 +587,16 @@ async def run_automation_cycle(force: bool = False) -> None:
 
             await session.commit()
 
-            # Provider Cycle Throttling
+            # Active Provider Profiles
             from app.db.models import ProviderProfile
 
             profiles = (await session.execute(select(ProviderProfile))).scalars().all()
-            active_movie_provider_ids = []
-            active_shows_provider_ids = []
-
-            for p in profiles:
-                if force:
-                    # Manual run: reset counter and always run all providers
-                    p.current_cycle_count = 0
-                    if p.media_type == "movies":
-                        active_movie_provider_ids.append(p.provider_id)
-                    elif p.media_type == "shows":
-                        active_shows_provider_ids.append(p.provider_id)
-                else:
-                    p.current_cycle_count += 1
-                    if p.current_cycle_count >= p.search_cycle_skip:
-                        p.current_cycle_count = 0
-                        if p.media_type == "movies":
-                            active_movie_provider_ids.append(p.provider_id)
-                        elif p.media_type == "shows":
-                            active_shows_provider_ids.append(p.provider_id)
-
-            await session.commit()
+            active_movie_provider_ids = [
+                p.provider_id for p in profiles if p.media_type == "movies"
+            ]
+            active_shows_provider_ids = [
+                p.provider_id for p in profiles if p.media_type == "shows"
+            ]
 
             if active_movie_provider_ids:
                 # 2. Process Movies

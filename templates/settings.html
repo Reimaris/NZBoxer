@@ -99,8 +99,43 @@
                             <input type="number" step="0.1" name="sh_max_time_hours" value="{{ db_settings.sh_max_time_hours if db_settings else '24.0' }}" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors font-mono text-center">
                         </div>
                         <div>
-                            <label class="block text-[#d1d5db] font-medium mb-1 text-xs uppercase tracking-wider">Scan Multiplier (15min base)</label>
-                            <input type="number" name="scan_interval_multiplier" value="{{ db_settings.scan_interval_multiplier if db_settings else '2' }}" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors font-mono text-center">
+                            <label class="block text-[#d1d5db] font-medium mb-1 text-xs uppercase tracking-wider">Self-Healing & Downloads</label>
+                            <select name="self_healing_interval" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors">
+                                <option value="15" {% if db_settings and db_settings.self_healing_interval == 15 %}selected{% endif %}>Every 15 minutes</option>
+                                <option value="30" {% if db_settings and db_settings.self_healing_interval == 30 %}selected{% endif %}>Every 30 minutes</option>
+                                <option value="60" {% if db_settings and db_settings.self_healing_interval == 60 %}selected{% endif %}>Every hour</option>
+                                <option value="120" {% if db_settings and db_settings.self_healing_interval == 120 %}selected{% endif %}>Every 2 hours</option>
+                                <option value="240" {% if db_settings and db_settings.self_healing_interval == 240 %}selected{% endif %}>Every 4 hours</option>
+                                <option value="360" {% if db_settings and db_settings.self_healing_interval == 360 %}selected{% endif %}>Every 6 hours</option>
+                                <option value="720" {% if db_settings and db_settings.self_healing_interval == 720 %}selected{% endif %}>Every 12 hours</option>
+                                <option value="1440" {% if db_settings and db_settings.self_healing_interval == 1440 %}selected{% endif %}>Every 24 hours</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-[#d1d5db] font-medium mb-1 text-xs uppercase tracking-wider">Video Search Interval</label>
+                            <select name="video_search_interval" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors">
+                                <option value="15" {% if db_settings and db_settings.video_search_interval == 15 %}selected{% endif %}>Every 15 minutes</option>
+                                <option value="30" {% if db_settings and db_settings.video_search_interval == 30 %}selected{% endif %}>Every 30 minutes</option>
+                                <option value="60" {% if not db_settings or db_settings.video_search_interval == 60 %}selected{% endif %}>Every hour</option>
+                                <option value="120" {% if db_settings and db_settings.video_search_interval == 120 %}selected{% endif %}>Every 2 hours</option>
+                                <option value="240" {% if db_settings and db_settings.video_search_interval == 240 %}selected{% endif %}>Every 4 hours</option>
+                                <option value="360" {% if db_settings and db_settings.video_search_interval == 360 %}selected{% endif %}>Every 6 hours</option>
+                                <option value="720" {% if db_settings and db_settings.video_search_interval == 720 %}selected{% endif %}>Every 12 hours</option>
+                                <option value="1440" {% if db_settings and db_settings.video_search_interval == 1440 %}selected{% endif %}>Every 24 hours</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-[#d1d5db] font-medium mb-1 text-xs uppercase tracking-wider">Print Search Interval</label>
+                            <select name="print_search_interval" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors">
+                                <option value="15" {% if db_settings and db_settings.print_search_interval == 15 %}selected{% endif %}>Every 15 minutes</option>
+                                <option value="30" {% if db_settings and db_settings.print_search_interval == 30 %}selected{% endif %}>Every 30 minutes</option>
+                                <option value="60" {% if not db_settings or db_settings.print_search_interval == 60 %}selected{% endif %}>Every hour</option>
+                                <option value="120" {% if db_settings and db_settings.print_search_interval == 120 %}selected{% endif %}>Every 2 hours</option>
+                                <option value="240" {% if db_settings and db_settings.print_search_interval == 240 %}selected{% endif %}>Every 4 hours</option>
+                                <option value="360" {% if db_settings and db_settings.print_search_interval == 360 %}selected{% endif %}>Every 6 hours</option>
+                                <option value="720" {% if db_settings and db_settings.print_search_interval == 720 %}selected{% endif %}>Every 12 hours</option>
+                                <option value="1440" {% if db_settings and db_settings.print_search_interval == 1440 %}selected{% endif %}>Every 24 hours</option>
+                            </select>
                         </div>
                         <div>
                             <label class="block text-[#d1d5db] font-medium mb-1 text-xs uppercase tracking-wider">Auto Retry</label>

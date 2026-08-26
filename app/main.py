@@ -130,11 +130,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         await reload_settings_from_db(session)
 
     # 2. Setup and Start APScheduler
-    from app.core.automation import run_automation_cycle
-    from app.core.self_healing import run_self_healing_cycle
+    from datetime import datetime
 
-    # State to keep track of intervals
-    state = {"cycle_count": 0}
+    from apscheduler.triggers.cron import CronTrigger
+
+    from app.core.automation import run_automation_cycle, run_print_automation_cycle
+    from app.core.automation_state import automation_state_manager
+    from app.core.scheduler_utils import is_interval_due
+    from app.core.self_healing import run_download_check_cycle, run_self_healing_cycle
 
     async def _orchestrator_job():
         if settings.automation_state == "disabled":
@@ -145,40 +148,51 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             logger.info("Automation is PAUSED. Skipping orchestrator cycle.")
             return
 
-        # Always run self-healing first
-        await run_self_healing_cycle()
+        now = datetime.now()
+        logger.info("⏰ Orchestrator clock tick at %s", now.strftime("%Y-%m-%d %H:%M:%S"))
 
-        # Check if we should run the full scan
-        if state["cycle_count"] % settings.scan_interval_multiplier == 0:
+        # 1. Self-Healing & Download Check
+        if is_interval_due(settings.self_healing_interval, now):
             logger.info(
-                "Running full automation cycle (Interval multiplier: %d)",
-                settings.scan_interval_multiplier,
+                "⏰ Running scheduled Self-Healing & Download Check (Interval: %dm)",
+                settings.self_healing_interval,
             )
-            from app.core.automation import run_print_automation_cycle
+            await run_self_healing_cycle()
+            await run_download_check_cycle()
 
+        if automation_state_manager.is_aborting():
+            logger.info("🛑 Automation abort detected after self-healing. Halting tick.")
+            return
+
+        # 2. Video Media Automation
+        if is_interval_due(settings.video_search_interval, now):
+            logger.info(
+                "⏰ Running scheduled Video Automation (Interval: %dm)",
+                settings.video_search_interval,
+            )
             await run_automation_cycle()
-            await run_print_automation_cycle()
-        else:
+
+        if automation_state_manager.is_aborting():
+            logger.info("🛑 Automation abort detected after video cycle. Halting tick.")
+            return
+
+        # 3. Print Media Automation
+        if is_interval_due(settings.print_search_interval, now):
             logger.info(
-                "Skipping full automation cycle (Interval multiplier: %d, Current cycle: %d)",
-                settings.scan_interval_multiplier,
-                state["cycle_count"],
+                "⏰ Running scheduled Print Automation (Interval: %dm)",
+                settings.print_search_interval,
             )
-
-        state["cycle_count"] += 1
-
-    interval_minutes = 15  # Base interval is always 15 minutes as requested
+            await run_print_automation_cycle()
 
     scheduler.add_job(
         _orchestrator_job,
-        "interval",
-        minutes=interval_minutes,
+        CronTrigger(minute="0,15,30,45"),
         id="orchestrator_job",
         replace_existing=True,
     )
     scheduler.start()
     logger.info(
-        "APScheduler started. Base interval set to %d minutes.", interval_minutes
+        "APScheduler started with quarter-hour cron trigger (:00, :15, :30, :45)."
     )
 
     # Yield control to the FastAPI application
@@ -1517,6 +1531,9 @@ async def export_settings():
                 "treasure_maps_api_key": db_settings.treasure_maps_api_key,
                 "torbox_api_key": db_settings.torbox_api_key,
                 "scan_interval_multiplier": db_settings.scan_interval_multiplier,
+                "self_healing_interval": getattr(db_settings, "self_healing_interval", 15),
+                "video_search_interval": getattr(db_settings, "video_search_interval", 60),
+                "print_search_interval": getattr(db_settings, "print_search_interval", 60),
                 "sh_max_retries": db_settings.sh_max_retries,
                 "sh_max_time_hours": db_settings.sh_max_time_hours,
                 "sh_auto_retry": db_settings.sh_auto_retry,
@@ -1543,7 +1560,7 @@ async def export_settings():
                         "media_type": prof.media_type,
                         "path": prof.path,
                         "mode": prof.mode,
-                        "search_cycle_skip": prof.search_cycle_skip,
+                        "search_cycle_skip": getattr(prof, "search_cycle_skip", 1),
                         "resolution": prof.resolution,
                         "languages_csv": prof.languages_csv,
                         "min_mb": prof.min_mb,
@@ -1600,6 +1617,9 @@ async def export_settings():
 async def save_global_settings(
     request: Request,
     scan_interval_multiplier: int = Form(1),
+    self_healing_interval: int = Form(15),
+    video_search_interval: int = Form(60),
+    print_search_interval: int = Form(60),
     sh_max_retries: int = Form(3),
     sh_max_time_hours: float = Form(12.0),
     sh_auto_retry: bool = Form(True),
@@ -1619,9 +1639,18 @@ async def save_global_settings(
     from sqlalchemy import select
 
     from app.core.default_scoring import DEFAULT_SCORING_CONFIG
+    from app.core.scheduler_utils import VALID_INTERVAL_PRESETS
     from app.db.models import SystemSettings
 
     form_data = await request.form()
+
+    # Validate interval presets
+    if self_healing_interval not in VALID_INTERVAL_PRESETS:
+        self_healing_interval = 15
+    if video_search_interval not in VALID_INTERVAL_PRESETS:
+        video_search_interval = 60
+    if print_search_interval not in VALID_INTERVAL_PRESETS:
+        print_search_interval = 60
 
     async with async_session_factory() as session:
         stmt = select(SystemSettings).where(SystemSettings.id == 1)
@@ -1629,6 +1658,9 @@ async def save_global_settings(
 
         if db_settings:
             db_settings.scan_interval_multiplier = scan_interval_multiplier
+            db_settings.self_healing_interval = self_healing_interval
+            db_settings.video_search_interval = video_search_interval
+            db_settings.print_search_interval = print_search_interval
             db_settings.sh_max_retries = sh_max_retries
             db_settings.sh_max_time_hours = sh_max_time_hours
             db_settings.sh_auto_retry = sh_auto_retry
@@ -1758,8 +1790,6 @@ async def save_provider(
     series_category_id: int = Form(5000),
     anime_category_id: int = Form(5070),
     bandwidth_mbit: int = Form(None),
-    # Unified setting for all profiles
-    search_cycle_skip: int = Form(1),
     # Profile settings
     enable_movies: bool = Form(False),
     enable_books: bool = Form(False),
@@ -1875,7 +1905,6 @@ async def save_provider(
                 provider_id=provider.id,
                 media_type="movies",
                 mode=movies_mode,
-                search_cycle_skip=search_cycle_skip,
                 resolution=movies_resolution,
                 source=movies_source,
                 video_codec=movies_video_codec,
@@ -1897,7 +1926,6 @@ async def save_provider(
                 provider_id=provider.id,
                 media_type="shows",
                 mode=series_mode,
-                search_cycle_skip=search_cycle_skip,
                 resolution=series_resolution,
                 source=series_source,
                 video_codec=series_video_codec,
@@ -1921,7 +1949,6 @@ async def save_provider(
                 provider_id=provider.id,
                 media_type="anime",
                 mode=anime_mode,
-                search_cycle_skip=search_cycle_skip,
                 resolution=anime_resolution,
                 source=anime_source,
                 video_codec=anime_video_codec,

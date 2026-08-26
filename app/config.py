@@ -47,6 +47,9 @@ class Settings:
     # Self-Healing & Automation
     automation_state: str = "active"
     scan_interval_multiplier: int = int(os.getenv("SCAN_INTERVAL_MULTIPLIER", "1"))
+    self_healing_interval: int = int(os.getenv("SELF_HEALING_INTERVAL", "15"))
+    video_search_interval: int = int(os.getenv("VIDEO_SEARCH_INTERVAL", "60"))
+    print_search_interval: int = int(os.getenv("PRINT_SEARCH_INTERVAL", "60"))
     sh_max_retries: int = int(os.getenv("SH_MAX_RETRIES", "3"))
     sh_max_time_hours: float = float(os.getenv("SH_MAX_TIME_HOURS", "12.0"))
     sh_auto_retry: bool = os.getenv("SH_AUTO_RETRY", "True").lower() == "true"
@@ -114,6 +117,9 @@ async def reload_settings_from_db(session: AsyncSession) -> None:
             treasure_maps_api_key=settings.treasure_maps_api_key,
             torbox_api_key=settings.torbox_api_key,
             scan_interval_multiplier=settings.scan_interval_multiplier,
+            self_healing_interval=settings.self_healing_interval,
+            video_search_interval=settings.video_search_interval,
+            print_search_interval=settings.print_search_interval,
             sh_max_retries=settings.sh_max_retries,
             sh_max_time_hours=settings.sh_max_time_hours,
             sh_auto_retry=settings.sh_auto_retry,
@@ -132,6 +138,15 @@ async def reload_settings_from_db(session: AsyncSession) -> None:
     settings.treasure_maps_api_key = db_settings.treasure_maps_api_key
     settings.torbox_api_key = db_settings.torbox_api_key
     settings.scan_interval_multiplier = db_settings.scan_interval_multiplier
+    settings.self_healing_interval = getattr(
+        db_settings, "self_healing_interval", settings.self_healing_interval
+    )
+    settings.video_search_interval = getattr(
+        db_settings, "video_search_interval", settings.video_search_interval
+    )
+    settings.print_search_interval = getattr(
+        db_settings, "print_search_interval", settings.print_search_interval
+    )
     settings.sh_max_retries = db_settings.sh_max_retries
     settings.sh_max_time_hours = db_settings.sh_max_time_hours
     settings.sh_auto_retry = db_settings.sh_auto_retry

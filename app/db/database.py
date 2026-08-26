@@ -354,6 +354,25 @@ async def init_db(database_url: str) -> None:
             except Exception:
                 pass
 
+            try:
+                await session.execute(
+                    __import__("sqlalchemy").text(
+                        "ALTER TABLE system_settings ADD COLUMN self_healing_interval INTEGER NOT NULL DEFAULT 15;"
+                    )
+                )
+                await session.execute(
+                    __import__("sqlalchemy").text(
+                        "ALTER TABLE system_settings ADD COLUMN video_search_interval INTEGER NOT NULL DEFAULT 60;"
+                    )
+                )
+                await session.execute(
+                    __import__("sqlalchemy").text(
+                        "ALTER TABLE system_settings ADD COLUMN print_search_interval INTEGER NOT NULL DEFAULT 60;"
+                    )
+                )
+            except Exception:
+                pass
+
             for tbl in [
                 "media_items",
                 "seasons",
