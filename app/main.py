@@ -2489,11 +2489,31 @@ async def abort_automation_endpoint():
 @app.get("/api/automation/status", response_class=HTMLResponse)
 async def automation_status_endpoint(request: Request):
     """Return top-nav status badge partial for the current automation state."""
+    from datetime import datetime
+
     from app.core.automation_state import automation_state_manager
+    from app.core.scheduler_utils import get_next_scheduled_time
 
     state = automation_state_manager.get_state()
+    global_state = (
+        settings.automation_state.value
+        if hasattr(settings.automation_state, "value")
+        else str(settings.automation_state)
+    ).lower()
+
+    now = datetime.now()
+    next_heal = get_next_scheduled_time(settings.self_healing_interval, now)
+    next_video = get_next_scheduled_time(settings.video_search_interval, now)
+    next_print = get_next_scheduled_time(settings.print_search_interval, now)
+
     return templates.TemplateResponse(
         request=request,
         name="partials/automation_status.html",
-        context={"state": state},
+        context={
+            "state": state,
+            "global_state": global_state,
+            "next_heal": next_heal,
+            "next_video": next_video,
+            "next_print": next_print,
+        },
     )

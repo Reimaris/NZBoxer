@@ -47,3 +47,31 @@ def is_interval_due(interval_minutes: int, current_dt: datetime) -> bool:
 
     step_hours = interval_minutes // 60
     return (hour % step_hours) == 0
+
+
+def get_next_scheduled_time(
+    interval_minutes: int, from_dt: datetime | None = None
+) -> str:
+    """Calculate the next wall-clock execution time formatted as 'HH:MM'.
+
+    Always aligns to the base quarter-hour heartbeat (:00, :15, :30, :45).
+    """
+    from datetime import timedelta
+
+    if from_dt is None:
+        from_dt = datetime.now()
+
+    # Move to next whole minute to ensure strictly upcoming tick
+    candidate = from_dt.replace(second=0, microsecond=0) + timedelta(minutes=1)
+
+    # Fast-forward to the next quarter-hour boundary
+    while candidate.minute not in (0, 15, 30, 45):
+        candidate += timedelta(minutes=1)
+
+    # Search for the next candidate satisfying the interval
+    for _ in range(96 * 2):  # Search up to 48 hours
+        if is_interval_due(interval_minutes, candidate):
+            return candidate.strftime("%H:%M")
+        candidate += timedelta(minutes=15)
+
+    return candidate.strftime("%H:%M")

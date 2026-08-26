@@ -88,7 +88,7 @@ async def init_db(database_url: str) -> None:
         "connect_args": {"check_same_thread": False},
     }
 
-    if ":memory:" in database_url:
+    if ":memory:" in database_url or "mode=memory" in database_url:
         kwargs["poolclass"] = StaticPool
 
     _engine = create_async_engine(database_url, **kwargs)
