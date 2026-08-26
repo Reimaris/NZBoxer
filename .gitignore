@@ -1,7 +1,5 @@
+# Environment and Python
 .env
-*.db
-*.db-shm
-*.db-wal
 __pycache__/
 *.py[cod]
 *$py.class
@@ -9,31 +7,40 @@ __pycache__/
 .venv/
 venv/
 env/
+dist/
+build/
+*.egg-info/
+
+# Databases and Runtime Logs
+*.db
+*.db-shm
+*.db-wal
+file:testdb*
+*.log
+config/logs/*.log
+logs/*.log
+
+# Agent Configuration, Memory, and Tickets
+AGENT_INSTRUCTIONS.md
+docs/AGENT_INSTRUCTIONS.md
+.agents/
+docs/agent_memory/
+docs/tickets/
+context.md
+usage.md
+
+# Testing and Coverage (Strict Local)
+tests/
+test_*.py
+TESTING_CHECKLIST.md
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
 htmlcov/
 .coverage
 coverage.xml
-dist/
-build/
-*.egg-info/
-file:testdb*
-*.log
-config/logs/*.log
-logs/*.log
-# Agent Configuration and Memory
-AGENT_INSTRUCTIONS.md
-.agents/
-docs/agent_memory/
-context.md
-usage.md
-
-# Testing and scratch
-tests/
-test_*.py
-TESTING_CHECKLIST.md
 .scratch/
+scratch/
 
 # Docker Local Overrides
 compose.override.yaml
