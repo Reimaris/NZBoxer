@@ -68,9 +68,10 @@
                     <!-- 1. Global Automation Activity Indicator (Schedule Pills) -->
                     <div id="automation-nav-status" hx-get="/api/automation/status" hx-trigger="load, every 2s" hx-swap="innerHTML" class="flex items-center"></div>
 
-                    <!-- 2. Automation State Dropdown & Info Popover -->
-                    <div class="relative flex items-center gap-1.5 ml-2" x-data="{ open: false, infoOpen: false }">
-                        <button @click="open = !open; infoOpen = false" @click.outside="open = false" class="flex items-center gap-2 px-3 py-1.5 bg-[#1e1e24] hover:bg-[#3f3f46] border border-[#3f3f46] rounded-md transition-colors text-xs font-medium">
+                    <!-- 2. Automation State Dropdown & Attached Info Button (Unified Split Pill) -->
+                    <div class="relative inline-flex items-center rounded-md border border-[#3f3f46] bg-[#1e1e24] shadow-sm ml-2" x-data="{ open: false, infoOpen: false }">
+                        <!-- Main State Trigger Button -->
+                        <button @click="open = !open; infoOpen = false" @click.outside="open = false" class="flex items-center gap-2 px-3 py-1.5 hover:bg-[#3f3f46] rounded-l-md transition-colors text-sm font-medium text-gray-200 hover:text-white">
                             <span class="flex h-2 w-2 relative">
                                 {% if settings.automation_state == 'active' %}
                                 <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
@@ -85,9 +86,9 @@
                             <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
                         </button>
 
-                        <!-- Info Icon Button & Popover -->
-                        <div class="relative">
-                            <button @click="infoOpen = !infoOpen; open = false" @click.outside="infoOpen = false" class="w-6 h-6 rounded-full bg-[#1e1e24] hover:bg-[#3f3f46] border border-[#3f3f46] text-[#a1a1aa] hover:text-white flex items-center justify-center transition-colors text-xs cursor-pointer" title="Automation States Info">
+                        <!-- Attached Info Button & Popover -->
+                        <div class="relative border-l border-[#3f3f46]">
+                            <button @click="infoOpen = !infoOpen; open = false" @click.outside="infoOpen = false" class="px-2 py-2 hover:bg-[#3f3f46] rounded-r-md text-[#a1a1aa] hover:text-white flex items-center justify-center transition-colors text-xs cursor-pointer" title="Automation States Info">
                                 <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                                 </svg>
