@@ -1,69 +1,81 @@
 <div class="flex items-center gap-1.5 sm:gap-2">
     <!-- 1. HEAL PILL -->
-    <div class="w-[118px] shrink-0 flex items-center justify-center">
+    <div class="w-[122px] shrink-0 flex items-center justify-center">
         {% if global_state == 'disabled' %}
-        <div class="w-full flex items-center justify-center gap-1.5 bg-[#18181b] border border-red-500/20 rounded-full px-2.5 py-1 text-xs text-red-500/70 font-mono" title="Self-Healing & Downloads">
-            <span class="text-[#71717a] font-sans font-medium">Heal:</span> Disabled
+        <div class="w-full flex items-center justify-between bg-[#18181b] border border-red-500/20 rounded-full px-3 py-1 text-xs text-red-500/70 font-sans shadow-sm" title="Self-Healing & Downloads">
+            <span class="text-[#71717a] font-medium">Heal:</span>
+            <span class="font-medium text-red-500/70">Disabled</span>
         </div>
         {% else %}
-        <div class="w-full flex items-center justify-center gap-1.5 bg-[#1e1e24] border border-[#3f3f46] rounded-full px-2.5 py-1 text-xs text-[#d1d5db] font-mono shadow-sm" title="Next Self-Healing & Download Check">
-            <span class="text-[#a1a1aa] font-sans font-medium">Heal:</span> {{ next_heal }}
+        <div class="w-full flex items-center justify-between bg-[#1e1e24] border border-[#3f3f46] rounded-full px-3 py-1 text-xs font-sans shadow-sm" title="Next Self-Healing & Download Check">
+            <span class="text-[#a1a1aa] font-medium">Heal:</span>
+            <span class="font-medium text-[#d1d5db]">{{ next_heal }}</span>
         </div>
         {% endif %}
     </div>
 
     <!-- 2. VIDEO PILL -->
-    <div class="w-[118px] shrink-0 flex items-center justify-center">
+    <div class="w-[122px] shrink-0 flex items-center justify-center">
         {% if state == 'running_video' %}
-        <div class="w-full flex items-center justify-center gap-1.5 bg-[#1e1e24] border border-[#d40060]/70 rounded-full px-2 py-1 text-xs text-pink-200 shadow-sm animate-fade-in">
-            <span class="relative flex h-2 w-2 shrink-0">
-                <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-pink-400 opacity-75"></span>
-                <span class="relative inline-flex rounded-full h-2 w-2 bg-[#d40060]"></span>
-            </span>
-            <span class="font-medium font-sans text-white text-xs">Video:</span>
-            <button hx-post="/api/automation/abort" hx-target="#automation-nav-status" class="ml-0.5 px-1.5 py-0.5 bg-red-800 hover:bg-red-700 text-white rounded text-[9px] font-bold uppercase tracking-wider transition-colors shadow-sm cursor-pointer" title="Abort search automation">
+        <div class="w-full flex items-center justify-between bg-[#1e1e24] border border-[#d40060]/70 rounded-full px-2.5 py-1 text-xs text-pink-200 shadow-sm animate-fade-in">
+            <div class="flex items-center gap-1.5">
+                <span class="relative flex h-2 w-2 shrink-0">
+                    <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-pink-400 opacity-75"></span>
+                    <span class="relative inline-flex rounded-full h-2 w-2 bg-[#d40060]"></span>
+                </span>
+                <span class="font-medium text-white">Video:</span>
+            </div>
+            <button hx-post="/api/automation/abort" hx-target="#automation-nav-status" class="px-1.5 py-0.5 bg-red-800 hover:bg-red-700 text-white rounded text-[9px] font-bold uppercase tracking-wider transition-colors shadow-sm cursor-pointer" title="Abort search automation">
                 Abort
             </button>
         </div>
         {% elif global_state == 'paused' %}
-        <div class="w-full flex items-center justify-center gap-1.5 bg-[#18181b] border border-yellow-500/20 rounded-full px-2.5 py-1 text-xs text-yellow-500/70 font-mono" title="Video Search Automation">
-            <span class="text-[#71717a] font-sans font-medium">Video:</span> Paused
+        <div class="w-full flex items-center justify-between bg-[#18181b] border border-yellow-500/20 rounded-full px-3 py-1 text-xs font-sans shadow-sm" title="Video Search Automation">
+            <span class="text-[#71717a] font-medium">Video:</span>
+            <span class="font-medium text-yellow-500/80">Paused</span>
         </div>
         {% elif global_state == 'disabled' %}
-        <div class="w-full flex items-center justify-center gap-1.5 bg-[#18181b] border border-red-500/20 rounded-full px-2.5 py-1 text-xs text-red-500/70 font-mono" title="Video Search Automation">
-            <span class="text-[#71717a] font-sans font-medium">Video:</span> Disabled
+        <div class="w-full flex items-center justify-between bg-[#18181b] border border-red-500/20 rounded-full px-3 py-1 text-xs font-sans shadow-sm" title="Video Search Automation">
+            <span class="text-[#71717a] font-medium">Video:</span>
+            <span class="font-medium text-red-500/70">Disabled</span>
         </div>
         {% else %}
-        <div class="w-full flex items-center justify-center gap-1.5 bg-[#1e1e24] border border-[#3f3f46] rounded-full px-2.5 py-1 text-xs text-[#d1d5db] font-mono shadow-sm" title="Next Video Search Automation">
-            <span class="text-[#a1a1aa] font-sans font-medium">Video:</span> {{ next_video }}
+        <div class="w-full flex items-center justify-between bg-[#1e1e24] border border-[#3f3f46] rounded-full px-3 py-1 text-xs font-sans shadow-sm" title="Next Video Search Automation">
+            <span class="text-[#a1a1aa] font-medium">Video:</span>
+            <span class="font-medium text-[#d1d5db]">{{ next_video }}</span>
         </div>
         {% endif %}
     </div>
 
     <!-- 3. PRINT PILL -->
-    <div class="w-[118px] shrink-0 flex items-center justify-center">
+    <div class="w-[122px] shrink-0 flex items-center justify-center">
         {% if state == 'running_print' %}
-        <div class="w-full flex items-center justify-center gap-1.5 bg-[#1e1e24] border border-[#d40060]/70 rounded-full px-2 py-1 text-xs text-pink-200 shadow-sm animate-fade-in">
-            <span class="relative flex h-2 w-2 shrink-0">
-                <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-pink-400 opacity-75"></span>
-                <span class="relative inline-flex rounded-full h-2 w-2 bg-[#d40060]"></span>
-            </span>
-            <span class="font-medium font-sans text-white text-xs">Print:</span>
-            <button hx-post="/api/automation/abort" hx-target="#automation-nav-status" class="ml-0.5 px-1.5 py-0.5 bg-red-800 hover:bg-red-700 text-white rounded text-[9px] font-bold uppercase tracking-wider transition-colors shadow-sm cursor-pointer" title="Abort print automation">
+        <div class="w-full flex items-center justify-between bg-[#1e1e24] border border-[#d40060]/70 rounded-full px-2.5 py-1 text-xs text-pink-200 shadow-sm animate-fade-in">
+            <div class="flex items-center gap-1.5">
+                <span class="relative flex h-2 w-2 shrink-0">
+                    <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-pink-400 opacity-75"></span>
+                    <span class="relative inline-flex rounded-full h-2 w-2 bg-[#d40060]"></span>
+                </span>
+                <span class="font-medium text-white">Print:</span>
+            </div>
+            <button hx-post="/api/automation/abort" hx-target="#automation-nav-status" class="px-1.5 py-0.5 bg-red-800 hover:bg-red-700 text-white rounded text-[9px] font-bold uppercase tracking-wider transition-colors shadow-sm cursor-pointer" title="Abort print automation">
                 Abort
             </button>
         </div>
         {% elif global_state == 'paused' %}
-        <div class="w-full flex items-center justify-center gap-1.5 bg-[#18181b] border border-yellow-500/20 rounded-full px-2.5 py-1 text-xs text-yellow-500/70 font-mono" title="Print Search Automation">
-            <span class="text-[#71717a] font-sans font-medium">Print:</span> Paused
+        <div class="w-full flex items-center justify-between bg-[#18181b] border border-yellow-500/20 rounded-full px-3 py-1 text-xs font-sans shadow-sm" title="Print Search Automation">
+            <span class="text-[#71717a] font-medium">Print:</span>
+            <span class="font-medium text-yellow-500/80">Paused</span>
         </div>
         {% elif global_state == 'disabled' %}
-        <div class="w-full flex items-center justify-center gap-1.5 bg-[#18181b] border border-red-500/20 rounded-full px-2.5 py-1 text-xs text-red-500/70 font-mono" title="Print Search Automation">
-            <span class="text-[#71717a] font-sans font-medium">Print:</span> Disabled
+        <div class="w-full flex items-center justify-between bg-[#18181b] border border-red-500/20 rounded-full px-3 py-1 text-xs font-sans shadow-sm" title="Print Search Automation">
+            <span class="text-[#71717a] font-medium">Print:</span>
+            <span class="font-medium text-red-500/70">Disabled</span>
         </div>
         {% else %}
-        <div class="w-full flex items-center justify-center gap-1.5 bg-[#1e1e24] border border-[#3f3f46] rounded-full px-2.5 py-1 text-xs text-[#d1d5db] font-mono shadow-sm" title="Next Print Search Automation">
-            <span class="text-[#a1a1aa] font-sans font-medium">Print:</span> {{ next_print }}
+        <div class="w-full flex items-center justify-between bg-[#1e1e24] border border-[#3f3f46] rounded-full px-3 py-1 text-xs font-sans shadow-sm" title="Next Print Search Automation">
+            <span class="text-[#a1a1aa] font-medium">Print:</span>
+            <span class="font-medium text-[#d1d5db]">{{ next_print }}</span>
         </div>
         {% endif %}
     </div>
