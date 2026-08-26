@@ -98,13 +98,16 @@ async def send_nzb_link(
                 if result.get("success"):
                     resp_data = result.get("data", {})
                     tb_id = (
-                        resp_data.get("usenet_id") 
-                        or resp_data.get("id") 
+                        resp_data.get("usenet_id")
+                        or resp_data.get("id")
                         or resp_data.get("download_id")
                         or resp_data.get("usenet_download_id")
                     )
                     if not tb_id:
-                        logger.warning("TorBox link upload success but no known ID field found in data: %s", resp_data)
+                        logger.warning(
+                            "TorBox link upload success but no known ID field found in data: %s",
+                            resp_data,
+                        )
                     return {
                         "hash": resp_data.get("hash"),
                         "id": tb_id,
@@ -196,13 +199,16 @@ async def send_nzb_file(
                 if result.get("success"):
                     resp_data = result.get("data", {})
                     tb_id = (
-                        resp_data.get("usenet_id") 
-                        or resp_data.get("id") 
+                        resp_data.get("usenet_id")
+                        or resp_data.get("id")
                         or resp_data.get("download_id")
                         or resp_data.get("usenet_download_id")
                     )
                     if not tb_id:
-                        logger.warning("TorBox success but no known ID field found in data: %s", resp_data)
+                        logger.warning(
+                            "TorBox success but no known ID field found in data: %s",
+                            resp_data,
+                        )
                     return {
                         "hash": resp_data.get("hash"),
                         "id": tb_id,
@@ -294,8 +300,8 @@ async def send_magnet_link(
                 if result.get("success"):
                     resp_data = result.get("data", {})
                     tb_id = (
-                        resp_data.get("torrent_id") 
-                        or resp_data.get("id") 
+                        resp_data.get("torrent_id")
+                        or resp_data.get("id")
                         or resp_data.get("download_id")
                     )
                     return {

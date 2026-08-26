@@ -72,9 +72,11 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("httpcore").setLevel(logging.WARNING)
 logging.getLogger("apscheduler").setLevel(logging.WARNING)
 
+
 class _EndpointFilter(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
         return record.getMessage().find("GET /api/automation/status") == -1
+
 
 logging.getLogger("uvicorn.access").addFilter(_EndpointFilter())
 
@@ -1700,6 +1702,7 @@ async def save_global_settings(
                 vupg = _get_int("cutoffs_upgrade")
                 if vupg is not None:
                     cutoffs["upgrade_threshold"] = vupg
+                    db_settings.upgrade_threshold = vupg
 
             db_settings.scoring_settings = sc
 

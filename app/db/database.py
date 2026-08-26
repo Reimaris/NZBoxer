@@ -372,7 +372,12 @@ async def init_db(database_url: str) -> None:
                 except Exception:
                     pass
 
-            for tbl in ["book_items", "manga_items", "manga_volumes", "magazine_subscriptions"]:
+            for tbl in [
+                "book_items",
+                "manga_items",
+                "manga_volumes",
+                "magazine_subscriptions",
+            ]:
                 try:
                     await session.execute(
                         __import__("sqlalchemy").text(
@@ -491,6 +496,36 @@ async def init_db(database_url: str) -> None:
                     )
             except Exception as e:
                 logger.warning("Error migrating indexer domain: %s", e)
+
+            # --- Migrate legacy cutoffs.target_score if set to 2500 ---
+            try:
+                from app.core.default_scoring import DEFAULT_SCORING_CONFIG
+                from app.db.models import SystemSettings
+
+                settings_res = await session.execute(
+                    select(SystemSettings).where(SystemSettings.id == 1)
+                )
+                db_settings = settings_res.scalar_one_or_none()
+                if db_settings and db_settings.scoring_settings:
+                    import copy
+
+                    sc = copy.deepcopy(db_settings.scoring_settings)
+                    cutoffs = sc.get("cutoffs")
+                    if (
+                        isinstance(cutoffs, dict)
+                        and cutoffs.get("target_score") == 2500
+                    ):
+                        default_target = DEFAULT_SCORING_CONFIG["cutoffs"][
+                            "target_score"
+                        ]
+                        cutoffs["target_score"] = default_target
+                        db_settings.scoring_settings = sc
+                        logger.info(
+                            "Migrated legacy target_score cutoff from 2500 to %d",
+                            default_target,
+                        )
+            except Exception as e:
+                logger.warning("Error migrating scoring cutoffs: %s", e)
 
             await session.commit()
 
