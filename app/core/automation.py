@@ -994,7 +994,6 @@ async def _process_season(session: AsyncSession, season: Season) -> None:
                 indexer_key=indexer.api_key,
                 early_exit_on_cutoff=True,
             )
-            await session.refresh(season)
             if grabbed or season.status in [
                 SeasonStatus.DOWNLOADING,
                 SeasonStatus.DOWNLOADED,
@@ -1034,7 +1033,6 @@ async def _process_season(session: AsyncSession, season: Season) -> None:
                 is_title_fallback=is_season_fallback,
                 filters=filters,
             )
-            await session.refresh(season)
             if grabbed or season.status in [
                 SeasonStatus.DOWNLOADING,
                 SeasonStatus.DOWNLOADED,

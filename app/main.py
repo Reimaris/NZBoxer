@@ -727,7 +727,7 @@ async def item_detail(request: Request, item_id: int):
     from sqlalchemy.orm import selectinload
 
     from app.db.database import async_session_factory
-    from app.db.models import MediaItem, Season, Episode
+    from app.db.models import Episode, MediaItem, Season
 
     async with async_session_factory() as session:
         item = await session.get(
