@@ -142,7 +142,7 @@
                     <!-- Accordion Episodes Body -->
                     <div x-show="open" x-collapse class="border-t border-slate-800 bg-slate-950/60 p-4">
                         {% if season.episodes %}
-                        <div class="grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-3">
+                        <div class="grid grid-cols-[repeat(auto-fit,minmax(280px,1fr))] gap-3">
                             {% for ep in season.episodes|sort(attribute='episode_number') %}
                             <div class="p-3 bg-slate-900/90 rounded border border-slate-800 flex justify-between items-center text-xs">
                                 <div>
@@ -151,7 +151,7 @@
                                     <span class="text-slate-500 text-[11px] block mt-0.5">{{ ep.air_date.strftime('%Y-%m-%d') }}</span>
                                     {% endif %}
                                 </div>
-                                <div class="flex items-center gap-1.5 shrink-0">
+                                <div class="flex items-center justify-end gap-1.5 shrink min-w-0 flex-wrap">
                                     <span class="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider
                                         {% if ep.status.value == 'completed' or ep.status.value == 'downloaded' %}bg-emerald-900/60 text-emerald-300 border border-emerald-700
                                         {% elif ep.status.value == 'searching' %}bg-blue-900/60 text-blue-300 border border-blue-700

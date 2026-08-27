@@ -48,13 +48,13 @@
     </div>
 
     {% if manga.volumes %}
-    <div class="grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-2.5 max-h-96 overflow-y-auto pr-1">
+    <div class="grid grid-cols-[repeat(auto-fit,minmax(260px,1fr))] gap-2.5 max-h-96 overflow-y-auto pr-1">
         {% for vol in manga.volumes|sort(attribute='volume_number') %}
         <div class="p-3 bg-[#1e1e24] hover:bg-[#272730] rounded border border-[#3f3f46] flex justify-between items-center text-xs transition-colors shadow-sm">
             <div class="flex items-center gap-2">
                 <span class="font-bold text-white font-mono text-sm">Vol {{ "%02d"|format(vol.volume_number) }}</span>
             </div>
-            <div class="flex items-center gap-2 shrink-0">
+            <div class="flex items-center justify-end gap-1.5 shrink min-w-0 flex-wrap">
                 <!-- Status Badge (Click to toggle status) -->
                 <button hx-post="/api/print/manga/volume/{{ vol.id }}/toggle-status" 
                         hx-target="#manga-volumes-{{ manga.id }}" 
