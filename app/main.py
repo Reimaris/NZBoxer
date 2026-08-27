@@ -144,6 +144,10 @@ async def run_orchestrator_tick(now: datetime | None = None) -> None:
         logger.info("Automation is DISABLED. Skipping orchestrator cycle.")
         return
 
+    if automation_state_manager.is_running():
+        logger.info("⏳ Automation is currently running. Skipping orchestrator tick to prevent concurrent execution.")
+        return
+
     if now is None:
         now = datetime.now()
 
