@@ -1266,6 +1266,10 @@ async def add_print_media(
                 status=MediaStatus.SEARCHING,
             )
             session.add(book)
+            await session.flush()
+            from app.core.self_healing import match_and_adopt_target_from_cache
+
+            await match_and_adopt_target_from_cache(session, book)
         elif media_type == "magazine":
             magazine = MagazineSubscription(
                 title=clean_title,
@@ -1379,6 +1383,16 @@ async def toggle_manga_volume_status(request: Request, volume_id: int):
 
         manga_id = volume.manga_id
         await session.commit()
+        manga_stmt = (
+            select(MangaItem)
+            .options(selectinload(MangaItem.volumes))
+            .where(MangaItem.id == manga_id)
+        )
+        m = (await session.execute(manga_stmt)).scalar_one_or_none()
+        if m:
+            from app.core.self_healing import match_and_adopt_target_from_cache
+
+            await match_and_adopt_target_from_cache(session, m)
 
         # Reload manga with all volumes
         manga_stmt = (

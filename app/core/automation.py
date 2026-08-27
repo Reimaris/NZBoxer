@@ -75,6 +75,13 @@ async def sync_all_providers() -> None:
                     await _sync_items(session, anime, MediaType.ANIME, provider.id)
 
             await session.commit()
+            from app.core.self_healing import (
+                adopt_torbox_downloads_for_print,
+                adopt_torbox_downloads_for_video,
+            )
+
+            await adopt_torbox_downloads_for_video(session)
+            await adopt_torbox_downloads_for_print(session)
             logger.info("All provider watchlists synced successfully.")
         except Exception as e:  # noqa: BLE001
             logger.error("Provider sync failed: %s", e)
@@ -1733,6 +1740,9 @@ async def manual_search_episode(session: AsyncSession, episode_id: int) -> bool:
     # Status update to searching
     episode.status = EpisodeStatus.SEARCHING
     await session.commit()
+    from app.core.self_healing import match_and_adopt_target_from_cache
+
+    await match_and_adopt_target_from_cache(session, episode.season.media_item)
 
     tvdb_id = media_item.tvdb_id
     tmdb_id = media_item.tmdb_id
@@ -1817,6 +1827,9 @@ async def manual_search_movie(session: AsyncSession, item_id: int) -> bool:
 
     media_item.status = MediaStatus.SEARCHING
     await session.commit()
+    from app.core.self_healing import match_and_adopt_target_from_cache
+
+    await match_and_adopt_target_from_cache(session, media_item)
 
     imdb_id = media_item.imdb_id
     tmdb_id = media_item.tmdb_id
