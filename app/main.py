@@ -145,7 +145,9 @@ async def run_orchestrator_tick(now: datetime | None = None) -> None:
         return
 
     if automation_state_manager.is_running():
-        logger.info("⏳ Automation is currently running. Skipping orchestrator tick to prevent concurrent execution.")
+        logger.info(
+            "⏳ Automation is currently running. Skipping orchestrator tick to prevent concurrent execution."
+        )
         return
 
     if now is None:
@@ -261,7 +263,9 @@ async def dashboard(request: Request):
             .order_by(MediaItem.created_at.desc())
             .options(
                 selectinload(MediaItem.seasons),
+                selectinload(MediaItem.failure_logs),
                 selectinload(MediaItem.download_history),
+                selectinload(MediaItem.failure_logs),
                 selectinload(MediaItem.provider),
             )
         )
@@ -723,7 +727,7 @@ async def item_detail(request: Request, item_id: int):
     from sqlalchemy.orm import selectinload
 
     from app.db.database import async_session_factory
-    from app.db.models import MediaItem, Season
+    from app.db.models import MediaItem, Season, Episode
 
     async with async_session_factory() as session:
         item = await session.get(
@@ -731,7 +735,12 @@ async def item_detail(request: Request, item_id: int):
             item_id,
             options=[
                 selectinload(MediaItem.seasons).selectinload(Season.episodes),
+                selectinload(MediaItem.seasons).selectinload(Season.failure_logs),
+                selectinload(MediaItem.seasons)
+                .selectinload(Season.episodes)
+                .selectinload(Episode.failure_logs),
                 selectinload(MediaItem.download_history),
+                selectinload(MediaItem.failure_logs),
             ],
         )
 

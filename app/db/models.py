@@ -490,10 +490,15 @@ class MediaItem(Base):
             return None
         return max(h.score for h in self.download_history if h.score is not None)
 
-
-# ---------------------------------------------------------------------------
-# Season Model
-# ---------------------------------------------------------------------------
+    # ---------------------------------------------------------------------------
+    # Season Model
+    # ---------------------------------------------------------------------------
+    failure_logs: Mapped[list["FailureLog"]] = relationship(
+        "FailureLog",
+        back_populates="media_item",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
 
 
 class Season(Base):
@@ -606,10 +611,15 @@ class Season(Base):
             return None
         return max(h.score for h in self.download_history if h.score is not None)
 
-
-# ---------------------------------------------------------------------------
-# Episode Model
-# ---------------------------------------------------------------------------
+    # ---------------------------------------------------------------------------
+    # Episode Model
+    # ---------------------------------------------------------------------------
+    failure_logs: Mapped[list["FailureLog"]] = relationship(
+        "FailureLog",
+        back_populates="season",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
 
 
 class Episode(Base):
@@ -711,10 +721,15 @@ class Episode(Base):
             return True
         return datetime.now(tz=self.air_date.tzinfo) >= self.air_date
 
-
-# ---------------------------------------------------------------------------
-# DownloadHistory Model
-# ---------------------------------------------------------------------------
+    # ---------------------------------------------------------------------------
+    # DownloadHistory Model
+    # ---------------------------------------------------------------------------
+    failure_logs: Mapped[list["FailureLog"]] = relationship(
+        "FailureLog",
+        back_populates="episode",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
 
 
 class DownloadHistory(Base):
@@ -929,6 +944,12 @@ class MangaVolume(Base):
     )
 
     manga: Mapped[MangaItem] = relationship("MangaItem", back_populates="volumes")
+    failure_logs: Mapped[list["FailureLog"]] = relationship(
+        "FailureLog",
+        back_populates="manga_volume",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
 
 
 class BookItem(Base):
@@ -954,6 +975,12 @@ class BookItem(Base):
     )
     fail_count: Mapped[int] = mapped_column(Integer, default=0)
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    failure_logs: Mapped[list["FailureLog"]] = relationship(
+        "FailureLog",
+        back_populates="book_item",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
 
 
 class MagazineSubscription(Base):
@@ -1068,3 +1095,62 @@ class SeenTorboxDownload(Base):
             f"<SeenTorboxDownload id={self.id} torbox_id={self.torbox_id!r} "
             f"state={self.download_state!r} title={self.raw_title!r:.40}>"
         )
+
+
+class FailureLog(Base):
+    """Centralized audit trail for transient and hard failures."""
+
+    __tablename__ = "failure_logs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+
+    media_item_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("media_items.id", ondelete="CASCADE"),
+        index=True,
+        nullable=True,
+    )
+    season_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("seasons.id", ondelete="CASCADE"), index=True, nullable=True
+    )
+    episode_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("episodes.id", ondelete="CASCADE"),
+        index=True,
+        nullable=True,
+    )
+    book_item_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("book_items.id", ondelete="CASCADE"),
+        index=True,
+        nullable=True,
+    )
+    manga_volume_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("manga_volumes.id", ondelete="CASCADE"),
+        index=True,
+        nullable=True,
+    )
+
+    category: Mapped[str] = mapped_column(String(100), nullable=False)
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    media_item: Mapped[MediaItem | None] = relationship(
+        "MediaItem", back_populates="failure_logs"
+    )
+    season: Mapped[Season | None] = relationship(
+        "Season", back_populates="failure_logs"
+    )
+    episode: Mapped[Episode | None] = relationship(
+        "Episode", back_populates="failure_logs"
+    )
+    book_item: Mapped[BookItem | None] = relationship(
+        "BookItem", back_populates="failure_logs"
+    )
+    manga_volume: Mapped[MangaVolume | None] = relationship(
+        "MangaVolume", back_populates="failure_logs"
+    )

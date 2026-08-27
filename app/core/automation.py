@@ -417,6 +417,7 @@ async def _sync_season_episodes(
         return
 
     from sqlalchemy import inspect
+
     # Avoid N+1 query if episodes are already eager-loaded
     if "episodes" in inspect(season).unloaded:
         await session.refresh(season, ["episodes"])
@@ -1312,7 +1313,6 @@ async def _evaluate_and_download(
                 "No indexer results found.",
             )
         else:
-            target.fail_count += 1
             target.empty_search_count += 1
 
             target.last_error = f"Empty search count: {target.empty_search_count}"
@@ -1482,7 +1482,6 @@ async def _evaluate_and_download(
                 "No matching releases found.",
             )
         else:
-            target.fail_count += 1
             target.empty_search_count += 1
             target.last_error = f"Empty search count: {target.empty_search_count}"
             logger.info(
@@ -1544,6 +1543,7 @@ async def _evaluate_and_download(
         )
         target.status = new_manual_status
         target.fail_count = 0
+        target.empty_search_count = 0
         target.last_error = None
         if target_episodes:
             for ep in target_episodes:
@@ -1582,10 +1582,10 @@ async def _evaluate_and_download(
     ):
         # Check hard daily grab limit (400 grabs/day)
         if not await can_grab_today(session, limit=400):
-            target.fail_count += 1
-            target.last_error = (
-                "⚠️ Daily grab limit of 400 NZB downloads reached. Skipping grab."
-            )
+            from app.core.failure_logger import log_failure
+
+            err_msg = "⚠️ Daily grab limit of 400 NZB downloads reached. Skipping grab."
+            log_failure(session, target, "system_limit", err_msg)
             logger.warning(
                 "    ⚠️ Daily grab limit of 400 reached. Skipping grab for '%s'.",
                 best_candidate["title"],
@@ -1618,8 +1618,10 @@ async def _evaluate_and_download(
                 nzb_bytes, filename=filename, session=session
             )
         except treasure_maps.IndexerError as e:
-            target.fail_count += 1
-            target.last_error = f"NZB download failed: {e}"
+            from app.core.failure_logger import log_failure
+
+            err_msg = f"NZB download failed: {e}"
+            log_failure(session, target, "indexer_error", err_msg)
             logger.error("    ❌ %s", target.last_error)
             await session.commit()
             return False
@@ -1627,12 +1629,14 @@ async def _evaluate_and_download(
         if not torbox_result or (
             not torbox_result.get("hash") and not torbox_result.get("id")
         ):
-            target.fail_count += 1
-            target.last_error = (
+            from app.core.failure_logger import log_failure
+
+            err_msg = str(
                 torbox_result.get("error")
                 if isinstance(torbox_result, dict) and torbox_result.get("error")
                 else "Error sending to TorBox."
             )
+            log_failure(session, target, "torbox_error", err_msg)
             logger.error("    ❌ %s", target.last_error)
             await session.commit()
             return False
@@ -1675,6 +1679,7 @@ async def _evaluate_and_download(
             )
             target.status = new_status
             target.fail_count = 0
+            target.empty_search_count = 0
             target.last_error = None
             target.upgrade_attempts_count = 0
 
@@ -1683,6 +1688,7 @@ async def _evaluate_and_download(
                 for ep in target_episodes:
                     ep.status = new_status
                     ep.fail_count = 0
+                    ep.empty_search_count = 0
                     ep.last_error = None
                     ep.upgrade_attempts_count = 0
 

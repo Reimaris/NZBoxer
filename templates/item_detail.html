@@ -39,8 +39,8 @@
                       {% endif %}
                     </span>
                     <span class="text-slate-200 capitalize font-medium">{{ item.status.value }}</span>
-                    {% if item.fail_count > 0 %}
-                    <span class="bg-red-900 text-white text-[10px] font-bold px-2 py-0.5 rounded ml-2 border border-red-700 cursor-help" title="{{ item.last_error }}">❌ {{ item.fail_count }} Fails</span>
+                    {% if item.failure_logs|length > 0 %}
+                    <span class="bg-red-900 text-white text-[10px] font-bold px-2 py-0.5 rounded ml-2 border border-red-700 cursor-help" title="{% for log in item.failure_logs[-5:] %}{{ log.created_at.strftime('%Y-%m-%d %H:%M') }}: {{ log.message }}&#10;{% endfor %}">❌ {{ item.failure_logs|length }} Fails</span>
                     {% endif %}
                 </div>
                 
@@ -125,8 +125,8 @@
                             {% elif season.status.value == 'completed' and season.best_score and season.best_score < 8000 %}
                             <span class="bg-[#1e1e24] text-gray-400 text-[10px] font-bold px-2 py-0.5 rounded border border-[#3f3f46] w-fit">Cutoff unmet ({{ season.upgrade_attempts_count }}/{{ max_upgrade_attempts }} attempts)</span>
                             {% endif %}
-                            {% if season.fail_count > 0 %}
-                            <span class="bg-red-900 text-white text-[10px] font-bold px-1.5 py-0.5 rounded border border-red-700 cursor-help" title="{{ season.last_error }}">❌ {{ season.fail_count }} Fails</span>
+                            {% if season.failure_logs|length > 0 %}
+                            <span class="bg-red-900 text-white text-[10px] font-bold px-1.5 py-0.5 rounded border border-red-700 cursor-help" title="{% for log in season.failure_logs[-5:] %}{{ log.created_at.strftime('%Y-%m-%d %H:%M') }}: {{ log.message }}&#10;{% endfor %}">❌ {{ season.failure_logs|length }} Fails</span>
                             {% endif %}
                         </div>
 
@@ -164,8 +164,8 @@
                                     {% elif ep.status.value == 'completed' and ep.best_score and ep.best_score < 8000 %}
                                     <span class="bg-[#1e1e24] text-gray-400 text-[9px] font-bold px-1.5 py-0.5 rounded border border-[#3f3f46]">Cutoff unmet ({{ ep.upgrade_attempts_count }}/{{ max_upgrade_attempts }})</span>
                                     {% endif %}
-                                    {% if ep.fail_count > 0 %}
-                                    <span class="text-red-400 font-bold" title="{{ ep.last_error }}">❌</span>
+                                    {% if ep.failure_logs|length > 0 %}
+                                    <span class="text-red-400 font-bold" title="{% for log in ep.failure_logs[-5:] %}{{ log.created_at.strftime('%Y-%m-%d %H:%M') }}: {{ log.message }}&#10;{% endfor %}">❌</span>
                                     {% endif %}
                                     <button hx-post="/episodes/{{ ep.id }}/search"
                                             class="ml-1 text-slate-400 hover:text-indigo-400 transition-colors focus:outline-none"

@@ -334,8 +334,8 @@
                                 <span class="bg-slate-600 text-white text-[11px] font-bold px-2 py-1 rounded uppercase tracking-wider shadow-sm">{{ item.status.value }}</span>
                             {% endif %}
                             
-                            {% if item.fail_count > 0 %}
-                            <span class="bg-red-900 text-white text-[10px] font-bold px-2 py-0.5 rounded cursor-help border border-red-700" title="{{ item.last_error }}">❌ {{ item.fail_count }} Fails</span>
+                            {% if item.failure_logs|length > 0 %}
+                            <span class="bg-red-900 text-white text-[10px] font-bold px-2 py-0.5 rounded cursor-help border border-red-700" title="{% for log in item.failure_logs[-5:] %}{{ log.created_at.strftime('%Y-%m-%d %H:%M') }}: {{ log.message }}&#10;{% endfor %}">❌ {{ item.failure_logs|length }} Fails</span>
                             {% endif %}
                         </div>
                     </td>

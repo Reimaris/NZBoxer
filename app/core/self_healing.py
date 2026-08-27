@@ -349,6 +349,14 @@ async def run_download_check_cycle() -> None:
                         title,
                         status,
                     )
+                    from app.core.failure_logger import log_failure
+
+                    log_failure(
+                        session,
+                        target,
+                        "torbox_error",
+                        f"TorBox download failed: {status}",
+                    )
                     bl = BlacklistedRelease(
                         media_item_id=media_item_id,
                         nzb_guid=history.nzb_guid,
@@ -649,6 +657,7 @@ async def adopt_torbox_downloads_for_video(session) -> None:
                 new_status = MediaStatus.DOWNLOADING
 
             movie.status = new_status
+            movie.empty_search_count = 0
             dh = DownloadHistory(
                 media_item_id=movie.id,
                 nzb_title=best_item.raw_title,
@@ -710,6 +719,7 @@ async def adopt_torbox_downloads_for_video(session) -> None:
                 new_season_status = SeasonStatus.DOWNLOADING
 
             season.status = new_season_status
+            season.empty_search_count = 0
 
             # Cascade to episodes
             ep_status = (
@@ -785,6 +795,7 @@ async def adopt_torbox_downloads_for_video(session) -> None:
                 new_episode_status = EpisodeStatus.DOWNLOADING
 
             episode.status = new_episode_status
+            episode.empty_search_count = 0
             dh = DownloadHistory(
                 media_item_id=episode.season.media_item_id,
                 season_id=episode.season.id,
@@ -869,6 +880,7 @@ async def adopt_torbox_downloads_for_print(session) -> None:
                 new_status = MediaStatus.DOWNLOADING
 
             book.status = new_status
+            book.empty_search_count = 0
             book.best_score = best_score
             changed = True
             logger.info("  🚀 Auto-adopted Book '%s' from TorBox", book.title)
@@ -914,6 +926,7 @@ async def adopt_torbox_downloads_for_print(session) -> None:
                     new_epi_status = EpisodeStatus.DOWNLOADING
 
                 vol.status = new_epi_status
+                vol.empty_search_count = 0
                 vol.best_score = best_score
                 changed = True
                 logger.info(
@@ -1009,6 +1022,7 @@ async def match_and_adopt_target_from_cache(session, target) -> bool:
                 new_status = MediaStatus.DOWNLOADING
 
             target.status = new_status
+            target.empty_search_count = 0
             dh = DownloadHistory(
                 media_item_id=target.id,
                 nzb_title=best_item.raw_title,
@@ -1086,6 +1100,7 @@ async def match_and_adopt_target_from_cache(session, target) -> bool:
                     new_season_status = SeasonStatus.DOWNLOADING
 
                 season.status = new_season_status
+                season.empty_search_count = 0
 
                 ep_status = (
                     EpisodeStatus.DOWNLOADED
@@ -1168,6 +1183,7 @@ async def match_and_adopt_target_from_cache(session, target) -> bool:
                             new_episode_status = EpisodeStatus.DOWNLOADING
 
                         ep.status = new_episode_status
+                        ep.empty_search_count = 0
                         dh = DownloadHistory(
                             media_item_id=target.id,
                             season_id=season.id,
@@ -1217,6 +1233,7 @@ async def match_and_adopt_target_from_cache(session, target) -> bool:
                 new_book_status = MediaStatus.DOWNLOADING
 
             target.status = new_book_status
+            target.empty_search_count = 0
             target.best_score = best_score
             changed = True
 
@@ -1270,6 +1287,7 @@ async def match_and_adopt_target_from_cache(session, target) -> bool:
                     new_epi_status = EpisodeStatus.DOWNLOADING
 
                 vol.status = new_epi_status
+                vol.empty_search_count = 0
                 vol.best_score = best_score
                 changed = True
 
