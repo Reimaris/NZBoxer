@@ -265,6 +265,40 @@
                             <input type="number" step="0.1" name="sh_retry_wait_hours" value="{{ db_settings.sh_retry_wait_hours if db_settings else '12.0' }}" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors font-mono text-center">
                         </div>
                     </div>
+                    <div class="mt-6 pt-6 border-t border-[#3f3f46]">
+                        <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                            <div>
+                                <h3 class="text-[#d1d5db] font-semibold text-sm mb-1 flex items-center gap-1.5">
+                                    TorBox Usenet Library Rescan
+                                    <div class="relative inline-flex items-center group">
+                                        <svg class="w-3.5 h-3.5 text-[#71717a] group-hover:text-[#d1d5db] transition-colors cursor-help" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                        </svg>
+                                        <div class="opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 absolute bottom-full left-0 mb-2 w-64 max-w-[calc(100vw-2rem)] bg-[#2a2a32] border border-[#3f3f46] text-gray-200 text-[11px] normal-case tracking-normal font-normal rounded-lg p-2.5 shadow-2xl z-30 pointer-events-none leading-relaxed">
+                                            Manually invalidates the local TorBox download cache, fetches fresh library state from TorBox, and re-evaluates all media to detect newly added items or external additions.
+                                        </div>
+                                    </div>
+                                </h3>
+                                <p class="text-[#71717a] text-xs max-w-lg leading-relaxed">
+                                    Useful if you added TorBox downloads from outside NZBoxer and want to instantly map them to your watchlists.
+                                </p>
+                            </div>
+                            <div id="rescan-torbox-container" class="flex items-center gap-3 shrink-0">
+                                <img id="rescan-spinner" class="htmx-indicator w-5 h-5 animate-spin" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24'%3E%3Ccircle class='opacity-25' cx='12' cy='12' r='10' stroke='%23d40060' stroke-width='4'%3E%3C/circle%3E%3Cpath class='opacity-75' fill='%23d40060' d='M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z'%3E%3C/path%3E%3C/svg%3E" alt="Loading...">
+                                <button type="button" 
+                                        hx-post="/api/automation/rescan-torbox" 
+                                        hx-target="#rescan-torbox-container" 
+                                        hx-swap="innerHTML"
+                                        hx-indicator="#rescan-spinner"
+                                        class="bg-[#2a2a32] hover:bg-[#3f3f46] text-white border border-[#3f3f46] text-xs font-medium px-4 py-2 rounded-lg transition-colors flex items-center gap-2 group">
+                                    <svg class="w-4 h-4 text-gray-400 group-hover:text-white transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                                    </svg>
+                                    Force Rescan
+                                </button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
 

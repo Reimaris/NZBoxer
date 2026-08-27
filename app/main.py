@@ -2412,6 +2412,44 @@ async def manual_sync(background_tasks: BackgroundTasks):
     )
 
 
+@app.post("/api/automation/rescan-torbox", response_class=HTMLResponse)
+async def rescan_torbox_cache():
+    """Manually invalidates TorBox cache and triggers an immediate full adoption pass."""
+    import logging
+
+    from app.core.self_healing import (
+        adopt_torbox_downloads_for_print,
+        adopt_torbox_downloads_for_video,
+        sync_torbox_cache,
+    )
+    from app.db.database import async_session_factory
+    from app.services import torbox
+
+    logger = logging.getLogger(__name__)
+
+    async with async_session_factory() as session:
+        try:
+            raw_downloads = await torbox.get_usenet_downloads(session=session)
+            if raw_downloads is not None:
+                await sync_torbox_cache(session, raw_downloads, force_rescan=True)
+                await adopt_torbox_downloads_for_video(session)
+                await adopt_torbox_downloads_for_print(session)
+                return HTMLResponse(
+                    content='<span class="text-green-500 font-medium text-sm flex items-center gap-1.5"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>Rescan complete! Reload to see changes.</span>'
+                )
+            else:
+                return HTMLResponse(
+                    content='<span class="text-red-500 font-medium text-sm">Error: Could not reach TorBox</span>',
+                    status_code=500,
+                )
+        except Exception as e:
+            logger.error("Error during manual TorBox rescan: %s", e)
+            return HTMLResponse(
+                content=f'<span class="text-red-500 font-medium text-sm">Error: {str(e)}</span>',
+                status_code=500,
+            )
+
+
 @app.post("/api/automation/run/video", response_class=HTMLResponse)
 async def run_video_automation_endpoint(background_tasks: BackgroundTasks):
     """Trigger manual video automation cycle."""
