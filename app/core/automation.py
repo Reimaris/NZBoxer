@@ -416,7 +416,10 @@ async def _sync_season_episodes(
     if not effective_tmdb_id:
         return
 
-    await session.refresh(season, ["episodes"])
+    from sqlalchemy import inspect
+    # Avoid N+1 query if episodes are already eager-loaded
+    if "episodes" in inspect(season).unloaded:
+        await session.refresh(season, ["episodes"])
 
     # Optimization: if we already have all episodes and none are FUTURE, skip TMDB API call
     expected_eps = season.episode_count or 0
@@ -516,7 +519,7 @@ async def run_automation_cycle(force: bool = False) -> None:
             # 1.5 Sync episodes for all seasons (optimized to skip TMDB if already loaded)
             stmt_s = select(Season).options(selectinload(Season.media_item))
             seasons_result = await session.execute(stmt_s)
-            for season in seasons_result.scalars():
+            for season in seasons_result.scalars().unique():
                 if automation_state_manager.is_aborting():
                     logger.info(
                         "🛑 Automation cycle abort requested. Halting season sync."
@@ -660,7 +663,7 @@ async def run_automation_cycle(force: bool = False) -> None:
                 )
 
                 seasons_result = await session.execute(season_stmt)
-                for season in seasons_result.scalars():
+                for season in seasons_result.scalars().unique():
                     if automation_state_manager.is_aborting():
                         logger.info(
                             "🛑 Automation cycle abort requested. Stopping season processing."
