@@ -17,6 +17,7 @@ from typing import Any
 
 from sqlalchemy import (
     JSON,
+    BigInteger,
     Boolean,
     DateTime,
     Enum,
@@ -1005,3 +1006,65 @@ class MagazineIssue(Base):
     subscription: Mapped[MagazineSubscription] = relationship(
         "MagazineSubscription", back_populates="issues"
     )
+
+
+# ---------------------------------------------------------------------------
+# SeenTorboxDownload Model
+# ---------------------------------------------------------------------------
+
+
+class SeenTorboxDownload(Base):
+    """Caches evaluated TorBox Usenet downloads to prevent redundant title parsing.
+
+    Attributes:
+        id:             Auto-incremented primary key.
+        torbox_id:      Unique TorBox download ID (string/int).
+        raw_title:      Original release name from TorBox.
+        parsed_title:   Extracted title / normalized name.
+        parsed_year:    Extracted release year (if available).
+        season_number:  Extracted season number (if season pack or episode).
+        episode_number: Extracted episode number (if individual episode).
+        media_type:     Inferred media type ('movie', 'series_season', 'series_episode', 'book', 'manga', 'unknown').
+        download_state: TorBox state ('completed', 'cached', 'downloading', 'queued', 'processing', 'failed', 'error', etc.).
+        size_bytes:     File size in bytes.
+        progress:       Download progress percentage (0.0 to 1.0 or 0 to 100).
+        created_at:     Row creation timestamp.
+        updated_at:     Last state update timestamp.
+    """
+
+    __tablename__ = "seen_torbox_downloads"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    torbox_id: Mapped[str] = mapped_column(
+        String(200), unique=True, index=True, nullable=False
+    )
+    raw_title: Mapped[str] = mapped_column(String(1000), nullable=False)
+    parsed_title: Mapped[str | None] = mapped_column(
+        String(500), index=True, nullable=True
+    )
+    parsed_year: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    season_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    episode_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    media_type: Mapped[str] = mapped_column(
+        String(50), default="unknown", nullable=False
+    )
+    download_state: Mapped[str] = mapped_column(
+        String(50), default="unknown", nullable=False
+    )
+    size_bytes: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    progress: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<SeenTorboxDownload id={self.id} torbox_id={self.torbox_id!r} "
+            f"state={self.download_state!r} title={self.raw_title!r:.40}>"
+        )
