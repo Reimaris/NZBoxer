@@ -98,7 +98,8 @@ async def send_nzb_link(
                 if result.get("success"):
                     resp_data = result.get("data", {})
                     tb_id = (
-                        resp_data.get("usenet_id")
+                        resp_data.get("usenetdownload_id")
+                        or resp_data.get("usenet_id")
                         or resp_data.get("id")
                         or resp_data.get("download_id")
                         or resp_data.get("usenet_download_id")
@@ -164,7 +165,7 @@ async def send_nzb_file(
     api_key: str | None = None,
     session: AsyncSession | None = None,
 ) -> dict[str, str | int | None]:
-    """Send raw NZB file content bytes to TorBox via multipart/form-data.
+    """Send an NZB file directly to TorBox.
 
     Args:
         nzb_bytes: The raw NZB file bytes.
@@ -199,7 +200,8 @@ async def send_nzb_file(
                 if result.get("success"):
                     resp_data = result.get("data", {})
                     tb_id = (
-                        resp_data.get("usenet_id")
+                        resp_data.get("usenetdownload_id")
+                        or resp_data.get("usenet_id")
                         or resp_data.get("id")
                         or resp_data.get("download_id")
                         or resp_data.get("usenet_download_id")
@@ -300,10 +302,17 @@ async def send_magnet_link(
                 if result.get("success"):
                     resp_data = result.get("data", {})
                     tb_id = (
-                        resp_data.get("torrent_id")
+                        resp_data.get("torrentdownload_id")
+                        or resp_data.get("torrent_id")
                         or resp_data.get("id")
                         or resp_data.get("download_id")
+                        or resp_data.get("torrent_download_id")
                     )
+                    if not tb_id:
+                        logger.warning(
+                            "TorBox magnet upload success but no known ID field found in data: %s",
+                            resp_data,
+                        )
                     return {
                         "hash": resp_data.get("hash"),
                         "id": tb_id,
