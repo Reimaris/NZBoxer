@@ -350,9 +350,16 @@ async def _sync_items(
                                     ),
                                 )
                                 session.add(season_obj)
+                                await session.flush()
+                                await _sync_season_episodes(
+                                    session, season_obj, tmdb_id=item.tmdb_id
+                                )
                             else:
                                 if s_air_date:
                                     existing_season.air_date = s_air_date
+                                await _sync_season_episodes(
+                                    session, existing_season, tmdb_id=item.tmdb_id
+                                )
                                 if existing_season.status in (
                                     SeasonStatus.PENDING,
                                     SeasonStatus.SEARCHING,
@@ -398,14 +405,31 @@ async def _sync_items(
         item.simkl_synced_at = datetime.now(timezone.utc)
 
 
-async def _sync_season_episodes(session: AsyncSession, season: Season) -> None:
+async def _sync_season_episodes(
+    session: AsyncSession, season: Season, tmdb_id: int | None = None
+) -> None:
     from app.db.models import Episode, EpisodeStatus
 
-    if not season.media_item or not season.media_item.tmdb_id:
+    effective_tmdb_id = tmdb_id or (
+        season.media_item.tmdb_id if season.media_item else None
+    )
+    if not effective_tmdb_id:
         return
 
+    await session.refresh(season, ["episodes"])
+
+    # Optimization: if we already have all episodes and none are FUTURE, skip TMDB API call
+    expected_eps = season.episode_count or 0
+    if expected_eps > 0 and len(season.episodes) >= expected_eps:
+        # Check if any episode is in FUTURE state
+        has_future_eps = any(
+            ep.status == EpisodeStatus.FUTURE for ep in season.episodes
+        )
+        if not has_future_eps:
+            return
+
     season_details = await tmdb.get_season_details(
-        season.media_item.tmdb_id, season.season_number
+        effective_tmdb_id, season.season_number
     )
     if not season_details:
         return
@@ -413,7 +437,6 @@ async def _sync_season_episodes(session: AsyncSession, season: Season) -> None:
     episodes_data = season_details.get("episodes", [])
 
     # Check existing episodes
-    await session.refresh(season, ["episodes"])
     existing_eps = {ep.episode_number: ep for ep in season.episodes}
 
     for ep_data in episodes_data:
@@ -490,21 +513,8 @@ async def run_automation_cycle(force: bool = False) -> None:
             return
 
         async with async_session_factory() as session:
-            # 1.5 Sync episodes for monitored seasons
-            stmt_s = (
-                select(Season)
-                .where(
-                    Season.monitored == True,
-                    Season.status.in_(
-                        [
-                            SeasonStatus.SEARCHING,
-                            SeasonStatus.PENDING,
-                            SeasonStatus.FUTURE,
-                        ]
-                    ),
-                )
-                .options(selectinload(Season.media_item))
-            )
+            # 1.5 Sync episodes for all seasons (optimized to skip TMDB if already loaded)
+            stmt_s = select(Season).options(selectinload(Season.media_item))
             seasons_result = await session.execute(stmt_s)
             for season in seasons_result.scalars():
                 if automation_state_manager.is_aborting():
