@@ -188,6 +188,15 @@ async def run_self_healing_cycle() -> None:
 
             await session.commit()
 
+            # --- Auto-Adoption from TorBox ---
+            try:
+                raw_downloads = await torbox.get_usenet_downloads(session=session)
+                if raw_downloads:
+                    await sync_torbox_cache(session, raw_downloads)
+                    await adopt_torbox_downloads_for_video(session)
+            except Exception as e:
+                logger.error("Error during TorBox cache sync and adoption: %s", e)
+
         logger.info("✅ Self-Healing-Zyklus abgeschlossen.")
     finally:
         log_process_end(logger, "Self-Healing Engine")
@@ -550,6 +559,246 @@ async def sync_torbox_cache(
                 progress=progress,
             )
             session.add(new_item)
+            changed = True
+
+    if changed:
+        await session.commit()
+
+
+async def adopt_torbox_downloads_for_video(session) -> None:
+    """Auto-adopts SEARCHING video items using the local TorBox download cache."""
+    from datetime import datetime, timezone
+
+    from sqlalchemy import select
+    from sqlalchemy.orm import selectinload
+
+    from app.config import scoring_config
+    from app.core.parser import parse_release_name
+    from app.core.scorer import score_release
+    from app.db.models import (
+        DownloadHistory,
+        Episode,
+        EpisodeStatus,
+        MediaItem,
+        MediaStatus,
+        MediaType,
+        Season,
+        SeasonStatus,
+        SeenTorboxDownload,
+    )
+
+    target_score = scoring_config.get("cutoffs", {}).get("target_score", 8000)
+
+    # 1. Fetch active cached video downloads
+    stmt_td = select(SeenTorboxDownload).where(
+        SeenTorboxDownload.media_type.in_(["movie", "series_season", "series_episode"]),
+        SeenTorboxDownload.download_state.not_in(["failed", "error"]),
+    )
+    active_downloads = (await session.execute(stmt_td)).scalars().all()
+
+    if not active_downloads:
+        return
+
+    import re
+
+    def clean_title(title: str) -> str:
+        return re.sub(r"[^a-z0-9]", "", title.lower())
+
+    changed = False
+
+    # 2. Match Movies
+    stmt_m = select(MediaItem).where(
+        MediaItem.media_type == MediaType.MOVIE,
+        MediaItem.status == MediaStatus.SEARCHING,
+    )
+    movies = (await session.execute(stmt_m)).scalars().all()
+
+    for movie in movies:
+        expected = clean_title(movie.title)
+        best_item = None
+        best_score = -1.0
+        best_parsed = None
+
+        for d in active_downloads:
+            if d.media_type != "movie":
+                continue
+            if not d.parsed_title or clean_title(d.parsed_title) != expected:
+                continue
+            if d.parsed_year and movie.year and d.parsed_year != movie.year:
+                continue
+
+            parsed = parse_release_name(d.raw_title)
+            score_res = score_release(
+                parsed,
+                d.size_bytes or 0,
+                expected_title=movie.title,
+                expected_year=movie.year,
+            )
+            if not score_res.is_rejected and score_res.score > best_score:
+                best_score = score_res.score
+                best_item = d
+                best_parsed = parsed
+
+        if best_item and best_parsed:
+            is_completed = best_score >= target_score
+            new_status = (
+                MediaStatus.COMPLETED if is_completed else MediaStatus.DOWNLOADED
+            )
+            if best_item.download_state in ("downloading", "queued", "processing"):
+                new_status = MediaStatus.DOWNLOADING
+
+            movie.status = new_status
+            dh = DownloadHistory(
+                media_item_id=movie.id,
+                nzb_title=best_item.raw_title,
+                score=best_score,
+                size_bytes=best_item.size_bytes,
+                resolution=best_parsed.resolution,
+                video_codec=best_parsed.video_codec,
+                audio_codec=best_parsed.audio_codec,
+                source=best_parsed.source,
+                torbox_id=best_item.torbox_id,
+                torbox_sent_at=datetime.now(timezone.utc),
+            )
+            session.add(dh)
+            changed = True
+
+    # 3. TV Shows (Season Packs)
+    stmt_s = (
+        select(Season)
+        .where(Season.status == SeasonStatus.SEARCHING)
+        .options(selectinload(Season.media_item), selectinload(Season.episodes))
+    )
+    seasons = (await session.execute(stmt_s)).scalars().all()
+
+    for season in seasons:
+        expected = clean_title(season.media_item.title)
+        best_item = None
+        best_score = -1.0
+        best_parsed = None
+
+        for d in active_downloads:
+            if d.media_type not in ("series_season", "series_episode"):
+                continue
+            if d.episode_number is not None:
+                continue
+            if not d.parsed_title or clean_title(d.parsed_title) != expected:
+                continue
+            if d.season_number != season.season_number:
+                continue
+
+            parsed = parse_release_name(d.raw_title)
+            score_res = score_release(
+                parsed,
+                d.size_bytes or 0,
+                expected_title=season.media_item.title,
+                expected_year=season.media_item.year,
+                expected_season=season.season_number,
+            )
+            if not score_res.is_rejected and score_res.score > best_score:
+                best_score = score_res.score
+                best_item = d
+                best_parsed = parsed
+
+        if best_item and best_parsed:
+            is_completed = best_score >= target_score
+            new_season_status = (
+                SeasonStatus.COMPLETED if is_completed else SeasonStatus.DOWNLOADED
+            )
+            if best_item.download_state in ("downloading", "queued", "processing"):
+                new_season_status = SeasonStatus.DOWNLOADING
+
+            season.status = new_season_status
+
+            # Cascade to episodes
+            ep_status = (
+                EpisodeStatus.DOWNLOADED
+                if new_season_status != SeasonStatus.DOWNLOADING
+                else EpisodeStatus.DOWNLOADING
+            )
+            for ep in season.episodes:
+                if ep.status in (EpisodeStatus.PENDING, EpisodeStatus.SEARCHING):
+                    ep.status = ep_status
+
+            dh = DownloadHistory(
+                media_item_id=season.media_item_id,
+                season_id=season.id,
+                nzb_title=best_item.raw_title,
+                score=best_score,
+                size_bytes=best_item.size_bytes,
+                resolution=best_parsed.resolution,
+                video_codec=best_parsed.video_codec,
+                audio_codec=best_parsed.audio_codec,
+                source=best_parsed.source,
+                torbox_id=best_item.torbox_id,
+                torbox_sent_at=datetime.now(timezone.utc),
+            )
+            session.add(dh)
+            changed = True
+
+    # 4. Episodes
+    stmt_e = (
+        select(Episode)
+        .where(Episode.status == EpisodeStatus.SEARCHING)
+        .options(selectinload(Episode.season).selectinload(Season.media_item))
+    )
+    episodes = (await session.execute(stmt_e)).scalars().all()
+
+    for episode in episodes:
+        expected = clean_title(episode.season.media_item.title)
+        best_item = None
+        best_score = -1.0
+        best_parsed = None
+
+        for d in active_downloads:
+            if d.media_type != "series_episode":
+                continue
+            if not d.parsed_title or clean_title(d.parsed_title) != expected:
+                continue
+            if (
+                d.season_number != episode.season.season_number
+                or d.episode_number != episode.episode_number
+            ):
+                continue
+
+            parsed = parse_release_name(d.raw_title)
+            score_res = score_release(
+                parsed,
+                d.size_bytes or 0,
+                expected_title=episode.season.media_item.title,
+                expected_year=episode.season.media_item.year,
+                expected_season=episode.season.season_number,
+                expected_episode=episode.episode_number,
+            )
+            if not score_res.is_rejected and score_res.score > best_score:
+                best_score = score_res.score
+                best_item = d
+                best_parsed = parsed
+
+        if best_item and best_parsed:
+            is_completed = best_score >= target_score
+            new_episode_status = (
+                EpisodeStatus.COMPLETED if is_completed else EpisodeStatus.DOWNLOADED
+            )
+            if best_item.download_state in ("downloading", "queued", "processing"):
+                new_episode_status = EpisodeStatus.DOWNLOADING
+
+            episode.status = new_episode_status
+            dh = DownloadHistory(
+                media_item_id=episode.season.media_item_id,
+                season_id=episode.season.id,
+                episode_id=episode.id,
+                nzb_title=best_item.raw_title,
+                score=best_score,
+                size_bytes=best_item.size_bytes,
+                resolution=best_parsed.resolution,
+                video_codec=best_parsed.video_codec,
+                audio_codec=best_parsed.audio_codec,
+                source=best_parsed.source,
+                torbox_id=best_item.torbox_id,
+                torbox_sent_at=datetime.now(timezone.utc),
+            )
+            session.add(dh)
             changed = True
 
     if changed:
