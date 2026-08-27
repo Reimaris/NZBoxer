@@ -451,3 +451,106 @@ async def run_download_check_cycle() -> None:
             logger.info("🔎 Download check finished: No changes.")
     finally:
         log_process_end(logger, "Download Check Engine")
+
+
+async def sync_torbox_cache(
+    session, raw_downloads: list[dict], force_rescan: bool = False
+) -> None:
+    """Parses new/modified TorBox items into SeenTorboxDownload records.
+    Ignores unchanged items to save CPU cycles.
+    """
+    from sqlalchemy import select
+
+    from app.core.parser import parse_release_name
+    from app.db.models import SeenTorboxDownload
+
+    if not raw_downloads:
+        return
+
+    tb_ids = [str(d.get("id")) for d in raw_downloads if d.get("id")]
+    if not tb_ids:
+        return
+
+    existing_stmt = select(SeenTorboxDownload).where(
+        SeenTorboxDownload.torbox_id.in_(tb_ids)
+    )
+    existing_items = {
+        item.torbox_id: item
+        for item in (await session.execute(existing_stmt)).scalars().all()
+    }
+
+    changed = False
+
+    for d in raw_downloads:
+        tb_id = str(d.get("id"))
+        if not tb_id:
+            continue
+
+        name = d.get("name") or d.get("title") or "Unknown"
+        state = d.get("download_state") or d.get("status") or "unknown"
+        size = d.get("size") or 0
+        try:
+            progress = float(d.get("progress") or 0.0)
+        except ValueError:
+            progress = 0.0
+
+        existing = existing_items.get(tb_id)
+
+        if existing:
+            # Skip if nothing changed
+            if (
+                not force_rescan
+                and existing.download_state == state
+                and existing.progress == progress
+            ):
+                continue
+
+            existing.download_state = state
+            existing.progress = progress
+            existing.size_bytes = size
+            changed = True
+        else:
+            # Only parse if new
+            parsed = parse_release_name(name)
+
+            media_type = "unknown"
+            if parsed.season is not None:
+                if parsed.episode is not None:
+                    media_type = "series_episode"
+                else:
+                    media_type = "series_season"
+            elif parsed.resolution or parsed.video_codec:
+                media_type = "movie"
+            else:
+                lower_name = name.lower()
+                if (
+                    ".epub" in lower_name
+                    or ".pdf" in lower_name
+                    or ".mobi" in lower_name
+                    or ".azw3" in lower_name
+                ):
+                    media_type = "book"
+                elif (
+                    ".cbz" in lower_name
+                    or ".cbr" in lower_name
+                    or "manga" in lower_name
+                ):
+                    media_type = "manga"
+
+            new_item = SeenTorboxDownload(
+                torbox_id=tb_id,
+                raw_title=name,
+                parsed_title=parsed.title or name,
+                parsed_year=parsed.year,
+                season_number=parsed.season,
+                episode_number=parsed.episode,
+                media_type=media_type,
+                download_state=state,
+                size_bytes=size,
+                progress=progress,
+            )
+            session.add(new_item)
+            changed = True
+
+    if changed:
+        await session.commit()
