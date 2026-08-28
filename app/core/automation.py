@@ -13,11 +13,11 @@ from collections.abc import Sequence
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.config import scoring_config
+from app.config import scoring_config, settings
 from app.core.automation_state import AutomationStatus, automation_state_manager
 from app.core.logging_config import log_process_end, log_process_start
 from app.core.parser import parse_release_name
@@ -623,18 +623,34 @@ async def run_automation_cycle(force: bool = False) -> None:
 
             if active_movie_provider_ids:
                 # 2. Process Movies
+                target_score = scoring_config.get("cutoffs", {}).get(
+                    "target_score", 8000
+                )
                 stmt_movies = (
                     select(MediaItem)
                     .where(
-                        MediaItem.status == MediaStatus.SEARCHING,
                         MediaItem.media_type == MediaType.MOVIE,
                         MediaItem.provider_id.in_(active_movie_provider_ids),
+                        or_(
+                            MediaItem.status == MediaStatus.SEARCHING,
+                            and_(
+                                MediaItem.status == MediaStatus.DOWNLOADED,
+                                MediaItem.upgrade_attempts_count
+                                < settings.max_upgrade_attempts,
+                            ),
+                        ),
                     )
                     .options(selectinload(MediaItem.download_history))
                 )
 
                 movies_result = await session.execute(stmt_movies)
                 for movie in movies_result.scalars():
+                    if (
+                        movie.status == MediaStatus.DOWNLOADED
+                        and movie.best_score is not None
+                        and movie.best_score >= target_score
+                    ):
+                        continue
                     if automation_state_manager.is_aborting():
                         logger.info(
                             "🛑 Automation cycle abort requested. Stopping movie processing."
@@ -651,11 +667,18 @@ async def run_automation_cycle(force: bool = False) -> None:
                     .join(MediaItem)
                     .where(
                         Season.monitored == True,
-                        Season.status.in_(
-                            [SeasonStatus.SEARCHING, SeasonStatus.PENDING]
-                        ),
                         MediaItem.status != MediaStatus.IGNORED,
                         MediaItem.provider_id.in_(active_shows_provider_ids),
+                        or_(
+                            Season.status.in_(
+                                [SeasonStatus.SEARCHING, SeasonStatus.PENDING]
+                            ),
+                            and_(
+                                Season.status == SeasonStatus.DOWNLOADED,
+                                Season.upgrade_attempts_count
+                                < settings.max_upgrade_attempts,
+                            ),
+                        ),
                     )
                     .options(
                         selectinload(Season.media_item).selectinload(
@@ -665,8 +688,17 @@ async def run_automation_cycle(force: bool = False) -> None:
                     )
                 )
 
+                target_score = scoring_config.get("cutoffs", {}).get(
+                    "target_score", 8000
+                )
                 seasons_result = await session.execute(season_stmt)
                 for season in seasons_result.scalars().unique():
+                    if (
+                        season.status == SeasonStatus.DOWNLOADED
+                        and season.best_score is not None
+                        and season.best_score >= target_score
+                    ):
+                        continue
                     if automation_state_manager.is_aborting():
                         logger.info(
                             "🛑 Automation cycle abort requested. Stopping season processing."
@@ -959,12 +991,19 @@ async def _process_season(session: AsyncSession, season: Season) -> None:
             "audio_channels": profile.audio_channels or "any",
         }
 
+    target_score = scoring_config.get("cutoffs", {}).get("target_score", 8000)
     stmt = (
         select(Episode)
         .where(
             Episode.season_id == season.id,
-            Episode.status == EpisodeStatus.SEARCHING,
             Episode.monitored == True,
+            or_(
+                Episode.status == EpisodeStatus.SEARCHING,
+                and_(
+                    Episode.status == EpisodeStatus.DOWNLOADED,
+                    Episode.upgrade_attempts_count < settings.max_upgrade_attempts,
+                ),
+            ),
         )
         .order_by(Episode.episode_number)
         .options(
@@ -973,7 +1012,15 @@ async def _process_season(session: AsyncSession, season: Season) -> None:
         )
     )
     episodes_res = await session.execute(stmt)
-    missing_episodes = episodes_res.scalars().all()
+    missing_episodes = [
+        ep
+        for ep in episodes_res.scalars().all()
+        if not (
+            ep.status == EpisodeStatus.DOWNLOADED
+            and ep.best_score is not None
+            and ep.best_score >= target_score
+        )
+    ]
 
     if not missing_episodes:
         logger.info("    ✅ No pending episodes for S%02d.", season.season_number)
