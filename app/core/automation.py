@@ -503,8 +503,9 @@ async def run_automation_cycle(force: bool = False) -> None:
             logger.info("🔄 Starting automation cycle...")
 
         # 0. Self-healing: fix failed downloads before searching
-        await run_self_healing_cycle()
-        await run_download_check_cycle()
+        if force:
+            await run_self_healing_cycle()
+            await run_download_check_cycle()
 
         if automation_state_manager.is_aborting():
             logger.info("🛑 Automation cycle abort requested early. Halting.")
@@ -676,7 +677,7 @@ async def run_automation_cycle(force: bool = False) -> None:
                 logger.info("⏩ Skipping series search in this cycle.")
 
         # 4. Download-Check: update status for items already sent to TorBox
-        if not automation_state_manager.is_aborting():
+        if force and not automation_state_manager.is_aborting():
             await run_download_check_cycle()
     finally:
         automation_state_manager.reset()
