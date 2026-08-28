@@ -1528,7 +1528,12 @@ async def get_settings_page(request: Request):
     from sqlalchemy import select
     from sqlalchemy.orm import selectinload
 
-    from app.db.models import NotificationChannel, Provider, SystemSettings
+    from app.db.models import (
+        BlacklistedRelease,
+        NotificationChannel,
+        Provider,
+        SystemSettings,
+    )
 
     async with async_session_factory() as session:
         stmt = select(SystemSettings).where(SystemSettings.id == 1)
@@ -1547,6 +1552,18 @@ async def get_settings_page(request: Request):
             (await session.execute(select(NotificationChannel))).scalars().all()
         )
 
+        blacklisted_releases = (
+            (
+                await session.execute(
+                    select(BlacklistedRelease).order_by(
+                        BlacklistedRelease.created_at.desc()
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+
         # Flatten scoring logic for the UI if needed
         scoring = (
             db_settings.scoring_settings
@@ -1562,6 +1579,7 @@ async def get_settings_page(request: Request):
             "scoring": scoring,
             "providers": providers,
             "notifications": notifications,
+            "blacklisted_releases": blacklisted_releases,
         },
     )
 
@@ -2694,3 +2712,52 @@ async def history_dashboard(request: Request):
             "mag_items": mag_items,
         },
     )
+
+
+@app.get("/api/blacklist")
+async def get_blacklist():
+    """Retrieve all blacklisted releases."""
+    from sqlalchemy import select
+
+    from app.db.database import async_session_factory
+    from app.db.models import BlacklistedRelease
+
+    async with async_session_factory() as session:
+        items = (
+            (
+                await session.execute(
+                    select(BlacklistedRelease).order_by(
+                        BlacklistedRelease.created_at.desc()
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        return [
+            {
+                "id": i.id,
+                "media_item_id": i.media_item_id,
+                "nzb_guid": i.nzb_guid,
+                "nzb_title": i.nzb_title,
+                "reason": i.reason,
+                "created_at": i.created_at.isoformat(),
+            }
+            for i in items
+        ]
+
+
+@app.delete("/api/blacklist/{blacklist_id}")
+async def delete_blacklisted_release(blacklist_id: int):
+    """Delete a blacklisted release so it can be grabbed again."""
+    from app.db.database import async_session_factory
+    from app.db.models import BlacklistedRelease
+
+    async with async_session_factory() as session:
+        item = await session.get(BlacklistedRelease, blacklist_id)
+        if item:
+            await session.delete(item)
+            await session.commit()
+
+    # Return empty string for HTMX to clear the row
+    return Response(content="", status_code=200)

@@ -339,6 +339,66 @@
                 </div>
             </div>
 
+            
+            <!-- Card 4: Blacklist Management -->
+            <div class="bg-[#1e1e24] border border-[#3f3f46] rounded-xl shadow-lg mt-8">
+                <div class="bg-[#2a2a32] rounded-t-xl border-b border-[#3f3f46] px-6 py-4 flex items-center justify-between">
+                    <h2 class="text-lg font-semibold text-white flex items-center gap-2">
+                        <svg class="w-5 h-5 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"></path></svg>
+                        Blacklist Management
+                    </h2>
+                </div>
+                <div class="p-6">
+                    <div class="overflow-x-auto max-h-96 overflow-y-auto">
+                        <table class="w-full text-left text-sm text-gray-300 border-collapse">
+                            <thead class="sticky top-0 bg-[#1e1e24] z-10">
+                                <tr class="border-b border-[#3f3f46] text-[#a1a1aa] uppercase text-xs">
+                                    <th class="px-4 py-3 font-medium">Date</th>
+                                    <th class="px-4 py-3 font-medium">Release Title</th>
+                                    <th class="px-4 py-3 font-medium">Reason</th>
+                                    <th class="px-4 py-3 font-medium w-24">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% if blacklisted_releases %}
+                                    {% for item in blacklisted_releases %}
+                                    <tr class="border-b border-[#3f3f46]/50 hover:bg-[#2a2a32] transition-colors" id="blacklist-row-{{ item.id }}">
+                                        <td class="px-4 py-3 whitespace-nowrap text-xs text-gray-400">
+                                            {{ item.created_at.strftime('%Y-%m-%d %H:%M') if item.created_at else 'Unknown' }}
+                                        </td>
+                                        <td class="px-4 py-3 font-mono text-[11px] truncate max-w-xs break-all" title="{{ item.nzb_title }}">
+                                            {{ item.nzb_title }}
+                                        </td>
+                                        <td class="px-4 py-3 text-xs">
+                                            <span class="bg-red-900/40 text-red-400 px-2 py-1 rounded-md border border-red-800/50">
+                                                {{ item.reason or 'Unknown Failure' }}
+                                            </span>
+                                        </td>
+                                        <td class="px-4 py-3">
+                                            <button type="button" 
+                                                    hx-delete="/api/blacklist/{{ item.id }}" 
+                                                    hx-target="#blacklist-row-{{ item.id }}" 
+                                                    hx-swap="outerHTML"
+                                                    class="text-gray-400 hover:text-red-400 transition-colors bg-[#2a2a32] hover:bg-red-900/20 p-1.5 rounded-lg border border-[#3f3f46] hover:border-red-900/50"
+                                                    title="Remove from Blacklist">
+                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                                            </button>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                {% else %}
+                                    <tr>
+                                        <td colspan="4" class="px-4 py-8 text-center text-[#71717a] italic">
+                                            No releases are currently blacklisted.
+                                        </td>
+                                    </tr>
+                                {% endif %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
             <div class="flex justify-end pt-4">
                 <button type="submit" class="bg-[#d40060] hover:bg-[#a3004a] text-white px-8 py-3 rounded-lg flex items-center gap-2 font-bold transition-transform hover:scale-105 shadow-[0_0_15px_rgba(212,0,96,0.4)]">
                     Save General Settings
