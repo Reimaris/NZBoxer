@@ -120,7 +120,22 @@ async def run_self_healing_cycle() -> None:
 
                 logger.debug("TorBox status for %s: %s", history.nzb_title, status)
 
-                if status in ("failed", "error", "not_found"):
+                if status in (
+                    "failed",
+                    "error",
+                    "not_found",
+                    "aborted",
+                    "cannot be re-completed",
+                    "not enough repair blocks",
+                ):
+                    from app.core.failure_logger import log_failure
+
+                    log_failure(
+                        session,
+                        target,
+                        "torbox_error",
+                        f"TorBox download failed: {status}",
+                    )
                     logger.warning(
                         "⚠️ Self-Healing: Download failed for %s",
                         history.nzb_title,
@@ -208,7 +223,7 @@ async def run_download_check_cycle() -> None:
 
     - completed / cached → set to DOWNLOADED or COMPLETED (if score >= target)
     - downloading / queued → leave as DOWNLOADING (still in progress)
-    - failed / error / not_found → hand off to self-healing (blacklist + revert)
+    - failed / error / aborted / cannot be re-completed / not enough repair blocks / not_found → hand off to self-healing (blacklist + revert)
     """
     log_process_start(logger, "Download Check Engine")
     try:
@@ -343,7 +358,13 @@ async def run_download_check_cycle() -> None:
                     )
                     target.status = final_status
                     changed += 1
-                elif status in ("failed", "error"):
+                elif status in (
+                    "failed",
+                    "error",
+                    "aborted",
+                    "cannot be re-completed",
+                    "not enough repair blocks",
+                ):
                     logger.warning(
                         "    ⚠️ %s → fehlgeschlagen (%s), wird erneut gesucht.",
                         title,
