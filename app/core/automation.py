@@ -684,6 +684,22 @@ async def run_automation_cycle(force: bool = False) -> None:
         log_process_end(logger, "Automation Cycle")
 
 
+async def _get_anime_aliases(item) -> list[str]:
+    aliases = {item.title}
+    if getattr(item, "alt_title", None):
+        aliases.add(item.alt_title)
+
+    if getattr(item, "anilist_id", None):
+        from app.services import anilist
+
+        anilist_aliases = await anilist.get_anime_aliases(item.anilist_id)
+        for alias in anilist_aliases:
+            if alias:
+                aliases.add(alias)
+
+    return list(aliases)
+
+
 async def _process_movie(session: AsyncSession, movie: MediaItem) -> None:
     from app.db.models import MediaType, ProviderProfile
 
@@ -746,6 +762,10 @@ async def _process_movie(session: AsyncSession, movie: MediaItem) -> None:
     all_results: list[dict[str, Any]] = []
     is_title_fallback = False
 
+    anime_aliases = []
+    if movie.media_type == MediaType.MOVIE and getattr(movie, "is_anime_movie", False):
+        anime_aliases = await _get_anime_aliases(movie)
+
     for indexer in active_indexers:
         logger.info(
             "    🔍 Searching indexer '%s' (priority %d) for movie '%s'...",
@@ -754,35 +774,83 @@ async def _process_movie(session: AsyncSession, movie: MediaItem) -> None:
             movie.title,
         )
         results = []
-        if movie.imdb_id:
-            results = await treasure_maps.search_movie(
-                imdb_id=movie.imdb_id,
-                category=cat_id,
-                api_url=indexer.api_url,
-                api_key=indexer.api_key,
-                session=session,
-            )
-        if not results and movie.tmdb_id:
-            results = await treasure_maps.search_movie(
-                tmdb_id=movie.tmdb_id,
-                category=cat_id,
-                api_url=indexer.api_url,
-                api_key=indexer.api_key,
-                session=session,
-            )
-        if not results:
-            logger.warning(
-                "    ⚠️ No ID match for movie '%s' on '%s', falling back to title search.",
-                movie.title,
-                indexer.name,
-            )
-            results = await treasure_maps.search_movie(
-                title=movie.title,
-                category=cat_id,
-                api_url=indexer.api_url,
-                api_key=indexer.api_key,
-                session=session,
-            )
+
+        if not anime_aliases:
+            if movie.imdb_id:
+                results = await treasure_maps.search_movie(
+                    imdb_id=movie.imdb_id,
+                    category=cat_id,
+                    api_url=indexer.api_url,
+                    api_key=indexer.api_key,
+                    session=session,
+                )
+            if not results and movie.tmdb_id:
+                results = await treasure_maps.search_movie(
+                    tmdb_id=movie.tmdb_id,
+                    category=cat_id,
+                    api_url=indexer.api_url,
+                    api_key=indexer.api_key,
+                    session=session,
+                )
+            if not results:
+                logger.warning(
+                    "    ⚠️ No ID match for movie '%s' on '%s', falling back to title search.",
+                    movie.title,
+                    indexer.name,
+                )
+                results = await treasure_maps.search_movie(
+                    title=movie.title,
+                    category=cat_id,
+                    api_url=indexer.api_url,
+                    api_key=indexer.api_key,
+                    session=session,
+                )
+                if results:
+                    is_title_fallback = True
+        else:
+            # Anime Aggregation Flow
+            seen_guids = set()
+            agg_results = []
+            if movie.imdb_id:
+                r = await treasure_maps.search_movie(
+                    imdb_id=movie.imdb_id,
+                    category=cat_id,
+                    api_url=indexer.api_url,
+                    api_key=indexer.api_key,
+                    session=session,
+                )
+                for x in r:
+                    g = x.get("guid") or x.get("link", "")
+                    if g and g not in seen_guids:
+                        seen_guids.add(g)
+                        agg_results.append(x)
+            if movie.tmdb_id:
+                r = await treasure_maps.search_movie(
+                    tmdb_id=movie.tmdb_id,
+                    category=cat_id,
+                    api_url=indexer.api_url,
+                    api_key=indexer.api_key,
+                    session=session,
+                )
+                for x in r:
+                    g = x.get("guid") or x.get("link", "")
+                    if g and g not in seen_guids:
+                        seen_guids.add(g)
+                        agg_results.append(x)
+            for alias in anime_aliases:
+                r = await treasure_maps.search_movie(
+                    title=alias,
+                    category=cat_id,
+                    api_url=indexer.api_url,
+                    api_key=indexer.api_key,
+                    session=session,
+                )
+                for x in r:
+                    g = x.get("guid") or x.get("link", "")
+                    if g and g not in seen_guids:
+                        seen_guids.add(g)
+                        agg_results.append(x)
+            results = agg_results
             if results:
                 is_title_fallback = True
 
@@ -918,13 +986,62 @@ async def _process_season(session: AsyncSession, season: Season) -> None:
         logger.warning("    ⚠️ No active indexers configured.")
         return
 
+    anime_aliases = []
+    if season.media_item.media_type == MediaType.ANIME:
+        anime_aliases = await _get_anime_aliases(season.media_item)
+
     async def _search_show_id_first(
         s: int,
         ep: str | None = None,
         api_url: str | None = None,
         api_key: str | None = None,
     ) -> tuple[list, bool]:
-        """Search by TVDB, then TMDB, then title fallback. Returns (results, is_title_fallback)."""
+        """Search by TVDB, then TMDB, then title fallback. For Anime, queries all aliases and aggregates."""
+        seen_guids = set()
+        agg_results = []
+
+        if not anime_aliases:
+            if tvdb_id:
+                r = await treasure_maps.search_show(
+                    tvdb_id=tvdb_id,
+                    season=s,
+                    ep=ep,
+                    category=cat_id,
+                    api_url=api_url,
+                    api_key=api_key,
+                    session=session,
+                )
+                if r:
+                    return r, False
+            if tmdb_id:
+                r = await treasure_maps.search_show(
+                    tmdb_id=tmdb_id,
+                    season=s,
+                    ep=ep,
+                    category=cat_id,
+                    api_url=api_url,
+                    api_key=api_key,
+                    session=session,
+                )
+                if r:
+                    return r, False
+            logger.warning(
+                "    ⚠️ No ID match for S%02d%s, falling back to title search.",
+                s,
+                f"E{ep}" if ep else "",
+            )
+            r = await treasure_maps.search_show(
+                title=season.media_item.title,
+                season=s,
+                ep=ep,
+                category=cat_id,
+                api_url=api_url,
+                api_key=api_key,
+                session=session,
+            )
+            return r, True
+
+        # Anime Aggregation Flow
         if tvdb_id:
             r = await treasure_maps.search_show(
                 tvdb_id=tvdb_id,
@@ -935,8 +1052,11 @@ async def _process_season(session: AsyncSession, season: Season) -> None:
                 api_key=api_key,
                 session=session,
             )
-            if r:
-                return r, False
+            for x in r:
+                g = x.get("guid") or x.get("link", "")
+                if g and g not in seen_guids:
+                    seen_guids.add(g)
+                    agg_results.append(x)
         if tmdb_id:
             r = await treasure_maps.search_show(
                 tmdb_id=tmdb_id,
@@ -947,24 +1067,48 @@ async def _process_season(session: AsyncSession, season: Season) -> None:
                 api_key=api_key,
                 session=session,
             )
-            if r:
-                return r, False
-        # Title fallback — warn operator
-        logger.warning(
-            "    ⚠️ No ID match for S%02d%s, falling back to title search.",
-            s,
-            f"E{ep}" if ep else "",
-        )
-        r = await treasure_maps.search_show(
-            title=season.media_item.title,
-            season=s,
-            ep=ep,
-            category=cat_id,
-            api_url=api_url,
-            api_key=api_key,
-            session=session,
-        )
-        return r, True
+            for x in r:
+                g = x.get("guid") or x.get("link", "")
+                if g and g not in seen_guids:
+                    seen_guids.add(g)
+                    agg_results.append(x)
+
+        for alias in anime_aliases:
+            r = await treasure_maps.search_show(
+                title=alias,
+                season=s,
+                ep=ep,
+                category=cat_id,
+                api_url=api_url,
+                api_key=api_key,
+                session=session,
+            )
+            for x in r:
+                g = x.get("guid") or x.get("link", "")
+                if g and g not in seen_guids:
+                    seen_guids.add(g)
+                    agg_results.append(x)
+
+            if ep:
+                try:
+                    abs_ep = int(ep)
+                    abs_title = f"{alias} {abs_ep:02d}"
+                    r_abs = await treasure_maps.search_show(
+                        title=abs_title,
+                        category=cat_id,
+                        api_url=api_url,
+                        api_key=api_key,
+                        session=session,
+                    )
+                    for x in r_abs:
+                        g = x.get("guid") or x.get("link", "")
+                        if g and g not in seen_guids:
+                            seen_guids.add(g)
+                            agg_results.append(x)
+                except ValueError:
+                    pass
+
+        return agg_results, bool(anime_aliases)
 
     try:
         if prefer_seasons:
@@ -1092,23 +1236,7 @@ async def _process_season(session: AsyncSession, season: Season) -> None:
                         api_key=indexer.api_key,
                     )
 
-                    # Additional fallback for Anime Absolute Episode Numbering
-                    if (
-                        not ep_results
-                        and season.media_item.media_type == MediaType.ANIME
-                    ):
-                        ep_title_search = (
-                            f"{season.media_item.title} {ep.episode_number:02d}"
-                        )
-                        abs_res = await treasure_maps.search_show(
-                            title=ep_title_search,
-                            category=cat_id,
-                            api_url=indexer.api_url,
-                            api_key=indexer.api_key,
-                            session=session,
-                        )
-                        ep_results = abs_res
-                        is_fallback = True
+                    # Absolute Episode Numbering is now handled internally by _search_show_id_first for Anime
 
                     if not ep_results:
                         continue

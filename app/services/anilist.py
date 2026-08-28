@@ -69,3 +69,39 @@ async def get_manga_details(anilist_id: int) -> dict[str, Any] | None:
         except Exception as e:
             logger.error(f"AniList get details failed: {e}")
             return None
+
+
+async def get_anime_aliases(anilist_id: int) -> list[str]:
+    """Fetches title aliases for a specific AniList Anime ID."""
+    query_str = """
+    query ($id: Int) {
+      Media(id: $id, type: ANIME) {
+        title { romaji english native }
+        synonyms
+      }
+    }
+    """
+    variables = {"id": anilist_id}
+
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        try:
+            resp = await client.post(
+                ANILIST_URL, json={"query": query_str, "variables": variables}
+            )
+            resp.raise_for_status()
+            data = resp.json().get("data", {}).get("Media") or {}
+
+            titles = data.get("title") or {}
+            aliases = set()
+            for k in ("romaji", "english", "native"):
+                if titles.get(k):
+                    aliases.add(titles[k])
+
+            for syn in data.get("synonyms") or []:
+                if syn:
+                    aliases.add(syn)
+
+            return list(aliases)
+        except Exception as e:
+            logger.error(f"AniList get_anime_aliases failed: {e}")
+            return []
