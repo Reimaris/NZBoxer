@@ -315,9 +315,9 @@
                             {% if item.status.value == 'downloaded' or item.status.value == 'completed' %}
                                 <span class="bg-emerald-600 text-white text-[11px] font-bold px-2 py-1 rounded uppercase tracking-wider shadow-sm">DONE</span>
                                 {% if item.status.value == 'downloaded' %}
-                                <span class="bg-blue-900 text-blue-200 text-[10px] font-bold px-2 py-0.5 rounded border border-blue-700 w-fit">Upgrade: {{ item.upgrade_attempts_count }}/{{ max_upgrade_attempts }}</span>
+                                <span class="bg-blue-900 text-blue-200 text-[10px] font-bold px-2 py-0.5 rounded border border-blue-700 w-fit">Upgrade: {{ item.aggregated_upgrade_attempts }}/{{ max_upgrade_attempts }}</span>
                                 {% elif item.status.value == 'completed' and item.best_score and item.best_score < 8000 %}
-                                <span class="bg-[#1e1e24] text-gray-400 text-[10px] font-bold px-2 py-0.5 rounded border border-[#3f3f46] w-fit">Cutoff unmet ({{ item.upgrade_attempts_count }}/{{ max_upgrade_attempts }} attempts)</span>
+                                <span class="bg-[#1e1e24] text-gray-400 text-[10px] font-bold px-2 py-0.5 rounded border border-[#3f3f46] w-fit">Cutoff unmet ({{ item.aggregated_upgrade_attempts }}/{{ max_upgrade_attempts }} attempts)</span>
                                 {% endif %}
                             {% elif item.status.value == 'downloading' %}
                                 <span class="bg-orange-600 animate-pulse text-white text-[11px] font-bold px-2 py-1 rounded uppercase tracking-wider shadow-sm">DOWNLOADING</span>
@@ -332,6 +332,20 @@
                                 <span class="bg-[#d40060] text-white text-[11px] font-bold px-2 py-1 rounded uppercase tracking-wider shadow-sm">WANTED</span>
                             {% else %}
                                 <span class="bg-slate-600 text-white text-[11px] font-bold px-2 py-1 rounded uppercase tracking-wider shadow-sm">{{ item.status.value }}</span>
+                            {% endif %}
+
+                            {% if item.media_type.value in ['show', 'anime'] and item.total_seasons > 0 %}
+                                {% set pct = (item.downloaded_seasons / item.total_seasons) * 100 %}
+                                {% if pct == 100 %}
+                                    {% set badge_color = "bg-emerald-700 text-white border-emerald-600" %}
+                                {% elif pct > 0 %}
+                                    {% set badge_color = "bg-amber-700 text-white border-amber-600" %}
+                                {% else %}
+                                    {% set badge_color = "bg-blue-900 text-blue-200 border-blue-700" %}
+                                {% endif %}
+                                <span class="{{ badge_color }} text-[10px] font-bold px-2 py-0.5 rounded border w-fit whitespace-nowrap shadow-sm mt-1">
+                                    {{ item.downloaded_seasons }}/{{ item.total_seasons }} Seasons Downloaded
+                                </span>
                             {% endif %}
                             
                             {% if item.failure_logs|length > 0 %}

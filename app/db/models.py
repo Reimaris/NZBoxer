@@ -470,6 +470,38 @@ class MediaItem(Base):
         lazy="selectin",
     )
 
+    @property
+    def total_seasons(self) -> int:
+        """Total seasons excluding season 0 (specials)."""
+        if self.media_type not in (MediaType.SHOW, MediaType.ANIME) or not self.seasons:
+            return 0
+        return sum(1 for s in self.seasons if s.season_number > 0)
+
+    @property
+    def downloaded_seasons(self) -> int:
+        """Total downloaded or completed seasons excluding season 0."""
+        if self.media_type not in (MediaType.SHOW, MediaType.ANIME) or not self.seasons:
+            return 0
+        return sum(
+            1
+            for s in self.seasons
+            if s.season_number > 0
+            and s.status in [SeasonStatus.DOWNLOADED, SeasonStatus.COMPLETED]
+        )
+
+    @property
+    def aggregated_upgrade_attempts(self) -> int:
+        """Aggregated upgrade attempts for the item (movies) or its seasons."""
+        if self.media_type == MediaType.MOVIE:
+            return self.upgrade_attempts_count
+        elif self.media_type in (MediaType.SHOW, MediaType.ANIME):
+            if not self.seasons:
+                return 0
+            return sum(
+                s.upgrade_attempts_count for s in self.seasons if s.season_number > 0
+            )
+        return 0
+
     def __repr__(self) -> str:
         return (
             f"<MediaItem id={self.id} simkl_id={self.simkl_id} "

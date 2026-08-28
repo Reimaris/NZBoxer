@@ -43,6 +43,29 @@
                     <span class="bg-red-900 text-white text-[10px] font-bold px-2 py-0.5 rounded ml-2 border border-red-700 cursor-help" title="{% for log in item.failure_logs[-5:] %}{{ log.created_at.strftime('%Y-%m-%d %H:%M') }}: {{ log.message }}&#10;{% endfor %}">❌ {{ item.failure_logs|length }} Fails</span>
                     {% endif %}
                 </div>
+                    {% if item.media_type.value == 'movie' %}
+                        {% if item.status.value == 'downloaded' %}
+                        <div class="mb-2"><span class="bg-blue-900 text-blue-200 text-[10px] font-bold px-2 py-0.5 rounded border border-blue-700 w-fit">Upgrade: {{ item.aggregated_upgrade_attempts }}/{{ max_upgrade_attempts }}</span></div>
+                        {% elif item.status.value == 'completed' and item.best_score and item.best_score < 8000 %}
+                        <div class="mb-2"><span class="bg-[#1e1e24] text-gray-400 text-[10px] font-bold px-2 py-0.5 rounded border border-[#3f3f46] w-fit">Cutoff unmet ({{ item.aggregated_upgrade_attempts }}/{{ max_upgrade_attempts }} attempts)</span></div>
+                        {% endif %}
+                    {% endif %}
+                {% if item.media_type.value in ['show', 'anime'] and item.total_seasons > 0 %}
+                    <div class="mb-4">
+                        {% set pct = (item.downloaded_seasons / item.total_seasons) * 100 %}
+                        {% if pct == 100 %}
+                            {% set badge_color = "bg-emerald-700 text-white border-emerald-600" %}
+                        {% elif pct > 0 %}
+                            {% set badge_color = "bg-amber-700 text-white border-amber-600" %}
+                        {% else %}
+                            {% set badge_color = "bg-blue-900 text-blue-200 border-blue-700" %}
+                        {% endif %}
+                        <span class="{{ badge_color }} text-[10px] font-bold px-2 py-0.5 rounded border whitespace-nowrap shadow-sm">
+                            {{ item.downloaded_seasons }}/{{ item.total_seasons }} Seasons Downloaded
+                        </span>
+                    </div>
+                {% endif %}
+
                 
                 <div class="grid grid-cols-2 gap-4 pt-4 border-t border-slate-700">
                     <div>
