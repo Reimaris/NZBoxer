@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from typing import TYPE_CHECKING, Any
 
 import httpx
@@ -28,6 +29,18 @@ TORBOX_BASE_URL = "https://api.torbox.app/v1"
 
 class TorBoxError(Exception):
     pass
+
+
+class DownloaderNetworkError(TorBoxError):
+    pass
+
+
+def _sanitize_error_body(text: str) -> str:
+    if not text:
+        return ""
+    clean = re.sub(r"<.*?>", " ", text)
+    clean = re.sub(r"\s+", " ", clean).strip()
+    return clean[:200]
 
 
 async def resolve_api_key(
@@ -122,7 +135,11 @@ async def send_nzb_link(
                 is_retriable = True
                 err_detail = str(e)
                 if isinstance(e, httpx.HTTPStatusError):
-                    if e.response.status_code not in (429, 500, 502, 503, 504):
+                    status = e.response.status_code
+                    if not (
+                        500 <= status < 600
+                        or status in (429, 520, 521, 522, 523, 524, 525, 526, 530)
+                    ):
                         is_retriable = False
                     try:
                         err_json = e.response.json()
@@ -133,6 +150,8 @@ async def send_nzb_link(
                         )
                     except Exception:
                         err_detail = e.response.text
+
+                err_detail = _sanitize_error_body(str(err_detail))
 
                 if not is_retriable:
                     logger.error("TorBox API error (non-retriable): %s", err_detail)
@@ -148,13 +167,16 @@ async def send_nzb_link(
                     )
                     await asyncio.sleep(wait_time)
                 else:
+                    err_msg = _sanitize_error_body(str(e))
                     logger.error(
                         "Failed to send NZB to TorBox after %d attempts: [%s] %s",
                         max_retries,
                         type(e).__name__,
-                        e,
+                        err_msg,
                     )
-                    return {}
+                    raise DownloaderNetworkError(
+                        f"TorBox network error: {err_msg}"
+                    ) from e
 
     return {}
 
@@ -224,7 +246,11 @@ async def send_nzb_file(
                 is_retriable = True
                 err_detail = str(e)
                 if isinstance(e, httpx.HTTPStatusError):
-                    if e.response.status_code not in (429, 500, 502, 503, 504):
+                    status = e.response.status_code
+                    if not (
+                        500 <= status < 600
+                        or status in (429, 520, 521, 522, 523, 524, 525, 526, 530)
+                    ):
                         is_retriable = False
                     try:
                         err_json = e.response.json()
@@ -235,6 +261,8 @@ async def send_nzb_file(
                         )
                     except Exception:
                         err_detail = e.response.text
+
+                err_detail = _sanitize_error_body(str(err_detail))
 
                 if not is_retriable:
                     logger.error("TorBox API error (non-retriable): %s", err_detail)
@@ -250,13 +278,16 @@ async def send_nzb_file(
                     )
                     await asyncio.sleep(wait_time)
                 else:
+                    err_msg = _sanitize_error_body(str(e))
                     logger.error(
                         "Failed to send NZB file to TorBox after %d attempts: [%s] %s",
                         max_retries,
                         type(e).__name__,
-                        e,
+                        err_msg,
                     )
-                    return {}
+                    raise DownloaderNetworkError(
+                        f"TorBox network error: {err_msg}"
+                    ) from e
 
     return {}
 
@@ -326,7 +357,11 @@ async def send_magnet_link(
                 is_retriable = True
                 err_detail = str(e)
                 if isinstance(e, httpx.HTTPStatusError):
-                    if e.response.status_code not in (429, 500, 502, 503, 504):
+                    status = e.response.status_code
+                    if not (
+                        500 <= status < 600
+                        or status in (429, 520, 521, 522, 523, 524, 525, 526, 530)
+                    ):
                         is_retriable = False
                     try:
                         err_json = e.response.json()
@@ -337,6 +372,8 @@ async def send_magnet_link(
                         )
                     except Exception:
                         err_detail = e.response.text
+
+                err_detail = _sanitize_error_body(str(err_detail))
 
                 if not is_retriable:
                     logger.error("TorBox API error (non-retriable): %s", err_detail)
@@ -352,13 +389,16 @@ async def send_magnet_link(
                     )
                     await asyncio.sleep(wait_time)
                 else:
+                    err_msg = _sanitize_error_body(str(e))
                     logger.error(
                         "Failed to send Magnet to TorBox after %d attempts: [%s] %s",
                         max_retries,
                         type(e).__name__,
-                        e,
+                        err_msg,
                     )
-                    return {}
+                    raise DownloaderNetworkError(
+                        f"TorBox network error: {err_msg}"
+                    ) from e
 
     return {}
 

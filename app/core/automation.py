@@ -36,6 +36,7 @@ from app.db.models import (
     SeasonStatus,
 )
 from app.services import provider_service, simkl, tmdb, torbox, treasure_maps
+from app.services.torbox import DownloaderNetworkError
 
 logger = logging.getLogger(__name__)
 
@@ -964,149 +965,30 @@ async def _process_season(session: AsyncSession, season: Season) -> None:
         )
         return r, True
 
-    if prefer_seasons:
-        logger.info("    📦 Searching season pack for S%02d...", season.season_number)
-        all_season_results: list[dict[str, Any]] = []
-        is_season_fallback = False
-
-        for indexer in active_indexers:
-            results, is_fallback = await _search_show_id_first(
-                season.season_number,
-                api_url=indexer.api_url,
-                api_key=indexer.api_key,
-            )
-            if not results:
-                continue
-            if is_fallback:
-                is_season_fallback = True
-
-            grabbed = await _evaluate_and_download(
-                session,
-                results,
-                season=season,
-                target_episodes=missing_episodes,
-                reject_words=reject_words,
-                required_language=required_language,
-                is_title_fallback=is_fallback,
-                filters=filters,
-                indexer_name=indexer.name,
-                indexer_url=indexer.api_url,
-                indexer_key=indexer.api_key,
-                early_exit_on_cutoff=True,
-            )
-            if grabbed or season.status in [
-                SeasonStatus.DOWNLOADING,
-                SeasonStatus.DOWNLOADED,
-                SeasonStatus.COMPLETED,
-                SeasonStatus.MANUAL_GRAB,
-            ]:
-                logger.info(
-                    "    🎯 Season pack grabbed on indexer '%s'. Halting cascade.",
-                    indexer.name,
-                )
-                if season.media_item.auto_monitor_next_season:
-                    next_s_stmt = select(Season).where(
-                        Season.media_item_id == season.media_item_id,
-                        Season.season_number == season.season_number + 1,
-                    )
-                    next_s = (await session.execute(next_s_stmt)).scalar_one_or_none()
-                    if next_s and not next_s.monitored:
-                        next_s.monitored = True
-                        next_s.status = SeasonStatus.SEARCHING
-                        logger.info(
-                            "    🔄 Automatically enabling next season: S%02d",
-                            next_s.season_number,
-                        )
-                        await session.commit()
-                return
-
-            all_season_results.extend(results)
-
-        if all_season_results:
-            grabbed = await _evaluate_and_download(
-                session,
-                all_season_results,
-                season=season,
-                target_episodes=missing_episodes,
-                reject_words=reject_words,
-                required_language=required_language,
-                is_title_fallback=is_season_fallback,
-                filters=filters,
-            )
-            if grabbed or season.status in [
-                SeasonStatus.DOWNLOADING,
-                SeasonStatus.DOWNLOADED,
-                SeasonStatus.COMPLETED,
-                SeasonStatus.MANUAL_GRAB,
-            ]:
-                if season.media_item.auto_monitor_next_season:
-                    next_s_stmt = select(Season).where(
-                        Season.media_item_id == season.media_item_id,
-                        Season.season_number == season.season_number + 1,
-                    )
-                    next_s = (await session.execute(next_s_stmt)).scalar_one_or_none()
-                    if next_s and not next_s.monitored:
-                        next_s.monitored = True
-                        next_s.status = SeasonStatus.SEARCHING
-                        logger.info(
-                            "    🔄 Automatically enabling next season: S%02d",
-                            next_s.season_number,
-                        )
-                        await session.commit()
-                return
-
-    # Process individual episodes (up to 5 per cycle, configurable via block_size)
-    block_size = (
-        profile.episode_block_size if profile and profile.episode_block_size else 5
-    )
-    for ep in missing_episodes[:block_size]:
-        if automation_state_manager.is_aborting():
+    try:
+        if prefer_seasons:
             logger.info(
-                "🛑 Automation cycle abort requested. Stopping episode processing."
+                "    📦 Searching season pack for S%02d...", season.season_number
             )
-            break
-        try:
-            logger.info(
-                "    📺 Suche Episode: S%02dE%02d",
-                season.season_number,
-                ep.episode_number,
-            )
-            all_ep_results: list[dict[str, Any]] = []
-            is_ep_fallback = False
-            early_grabbed = False
+            all_season_results: list[dict[str, Any]] = []
+            is_season_fallback = False
 
             for indexer in active_indexers:
-                ep_results, is_fallback = await _search_show_id_first(
+                results, is_fallback = await _search_show_id_first(
                     season.season_number,
-                    str(ep.episode_number),
                     api_url=indexer.api_url,
                     api_key=indexer.api_key,
                 )
-
-                # Additional fallback for Anime Absolute Episode Numbering
-                if not ep_results and season.media_item.media_type == MediaType.ANIME:
-                    ep_title_search = (
-                        f"{season.media_item.title} {ep.episode_number:02d}"
-                    )
-                    abs_res = await treasure_maps.search_show(
-                        title=ep_title_search,
-                        category=cat_id,
-                        api_url=indexer.api_url,
-                        api_key=indexer.api_key,
-                        session=session,
-                    )
-                    ep_results = abs_res
-                    is_fallback = True
-
-                if not ep_results:
+                if not results:
                     continue
                 if is_fallback:
-                    is_ep_fallback = True
+                    is_season_fallback = True
 
                 grabbed = await _evaluate_and_download(
                     session,
-                    ep_results,
-                    episode=ep,
+                    results,
+                    season=season,
+                    target_episodes=missing_episodes,
                     reject_words=reject_words,
                     required_language=required_language,
                     is_title_fallback=is_fallback,
@@ -1116,73 +998,206 @@ async def _process_season(session: AsyncSession, season: Season) -> None:
                     indexer_key=indexer.api_key,
                     early_exit_on_cutoff=True,
                 )
-                if grabbed:
+                if grabbed or season.status in [
+                    SeasonStatus.DOWNLOADING,
+                    SeasonStatus.DOWNLOADED,
+                    SeasonStatus.COMPLETED,
+                    SeasonStatus.MANUAL_GRAB,
+                ]:
                     logger.info(
-                        "    🎯 Target cutoff met for S%02dE%02d on indexer '%s'.",
-                        season.season_number,
-                        ep.episode_number,
+                        "    🎯 Season pack grabbed on indexer '%s'. Halting cascade.",
                         indexer.name,
                     )
-                    early_grabbed = True
-                    break
+                    if season.media_item.auto_monitor_next_season:
+                        next_s_stmt = select(Season).where(
+                            Season.media_item_id == season.media_item_id,
+                            Season.season_number == season.season_number + 1,
+                        )
+                        next_s = (
+                            await session.execute(next_s_stmt)
+                        ).scalar_one_or_none()
+                        if next_s and not next_s.monitored:
+                            next_s.monitored = True
+                            next_s.status = SeasonStatus.SEARCHING
+                            logger.info(
+                                "    🔄 Automatically enabling next season: S%02d",
+                                next_s.season_number,
+                            )
+                            await session.commit()
+                    return
 
-                all_ep_results.extend(ep_results)
+                all_season_results.extend(results)
 
-            if not early_grabbed:
-                if all_ep_results:
-                    await _evaluate_and_download(
-                        session,
-                        all_ep_results,
-                        episode=ep,
-                        reject_words=reject_words,
-                        required_language=required_language,
-                        is_title_fallback=is_ep_fallback,
-                        filters=filters,
-                    )
-                else:
-                    await _evaluate_and_download(
-                        session,
-                        [],
-                        episode=ep,
-                        reject_words=reject_words,
-                        required_language=required_language,
-                        is_title_fallback=is_ep_fallback,
-                        filters=filters,
-                    )
-        except Exception as ep_err:  # noqa: BLE001
-            logger.error(
-                "    ❌ Error searching S%02dE%02d: %s",
-                season.season_number,
-                ep.episode_number,
-                ep_err,
-            )
-        finally:
-            # Politeness delay between consecutive indexer requests
-            await asyncio.sleep(1.0)
-
-    # Check if all monitored episodes are finished
-    stmt_check = select(Episode).where(
-        Episode.season_id == season.id,
-        Episode.status.in_([EpisodeStatus.SEARCHING, EpisodeStatus.PENDING]),
-        Episode.monitored == True,
-    )
-    if not (await session.execute(stmt_check)).scalars().all():
-        # Season is done
-        season.status = SeasonStatus.COMPLETED
-        if season.media_item.auto_monitor_next_season:
-            next_s_stmt = select(Season).where(
-                Season.media_item_id == season.media_item_id,
-                Season.season_number == season.season_number + 1,
-            )
-            next_s = (await session.execute(next_s_stmt)).scalar_one_or_none()
-            if next_s and not next_s.monitored:
-                next_s.monitored = True
-                next_s.status = SeasonStatus.SEARCHING
-                logger.info(
-                    "    🔄 All episodes downloaded. Enabling next season: S%02d",
-                    next_s.season_number,
+            if all_season_results:
+                grabbed = await _evaluate_and_download(
+                    session,
+                    all_season_results,
+                    season=season,
+                    target_episodes=missing_episodes,
+                    reject_words=reject_words,
+                    required_language=required_language,
+                    is_title_fallback=is_season_fallback,
+                    filters=filters,
                 )
-        await session.commit()
+                if grabbed or season.status in [
+                    SeasonStatus.DOWNLOADING,
+                    SeasonStatus.DOWNLOADED,
+                    SeasonStatus.COMPLETED,
+                    SeasonStatus.MANUAL_GRAB,
+                ]:
+                    if season.media_item.auto_monitor_next_season:
+                        next_s_stmt = select(Season).where(
+                            Season.media_item_id == season.media_item_id,
+                            Season.season_number == season.season_number + 1,
+                        )
+                        next_s = (
+                            await session.execute(next_s_stmt)
+                        ).scalar_one_or_none()
+                        if next_s and not next_s.monitored:
+                            next_s.monitored = True
+                            next_s.status = SeasonStatus.SEARCHING
+                            logger.info(
+                                "    🔄 Automatically enabling next season: S%02d",
+                                next_s.season_number,
+                            )
+                            await session.commit()
+                    return
+
+        # Process individual episodes (up to 5 per cycle, configurable via block_size)
+        block_size = (
+            profile.episode_block_size if profile and profile.episode_block_size else 5
+        )
+        for ep in missing_episodes[:block_size]:
+            if automation_state_manager.is_aborting():
+                logger.info(
+                    "🛑 Automation cycle abort requested. Stopping episode processing."
+                )
+                break
+            try:
+                logger.info(
+                    "    📺 Suche Episode: S%02dE%02d",
+                    season.season_number,
+                    ep.episode_number,
+                )
+                all_ep_results: list[dict[str, Any]] = []
+                is_ep_fallback = False
+                early_grabbed = False
+
+                for indexer in active_indexers:
+                    ep_results, is_fallback = await _search_show_id_first(
+                        season.season_number,
+                        str(ep.episode_number),
+                        api_url=indexer.api_url,
+                        api_key=indexer.api_key,
+                    )
+
+                    # Additional fallback for Anime Absolute Episode Numbering
+                    if (
+                        not ep_results
+                        and season.media_item.media_type == MediaType.ANIME
+                    ):
+                        ep_title_search = (
+                            f"{season.media_item.title} {ep.episode_number:02d}"
+                        )
+                        abs_res = await treasure_maps.search_show(
+                            title=ep_title_search,
+                            category=cat_id,
+                            api_url=indexer.api_url,
+                            api_key=indexer.api_key,
+                            session=session,
+                        )
+                        ep_results = abs_res
+                        is_fallback = True
+
+                    if not ep_results:
+                        continue
+                    if is_fallback:
+                        is_ep_fallback = True
+
+                    grabbed = await _evaluate_and_download(
+                        session,
+                        ep_results,
+                        episode=ep,
+                        reject_words=reject_words,
+                        required_language=required_language,
+                        is_title_fallback=is_fallback,
+                        filters=filters,
+                        indexer_name=indexer.name,
+                        indexer_url=indexer.api_url,
+                        indexer_key=indexer.api_key,
+                        early_exit_on_cutoff=True,
+                    )
+                    if grabbed:
+                        logger.info(
+                            "    🎯 Target cutoff met for S%02dE%02d on indexer '%s'.",
+                            season.season_number,
+                            ep.episode_number,
+                            indexer.name,
+                        )
+                        early_grabbed = True
+                        break
+
+                    all_ep_results.extend(ep_results)
+
+                if not early_grabbed:
+                    if all_ep_results:
+                        await _evaluate_and_download(
+                            session,
+                            all_ep_results,
+                            episode=ep,
+                            reject_words=reject_words,
+                            required_language=required_language,
+                            is_title_fallback=is_ep_fallback,
+                            filters=filters,
+                        )
+                    else:
+                        await _evaluate_and_download(
+                            session,
+                            [],
+                            episode=ep,
+                            reject_words=reject_words,
+                            required_language=required_language,
+                            is_title_fallback=is_ep_fallback,
+                            filters=filters,
+                        )
+            except Exception as ep_err:  # noqa: BLE001
+                logger.error(
+                    "    ❌ Error searching S%02dE%02d: %s",
+                    season.season_number,
+                    ep.episode_number,
+                    ep_err,
+                )
+            finally:
+                # Politeness delay between consecutive indexer requests
+                await asyncio.sleep(1.0)
+
+        # Check if all monitored episodes are finished
+        stmt_check = select(Episode).where(
+            Episode.season_id == season.id,
+            Episode.status.in_([EpisodeStatus.SEARCHING, EpisodeStatus.PENDING]),
+            Episode.monitored == True,
+        )
+        if not (await session.execute(stmt_check)).scalars().all():
+            # Season is done
+            season.status = SeasonStatus.COMPLETED
+            if season.media_item.auto_monitor_next_season:
+                next_s_stmt = select(Season).where(
+                    Season.media_item_id == season.media_item_id,
+                    Season.season_number == season.season_number + 1,
+                )
+                next_s = (await session.execute(next_s_stmt)).scalar_one_or_none()
+                if next_s and not next_s.monitored:
+                    next_s.monitored = True
+                    next_s.status = SeasonStatus.SEARCHING
+                    logger.info(
+                        "    🔄 All episodes downloaded. Enabling next season: S%02d",
+                        next_s.season_number,
+                    )
+            await session.commit()
+
+    except DownloaderNetworkError as e:
+        logger.error("Network error during season grab, halting cascade: %s", e)
+        return
 
 
 async def _handle_upgrade_failure(
