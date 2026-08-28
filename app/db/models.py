@@ -532,6 +532,44 @@ class MediaItem(Base):
         lazy="selectin",
     )
 
+    @property
+    def is_fully_completed(self) -> bool:
+        """Returns True if the item requires no further automated actions (History)."""
+        from app.config import scoring_config
+
+        target_score = scoring_config.get("cutoffs", {}).get("target_score", 8000)
+
+        if self.status in [MediaStatus.COMPLETED, MediaStatus.IGNORED]:
+            return True
+
+        if self.media_type == MediaType.MOVIE:
+            if (
+                self.status == MediaStatus.DOWNLOADED
+                and self.best_score is not None
+                and self.best_score >= target_score
+            ):
+                return True
+            return False
+
+        elif self.media_type in (MediaType.SHOW, MediaType.ANIME):
+            if not self.seasons or self.total_seasons == 0:
+                return False
+
+            for season in self.seasons:
+                if season.season_number == 0:
+                    continue
+                if season.status in [SeasonStatus.COMPLETED, SeasonStatus.IGNORED]:
+                    continue
+                if (
+                    season.status == SeasonStatus.DOWNLOADED
+                    and season.best_score is not None
+                    and season.best_score >= target_score
+                ):
+                    continue
+                return False
+            return True
+        return False
+
 
 class Season(Base):
     """Represents a single season of a TV series.
@@ -951,6 +989,24 @@ class MangaItem(Base):
         lazy="selectin",
     )
 
+    @property
+    def is_fully_completed(self) -> bool:
+        """Returns True if the item requires no further automated actions (History)."""
+        from app.config import scoring_config
+
+        target_score = scoring_config.get("cutoffs", {}).get("target_score", 8000)
+
+        if self.status in [MediaStatus.COMPLETED, MediaStatus.IGNORED]:
+            return True
+
+        if (
+            self.status == MediaStatus.DOWNLOADED
+            and self.best_score is not None
+            and self.best_score >= target_score
+        ):
+            return True
+        return False
+
 
 class MangaVolume(Base):
     """Represents a specific volume of a Manga."""
@@ -1013,6 +1069,24 @@ class BookItem(Base):
         cascade="all, delete-orphan",
         lazy="selectin",
     )
+
+    @property
+    def is_fully_completed(self) -> bool:
+        """Returns True if the item requires no further automated actions (History)."""
+        from app.config import scoring_config
+
+        target_score = scoring_config.get("cutoffs", {}).get("target_score", 8000)
+
+        if self.status in [MediaStatus.COMPLETED, MediaStatus.IGNORED]:
+            return True
+
+        if (
+            self.status == MediaStatus.DOWNLOADED
+            and self.best_score is not None
+            and self.best_score >= target_score
+        ):
+            return True
+        return False
 
 
 class MagazineSubscription(Base):

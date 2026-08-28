@@ -270,7 +270,8 @@ async def dashboard(request: Request):
             )
         )
         result = await session.execute(stmt)
-        items = result.scalars().all()
+        all_items = result.scalars().all()
+        items = [i for i in all_items if not i.is_fully_completed]
 
         # Detailed stats calculations
         movie_items = [i for i in items if i.media_type == MediaType.MOVIE]
@@ -1099,9 +1100,16 @@ async def print_dashboard(request: Request):
             .order_by(MagazineSubscription.title)
         )
 
-        mangas = (await session.execute(manga_stmt)).scalars().all()
-        books = (await session.execute(book_stmt)).scalars().all()
-        magazines = (await session.execute(mag_stmt)).scalars().all()
+        all_mangas = (await session.execute(manga_stmt)).scalars().all()
+        mangas = [m for m in all_mangas if not m.is_fully_completed]
+        all_books = (await session.execute(book_stmt)).scalars().all()
+        books = [b for b in all_books if not b.is_fully_completed]
+        all_mags = (await session.execute(mag_stmt)).scalars().all()
+        magazines = [
+            m
+            for m in all_mags
+            if m.status not in (MediaStatus.COMPLETED, MediaStatus.IGNORED)
+        ]
 
         manga_stats = {
             "total": len(mangas),
@@ -2606,5 +2614,83 @@ async def automation_status_endpoint(request: Request):
             "next_heal": next_heal,
             "next_video": next_video,
             "next_print": next_print,
+        },
+    )
+
+
+@app.get("/history", response_class=HTMLResponse)
+async def history_dashboard(request: Request):
+    """Dashboard displaying fully completed media items (History Archive)."""
+    from sqlalchemy import select
+    from sqlalchemy.orm import selectinload
+
+    from app.db.database import async_session_factory
+    from app.db.models import (
+        BookItem,
+        MagazineSubscription,
+        MangaItem,
+        MediaItem,
+        MediaStatus,
+        MediaType,
+    )
+
+    async with async_session_factory() as session:
+        # Fetch Video Media
+        video_stmt = (
+            select(MediaItem)
+            .order_by(MediaItem.updated_at.desc())
+            .options(
+                selectinload(MediaItem.seasons),
+                selectinload(MediaItem.failure_logs),
+                selectinload(MediaItem.download_history),
+                selectinload(MediaItem.provider),
+            )
+        )
+        video_items = (await session.execute(video_stmt)).scalars().all()
+        history_video = [i for i in video_items if i.is_fully_completed]
+
+        movie_items = [i for i in history_video if i.media_type == MediaType.MOVIE]
+        series_items = [i for i in history_video if i.media_type == MediaType.SHOW]
+        anime_items = [i for i in history_video if i.media_type == MediaType.ANIME]
+
+        # Fetch Print Media
+        manga_stmt = (
+            select(MangaItem)
+            .options(selectinload(MangaItem.volumes))
+            .order_by(MangaItem.title)
+        )
+        book_stmt = select(BookItem).order_by(BookItem.title)
+        mag_stmt = (
+            select(MagazineSubscription)
+            .options(selectinload(MagazineSubscription.issues))
+            .order_by(MagazineSubscription.title)
+        )
+
+        manga_items = [
+            i
+            for i in (await session.execute(manga_stmt)).scalars().all()
+            if i.is_fully_completed
+        ]
+        book_items = [
+            i
+            for i in (await session.execute(book_stmt)).scalars().all()
+            if i.is_fully_completed
+        ]
+        mag_items = [
+            i
+            for i in (await session.execute(mag_stmt)).scalars().all()
+            if i.status in (MediaStatus.COMPLETED, MediaStatus.IGNORED)
+        ]
+
+    return templates.TemplateResponse(
+        request=request,
+        name="history_dashboard.html",
+        context={
+            "movie_items": movie_items,
+            "series_items": series_items,
+            "anime_items": anime_items,
+            "manga_items": manga_items,
+            "book_items": book_items,
+            "mag_items": mag_items,
         },
     )
