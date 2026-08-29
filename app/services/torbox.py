@@ -456,12 +456,12 @@ async def check_download_status(
             return {"status": "error", "detail": str(e)}
 
 
-async def delete_download(
+async def delete_usenet_download(
     download_id: int,
     api_key: str | None = None,
     session: AsyncSession | None = None,
 ) -> dict[str, Any]:
-    """Deletes a download from TorBox."""
+    """Deletes a usenet download from TorBox."""
     key = await resolve_api_key(session=session, explicit_key=api_key)
     if not key:
         return {"success": False, "detail": "No API key configured"}
@@ -482,7 +482,37 @@ async def delete_download(
             res: dict[str, Any] = response.json()
             return res
         except httpx.HTTPError as e:
-            logger.error(f"Failed to delete TorBox download {download_id}: {e}")
+            logger.error(f"Failed to delete TorBox usenet download {download_id}: {e}")
+            return {"success": False, "detail": str(e)}
+
+
+async def delete_torrent_download(
+    download_id: int,
+    api_key: str | None = None,
+    session: AsyncSession | None = None,
+) -> dict[str, Any]:
+    """Deletes a torrent download from TorBox."""
+    key = await resolve_api_key(session=session, explicit_key=api_key)
+    if not key:
+        return {"success": False, "detail": "No API key configured"}
+
+    headers = {
+        "Authorization": f"Bearer {key}",
+        "User-Agent": DEFAULT_USER_AGENT,
+    }
+
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        try:
+            response = await client.post(
+                "https://api.torbox.app/v1/api/torrents/controltorrent",
+                headers=headers,
+                json={"torrent_id": download_id, "operation": "delete"},
+            )
+            response.raise_for_status()
+            res: dict[str, Any] = response.json()
+            return res
+        except httpx.HTTPError as e:
+            logger.error(f"Failed to delete TorBox torrent download {download_id}: {e}")
             return {"success": False, "detail": str(e)}
 
 

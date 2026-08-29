@@ -249,6 +249,7 @@ async def run_download_check_cycle() -> None:
                     tb_data = resp.json()
                     if tb_data.get("success"):
                         for item in tb_data.get("data", []) or []:
+                            item["_type"] = "usenet"
                             tb_items[str(item.get("id", ""))] = item
 
                 # Fetch Torrents
@@ -259,10 +260,11 @@ async def run_download_check_cycle() -> None:
                     tb_data_t = resp_t.json()
                     if tb_data_t.get("success"):
                         for item in tb_data_t.get("data", []) or []:
+                            item["_type"] = "torrent"
                             tb_items[str(item.get("id", ""))] = item
 
         except Exception as e:
-            logger.error("❌ Konnte TorBox-Liste nicht abrufen: %s", e)
+            logger.error("❌ Failed to fetch TorBox list: %s", e)
             return
 
         async with async_session_factory() as session:
@@ -334,9 +336,10 @@ async def run_download_check_cycle() -> None:
 
             changed = 0
 
-            def _handle_status_update(
+            async def _handle_status_update(
                 target,
                 history,
+                tb_info,
                 status,
                 title,
                 media_item_id,
@@ -345,7 +348,9 @@ async def run_download_check_cycle() -> None:
                 downloaded_status,
             ):
                 nonlocal changed
-                if status in ("completed", "cached", "paused"):
+                status_lower = status.lower()
+
+                if status_lower in ("completed", "cached", "paused"):
                     is_completed = (
                         history.score is not None and history.score >= target_score
                     )
@@ -358,12 +363,14 @@ async def run_download_check_cycle() -> None:
                     )
                     target.status = final_status
                     changed += 1
-                elif status in (
-                    "failed",
-                    "error",
-                    "aborted",
-                    "cannot be re-completed",
-                    "not enough repair blocks",
+                elif (
+                    status_lower.startswith("failed")
+                    or status_lower.startswith("error")
+                    or "aborted" in status_lower
+                    or "repair failed" in status_lower
+                    or "not-complete" in status_lower
+                    or status_lower
+                    in ("cannot be re-completed", "not enough repair blocks")
                 ):
                     logger.warning(
                         "    ⚠️ %s → failed (%s), returning to search queue.",
@@ -371,6 +378,7 @@ async def run_download_check_cycle() -> None:
                         status,
                     )
                     from app.core.failure_logger import log_failure
+                    from app.services import torbox
 
                     log_failure(
                         session,
@@ -385,9 +393,29 @@ async def run_download_check_cycle() -> None:
                         reason=f"TorBox: {status}",
                     )
                     session.add(bl)
-                    # We cannot await inside this sync helper, so we mark it for deletion outside
+
+                    if history.torbox_id:
+                        tb_type = (
+                            tb_info.get("_type", "usenet") if tb_info else "usenet"
+                        )
+                        try:
+                            if tb_type == "usenet":
+                                await torbox.delete_usenet_download(
+                                    int(history.torbox_id), session=session
+                                )
+                            else:
+                                await torbox.delete_torrent_download(
+                                    int(history.torbox_id), session=session
+                                )
+                        except Exception as e:
+                            logger.error(f"Failed to delete {tb_type} from TorBox: {e}")
+
+                    # Revert target status and clear candidate
+                    target.status = searching_status
+                    if hasattr(target, "pending_candidate_json"):
+                        target.pending_candidate_json = None
                     return True  # mark as failed
-                elif status == "not_found":
+                elif status_lower == "not_found":
                     is_completed = (
                         history.score is not None and history.score >= target_score
                     )
@@ -416,9 +444,10 @@ async def run_download_check_cycle() -> None:
                     ),
                 )
                 status, tb = _get_tb_status(latest)
-                if _handle_status_update(
+                if await _handle_status_update(
                     movie,
                     latest,
+                    tb,
                     status,
                     movie.title,
                     movie.id,
@@ -427,7 +456,6 @@ async def run_download_check_cycle() -> None:
                     MediaStatus.DOWNLOADED,
                 ):
                     await session.delete(latest)
-                    movie.status = MediaStatus.SEARCHING
                     changed += 1
 
             for season in seasons:
@@ -441,9 +469,10 @@ async def run_download_check_cycle() -> None:
                 )
                 status, tb = _get_tb_status(latest)
                 title = f"{season.media_item.title} S{season.season_number:02d}"
-                if _handle_status_update(
+                if await _handle_status_update(
                     season,
                     latest,
+                    tb,
                     status,
                     title,
                     season.media_item_id,
@@ -452,7 +481,6 @@ async def run_download_check_cycle() -> None:
                     SeasonStatus.DOWNLOADED,
                 ):
                     await session.delete(latest)
-                    season.status = SeasonStatus.SEARCHING
                     changed += 1
 
             for episode in episodes:
@@ -466,9 +494,10 @@ async def run_download_check_cycle() -> None:
                 )
                 status, tb = _get_tb_status(latest)
                 title = f"{episode.season.media_item.title} S{episode.season.season_number:02d}E{episode.episode_number:02d}"
-                if _handle_status_update(
+                if await _handle_status_update(
                     episode,
                     latest,
+                    tb,
                     status,
                     title,
                     episode.season.media_item_id,
@@ -477,7 +506,6 @@ async def run_download_check_cycle() -> None:
                     EpisodeStatus.DOWNLOADED,
                 ):
                     await session.delete(latest)
-                    episode.status = EpisodeStatus.SEARCHING
                     changed += 1
 
             await session.commit()
