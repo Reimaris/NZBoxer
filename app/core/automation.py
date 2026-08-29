@@ -166,6 +166,9 @@ async def _sync_items(
                 existing_season.simkl_id = simkl_id
             if anilist_id and not existing_season.anilist_id:
                 existing_season.anilist_id = anilist_id
+            existing_season.monitored = True
+            if existing_season.status == SeasonStatus.PENDING:
+                existing_season.status = SeasonStatus.SEARCHING
             continue
         anilist_id = int(anilist_id_str) if anilist_id_str else None
         if not item:
@@ -416,68 +419,77 @@ async def _sync_items(
                 from app.services import anilist
                 logger.info("    ℹ️ No TMDB seasons found for Anime '%s'. Falling back to AniList Sequel Consolidation.", item.title)
                 
-                season_details = await anilist.get_anime_season_details(item.anilist_id)
+                original_anilist_id = item.anilist_id
+                hierarchy_data = await anilist.get_anime_root_and_hierarchy(item.anilist_id)
                 
-                async def _create_anilist_season(s_num: int, anilist_node: dict, is_monitored: bool):
-                    ep_count = anilist_node.get("episodes")
-                    s_air_date = None
-                    start_date = anilist_node.get("startDate")
-                    if start_date and start_date.get("year"):
-                        try:
-                            s_air_date = datetime(
-                                start_date["year"],
-                                start_date.get("month") or 1,
-                                start_date.get("day") or 1,
-                                tzinfo=timezone.utc
-                            )
-                        except ValueError:
-                            pass
+                if hierarchy_data:
+                    root_node = hierarchy_data["root"]
+                    hierarchy_list = hierarchy_data["hierarchy"]
                     
-                    is_season_future = (s_air_date and s_air_date > datetime.now(timezone.utc)) or (item.status == MediaStatus.FUTURE)
-                    
-                    existing_season_stmt = select(Season).where(
-                        Season.media_item_id == item.id,
-                        Season.season_number == s_num,
-                    )
-                    existing_season = (await session.execute(existing_season_stmt)).scalars().first()
-                    if not existing_season:
-                        season_obj = Season(
-                            media_item_id=item.id,
-                            season_number=s_num,
-                            monitored=is_monitored,
-                            episode_count=ep_count,
-                            air_date=s_air_date,
-                            anilist_id=anilist_node.get("id"),
-                            status=SeasonStatus.FUTURE if is_season_future else (SeasonStatus.SEARCHING if is_monitored else SeasonStatus.PENDING),
-                        )
-                        session.add(season_obj)
-                        await session.flush()
+                    if root_node.get("id") != original_anilist_id:
+                        logger.info("    🔄 Out-of-order sequel detected. Updating MediaItem '%s' to root franchise metadata.", item.title)
+                        item.anilist_id = root_node.get("id")
+                        item.mal_id = root_node.get("idMal") or item.mal_id
+                        titles = root_node.get("title", {})
+                        item.title = titles.get("english") or titles.get("romaji") or item.title
                         
-                        # Create episodes manually since TMDB sync won't work
-                        from app.db.models import Episode, EpisodeStatus
-                        if ep_count:
-                            for ep_num in range(1, ep_count + 1):
-                                new_ep = Episode(
-                                    season_id=season_obj.id,
-                                    episode_number=ep_num,
-                                    air_date=s_air_date if ep_num == 1 else None,
-                                    status=EpisodeStatus.FUTURE if is_season_future else EpisodeStatus.PENDING,
+                    async def _create_anilist_season(s_num: int, anilist_node: dict):
+                        ep_count = anilist_node.get("episodes")
+                        s_air_date = None
+                        start_date = anilist_node.get("startDate")
+                        if start_date and start_date.get("year"):
+                            try:
+                                s_air_date = datetime(
+                                    start_date["year"],
+                                    start_date.get("month") or 1,
+                                    start_date.get("day") or 1,
+                                    tzinfo=timezone.utc
                                 )
-                                session.add(new_ep)
-                    else:
-                        if not existing_season.anilist_id:
-                            existing_season.anilist_id = anilist_node.get("id")
+                            except ValueError:
+                                pass
+                        
+                        is_season_future = (s_air_date and s_air_date > datetime.now(timezone.utc)) or (item.status == MediaStatus.FUTURE)
+                        is_monitored = (anilist_node.get("id") == original_anilist_id)
+                        
+                        existing_season_stmt = select(Season).where(
+                            Season.media_item_id == item.id,
+                            Season.season_number == s_num,
+                        )
+                        existing_season = (await session.execute(existing_season_stmt)).scalars().first()
+                        if not existing_season:
+                            season_obj = Season(
+                                media_item_id=item.id,
+                                season_number=s_num,
+                                monitored=is_monitored,
+                                episode_count=ep_count,
+                                air_date=s_air_date,
+                                anilist_id=anilist_node.get("id"),
+                                status=SeasonStatus.FUTURE if is_season_future else (SeasonStatus.SEARCHING if is_monitored else SeasonStatus.PENDING),
+                            )
+                            session.add(season_obj)
+                            await session.flush()
                             
-                # Process Season 1
-                if season_details:
-                    await _create_anilist_season(1, season_details, True)
-                    
-                # Traverse Sequels for Season 2, 3...
-                sequels = await anilist.get_anime_sequels(item.anilist_id)
-                current_s_num = 2
-                for seq in sequels:
-                    await _create_anilist_season(current_s_num, seq, False)
-                    current_s_num += 1
+                            # Create episodes manually since TMDB sync won't work
+                            from app.db.models import Episode, EpisodeStatus
+                            if ep_count:
+                                for ep_num in range(1, ep_count + 1):
+                                    new_ep = Episode(
+                                        season_id=season_obj.id,
+                                        episode_number=ep_num,
+                                        air_date=s_air_date if ep_num == 1 else None,
+                                        status=EpisodeStatus.FUTURE if is_season_future else EpisodeStatus.PENDING,
+                                    )
+                                    session.add(new_ep)
+                        else:
+                            if not existing_season.anilist_id:
+                                existing_season.anilist_id = anilist_node.get("id")
+                            if is_monitored and not existing_season.monitored:
+                                existing_season.monitored = True
+                                if existing_season.status == SeasonStatus.PENDING:
+                                    existing_season.status = SeasonStatus.SEARCHING
+                                    
+                    for idx, node in enumerate(hierarchy_list):
+                        await _create_anilist_season(idx + 1, node)
 
         else:
             # Update existing
