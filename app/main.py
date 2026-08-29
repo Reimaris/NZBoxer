@@ -74,8 +74,16 @@ logging.getLogger("apscheduler").setLevel(logging.WARNING)
 
 
 class _EndpointFilter(logging.Filter):
+    SUPPRESSED_ENDPOINTS = (
+        "/api/automation/status",
+        "/api/torbox/status",
+        "/history/tab/",
+        "/history",
+    )
+
     def filter(self, record: logging.LogRecord) -> bool:
-        return record.getMessage().find("GET /api/automation/status") == -1
+        msg = record.getMessage()
+        return not any(endpoint in msg for endpoint in self.SUPPRESSED_ENDPOINTS)
 
 
 logging.getLogger("uvicorn.access").addFilter(_EndpointFilter())
@@ -99,17 +107,21 @@ def relative_date(dt: datetime | None) -> str:
     if not dt:
         return ""
     if dt.tzinfo is None:
-        now = datetime.now()
+        today = datetime.now().date()
     else:
-        now = datetime.now(dt.tzinfo)
-    delta = dt - now
-    days = delta.days
-    if days > 0:
-        return f"in {days} Tagen"
-    elif days < 0:
-        return f"vor {abs(days)} Tagen"
+        today = datetime.now(dt.tzinfo).date()
+    target_date = dt.date()
+    days = (target_date - today).days
+    if days == 0:
+        return "Today"
+    elif days == 1:
+        return "in 1 day"
+    elif days > 1:
+        return f"in {days} days"
+    elif days == -1:
+        return "1 day ago"
     else:
-        return "Heute"
+        return f"{abs(days)} days ago"
 
 
 APP_VERSION = "2.5.0"
@@ -2288,14 +2300,14 @@ async def run_system_check(request: Request):
                     )
                     results["tmdb"] = {
                         "ok": r.status_code == 200,
-                        "msg": "Erfolgreich"
+                        "msg": "Success"
                         if r.status_code == 200
                         else f"Error {r.status_code}",
                     }
                 except Exception as e:
                     results["tmdb"] = {"ok": False, "msg": str(e)}
             else:
-                results["tmdb"] = {"ok": False, "msg": "API Key fehlt"}
+                results["tmdb"] = {"ok": False, "msg": "API key missing"}
 
             # 2. Treasure Maps
             tm_p = get_prov("treasure_maps")
@@ -2320,14 +2332,14 @@ async def run_system_check(request: Request):
                     )
                     results["treasure_maps"] = {
                         "ok": r.status_code == 200,
-                        "msg": "Erfolgreich"
+                        "msg": "Success"
                         if r.status_code == 200
                         else f"Error {r.status_code}",
                     }
                 except Exception as e:
                     results["treasure_maps"] = {"ok": False, "msg": str(e)}
             else:
-                results["treasure_maps"] = {"ok": False, "msg": "API Key fehlt"}
+                results["treasure_maps"] = {"ok": False, "msg": "API key missing"}
 
             # 3. TorBox
             tb_p = get_prov("torbox")
@@ -2355,14 +2367,14 @@ async def run_system_check(request: Request):
                     )
                     results["torbox"] = {
                         "ok": r.status_code == 200,
-                        "msg": "Erfolgreich"
+                        "msg": "Success"
                         if r.status_code == 200
                         else f"Error {r.status_code}",
                     }
                 except Exception as e:
                     results["torbox"] = {"ok": False, "msg": str(e)}
             else:
-                results["torbox"] = {"ok": False, "msg": "API Key fehlt"}
+                results["torbox"] = {"ok": False, "msg": "API key missing"}
 
             # 4. Simkl
             simkl_p = get_prov("simkl")
@@ -2377,14 +2389,14 @@ async def run_system_check(request: Request):
                     )
                     results["simkl"] = {
                         "ok": r.status_code == 200,
-                        "msg": "Erfolgreich"
+                        "msg": "Success"
                         if r.status_code == 200
                         else f"Error {r.status_code}",
                     }
                 except Exception as e:
                     results["simkl"] = {"ok": False, "msg": str(e)}
             else:
-                results["simkl"] = {"ok": False, "msg": "Kein konfigurierter Provider"}
+                results["simkl"] = {"ok": False, "msg": "No configured provider"}
 
             # 5. Telegram
             tg = next(
@@ -2397,14 +2409,14 @@ async def run_system_check(request: Request):
                     )
                     results["telegram"] = {
                         "ok": r.status_code == 200,
-                        "msg": "Erfolgreich"
+                        "msg": "Success"
                         if r.status_code == 200
                         else f"Error {r.status_code}",
                     }
                 except Exception as e:
                     results["telegram"] = {"ok": False, "msg": str(e)}
             else:
-                results["telegram"] = {"ok": False, "msg": "Kein konfigurierter Bot"}
+                results["telegram"] = {"ok": False, "msg": "No configured bot"}
 
     # Return HTML list of results
     html = '<div class="space-y-4">'
@@ -2503,7 +2515,7 @@ async def run_video_automation_endpoint(background_tasks: BackgroundTasks):
             <div class="bg-amber-600 text-white px-4 py-3 rounded-md shadow-lg border border-amber-700 flex items-center justify-between animate-fade-in-down mb-4">
                 <div class="flex items-center gap-3">
                     <svg class="w-5 h-5 text-amber-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
-                    <span class="text-sm font-medium">Ein Suchlauf ist bereits aktiv oder wird beendet!</span>
+                    <span class="text-sm font-medium">An automation run is already active or aborting!</span>
                 </div>
                 <button onclick="this.parentElement.remove()" class="text-gray-200 hover:text-white">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
@@ -2519,7 +2531,7 @@ async def run_video_automation_endpoint(background_tasks: BackgroundTasks):
         <div class="bg-[#d40060] text-white px-4 py-3 rounded-md shadow-lg border border-[#a3004a] flex items-center justify-between animate-fade-in-down mb-4">
             <div class="flex items-center gap-3">
                 <svg class="w-5 h-5 text-pink-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
-                <span class="text-sm font-medium">Videomedien-Suchlauf im Hintergrund gestartet!</span>
+                <span class="text-sm font-medium">Video media search started in background!</span>
             </div>
             <button onclick="this.parentElement.remove()" class="text-gray-300 hover:text-white">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
@@ -2541,7 +2553,7 @@ async def run_print_automation_endpoint(background_tasks: BackgroundTasks):
             <div class="bg-amber-600 text-white px-4 py-3 rounded-md shadow-lg border border-amber-700 flex items-center justify-between animate-fade-in-down mb-4">
                 <div class="flex items-center gap-3">
                     <svg class="w-5 h-5 text-amber-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
-                    <span class="text-sm font-medium">Ein Suchlauf ist bereits aktiv oder wird beendet!</span>
+                    <span class="text-sm font-medium">An automation run is already active or aborting!</span>
                 </div>
                 <button onclick="this.parentElement.remove()" class="text-gray-200 hover:text-white">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
@@ -2557,7 +2569,7 @@ async def run_print_automation_endpoint(background_tasks: BackgroundTasks):
         <div class="bg-[#d40060] text-white px-4 py-3 rounded-md shadow-lg border border-[#a3004a] flex items-center justify-between animate-fade-in-down mb-4">
             <div class="flex items-center gap-3">
                 <svg class="w-5 h-5 text-pink-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
-                <span class="text-sm font-medium">Printmedien-Suchlauf im Hintergrund gestartet!</span>
+                <span class="text-sm font-medium">Print media search started in background!</span>
             </div>
             <button onclick="this.parentElement.remove()" class="text-gray-300 hover:text-white">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
@@ -2582,7 +2594,7 @@ async def abort_automation_endpoint():
                         <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                         <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                     </svg>
-                    <span class="text-sm font-medium">Suchlauf wird nach aktuellem Element ordnungsgemäß abgebrochen...</span>
+                    <span class="text-sm font-medium">Search will gracefully abort after current item...</span>
                 </div>
                 <button onclick="this.parentElement.remove()" class="text-gray-200 hover:text-white">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
@@ -2595,7 +2607,7 @@ async def abort_automation_endpoint():
         <div class="bg-slate-700 text-white px-4 py-3 rounded-md shadow-lg border border-slate-600 flex items-center justify-between animate-fade-in-down mb-4">
             <div class="flex items-center gap-3">
                 <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-                <span class="text-sm font-medium">Kein aktiver Suchlauf gefunden.</span>
+                <span class="text-sm font-medium">No active search run found.</span>
             </div>
             <button onclick="this.parentElement.remove()" class="text-gray-300 hover:text-white">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>

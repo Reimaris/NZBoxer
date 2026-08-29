@@ -1760,7 +1760,7 @@ async def _evaluate_and_download(
             season,
             episode,
             is_manual,
-            f"Bestes Release (Score {best_candidate['score']}) liegt unter dem Upgrade-Schwellenwert.",
+            f"Best release (Score {best_candidate['score']}) is below upgrade threshold.",
         )
         return False
 

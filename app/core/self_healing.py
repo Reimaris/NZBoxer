@@ -45,7 +45,7 @@ async def run_self_healing_cycle() -> None:
             logger.debug("TorBox API key missing. Skipping self-healing cycle.")
             return
 
-        logger.info("🔧 Starte Self-Healing-Zyklus...")
+        logger.info("🔧 Starting Self-Healing cycle...")
 
         async with async_session_factory() as session:
             stmt = (
@@ -213,7 +213,7 @@ async def run_self_healing_cycle() -> None:
             except Exception as e:
                 logger.error("Error during TorBox cache sync and adoption: %s", e)
 
-        logger.info("✅ Self-Healing-Zyklus abgeschlossen.")
+        logger.info("✅ Self-Healing cycle complete.")
     finally:
         log_process_end(logger, "Self-Healing Engine")
 
@@ -366,7 +366,7 @@ async def run_download_check_cycle() -> None:
                     "not enough repair blocks",
                 ):
                     logger.warning(
-                        "    ⚠️ %s → fehlgeschlagen (%s), wird erneut gesucht.",
+                        "    ⚠️ %s → failed (%s), returning to search queue.",
                         title,
                         status,
                     )
@@ -483,9 +483,7 @@ async def run_download_check_cycle() -> None:
             await session.commit()
 
         if changed:
-            logger.info(
-                "🔎 Download-Check abgeschlossen: %d Status aktualisiert.", changed
-            )
+            logger.info("🔎 Download check complete: %d statuses updated.", changed)
         else:
             logger.info("🔎 Download check finished: No changes.")
     finally:
