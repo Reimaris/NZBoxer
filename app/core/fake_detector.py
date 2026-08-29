@@ -19,7 +19,10 @@ SIZE_CONSTRAINTS: dict[str, dict[str, float]] = {
 }
 
 # Fake/Executable extensions
-BAD_EXTENSIONS = {".exe", ".scr", ".bat", ".vbs", ".iso", ".msi", ".cmd", ".com"}
+BAD_EXTENSIONS = {
+    ".exe", ".scr", ".bat", ".vbs", ".iso", ".msi", ".cmd", ".com",
+    ".sh", ".bin", ".jar", ".apk", ".lnk", ".dll", ".ps1"
+}
 PHISHING_FILES = {"password.txt", "pass.txt", "instructions.txt", "readme_first.txt"}
 DOCUMENT_EXTENSIONS = {".epub", ".pdf", ".cbz", ".cbr", ".azw3", ".mobi"}
 VIDEO_ARCHIVE_EXTENSIONS = {

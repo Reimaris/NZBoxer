@@ -1803,6 +1803,28 @@ async def _evaluate_and_download(
                 api_key=indexer_key,
                 session=session,
             )
+
+            from app.core.fake_detector import is_nzb_content_fake
+            mt = "movie" if movie else "episode"
+            is_fake, fake_reason = is_nzb_content_fake(nzb_bytes, media_type=mt)
+            if is_fake:
+                from app.core.failure_logger import log_failure
+                from app.db.models import BlacklistedRelease
+
+                err_msg = f"NZB flagged as fake/executable: {fake_reason}"
+                log_failure(session, target, "fake_payload", err_msg)
+                logger.error("    🚫 %s", err_msg)
+
+                bl = BlacklistedRelease(
+                    media_item_id=media_item_id,
+                    nzb_guid=best_candidate["guid"],
+                    nzb_title=best_candidate["title"],
+                    reason=err_msg,
+                )
+                session.add(bl)
+                await session.commit()
+                return False
+
             torbox_result = await torbox.send_nzb_file(
                 nzb_bytes, filename=filename, session=session
             )
