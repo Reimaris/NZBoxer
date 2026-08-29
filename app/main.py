@@ -1699,11 +1699,12 @@ async def save_global_settings(
     self_healing_interval: int = Form(15),
     video_search_interval: int = Form(60),
     print_search_interval: int = Form(60),
+    upgrade_search_interval_hours: int = Form(24),
     sh_max_retries: int = Form(3),
     sh_max_time_hours: float = Form(12.0),
     sh_auto_retry: bool = Form(True),
     sh_retry_wait_hours: float = Form(24.0),
-    max_upgrade_attempts: int = Form(10),
+    max_upgrade_attempts: int = Form(7),
     dry_run: bool = Form(False),
     upgrade_threshold: int = Form(500),
     backoff_tier2_skip: int = Form(6),
@@ -1740,6 +1741,7 @@ async def save_global_settings(
             db_settings.self_healing_interval = self_healing_interval
             db_settings.video_search_interval = video_search_interval
             db_settings.print_search_interval = print_search_interval
+            db_settings.upgrade_search_interval_hours = upgrade_search_interval_hours
             db_settings.sh_max_retries = sh_max_retries
             db_settings.sh_max_time_hours = sh_max_time_hours
             db_settings.sh_auto_retry = sh_auto_retry

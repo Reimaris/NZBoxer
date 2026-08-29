@@ -406,6 +406,52 @@ async def init_db(database_url: str) -> None:
                 except Exception:
                     pass
 
+            # Upgrade throttling & search interval migration (Ticket 01)
+            try:
+                await session.execute(
+                    __import__("sqlalchemy").text(
+                        "ALTER TABLE system_settings ADD COLUMN upgrade_search_interval_hours INTEGER NOT NULL DEFAULT 24;"
+                    )
+                )
+            except Exception:
+                pass
+
+            # Season external identifiers (simkl_id, anilist_id)
+            for col in ["simkl_id", "anilist_id"]:
+                try:
+                    await session.execute(
+                        __import__("sqlalchemy").text(
+                            f"ALTER TABLE seasons ADD COLUMN {col} INTEGER;"
+                        )
+                    )
+                except Exception:
+                    pass
+                try:
+                    await session.execute(
+                        __import__("sqlalchemy").text(
+                            f"CREATE INDEX IF NOT EXISTS ix_seasons_{col} ON seasons ({col});"
+                        )
+                    )
+                except Exception:
+                    pass
+
+            # Timestamps for last upgrade search
+            for tbl in [
+                "media_items",
+                "seasons",
+                "episodes",
+                "book_items",
+                "manga_volumes",
+            ]:
+                try:
+                    await session.execute(
+                        __import__("sqlalchemy").text(
+                            f"ALTER TABLE {tbl} ADD COLUMN last_upgrade_search_at DATETIME;"
+                        )
+                    )
+                except Exception:
+                    pass
+
             # Backfill existing providers category
             try:
                 await session.execute(
