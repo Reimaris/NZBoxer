@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Sequence
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from sqlalchemy import and_, or_, select
@@ -40,6 +40,19 @@ from app.services.torbox import DownloaderNetworkError
 
 logger = logging.getLogger(__name__)
 
+
+def is_eligible_for_search(empty_search_count: int, last_searched_at: datetime | None) -> bool:
+    """Evaluate progressive backoff tiers for search eligibility."""
+    if empty_search_count < 3:
+        return True
+    if last_searched_at is None:
+        return True
+    
+    now = datetime.now(timezone.utc)
+    if empty_search_count < 10:
+        return (now - last_searched_at) >= timedelta(hours=settings.backoff_tier2_skip)
+    else:
+        return (now - last_searched_at) >= timedelta(hours=settings.backoff_tier3_skip)
 
 async def sync_all_providers() -> None:
     """Sync watchlists and libraries from all configured providers (Simkl, etc.)."""
@@ -736,6 +749,13 @@ async def _process_movie(session: AsyncSession, movie: MediaItem) -> None:
     from app.db.models import MediaType, ProviderProfile
 
     logger.info("🎬 Processing movie: %s", movie.title)
+    
+    if not is_eligible_for_search(movie.empty_search_count, movie.last_searched_at):
+        logger.info("    ⏳ Movie '%s' is in backoff tier (Empty searches: %d). Skipping.", movie.title, movie.empty_search_count)
+        return
+
+    movie.last_searched_at = datetime.now(timezone.utc)
+
     if not movie.imdb_id and not movie.tmdb_id:
         logger.warning("⚠️ Film %s has no IDs, attempting title search.", movie.title)
 
@@ -1168,7 +1188,15 @@ async def _process_season(session: AsyncSession, season: Season) -> None:
         return agg_results, bool(anime_aliases)
 
     try:
-        if prefer_seasons and loaded_count == 0:
+        run_season_search = prefer_seasons and loaded_count == 0
+        if run_season_search:
+            if not is_eligible_for_search(season.empty_search_count, season.last_searched_at):
+                logger.info("    ⏳ Season pack search is in backoff tier (Empty searches: %d). Skipping.", season.empty_search_count)
+                run_season_search = False
+            else:
+                season.last_searched_at = datetime.now(timezone.utc)
+
+        if run_season_search:
             logger.info(
                 "    📦 Searching season pack for S%02d...", season.season_number
             )
@@ -1275,6 +1303,18 @@ async def _process_season(session: AsyncSession, season: Season) -> None:
                     "🛑 Automation cycle abort requested. Stopping episode processing."
                 )
                 break
+                
+            if not is_eligible_for_search(ep.empty_search_count, ep.last_searched_at):
+                logger.info(
+                    "    ⏳ Episode S%02dE%02d is in backoff tier (Empty searches: %d). Skipping.",
+                    season.season_number,
+                    ep.episode_number,
+                    ep.empty_search_count,
+                )
+                continue
+
+            ep.last_searched_at = datetime.now(timezone.utc)
+            
             try:
                 logger.info(
                     "    📺 Suche Episode: S%02dE%02d",
@@ -1967,6 +2007,9 @@ async def manual_search_episode(session: AsyncSession, episode_id: int) -> bool:
         logger.error("❌ Episode %s not found or incomplete.", episode_id)
         return False
 
+    episode.empty_search_count = 0
+    await session.commit()
+
     season = episode.season
     media_item = season.media_item
 
@@ -2062,6 +2105,9 @@ async def manual_search_movie(session: AsyncSession, item_id: int) -> bool:
     if not media_item or media_item.media_type != MediaType.MOVIE:
         logger.error("❌ Movie %s not found or is not a movie.", item_id)
         return False
+
+    media_item.empty_search_count = 0
+    await session.commit()
 
     logger.info("🔍 Manual search started for movie: %s gestartet", media_item.title)
 
@@ -2166,6 +2212,12 @@ async def process_print_book(session: AsyncSession, book: BookItem) -> bool:
     ):
         # Already at top tier, no need to search for upgrade
         return False
+
+    if not is_eligible_for_search(book.empty_search_count, book.last_searched_at):
+        logger.info("    ⏳ Book '%s' is in backoff tier (Empty searches: %d). Skipping.", book.title, book.empty_search_count)
+        return False
+
+    book.last_searched_at = datetime.now(timezone.utc)
 
     logger.info("  📖 Searching indexers for Book: %s", book.title)
 
@@ -2594,6 +2646,11 @@ async def process_print_manga(session: AsyncSession, manga: MangaItem) -> bool:
             )
             break
         n = vol.volume_number
+
+        if not is_eligible_for_search(vol.empty_search_count, vol.last_searched_at):
+            logger.info("    ⏳ Manga Volume %d is in backoff tier (Empty searches: %d). Skipping.", n, vol.empty_search_count)
+            continue
+
         vol_queries = [
             f"{manga.title} v{n:02d}",
             f"{manga.title} vol {n}",
