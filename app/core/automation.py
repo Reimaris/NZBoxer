@@ -192,8 +192,10 @@ async def _sync_items(
         else:
             is_new = False
 
-        # Fetch metadata from TMDB/AniList if available (for new items, or items missing release date)
-        if (tmdb_id or item.imdb_id or item.anilist_id) and (is_new or not item.release_date):
+        # Fetch metadata from TMDB/AniList if available (for new items, items missing release date, or items missing seasons)
+        if (tmdb_id or item.imdb_id or item.anilist_id) and (
+            is_new or not item.release_date or (not item.seasons and item.media_type != MediaType.MOVIE)
+        ):
             details = None
             if tmdb_id:
                 if media_type in (MediaType.SHOW, MediaType.ANIME):

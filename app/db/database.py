@@ -348,7 +348,7 @@ async def init_db(database_url: str) -> None:
             try:
                 await session.execute(
                     __import__("sqlalchemy").text(
-                        "ALTER TABLE system_settings ADD COLUMN max_upgrade_attempts INTEGER NOT NULL DEFAULT 10;"
+                        "ALTER TABLE system_settings ADD COLUMN max_upgrade_attempts INTEGER NOT NULL DEFAULT 7;"
                     )
                 )
             except Exception:
