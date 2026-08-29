@@ -216,3 +216,120 @@ async def get_anime_sequels(anilist_id: int) -> list[dict[str, Any]]:
                 break
                 
     return sequels
+
+async def get_anime_root_and_hierarchy(anilist_id: int) -> dict[str, Any] | None:
+    """
+    Traverses PREQUEL relations up to the root franchise anime, then traverses
+    SEQUEL relations down to build the complete ordered season hierarchy.
+    Excludes Movies, OVAs, Specials, and Music formats.
+    """
+    query_str = """
+    query ($id: Int) {
+      Media(id: $id, type: ANIME) {
+        id
+        type
+        format
+        episodes
+        title { romaji english native }
+        status
+        startDate { year month day }
+        idMal
+        relations {
+          edges {
+            relationType
+            node {
+              id
+              type
+              format
+              episodes
+              title { romaji english native }
+              status
+              startDate { year month day }
+              idMal
+            }
+          }
+        }
+      }
+    }
+    """
+    
+    ALLOWED_FORMATS = {"TV", "TV_SHORT", "ONA"}
+    
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        # Step 1: Traverse up to find root
+        current_id = anilist_id
+        root_node = None
+        visited_up = {current_id}
+        
+        while current_id:
+            try:
+                variables = {"id": current_id}
+                resp = await _post_with_retry(client, {"query": query_str, "variables": variables})
+                data = resp.json()
+                media = data.get("data", {}).get("Media")
+                if not media:
+                    break
+                    
+                root_node = media
+                
+                edges = media.get("relations", {}).get("edges", [])
+                next_id = None
+                for edge in edges:
+                    if edge.get("relationType") == "PREQUEL":
+                        node = edge.get("node")
+                        if node and node.get("type") == "ANIME" and node.get("format") in ALLOWED_FORMATS:
+                            node_id = node.get("id")
+                            if node_id not in visited_up:
+                                next_id = node_id
+                                visited_up.add(node_id)
+                                break
+                
+                current_id = next_id
+                
+            except Exception as e:
+                logger.error(f"AniList prequel traversal failed: {e}")
+                break
+                
+        if not root_node:
+            return None
+            
+        # Step 2: Traverse down to build hierarchy
+        hierarchy = [root_node]
+        current_id = root_node.get("id")
+        visited_down = {current_id}
+        
+        current_media = root_node
+        
+        while current_media:
+            edges = current_media.get("relations", {}).get("edges", [])
+            next_id = None
+            for edge in edges:
+                if edge.get("relationType") == "SEQUEL":
+                    node = edge.get("node")
+                    if node and node.get("type") == "ANIME" and node.get("format") in ALLOWED_FORMATS:
+                        node_id = node.get("id")
+                        if node_id not in visited_down:
+                            next_id = node_id
+                            visited_down.add(node_id)
+                            break
+                            
+            if not next_id:
+                break
+                
+            try:
+                variables = {"id": next_id}
+                resp = await _post_with_retry(client, {"query": query_str, "variables": variables})
+                data = resp.json()
+                current_media = data.get("data", {}).get("Media")
+                if current_media:
+                    hierarchy.append(current_media)
+                else:
+                    break
+            except Exception as e:
+                logger.error(f"AniList sequel traversal failed: {e}")
+                break
+                
+        return {
+            "root": root_node,
+            "hierarchy": hierarchy
+        }
