@@ -136,7 +136,7 @@ async def _sync_items(
             .options(selectinload(MediaItem.seasons))
         )
         result = await session.execute(stmt)
-        item = result.scalar_one_or_none()
+        item = result.scalars().first()
 
         ids = movie_data.get("ids", {})
         tmdb_id_str = ids.get("tmdb")
@@ -159,7 +159,7 @@ async def _sync_items(
                 and_(Season.anilist_id.isnot(None), Season.anilist_id == anilist_id) if anilist_id else False
             )
         )
-        existing_season = (await session.execute(season_stmt)).scalar_one_or_none()
+        existing_season = (await session.execute(season_stmt)).scalars().first()
         if existing_season and not item:
             logger.info("    ⏩ Item '%s' is already tracked as Season %d of a consolidated parent series. Skipping standalone creation.", movie_data.get("title"), existing_season.season_number)
             if not existing_season.simkl_id:
@@ -369,7 +369,7 @@ async def _sync_items(
                             )
                             existing_season = (
                                 await session.execute(existing_season_stmt)
-                            ).scalar_one_or_none()
+                            ).scalars().first()
                             if not existing_season:
                                 season_obj = Season(
                                     media_item_id=item.id,
@@ -439,7 +439,7 @@ async def _sync_items(
                         Season.media_item_id == item.id,
                         Season.season_number == s_num,
                     )
-                    existing_season = (await session.execute(existing_season_stmt)).scalar_one_or_none()
+                    existing_season = (await session.execute(existing_season_stmt)).scalars().first()
                     if not existing_season:
                         season_obj = Season(
                             media_item_id=item.id,
@@ -916,7 +916,7 @@ async def _process_movie(session: AsyncSession, movie: MediaItem) -> None:
         ProviderProfile.provider_id == movie.provider_id,
         ProviderProfile.media_type == "movies",
     )
-    profile = (await session.execute(profile_stmt)).scalar_one_or_none()
+    profile = (await session.execute(profile_stmt)).scalars().first()
     reject_words = (
         [w.strip().lower() for w in profile.reject_words_csv.split(",") if w.strip()]
         if profile and profile.reject_words_csv
@@ -1128,7 +1128,7 @@ async def _process_season(session: AsyncSession, season: Season) -> None:
         ProviderProfile.provider_id == season.media_item.provider_id,
         ProviderProfile.media_type == "shows",
     )
-    profile = (await session.execute(profile_stmt)).scalar_one_or_none()
+    profile = (await session.execute(profile_stmt)).scalars().first()
 
     reject_words = (
         [w.strip().lower() for w in profile.reject_words_csv.split(",") if w.strip()]
@@ -1403,7 +1403,7 @@ async def _process_season(session: AsyncSession, season: Season) -> None:
                         )
                         next_s = (
                             await session.execute(next_s_stmt)
-                        ).scalar_one_or_none()
+                        ).scalars().first()
                         if next_s and not next_s.monitored:
                             next_s.monitored = True
                             next_s.status = SeasonStatus.SEARCHING
@@ -1440,7 +1440,7 @@ async def _process_season(session: AsyncSession, season: Season) -> None:
                         )
                         next_s = (
                             await session.execute(next_s_stmt)
-                        ).scalar_one_or_none()
+                        ).scalars().first()
                         if next_s and not next_s.monitored:
                             next_s.monitored = True
                             next_s.status = SeasonStatus.SEARCHING
@@ -1569,7 +1569,7 @@ async def _process_season(session: AsyncSession, season: Season) -> None:
                     Season.media_item_id == season.media_item_id,
                     Season.season_number == season.season_number + 1,
                 )
-                next_s = (await session.execute(next_s_stmt)).scalar_one_or_none()
+                next_s = (await session.execute(next_s_stmt)).scalars().first()
                 if next_s and not next_s.monitored:
                     next_s.monitored = True
                     next_s.status = SeasonStatus.SEARCHING
@@ -2132,7 +2132,7 @@ async def _evaluate_and_download(
                 .options(selectinload(ProviderProfile.notification_channel))
             )
             profile_res = await session.execute(profile_stmt)
-            profile = profile_res.scalar_one_or_none()
+            profile = profile_res.scalars().first()
 
             if profile and profile.notification_channel:
                 channel = profile.notification_channel
@@ -2162,7 +2162,7 @@ async def manual_search_episode(session: AsyncSession, episode_id: int) -> bool:
             .selectinload(MediaItem.provider)
         )
     )
-    episode = (await session.execute(stmt)).scalar_one_or_none()
+    episode = (await session.execute(stmt)).scalars().first()
 
     if not episode or not episode.season or not episode.season.media_item:
         logger.error("❌ Episode %s not found or incomplete.", episode_id)
@@ -2203,7 +2203,7 @@ async def manual_search_episode(session: AsyncSession, episode_id: int) -> bool:
         ProviderProfile.provider_id == media_item.provider_id,
         ProviderProfile.media_type == "shows",
     )
-    profile = (await session.execute(profile_stmt)).scalar_one_or_none()
+    profile = (await session.execute(profile_stmt)).scalars().first()
     reject_words = (
         [w.strip().lower() for w in profile.reject_words_csv.split(",") if w.strip()]
         if profile and profile.reject_words_csv
@@ -2261,7 +2261,7 @@ async def manual_search_movie(session: AsyncSession, item_id: int) -> bool:
         .where(MediaItem.id == item_id)
         .options(selectinload(MediaItem.provider))
     )
-    media_item = (await session.execute(stmt)).scalar_one_or_none()
+    media_item = (await session.execute(stmt)).scalars().first()
 
     if not media_item or media_item.media_type != MediaType.MOVIE:
         logger.error("❌ Movie %s not found or is not a movie.", item_id)
@@ -2286,7 +2286,7 @@ async def manual_search_movie(session: AsyncSession, item_id: int) -> bool:
         ProviderProfile.provider_id == media_item.provider_id,
         ProviderProfile.media_type == "movies",
     )
-    profile = (await session.execute(profile_stmt)).scalar_one_or_none()
+    profile = (await session.execute(profile_stmt)).scalars().first()
     reject_words = (
         [w.strip().lower() for w in profile.reject_words_csv.split(",") if w.strip()]
         if profile and profile.reject_words_csv
@@ -2605,7 +2605,7 @@ async def process_print_manga(session: AsyncSession, manga: MangaItem) -> bool:
         .options(selectinload(MangaItem.volumes))
         .where(MangaItem.id == manga.id)
     )
-    manga_obj = (await session.execute(stmt)).scalar_one_or_none()
+    manga_obj = (await session.execute(stmt)).scalars().first()
     if not manga_obj:
         return False
     manga = manga_obj
