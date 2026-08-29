@@ -128,7 +128,7 @@
             </div>
             <p class="text-slate-400 text-sm mb-8 leading-relaxed max-w-3xl">{{ item.overview or "No overview available for this item." }}</p>
 
-            {% if item.media_type == 'show' and item.seasons %}
+            {% if item.media_type.value in ['show', 'anime'] and item.seasons %}
             <h2 class="text-xl font-semibold mb-4 text-slate-200 flex items-center gap-2">
                 <svg class="w-5 h-5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 002-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
                 Season Management
