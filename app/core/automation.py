@@ -13,7 +13,7 @@ from collections.abc import Sequence
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -41,18 +41,21 @@ from app.services.torbox import DownloaderNetworkError
 logger = logging.getLogger(__name__)
 
 
-def is_eligible_for_search(empty_search_count: int, last_searched_at: datetime | None) -> bool:
+def is_eligible_for_search(
+    empty_search_count: int, last_searched_at: datetime | None
+) -> bool:
     """Evaluate progressive backoff tiers for search eligibility."""
     if empty_search_count < 3:
         return True
     if last_searched_at is None:
         return True
-    
+
     now = datetime.now(timezone.utc)
     if empty_search_count < 10:
         return (now - last_searched_at) >= timedelta(hours=settings.backoff_tier2_skip)
     else:
         return (now - last_searched_at) >= timedelta(hours=settings.backoff_tier3_skip)
+
 
 async def sync_all_providers() -> None:
     """Sync watchlists and libraries from all configured providers (Simkl, etc.)."""
@@ -635,7 +638,7 @@ async def run_automation_cycle(force: bool = False) -> None:
             ]
 
             if active_movie_provider_ids:
-                # 2. Process Movies
+                # 2. Process Movies (Acquisition)
                 target_score = scoring_config.get("cutoffs", {}).get(
                     "target_score", 8000
                 )
@@ -644,26 +647,13 @@ async def run_automation_cycle(force: bool = False) -> None:
                     .where(
                         MediaItem.media_type == MediaType.MOVIE,
                         MediaItem.provider_id.in_(active_movie_provider_ids),
-                        or_(
-                            MediaItem.status == MediaStatus.SEARCHING,
-                            and_(
-                                MediaItem.status == MediaStatus.DOWNLOADED,
-                                MediaItem.upgrade_attempts_count
-                                < settings.max_upgrade_attempts,
-                            ),
-                        ),
+                        MediaItem.status == MediaStatus.SEARCHING,
                     )
                     .options(selectinload(MediaItem.download_history))
                 )
 
                 movies_result = await session.execute(stmt_movies)
                 for movie in movies_result.scalars():
-                    if (
-                        movie.status == MediaStatus.DOWNLOADED
-                        and movie.best_score is not None
-                        and movie.best_score >= target_score
-                    ):
-                        continue
                     if automation_state_manager.is_aborting():
                         logger.info(
                             "🛑 Automation cycle abort requested. Stopping movie processing."
@@ -674,7 +664,7 @@ async def run_automation_cycle(force: bool = False) -> None:
                 logger.info("⏩ Skipping movie search in this cycle.")
 
             if active_shows_provider_ids and not automation_state_manager.is_aborting():
-                # 3. Process Shows (Seasons)
+                # 3. Process Shows (Seasons Acquisition)
                 season_stmt = (
                     select(Season)
                     .join(MediaItem)
@@ -682,15 +672,8 @@ async def run_automation_cycle(force: bool = False) -> None:
                         Season.monitored == True,
                         MediaItem.status != MediaStatus.IGNORED,
                         MediaItem.provider_id.in_(active_shows_provider_ids),
-                        or_(
-                            Season.status.in_(
-                                [SeasonStatus.SEARCHING, SeasonStatus.PENDING]
-                            ),
-                            and_(
-                                Season.status == SeasonStatus.DOWNLOADED,
-                                Season.upgrade_attempts_count
-                                < settings.max_upgrade_attempts,
-                            ),
+                        Season.status.in_(
+                            [SeasonStatus.SEARCHING, SeasonStatus.PENDING]
                         ),
                     )
                     .options(
@@ -701,17 +684,8 @@ async def run_automation_cycle(force: bool = False) -> None:
                     )
                 )
 
-                target_score = scoring_config.get("cutoffs", {}).get(
-                    "target_score", 8000
-                )
                 seasons_result = await session.execute(season_stmt)
                 for season in seasons_result.scalars().unique():
-                    if (
-                        season.status == SeasonStatus.DOWNLOADED
-                        and season.best_score is not None
-                        and season.best_score >= target_score
-                    ):
-                        continue
                     if automation_state_manager.is_aborting():
                         logger.info(
                             "🛑 Automation cycle abort requested. Stopping season processing."
@@ -720,6 +694,82 @@ async def run_automation_cycle(force: bool = False) -> None:
                     await _process_season(session, season)
             else:
                 logger.info("⏩ Skipping series search in this cycle.")
+
+            # --- Upgrade Evaluation Engine (Video) ---
+            if not automation_state_manager.is_aborting():
+                from datetime import timedelta
+
+                logger.info("🔄 Starting Upgrade Evaluation Engine (Video)...")
+
+                if active_movie_provider_ids:
+                    stmt_movies_upg = (
+                        select(MediaItem)
+                        .where(
+                            MediaItem.media_type == MediaType.MOVIE,
+                            MediaItem.provider_id.in_(active_movie_provider_ids),
+                            MediaItem.status == MediaStatus.DOWNLOADED,
+                            MediaItem.upgrade_attempts_count
+                            < settings.max_upgrade_attempts,
+                        )
+                        .options(selectinload(MediaItem.download_history))
+                    )
+                    for movie in (await session.execute(stmt_movies_upg)).scalars():
+                        if (
+                            movie.best_score is not None
+                            and movie.best_score >= target_score
+                        ):
+                            continue
+                        if movie.last_upgrade_search_at and (
+                            datetime.now(timezone.utc) - movie.last_upgrade_search_at
+                        ) < timedelta(hours=settings.upgrade_search_interval_hours):
+                            continue
+                        if automation_state_manager.is_aborting():
+                            break
+                        logger.info("  ⬆️ Upgrade Evaluation for Movie: %s", movie.title)
+                        await _process_movie(session, movie)
+
+                if (
+                    active_shows_provider_ids
+                    and not automation_state_manager.is_aborting()
+                ):
+                    season_stmt_upg = (
+                        select(Season)
+                        .join(MediaItem)
+                        .where(
+                            Season.monitored == True,
+                            MediaItem.status != MediaStatus.IGNORED,
+                            MediaItem.provider_id.in_(active_shows_provider_ids),
+                            Season.status == SeasonStatus.DOWNLOADED,
+                            Season.upgrade_attempts_count
+                            < settings.max_upgrade_attempts,
+                        )
+                        .options(
+                            selectinload(Season.media_item).selectinload(
+                                MediaItem.provider
+                            ),
+                            selectinload(Season.download_history),
+                        )
+                    )
+                    for season in (
+                        (await session.execute(season_stmt_upg)).scalars().unique()
+                    ):
+                        if (
+                            season.best_score is not None
+                            and season.best_score >= target_score
+                        ):
+                            continue
+                        if season.last_upgrade_search_at and (
+                            datetime.now(timezone.utc) - season.last_upgrade_search_at
+                        ) < timedelta(hours=settings.upgrade_search_interval_hours):
+                            continue
+                        if automation_state_manager.is_aborting():
+                            break
+                        logger.info(
+                            "  ⬆️ Upgrade Evaluation for Season Pack: S%02d of %s",
+                            season.season_number,
+                            season.media_item.title,
+                        )
+                        await _process_season(session, season)
 
         # 4. Download-Check: update status for items already sent to TorBox
         if force and not automation_state_manager.is_aborting():
@@ -749,9 +799,13 @@ async def _process_movie(session: AsyncSession, movie: MediaItem) -> None:
     from app.db.models import MediaType, ProviderProfile
 
     logger.info("🎬 Processing movie: %s", movie.title)
-    
+
     if not is_eligible_for_search(movie.empty_search_count, movie.last_searched_at):
-        logger.info("    ⏳ Movie '%s' is in backoff tier (Empty searches: %d). Skipping.", movie.title, movie.empty_search_count)
+        logger.info(
+            "    ⏳ Movie '%s' is in backoff tier (Empty searches: %d). Skipping.",
+            movie.title,
+            movie.empty_search_count,
+        )
         return
 
     movie.last_searched_at = datetime.now(timezone.utc)
@@ -1034,19 +1088,30 @@ async def _process_season(session: AsyncSession, season: Season) -> None:
         return
 
     loaded_count = sum(
-        1 for ep in all_monitored
-        if ep.status in (EpisodeStatus.DOWNLOADING, EpisodeStatus.DOWNLOADED, EpisodeStatus.COMPLETED)
+        1
+        for ep in all_monitored
+        if ep.status
+        in (
+            EpisodeStatus.DOWNLOADING,
+            EpisodeStatus.DOWNLOADED,
+            EpisodeStatus.COMPLETED,
+        )
     )
 
     if loaded_count == total_monitored:
-        logger.info("    ✅ Whole season loaded. Proceeding with upgrade evaluation for eligible episodes.")
+        logger.info(
+            "    ✅ Whole season loaded. Proceeding with upgrade evaluation for eligible episodes."
+        )
 
     missing_episodes = []
     for ep in all_monitored:
         is_missing = False
         if ep.status == EpisodeStatus.SEARCHING:
             is_missing = True
-        elif ep.status == EpisodeStatus.DOWNLOADED and ep.upgrade_attempts_count < settings.max_upgrade_attempts:
+        elif (
+            ep.status == EpisodeStatus.DOWNLOADED
+            and ep.upgrade_attempts_count < settings.max_upgrade_attempts
+        ):
             if not (ep.best_score is not None and ep.best_score >= target_score):
                 is_missing = True
         if is_missing:
@@ -1190,8 +1255,13 @@ async def _process_season(session: AsyncSession, season: Season) -> None:
     try:
         run_season_search = prefer_seasons and loaded_count == 0
         if run_season_search:
-            if not is_eligible_for_search(season.empty_search_count, season.last_searched_at):
-                logger.info("    ⏳ Season pack search is in backoff tier (Empty searches: %d). Skipping.", season.empty_search_count)
+            if not is_eligible_for_search(
+                season.empty_search_count, season.last_searched_at
+            ):
+                logger.info(
+                    "    ⏳ Season pack search is in backoff tier (Empty searches: %d). Skipping.",
+                    season.empty_search_count,
+                )
                 run_season_search = False
             else:
                 season.last_searched_at = datetime.now(timezone.utc)
@@ -1303,7 +1373,7 @@ async def _process_season(session: AsyncSession, season: Season) -> None:
                     "🛑 Automation cycle abort requested. Stopping episode processing."
                 )
                 break
-                
+
             if not is_eligible_for_search(ep.empty_search_count, ep.last_searched_at):
                 logger.info(
                     "    ⏳ Episode S%02dE%02d is in backoff tier (Empty searches: %d). Skipping.",
@@ -1314,7 +1384,7 @@ async def _process_season(session: AsyncSession, season: Season) -> None:
                 continue
 
             ep.last_searched_at = datetime.now(timezone.utc)
-            
+
             try:
                 logger.info(
                     "    📺 Suche Episode: S%02dE%02d",
@@ -1451,6 +1521,10 @@ async def _handle_upgrade_failure(
     if not is_manual:
         target.upgrade_attempts_count += 1
 
+    from datetime import datetime, timezone
+
+    target.last_upgrade_search_at = datetime.now(timezone.utc)
+
     if target.upgrade_attempts_count >= settings.max_upgrade_attempts:
         if movie:
             target.status = MediaStatus.COMPLETED
@@ -1479,9 +1553,7 @@ async def _handle_upgrade_failure(
                     BlacklistedRelease.media_item_id == episode.season.media_item_id
                 )
             )
-        target.last_error = (
-            f"{reason_msg} Max upgrade attempts reached. (Status: COMPLETED)"
-        )
+        target.last_error = f"Cutoff unmet ({target.upgrade_attempts_count}/{settings.max_upgrade_attempts} attempts)"
     else:
         # Revert to downloaded if it wasn't already completed?
         # Actually, it's either DOWNLOADED or COMPLETED.
@@ -1855,6 +1927,7 @@ async def _evaluate_and_download(
             )
 
             from app.core.fake_detector import is_nzb_content_fake
+
             mt = "movie" if movie else "episode"
             is_fake, fake_reason = is_nzb_content_fake(nzb_bytes, media_type=mt)
             if is_fake:
@@ -2179,14 +2252,16 @@ async def _handle_print_upgrade_failure(
 
     target.upgrade_attempts_count += 1
 
+    from datetime import datetime, timezone
+
+    target.last_upgrade_search_at = datetime.now(timezone.utc)
+
     if target.upgrade_attempts_count >= settings.max_upgrade_attempts:
         if hasattr(target, "manga_id"):  # MangaVolume
             target.status = EpisodeStatus.COMPLETED
         else:
             target.status = MediaStatus.COMPLETED
-        target.last_error = (
-            f"{reason_msg} Max upgrade attempts reached. (Status: COMPLETED)"
-        )
+        target.last_error = f"Cutoff unmet ({target.upgrade_attempts_count}/{settings.max_upgrade_attempts} attempts)"
     else:
         target.last_error = f"{reason_msg} Attempt {target.upgrade_attempts_count}/{settings.max_upgrade_attempts}."
 
@@ -2214,7 +2289,11 @@ async def process_print_book(session: AsyncSession, book: BookItem) -> bool:
         return False
 
     if not is_eligible_for_search(book.empty_search_count, book.last_searched_at):
-        logger.info("    ⏳ Book '%s' is in backoff tier (Empty searches: %d). Skipping.", book.title, book.empty_search_count)
+        logger.info(
+            "    ⏳ Book '%s' is in backoff tier (Empty searches: %d). Skipping.",
+            book.title,
+            book.empty_search_count,
+        )
         return False
 
     book.last_searched_at = datetime.now(timezone.utc)
@@ -2648,7 +2727,11 @@ async def process_print_manga(session: AsyncSession, manga: MangaItem) -> bool:
         n = vol.volume_number
 
         if not is_eligible_for_search(vol.empty_search_count, vol.last_searched_at):
-            logger.info("    ⏳ Manga Volume %d is in backoff tier (Empty searches: %d). Skipping.", n, vol.empty_search_count)
+            logger.info(
+                "    ⏳ Manga Volume %d is in backoff tier (Empty searches: %d). Skipping.",
+                n,
+                vol.empty_search_count,
+            )
             continue
 
         vol_queries = [
@@ -2804,14 +2887,12 @@ async def run_print_automation_cycle(force: bool = False) -> None:
         from sqlalchemy.orm import selectinload
 
         from app.db.database import async_session_factory
-        from app.db.models import BookItem, MangaItem, MediaStatus
+        from app.db.models import BookItem, EpisodeStatus, MangaItem, MediaStatus
 
         async with async_session_factory() as session:
-            # 1. Process Books in SEARCHING / PENDING state
+            # 1. Process Books (Acquisition)
             stmt_books = select(BookItem).where(
-                BookItem.status.in_(
-                    [MediaStatus.PENDING, MediaStatus.SEARCHING, MediaStatus.DOWNLOADED]
-                )
+                BookItem.status.in_([MediaStatus.PENDING, MediaStatus.SEARCHING])
             )
             books = (await session.execute(stmt_books)).scalars().all()
             for book in books:
@@ -2825,7 +2906,7 @@ async def run_print_automation_cycle(force: bool = False) -> None:
                 except Exception as e:
                     logger.error("Error processing Book '%s': %s", book.title, e)
 
-            # 2. Process Manga with wanted volumes
+            # 2. Process Manga with wanted volumes (Acquisition)
             if not automation_state_manager.is_aborting():
                 stmt_manga = (
                     select(MangaItem)
@@ -2836,7 +2917,6 @@ async def run_print_automation_cycle(force: bool = False) -> None:
                                 MediaStatus.PENDING,
                                 MediaStatus.SEARCHING,
                                 MediaStatus.DOWNLOADING,
-                                MediaStatus.DOWNLOADED,
                             ]
                         )
                     )
@@ -2852,6 +2932,76 @@ async def run_print_automation_cycle(force: bool = False) -> None:
                         await process_print_manga(session, manga)
                     except Exception as e:
                         logger.error("Error processing Manga '%s': %s", manga.title, e)
+
+            # --- Upgrade Evaluation Engine (Print) ---
+            if not automation_state_manager.is_aborting():
+                from datetime import timedelta
+
+                logger.info("🔄 Starting Upgrade Evaluation Engine (Print)...")
+
+                stmt_books_upg = select(BookItem).where(
+                    BookItem.status == MediaStatus.DOWNLOADED,
+                    BookItem.upgrade_attempts_count < settings.max_upgrade_attempts,
+                )
+                books_upg = (await session.execute(stmt_books_upg)).scalars().all()
+                for book in books_upg:
+                    if book.best_score is not None and book.best_score >= 1000:
+                        continue
+                    if book.last_upgrade_search_at and (
+                        datetime.now(timezone.utc) - book.last_upgrade_search_at
+                    ) < timedelta(hours=settings.upgrade_search_interval_hours):
+                        continue
+                    if automation_state_manager.is_aborting():
+                        break
+                    try:
+                        logger.info("  ⬆️ Upgrade Evaluation for Book: %s", book.title)
+                        await process_print_book(session, book)
+                    except Exception as e:
+                        logger.error("Error processing Book '%s': %s", book.title, e)
+
+                if not automation_state_manager.is_aborting():
+                    stmt_manga_upg = (
+                        select(MangaItem)
+                        .options(selectinload(MangaItem.volumes))
+                        .where(MangaItem.status == MediaStatus.DOWNLOADED)
+                    )
+                    mangas_upg = (await session.execute(stmt_manga_upg)).scalars().all()
+                    for manga in mangas_upg:
+                        # For manga, individual volumes are upgraded. If manga is DOWNLOADED, it has volumes.
+                        # Wait, we need to check if ANY volume is eligible for upgrade.
+                        # But process_print_manga internally evaluates volumes. We can just pass the manga if it has eligible volumes.
+                        eligible_vols = [
+                            v
+                            for v in manga.volumes
+                            if v.status == EpisodeStatus.DOWNLOADED
+                            and (v.best_score is None or v.best_score < 1000)
+                            and v.upgrade_attempts_count < settings.max_upgrade_attempts
+                            and (
+                                v.last_upgrade_search_at is None
+                                or (
+                                    datetime.now(timezone.utc)
+                                    - v.last_upgrade_search_at
+                                )
+                                >= timedelta(
+                                    hours=settings.upgrade_search_interval_hours
+                                )
+                            )
+                        ]
+                        if not eligible_vols:
+                            continue
+
+                        if automation_state_manager.is_aborting():
+                            break
+                        try:
+                            logger.info(
+                                "  ⬆️ Upgrade Evaluation for Manga: %s", manga.title
+                            )
+                            await process_print_manga(session, manga)
+                        except Exception as e:
+                            logger.error(
+                                "Error processing Manga '%s': %s", manga.title, e
+                            )
+
     finally:
         automation_state_manager.reset()
         logger.info("=== End Print Media Automation Cycle ===")
