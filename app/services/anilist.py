@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from typing import Any
 
@@ -5,6 +6,28 @@ import httpx
 
 logger = logging.getLogger(__name__)
 ANILIST_URL = "https://graphql.anilist.co"
+
+
+async def _post_with_retry(client: httpx.AsyncClient, json_data: dict, max_retries: int = 3) -> httpx.Response:
+    for attempt in range(max_retries):
+        resp = await client.post(ANILIST_URL, json=json_data)
+        if resp.status_code == 429:
+            retry_after = int(resp.headers.get("Retry-After", 10))
+            if attempt < max_retries - 1:
+                logger.warning(f"AniList rate limited (429). Retrying after {retry_after} seconds...")
+                await asyncio.sleep(retry_after)
+                continue
+        resp.raise_for_status()
+        
+        # Pre-emptive sleep if remaining requests are very low
+        remaining = resp.headers.get("X-RateLimit-Remaining")
+        if remaining and int(remaining) < 3:
+            logger.info("AniList rate limit running low, backing off pre-emptively for 3 seconds...")
+            await asyncio.sleep(3)
+            
+        return resp
+    return resp # Should never reach here due to raise_for_status inside loop
+
 
 
 async def search_manga(query: str) -> list[dict[str, Any]]:
@@ -28,10 +51,8 @@ async def search_manga(query: str) -> list[dict[str, Any]]:
 
     async with httpx.AsyncClient(timeout=10.0) as client:
         try:
-            resp = await client.post(
-                ANILIST_URL, json={"query": query_str, "variables": variables}
+            resp = await _post_with_retry(client, {"query": query_str, "variables": variables}
             )
-            resp.raise_for_status()
             data = resp.json()
             return data.get("data", {}).get("Page", {}).get("media", [])
         except Exception as e:
@@ -60,10 +81,8 @@ async def get_manga_details(anilist_id: int) -> dict[str, Any] | None:
 
     async with httpx.AsyncClient(timeout=10.0) as client:
         try:
-            resp = await client.post(
-                ANILIST_URL, json={"query": query_str, "variables": variables}
+            resp = await _post_with_retry(client, {"query": query_str, "variables": variables}
             )
-            resp.raise_for_status()
             data = resp.json()
             return data.get("data", {}).get("Media")
         except Exception as e:
@@ -85,10 +104,8 @@ async def get_anime_aliases(anilist_id: int) -> list[str]:
 
     async with httpx.AsyncClient(timeout=10.0) as client:
         try:
-            resp = await client.post(
-                ANILIST_URL, json={"query": query_str, "variables": variables}
+            resp = await _post_with_retry(client, {"query": query_str, "variables": variables}
             )
-            resp.raise_for_status()
             data = resp.json().get("data", {}).get("Media") or {}
 
             titles = data.get("title") or {}
@@ -126,10 +143,8 @@ async def get_anime_season_details(anilist_id: int) -> dict[str, Any] | None:
 
     async with httpx.AsyncClient(timeout=10.0) as client:
         try:
-            resp = await client.post(
-                ANILIST_URL, json={"query": query_str, "variables": variables}
+            resp = await _post_with_retry(client, {"query": query_str, "variables": variables}
             )
-            resp.raise_for_status()
             data = resp.json()
             return data.get("data", {}).get("Media")
         except Exception as e:
@@ -173,10 +188,8 @@ async def get_anime_sequels(anilist_id: int) -> list[dict[str, Any]]:
         while current_id:
             try:
                 variables = {"id": current_id}
-                resp = await client.post(
-                    ANILIST_URL, json={"query": query_str, "variables": variables}
+                resp = await _post_with_retry(client, {"query": query_str, "variables": variables}
                 )
-                resp.raise_for_status()
                 data = resp.json()
                 media = data.get("data", {}).get("Media")
                 if not media:
