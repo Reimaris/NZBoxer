@@ -151,6 +151,23 @@ async def _sync_items(
         anilist_id_str = ids.get("anilist")
         anilist_id = int(anilist_id_str) if anilist_id_str else None
 
+        # Check if incoming item is actually a consolidated season
+        from sqlalchemy import and_, or_
+        season_stmt = select(Season).where(
+            or_(
+                Season.simkl_id == simkl_id,
+                and_(Season.anilist_id.isnot(None), Season.anilist_id == anilist_id) if anilist_id else False
+            )
+        )
+        existing_season = (await session.execute(season_stmt)).scalar_one_or_none()
+        if existing_season and not item:
+            logger.info("    ⏩ Item '%s' is already tracked as Season %d of a consolidated parent series. Skipping standalone creation.", movie_data.get("title"), existing_season.season_number)
+            if not existing_season.simkl_id:
+                existing_season.simkl_id = simkl_id
+            if anilist_id and not existing_season.anilist_id:
+                existing_season.anilist_id = anilist_id
+            continue
+        anilist_id = int(anilist_id_str) if anilist_id_str else None
         if not item:
             item = MediaItem(
                 provider_id=provider_id,
@@ -175,8 +192,8 @@ async def _sync_items(
         else:
             is_new = False
 
-        # Fetch metadata from TMDB if available (for new items, or items missing release date)
-        if (tmdb_id or item.imdb_id) and (is_new or not item.release_date):
+        # Fetch metadata from TMDB/AniList if available (for new items, or items missing release date)
+        if (tmdb_id or item.imdb_id or item.anilist_id) and (is_new or not item.release_date):
             details = None
             if tmdb_id:
                 if media_type in (MediaType.SHOW, MediaType.ANIME):
@@ -390,6 +407,75 @@ async def _sync_items(
                                             if existing_season.monitored
                                             else SeasonStatus.PENDING
                                         )
+
+            # --- AniList Anime GraphQL Metadata & Sequel Consolidation ---
+            seasons = details.get("seasons", []) if details else []
+            if media_type == MediaType.ANIME and not seasons and item.anilist_id:
+                from app.services import anilist
+                logger.info("    ℹ️ No TMDB seasons found for Anime '%s'. Falling back to AniList Sequel Consolidation.", item.title)
+                
+                season_details = await anilist.get_anime_season_details(item.anilist_id)
+                
+                async def _create_anilist_season(s_num: int, anilist_node: dict, is_monitored: bool):
+                    ep_count = anilist_node.get("episodes")
+                    s_air_date = None
+                    start_date = anilist_node.get("startDate")
+                    if start_date and start_date.get("year"):
+                        try:
+                            s_air_date = datetime(
+                                start_date["year"],
+                                start_date.get("month") or 1,
+                                start_date.get("day") or 1,
+                                tzinfo=timezone.utc
+                            )
+                        except ValueError:
+                            pass
+                    
+                    is_season_future = (s_air_date and s_air_date > datetime.now(timezone.utc)) or (item.status == MediaStatus.FUTURE)
+                    
+                    existing_season_stmt = select(Season).where(
+                        Season.media_item_id == item.id,
+                        Season.season_number == s_num,
+                    )
+                    existing_season = (await session.execute(existing_season_stmt)).scalar_one_or_none()
+                    if not existing_season:
+                        season_obj = Season(
+                            media_item_id=item.id,
+                            season_number=s_num,
+                            monitored=is_monitored,
+                            episode_count=ep_count,
+                            air_date=s_air_date,
+                            anilist_id=anilist_node.get("id"),
+                            status=SeasonStatus.FUTURE if is_season_future else (SeasonStatus.SEARCHING if is_monitored else SeasonStatus.PENDING),
+                        )
+                        session.add(season_obj)
+                        await session.flush()
+                        
+                        # Create episodes manually since TMDB sync won't work
+                        from app.db.models import Episode, EpisodeStatus
+                        if ep_count:
+                            for ep_num in range(1, ep_count + 1):
+                                new_ep = Episode(
+                                    season_id=season_obj.id,
+                                    episode_number=ep_num,
+                                    air_date=s_air_date if ep_num == 1 else None,
+                                    status=EpisodeStatus.FUTURE if is_season_future else EpisodeStatus.PENDING,
+                                )
+                                session.add(new_ep)
+                    else:
+                        if not existing_season.anilist_id:
+                            existing_season.anilist_id = anilist_node.get("id")
+                            
+                # Process Season 1
+                if season_details:
+                    await _create_anilist_season(1, season_details, True)
+                    
+                # Traverse Sequels for Season 2, 3...
+                sequels = await anilist.get_anime_sequels(item.anilist_id)
+                current_s_num = 2
+                for seq in sequels:
+                    await _create_anilist_season(current_s_num, seq, False)
+                    current_s_num += 1
 
         else:
             # Update existing
