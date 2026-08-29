@@ -416,7 +416,7 @@ async def init_db(database_url: str) -> None:
             except Exception:
                 pass
 
-            # Season external identifiers (simkl_id, anilist_id)
+            # Season external identifiers (simkl_id, anilist_id, title)
             for col in ["simkl_id", "anilist_id"]:
                 try:
                     await session.execute(
@@ -434,6 +434,15 @@ async def init_db(database_url: str) -> None:
                     )
                 except Exception:
                     pass
+
+            try:
+                await session.execute(
+                    __import__("sqlalchemy").text(
+                        "ALTER TABLE seasons ADD COLUMN title VARCHAR(512);"
+                    )
+                )
+            except Exception:
+                pass
 
             # Timestamps for last upgrade search
             for tbl in [
@@ -481,7 +490,7 @@ async def init_db(database_url: str) -> None:
                 settings_res = await session.execute(
                     select(SystemSettings).where(SystemSettings.id == 1)
                 )
-                db_settings = settings_res.scalar_one_or_none()
+                db_settings = settings_res.scalars().first()
 
                 if db_settings:
                     prov_res = await session.execute(select(Provider))
@@ -570,7 +579,7 @@ async def init_db(database_url: str) -> None:
                 settings_res = await session.execute(
                     select(SystemSettings).where(SystemSettings.id == 1)
                 )
-                db_settings = settings_res.scalar_one_or_none()
+                db_settings = settings_res.scalars().first()
                 if db_settings and db_settings.scoring_settings:
                     import copy
 
