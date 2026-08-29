@@ -992,18 +992,13 @@ async def _process_season(session: AsyncSession, season: Season) -> None:
         }
 
     target_score = scoring_config.get("cutoffs", {}).get("target_score", 8000)
-    stmt = (
+
+    # Fetch all monitored episodes to determine loaded state
+    all_monitored_stmt = (
         select(Episode)
         .where(
             Episode.season_id == season.id,
             Episode.monitored == True,
-            or_(
-                Episode.status == EpisodeStatus.SEARCHING,
-                and_(
-                    Episode.status == EpisodeStatus.DOWNLOADED,
-                    Episode.upgrade_attempts_count < settings.max_upgrade_attempts,
-                ),
-            ),
         )
         .order_by(Episode.episode_number)
         .options(
@@ -1011,16 +1006,31 @@ async def _process_season(session: AsyncSession, season: Season) -> None:
             selectinload(Episode.download_history),
         )
     )
-    episodes_res = await session.execute(stmt)
-    missing_episodes = [
-        ep
-        for ep in episodes_res.scalars().all()
-        if not (
-            ep.status == EpisodeStatus.DOWNLOADED
-            and ep.best_score is not None
-            and ep.best_score >= target_score
-        )
-    ]
+    all_monitored = (await session.execute(all_monitored_stmt)).scalars().all()
+    total_monitored = len(all_monitored)
+
+    if total_monitored == 0:
+        logger.info("    ✅ No monitored episodes for S%02d.", season.season_number)
+        return
+
+    loaded_count = sum(
+        1 for ep in all_monitored
+        if ep.status in (EpisodeStatus.DOWNLOADING, EpisodeStatus.DOWNLOADED, EpisodeStatus.COMPLETED)
+    )
+
+    if loaded_count == total_monitored:
+        logger.info("    ✅ Whole season loaded. Proceeding with upgrade evaluation for eligible episodes.")
+
+    missing_episodes = []
+    for ep in all_monitored:
+        is_missing = False
+        if ep.status == EpisodeStatus.SEARCHING:
+            is_missing = True
+        elif ep.status == EpisodeStatus.DOWNLOADED and ep.upgrade_attempts_count < settings.max_upgrade_attempts:
+            if not (ep.best_score is not None and ep.best_score >= target_score):
+                is_missing = True
+        if is_missing:
+            missing_episodes.append(ep)
 
     if not missing_episodes:
         logger.info("    ✅ No pending episodes for S%02d.", season.season_number)
@@ -1158,7 +1168,7 @@ async def _process_season(session: AsyncSession, season: Season) -> None:
         return agg_results, bool(anime_aliases)
 
     try:
-        if prefer_seasons:
+        if prefer_seasons and loaded_count == 0:
             logger.info(
                 "    📦 Searching season pack for S%02d...", season.season_number
             )
