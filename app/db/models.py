@@ -620,6 +620,7 @@ class Season(Base):
     season_number: Mapped[int] = mapped_column(Integer, nullable=False)
     simkl_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     anilist_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    title: Mapped[str | None] = mapped_column(String(512), nullable=True)
     monitored: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     status: Mapped[SeasonStatus] = mapped_column(
         Enum(SeasonStatus, name="season_status_enum"),

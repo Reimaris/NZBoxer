@@ -457,6 +457,7 @@ async def _sync_items(
                         )
                         existing_season = (await session.execute(existing_season_stmt)).scalars().first()
                         if not existing_season:
+                            season_title = anilist_node.get("title", {})
                             season_obj = Season(
                                 media_item_id=item.id,
                                 season_number=s_num,
@@ -464,6 +465,7 @@ async def _sync_items(
                                 episode_count=ep_count,
                                 air_date=s_air_date,
                                 anilist_id=anilist_node.get("id"),
+                                title=season_title.get("english") or season_title.get("romaji") or season_title.get("native"),
                                 status=SeasonStatus.FUTURE if is_season_future else (SeasonStatus.SEARCHING if is_monitored else SeasonStatus.PENDING),
                             )
                             session.add(season_obj)
@@ -1229,8 +1231,11 @@ async def _process_season(session: AsyncSession, season: Season) -> None:
         return
 
     anime_aliases = []
+    sequel_aliases = []
     if season.media_item.media_type == MediaType.ANIME:
         anime_aliases = await _get_anime_aliases(season.media_item)
+        if season.season_number > 1:
+            sequel_aliases = await _get_anime_aliases(season)
 
     async def _search_show_id_first(
         s: int,
@@ -1320,6 +1325,39 @@ async def _process_season(session: AsyncSession, season: Season) -> None:
                 title=alias,
                 season=s,
                 ep=ep,
+                category=cat_id,
+                api_url=api_url,
+                api_key=api_key,
+                session=session,
+            )
+            for x in r:
+                g = x.get("guid") or x.get("link", "")
+                if g and g not in seen_guids:
+                    seen_guids.add(g)
+                    agg_results.append(x)
+
+            if ep:
+                try:
+                    abs_ep = int(ep)
+                    abs_title = f"{alias} {abs_ep:02d}"
+                    r_abs = await treasure_maps.search_show(
+                        title=abs_title,
+                        category=cat_id,
+                        api_url=api_url,
+                        api_key=api_key,
+                        session=session,
+                    )
+                    for x in r_abs:
+                        g = x.get("guid") or x.get("link", "")
+                        if g and g not in seen_guids:
+                            seen_guids.add(g)
+                            agg_results.append(x)
+                except ValueError:
+                    pass
+
+        for alias in sequel_aliases:
+            r = await treasure_maps.search_show(
+                title=alias,
                 category=cat_id,
                 api_url=api_url,
                 api_key=api_key,
