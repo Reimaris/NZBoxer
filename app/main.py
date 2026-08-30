@@ -73,20 +73,7 @@ logging.getLogger("httpcore").setLevel(logging.WARNING)
 logging.getLogger("apscheduler").setLevel(logging.WARNING)
 
 
-class _EndpointFilter(logging.Filter):
-    SUPPRESSED_ENDPOINTS = (
-        "/api/automation/status",
-        "/api/torbox/status",
-        "/history/tab/",
-        "/history",
-    )
-
-    def filter(self, record: logging.LogRecord) -> bool:
-        msg = record.getMessage()
-        return not any(endpoint in msg for endpoint in self.SUPPRESSED_ENDPOINTS)
-
-
-logging.getLogger("uvicorn.access").addFilter(_EndpointFilter())
+logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
 
 # Scheduler instance
 scheduler = AsyncIOScheduler()
@@ -365,7 +352,7 @@ async def manual_search_page(
 
     async with async_session_factory() as session:
         stmt = select(SystemSettings).where(SystemSettings.id == 1)
-        db_settings = (await session.execute(stmt)).scalar_one_or_none()
+        db_settings = (await session.execute(stmt)).scalars().first()
 
         defaults = {}
         if db_settings and db_settings.scoring_settings:
@@ -426,7 +413,7 @@ async def manual_search(
     if save_defaults:
         async with async_session_factory() as session:
             stmt = select(SystemSettings).where(SystemSettings.id == 1)
-            db_settings = (await session.execute(stmt)).scalar_one_or_none()
+            db_settings = (await session.execute(stmt)).scalars().first()
             if db_settings:
                 new_defaults = {
                     "category": category,
@@ -780,7 +767,7 @@ async def toggle_season(item_id: int, season_number: int):
             Season.media_item_id == item_id, Season.season_number == season_number
         )
         result = await session.execute(stmt)
-        season = result.scalar_one_or_none()
+        season = result.scalars().first()
 
         if season:
             season.monitored = not season.monitored
@@ -998,19 +985,112 @@ async def ignore_item(item_id: int):
     return HTMLResponse(content="Error", status_code=400)
 
 
-@app.post("/items/{item_id}/toggle_anime_type")
-async def toggle_anime_type(item_id: int):
-    """Toggle whether an Anime is considered a Movie or a Series."""
+@app.post("/api/items/{item_id}/change-type")
+async def change_type_endpoint(
+    item_id: int, target_type: str = Form(...), background_tasks: BackgroundTasks = None
+):
+    from sqlalchemy.orm import selectinload
+
     from app.db.database import async_session_factory
-    from app.db.models import MediaItem
+    from app.db.models import MediaItem, MediaType, Season
 
     async with async_session_factory() as session:
-        item = await session.get(MediaItem, item_id)
-        if item:
-            item.is_anime_movie = not item.is_anime_movie
-            await session.commit()
-            return HTMLResponse(content="<script>window.location.reload();</script>")
-    return HTMLResponse(content="Error", status_code=400)
+        item = await session.get(
+            MediaItem,
+            item_id,
+            options=[
+                selectinload(MediaItem.seasons),
+                selectinload(MediaItem.download_history),
+            ],
+        )
+        if not item:
+            return Response("Item not found", status_code=404)
+
+        if target_type not in ("movie", "series", "anime", "anime-movie"):
+            return Response("Invalid target_type", status_code=400)
+
+        currently_is_series = item.media_type in (MediaType.SHOW, MediaType.ANIME)
+        target_is_series = target_type in ("series", "anime")
+
+        # 1. Structural Reshaping
+        if not currently_is_series and target_is_series:
+            season_1 = next((s for s in item.seasons if s.season_number == 1), None)
+            if not season_1:
+                season_1 = Season(
+                    media_item_id=item.id,
+                    season_number=1,
+                    monitored=True,
+                    status=item.status,
+                )
+                session.add(season_1)
+                await session.flush()
+
+            for dh in item.download_history:
+                dh.season_id = season_1.id
+
+        elif currently_is_series and not target_is_series:
+            from sqlalchemy import update
+
+            from app.db.models import DownloadHistory, Season
+
+            session.expunge(item)
+
+            # Unlink DH
+            await session.execute(
+                update(DownloadHistory)
+                .where(DownloadHistory.media_item_id == item.id)
+                .values(season_id=None, episode_id=None)
+            )
+
+            await session.execute(
+                Season.__table__.delete().where(Season.media_item_id == item.id)
+            )
+
+            # Reload item
+            item = await session.get(
+                MediaItem, item_id, options=[selectinload(MediaItem.seasons)]
+            )
+
+        # 2. Field updates
+        if target_type == "movie":
+            item.media_type = MediaType.MOVIE
+            item.is_anime_movie = False
+        elif target_type == "anime-movie":
+            item.media_type = MediaType.MOVIE
+            item.is_anime_movie = True
+        elif target_type == "series":
+            item.media_type = MediaType.SHOW
+            item.is_anime_movie = False
+        elif target_type == "anime":
+            item.media_type = MediaType.ANIME
+            item.is_anime_movie = False
+
+        # 3. Search Resets
+        item.empty_search_count = 0
+        item.last_searched_at = None
+        if target_is_series:
+            for s in item.seasons:
+                s.empty_search_count = 0
+                s.last_searched_at = None
+
+        await session.commit()
+
+        # 4. Dispatch background task
+        if target_type in ("anime", "anime-movie") and background_tasks:
+
+            async def _bg_enrich():
+                from app.core.automation import enrich_anime_metadata
+                from app.db.database import async_session_factory
+
+                async with async_session_factory() as bg_session:
+                    bg_item = await bg_session.get(MediaItem, item_id)
+                    if bg_item and bg_item.anilist_id:
+                        await enrich_anime_metadata(bg_session, bg_item)
+                        await bg_session.commit()
+
+            background_tasks.add_task(_bg_enrich)
+
+    return HTMLResponse("<script>window.location.reload();</script>")
 
 
 @app.post("/items/{item_id}/toggle_auto_monitor")
@@ -1066,7 +1146,7 @@ async def set_automation_state(state: str = Form(...)):
 
     async with async_session_factory() as session:
         stmt = select(SystemSettings).where(SystemSettings.id == 1)
-        db_settings = (await session.execute(stmt)).scalar_one_or_none()
+        db_settings = (await session.execute(stmt)).scalars().first()
         if db_settings:
             db_settings.automation_state = valid_states[state]
             await session.commit()
@@ -1331,7 +1411,7 @@ async def get_manga_volumes_partial(request: Request, manga_id: int):
             .options(selectinload(MangaItem.volumes))
             .where(MangaItem.id == manga_id)
         )
-        manga = (await session.execute(stmt)).scalar_one_or_none()
+        manga = (await session.execute(stmt)).scalars().first()
         if not manga:
             raise HTTPException(status_code=404, detail="Manga not found")
 
@@ -1367,7 +1447,7 @@ async def set_manga_monitoring(
             .options(selectinload(MangaItem.volumes))
             .where(MangaItem.id == manga_id)
         )
-        manga = (await session.execute(stmt)).scalar_one_or_none()
+        manga = (await session.execute(stmt)).scalars().first()
         if not manga:
             raise HTTPException(status_code=404, detail="Manga not found")
 
@@ -1405,7 +1485,7 @@ async def toggle_manga_volume_status(request: Request, volume_id: int):
 
     async with async_session_factory() as session:
         vol_stmt = select(MangaVolume).where(MangaVolume.id == volume_id)
-        volume = (await session.execute(vol_stmt)).scalar_one_or_none()
+        volume = (await session.execute(vol_stmt)).scalars().first()
         if not volume:
             raise HTTPException(status_code=404, detail="Volume not found")
 
@@ -1421,7 +1501,7 @@ async def toggle_manga_volume_status(request: Request, volume_id: int):
             .options(selectinload(MangaItem.volumes))
             .where(MangaItem.id == manga_id)
         )
-        m = (await session.execute(manga_stmt)).scalar_one_or_none()
+        m = (await session.execute(manga_stmt)).scalars().first()
         if m:
             from app.core.self_healing import match_and_adopt_target_from_cache
 
@@ -1433,7 +1513,7 @@ async def toggle_manga_volume_status(request: Request, volume_id: int):
             .options(selectinload(MangaItem.volumes))
             .where(MangaItem.id == manga_id)
         )
-        manga = (await session.execute(manga_stmt)).scalar_one_or_none()
+        manga = (await session.execute(manga_stmt)).scalars().first()
 
     return templates.TemplateResponse(
         request=request,
@@ -1457,7 +1537,7 @@ async def add_manga_volume(request: Request, manga_id: int):
             .options(selectinload(MangaItem.volumes))
             .where(MangaItem.id == manga_id)
         )
-        manga = (await session.execute(stmt)).scalar_one_or_none()
+        manga = (await session.execute(stmt)).scalars().first()
         if not manga:
             raise HTTPException(status_code=404, detail="Manga not found")
 
@@ -1508,7 +1588,7 @@ async def update_book_status(book_id: int, status: str = Form(...)):
 
     async with async_session_factory() as session:
         stmt = select(BookItem).where(BookItem.id == book_id)
-        book = (await session.execute(stmt)).scalar_one_or_none()
+        book = (await session.execute(stmt)).scalars().first()
         if not book:
             raise HTTPException(status_code=404, detail="Book not found")
 
@@ -1549,7 +1629,7 @@ async def get_settings_page(request: Request):
 
     async with async_session_factory() as session:
         stmt = select(SystemSettings).where(SystemSettings.id == 1)
-        db_settings = (await session.execute(stmt)).scalar_one_or_none()
+        db_settings = (await session.execute(stmt)).scalars().first()
 
         providers = (
             (
@@ -1608,7 +1688,7 @@ async def export_settings():
     async with async_session_factory() as session:
         # Get SystemSettings
         stmt = select(SystemSettings).where(SystemSettings.id == 1)
-        db_settings = (await session.execute(stmt)).scalar_one_or_none()
+        db_settings = (await session.execute(stmt)).scalars().first()
         settings_dict = {}
         if db_settings:
             settings_dict = {
@@ -1746,7 +1826,7 @@ async def save_global_settings(
 
     async with async_session_factory() as session:
         stmt = select(SystemSettings).where(SystemSettings.id == 1)
-        db_settings = (await session.execute(stmt)).scalar_one_or_none()
+        db_settings = (await session.execute(stmt)).scalars().first()
 
         if db_settings:
             db_settings.scan_interval_multiplier = scan_interval_multiplier
@@ -2262,8 +2342,14 @@ async def run_system_check(request: Request):
     results = {}
     async with async_session_factory() as session:
         db_settings = (
-            await session.execute(select(SystemSettings).where(SystemSettings.id == 1))
-        ).scalar_one_or_none()
+            (
+                await session.execute(
+                    select(SystemSettings).where(SystemSettings.id == 1)
+                )
+            )
+            .scalars()
+            .first()
+        )
         providers = (await session.execute(select(Provider))).scalars().all()
         notifications = (
             (await session.execute(select(NotificationChannel))).scalars().all()
