@@ -94,6 +94,8 @@ async def sync_all_providers() -> None:
                     await _sync_items(session, shows, MediaType.SHOW, provider.id)
                     await _sync_items(session, anime, MediaType.ANIME, provider.id)
 
+                    await consolidate_standalone_anime_sequels(session)
+
             await session.commit()
             from app.core.self_healing import (
                 adopt_torbox_downloads_for_print,
@@ -3264,13 +3266,41 @@ async def enrich_anime_metadata(session: AsyncSession, item: MediaItem) -> None:
 
 async def consolidate_standalone_anime_sequels(session: AsyncSession) -> None:
     """Detects standalone MediaItems that are tracked as child Seasons on parent series, and marks them IGNORED."""
-    from sqlalchemy import func, or_, select
+    import re
+
+    from sqlalchemy import select
     from sqlalchemy.orm import selectinload
 
-    from app.db.models import MediaItem, MediaStatus, MediaType
+    from app.db.models import MediaItem, MediaStatus, MediaType, SeasonStatus
 
-    # Find all anime parent items that have multiple seasons
-    parent_stmt = (
+    def _normalize_title(t: str | None) -> str:
+        if not t:
+            return ""
+        # Lowercase, replace punctuation/dashes with space, strip extra whitespace
+        t = re.sub(r"[:\-_,.]", " ", t.lower())
+        return re.sub(r"\s+", " ", t).strip()
+
+    ROMAN_SUFFIXES: dict[int, list[str]] = {
+        2: ["ii", "2", "2nd", "second", "season 2", "s2", "2nd season", "season ii"],
+        3: ["iii", "3", "3rd", "third", "season 3", "s3", "3rd season", "season iii"],
+        4: ["iv", "4", "4th", "fourth", "season 4", "s4", "4th season", "season iv"],
+        5: ["v", "5", "5th", "fifth", "season 5", "s5", "5th season", "season v"],
+        6: ["vi", "6", "6th", "sixth", "season 6", "s6", "6th season", "season vi"],
+        7: ["vii", "7", "7th", "seventh", "season 7", "s7", "7th season", "season vii"],
+        8: [
+            "viii",
+            "8",
+            "8th",
+            "eighth",
+            "season 8",
+            "s8",
+            "8th season",
+            "season viii",
+        ],
+    }
+
+    # Fetch all active anime items with their seasons
+    anime_stmt = (
         select(MediaItem)
         .where(
             MediaItem.media_type == MediaType.ANIME,
@@ -3278,45 +3308,128 @@ async def consolidate_standalone_anime_sequels(session: AsyncSession) -> None:
         )
         .options(selectinload(MediaItem.seasons))
     )
-    parents = (await session.execute(parent_stmt)).scalars().unique().all()
+    all_anime = (await session.execute(anime_stmt)).scalars().unique().all()
+
+    # Parents are anime items with >= 2 seasons
+    parents = [item for item in all_anime if len(item.seasons) >= 2]
+    candidates = [item for item in all_anime]
 
     for parent in parents:
         for season in parent.seasons:
             if season.season_number <= 1:
                 continue
 
-            conditions = []
-            if season.anilist_id:
-                conditions.append(MediaItem.anilist_id == season.anilist_id)
-            if season.simkl_id:
-                conditions.append(MediaItem.simkl_id == season.simkl_id)
-            if season.title:
-                s_title = season.title.strip().lower()
-                conditions.append(func.lower(MediaItem.title) == s_title)
-                conditions.append(func.lower(MediaItem.alt_title) == s_title)
-
-            if not conditions:
-                continue
-
-            standalone_stmt = select(MediaItem).where(
-                MediaItem.id != parent.id,
-                MediaItem.status != MediaStatus.IGNORED,
-                or_(*conditions),
+            s_num = season.season_number
+            suffixes = ROMAN_SUFFIXES.get(
+                s_num, [str(s_num), f"season {s_num}", f"s{s_num}"]
             )
-            standalone_items = (await session.execute(standalone_stmt)).scalars().all()
-            for s_item in standalone_items:
-                logger.info(
-                    "    ⏩ Auto-consolidating sequel MediaItem '%s' (ID %d) -> Soft-ignored (tracked as Season %d of '%s' ID %d).",
-                    s_item.title,
-                    s_item.id,
-                    season.season_number,
-                    parent.title,
-                    parent.id,
-                )
-                s_item.status = MediaStatus.IGNORED
-                if not season.simkl_id and s_item.simkl_id:
-                    season.simkl_id = s_item.simkl_id
-                if not season.anilist_id and s_item.anilist_id:
-                    season.anilist_id = s_item.anilist_id
-                if not season.title and s_item.title:
-                    season.title = s_item.title
+
+            parent_titles = [
+                _normalize_title(parent.title),
+                _normalize_title(parent.alt_title),
+            ]
+            stripped_parent_titles = set()
+            for pt in parent_titles:
+                if pt:
+                    stripped_parent_titles.add(pt)
+                    for sub in ("trouble", "season 1", "1st season", "tv", "part 1"):
+                        if sub in pt:
+                            stripped = pt.replace(sub, "").strip()
+                            if stripped:
+                                stripped_parent_titles.add(stripped)
+
+            s_title_norm = _normalize_title(season.title)
+            is_generic_season_title = s_title_norm in (
+                "season 1",
+                "season 2",
+                "season 3",
+                "season 4",
+                "season 5",
+                "staffel 1",
+                "staffel 2",
+                "staffel 3",
+                "staffel 4",
+                "staffel 5",
+                "specials",
+            )
+
+            for cand in candidates:
+                if cand.id == parent.id or cand.status == MediaStatus.IGNORED:
+                    continue
+
+                matched = False
+
+                # 1. Direct ID matches
+                if (
+                    season.anilist_id
+                    and cand.anilist_id
+                    and season.anilist_id == cand.anilist_id
+                ):
+                    matched = True
+                elif (
+                    season.simkl_id
+                    and cand.simkl_id
+                    and season.simkl_id == cand.simkl_id
+                ):
+                    matched = True
+
+                # 2. Season title match
+                cand_titles = [
+                    _normalize_title(cand.title),
+                    _normalize_title(cand.alt_title),
+                ]
+                cand_titles = [t for t in cand_titles if t]
+
+                if not matched and season.title and not is_generic_season_title:
+                    for ct in cand_titles:
+                        if ct == s_title_norm:
+                            matched = True
+                            break
+
+                # 3. Roman Numeral / Suffix / Title Matching
+                if not matched:
+                    for pt in stripped_parent_titles:
+                        for ct in cand_titles:
+                            for sfx in suffixes:
+                                if ct == f"{pt} {sfx}" or ct == f"{pt}{sfx}":
+                                    matched = True
+                                    break
+                                if sfx in ct and pt in ct:
+                                    matched = True
+                                    break
+                            if matched:
+                                break
+
+                            # Check base title containment with air date year match
+                            if len(pt) >= 4 and pt in ct:
+                                if (
+                                    cand.year
+                                    and season.air_date
+                                    and cand.year == season.air_date.year
+                                ):
+                                    matched = True
+                                    break
+                        if matched:
+                            break
+
+                if matched:
+                    logger.info(
+                        "    ⏩ Auto-consolidating sequel MediaItem '%s' (ID %d) -> Soft-ignored (tracked as Season %d of '%s' ID %d).",
+                        cand.title,
+                        cand.id,
+                        season.season_number,
+                        parent.title,
+                        parent.id,
+                    )
+                    cand.status = MediaStatus.IGNORED
+                    for s in cand.seasons:
+                        s.status = SeasonStatus.IGNORED
+
+                    if not season.simkl_id and cand.simkl_id:
+                        season.simkl_id = cand.simkl_id
+                    if not season.anilist_id and cand.anilist_id:
+                        season.anilist_id = cand.anilist_id
+                    if (not season.title or is_generic_season_title) and cand.title:
+                        season.title = cand.title
+
+    await session.commit()
