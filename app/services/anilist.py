@@ -8,26 +8,31 @@ logger = logging.getLogger(__name__)
 ANILIST_URL = "https://graphql.anilist.co"
 
 
-async def _post_with_retry(client: httpx.AsyncClient, json_data: dict, max_retries: int = 3) -> httpx.Response:
+async def _post_with_retry(
+    client: httpx.AsyncClient, json_data: dict, max_retries: int = 3
+) -> httpx.Response:
     for attempt in range(max_retries):
         resp = await client.post(ANILIST_URL, json=json_data)
         if resp.status_code == 429:
             retry_after = int(resp.headers.get("Retry-After", 10))
             if attempt < max_retries - 1:
-                logger.warning(f"AniList rate limited (429). Retrying after {retry_after} seconds...")
+                logger.warning(
+                    f"AniList rate limited (429). Retrying after {retry_after} seconds..."
+                )
                 await asyncio.sleep(retry_after)
                 continue
         resp.raise_for_status()
-        
+
         # Pre-emptive sleep if remaining requests are very low
         remaining = resp.headers.get("X-RateLimit-Remaining")
         if remaining and int(remaining) < 3:
-            logger.info("AniList rate limit running low, backing off pre-emptively for 3 seconds...")
+            logger.info(
+                "AniList rate limit running low, backing off pre-emptively for 3 seconds..."
+            )
             await asyncio.sleep(3)
-            
-        return resp
-    return resp # Should never reach here due to raise_for_status inside loop
 
+        return resp
+    return resp  # Should never reach here due to raise_for_status inside loop
 
 
 async def search_manga(query: str) -> list[dict[str, Any]]:
@@ -51,7 +56,8 @@ async def search_manga(query: str) -> list[dict[str, Any]]:
 
     async with httpx.AsyncClient(timeout=10.0) as client:
         try:
-            resp = await _post_with_retry(client, {"query": query_str, "variables": variables}
+            resp = await _post_with_retry(
+                client, {"query": query_str, "variables": variables}
             )
             data = resp.json()
             return data.get("data", {}).get("Page", {}).get("media", [])
@@ -81,7 +87,8 @@ async def get_manga_details(anilist_id: int) -> dict[str, Any] | None:
 
     async with httpx.AsyncClient(timeout=10.0) as client:
         try:
-            resp = await _post_with_retry(client, {"query": query_str, "variables": variables}
+            resp = await _post_with_retry(
+                client, {"query": query_str, "variables": variables}
             )
             data = resp.json()
             return data.get("data", {}).get("Media")
@@ -104,7 +111,8 @@ async def get_anime_aliases(anilist_id: int) -> list[str]:
 
     async with httpx.AsyncClient(timeout=10.0) as client:
         try:
-            resp = await _post_with_retry(client, {"query": query_str, "variables": variables}
+            resp = await _post_with_retry(
+                client, {"query": query_str, "variables": variables}
             )
             data = resp.json().get("data", {}).get("Media") or {}
 
@@ -122,6 +130,7 @@ async def get_anime_aliases(anilist_id: int) -> list[str]:
         except Exception as e:
             logger.error(f"AniList get_anime_aliases failed: {e}")
             return []
+
 
 async def get_anime_season_details(anilist_id: int) -> dict[str, Any] | None:
     """Fetches episode counts and airing info for a specific AniList Anime ID."""
@@ -143,7 +152,8 @@ async def get_anime_season_details(anilist_id: int) -> dict[str, Any] | None:
 
     async with httpx.AsyncClient(timeout=10.0) as client:
         try:
-            resp = await _post_with_retry(client, {"query": query_str, "variables": variables}
+            resp = await _post_with_retry(
+                client, {"query": query_str, "variables": variables}
             )
             data = resp.json()
             return data.get("data", {}).get("Media")
@@ -160,7 +170,7 @@ async def get_anime_sequels(anilist_id: int) -> list[dict[str, Any]]:
     Let's fetch recursively here."""
     sequels = []
     current_id = anilist_id
-    
+
     query_str = """
     query ($id: Int) {
       Media(id: $id, type: ANIME) {
@@ -182,40 +192,46 @@ async def get_anime_sequels(anilist_id: int) -> list[dict[str, Any]]:
       }
     }
     """
-    
+
     async with httpx.AsyncClient(timeout=10.0) as client:
         visited = {current_id}
         while current_id:
             try:
                 variables = {"id": current_id}
-                resp = await _post_with_retry(client, {"query": query_str, "variables": variables}
+                resp = await _post_with_retry(
+                    client, {"query": query_str, "variables": variables}
                 )
                 data = resp.json()
                 media = data.get("data", {}).get("Media")
                 if not media:
                     break
-                    
+
                 edges = media.get("relations", {}).get("edges", [])
                 next_id = None
                 for edge in edges:
                     if edge.get("relationType") == "SEQUEL":
                         node = edge.get("node")
                         # We only want TV/OVA/ONA formats, maybe MOVIE? Usually TV sequels are next seasons.
-                        if node and node.get("type") == "ANIME" and node.get("format") in ("TV", "TV_SHORT", "OVA", "ONA"):
+                        if (
+                            node
+                            and node.get("type") == "ANIME"
+                            and node.get("format") in ("TV", "TV_SHORT", "OVA", "ONA")
+                        ):
                             node_id = node.get("id")
                             if node_id not in visited:
                                 sequels.append(node)
                                 visited.add(node_id)
                                 next_id = node_id
-                                break # just follow the first direct sequel
-                
+                                break  # just follow the first direct sequel
+
                 current_id = next_id
-                
+
             except Exception as e:
                 logger.error(f"AniList get_anime_sequels failed: {e}")
                 break
-                
+
     return sequels
+
 
 async def get_anime_root_and_hierarchy(anilist_id: int) -> dict[str, Any] | None:
     """
@@ -252,73 +268,85 @@ async def get_anime_root_and_hierarchy(anilist_id: int) -> dict[str, Any] | None
       }
     }
     """
-    
+
     ALLOWED_FORMATS = {"TV", "TV_SHORT", "ONA"}
-    
+
     async with httpx.AsyncClient(timeout=10.0) as client:
         # Step 1: Traverse up to find root
         current_id = anilist_id
         root_node = None
         visited_up = {current_id}
-        
+
         while current_id:
             try:
                 variables = {"id": current_id}
-                resp = await _post_with_retry(client, {"query": query_str, "variables": variables})
+                resp = await _post_with_retry(
+                    client, {"query": query_str, "variables": variables}
+                )
                 data = resp.json()
                 media = data.get("data", {}).get("Media")
                 if not media:
                     break
-                    
+
                 root_node = media
-                
+
                 edges = media.get("relations", {}).get("edges", [])
                 next_id = None
                 for edge in edges:
                     if edge.get("relationType") == "PREQUEL":
                         node = edge.get("node")
-                        if node and node.get("type") == "ANIME" and node.get("format") in ALLOWED_FORMATS:
+                        if (
+                            node
+                            and node.get("type") == "ANIME"
+                            and node.get("format") in ALLOWED_FORMATS
+                        ):
                             node_id = node.get("id")
                             if node_id not in visited_up:
                                 next_id = node_id
                                 visited_up.add(node_id)
                                 break
-                
+
                 current_id = next_id
-                
+
             except Exception as e:
                 logger.error(f"AniList prequel traversal failed: {e}")
                 break
-                
+
         if not root_node:
             return None
-            
+
         # Step 2: Traverse down to build hierarchy
         hierarchy = [root_node]
         current_id = root_node.get("id")
         visited_down = {current_id}
-        
+
         current_media = root_node
-        
+
         while current_media:
             edges = current_media.get("relations", {}).get("edges", [])
             next_id = None
             for edge in edges:
                 if edge.get("relationType") == "SEQUEL":
                     node = edge.get("node")
-                    if node and node.get("type") == "ANIME" and node.get("format") in ALLOWED_FORMATS:
+                    if (
+                        node
+                        and node.get("type") == "ANIME"
+                        and node.get("format") in ALLOWED_FORMATS
+                    ):
                         node_id = node.get("id")
                         if node_id not in visited_down:
                             next_id = node_id
                             visited_down.add(node_id)
                             break
-                            
+
             if not next_id:
                 break
-                
+
             try:
                 variables = {"id": next_id}
-                resp = await _post_with_retry(client, {"query": query_str, "variables": variables})
+                resp = await _post_with_retry(
+                    client, {"query": query_str, "variables": variables}
+                )
                 data = resp.json()
                 current_media = data.get("data", {}).get("Media")
                 if current_media:
@@ -328,8 +356,5 @@ async def get_anime_root_and_hierarchy(anilist_id: int) -> dict[str, Any] | None
             except Exception as e:
                 logger.error(f"AniList sequel traversal failed: {e}")
                 break
-                
-        return {
-            "root": root_node,
-            "hierarchy": hierarchy
-        }
+
+        return {"root": root_node, "hierarchy": hierarchy}

@@ -187,7 +187,7 @@ async def run_self_healing_cycle() -> None:
                         .options(selectinload(ProviderProfile.notification_channel))
                     )
                     profile_res = await session.execute(profile_stmt)
-                    profile = profile_res.scalar_one_or_none()
+                    profile = profile_res.scalars().first()
 
                     if profile and profile.notification_channel:
                         channel = profile.notification_channel
@@ -1096,7 +1096,7 @@ async def match_and_adopt_target_from_cache(session, target) -> bool:
                 .where(MediaItem.id == target.id)
                 .options(selectinload(MediaItem.seasons).selectinload(Season.episodes))
             )
-            target = (await session.execute(stmt)).scalar_one_or_none()
+            target = (await session.execute(stmt)).scalars().first()
             if not target:
                 return False
 
@@ -1294,7 +1294,7 @@ async def match_and_adopt_target_from_cache(session, target) -> bool:
                 .where(MangaItem.id == target.id)
                 .options(selectinload(MangaItem.volumes))
             )
-            target = (await session.execute(stmt_manga_local)).scalar_one_or_none()
+            target = (await session.execute(stmt_manga_local)).scalars().first()
             if not target:
                 return False
 

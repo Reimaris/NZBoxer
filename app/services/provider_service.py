@@ -28,7 +28,7 @@ async def get_active_downloader(db: AsyncSession) -> Provider | None:
         .limit(1)
     )
     result = await db.execute(stmt)
-    return result.scalar_one_or_none()
+    return result.scalars().first()
 
 
 async def set_active_downloader(db: AsyncSession, provider_id: int) -> None:
@@ -96,7 +96,7 @@ async def get_metadata_provider(
         .limit(1)
     )
     result = await db.execute(stmt)
-    return result.scalar_one_or_none()
+    return result.scalars().first()
 
 
 async def get_providers_by_category(

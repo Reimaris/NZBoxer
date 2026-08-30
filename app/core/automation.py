@@ -1349,6 +1349,10 @@ async def _process_season(session: AsyncSession, season: Season) -> None:
             all_season_results: list[dict[str, Any]] = []
             is_season_fallback = False
 
+            is_anime_unified = (
+                season.media_item.media_type == MediaType.ANIME
+                and season.season_number > 1
+            )
             for indexer in active_indexers:
                 results, is_fallback = await _search_show_id_first(
                     season.season_number,
@@ -1360,47 +1364,65 @@ async def _process_season(session: AsyncSession, season: Season) -> None:
                 if is_fallback:
                     is_season_fallback = True
 
-                grabbed = await _evaluate_and_download(
-                    session,
-                    results,
-                    season=season,
-                    target_episodes=missing_episodes,
-                    reject_words=reject_words,
-                    required_language=required_language,
-                    is_title_fallback=is_fallback,
-                    filters=filters,
-                    indexer_name=indexer.name,
-                    indexer_url=indexer.api_url,
-                    indexer_key=indexer.api_key,
-                    early_exit_on_cutoff=True,
-                )
-                if grabbed or season.status in [
-                    SeasonStatus.DOWNLOADING,
-                    SeasonStatus.DOWNLOADED,
-                    SeasonStatus.COMPLETED,
-                    SeasonStatus.MANUAL_GRAB,
-                ]:
-                    logger.info(
-                        "    🎯 Season pack grabbed on indexer '%s'. Halting cascade.",
-                        indexer.name,
+                for r in results:
+                    r["_indexer_name"] = indexer.name
+                    r["_indexer_url"] = indexer.api_url
+                    r["_indexer_key"] = indexer.api_key
+
+                if not is_anime_unified:
+                    grabbed = await _evaluate_and_download(
+                        session,
+                        results,
+                        season=season,
+                        target_episodes=missing_episodes,
+                        reject_words=reject_words,
+                        required_language=required_language,
+                        is_title_fallback=is_fallback,
+                        filters=filters,
+                        indexer_name=indexer.name,
+                        indexer_url=indexer.api_url,
+                        indexer_key=indexer.api_key,
+                        early_exit_on_cutoff=True,
                     )
-                    if season.media_item.auto_monitor_next_season:
-                        next_s_stmt = select(Season).where(
-                            Season.media_item_id == season.media_item_id,
-                            Season.season_number == season.season_number + 1,
+                    if grabbed or season.status in [
+                        SeasonStatus.DOWNLOADING,
+                        SeasonStatus.DOWNLOADED,
+                        SeasonStatus.COMPLETED,
+                        SeasonStatus.MANUAL_GRAB,
+                    ]:
+                        logger.info(
+                            "    🎯 Season pack grabbed on indexer '%s'. Halting cascade.",
+                            indexer.name,
                         )
-                        next_s = (await session.execute(next_s_stmt)).scalars().first()
-                        if next_s and not next_s.monitored:
-                            next_s.monitored = True
-                            next_s.status = SeasonStatus.SEARCHING
-                            logger.info(
-                                "    🔄 Automatically enabling next season: S%02d",
-                                next_s.season_number,
+                        if season.media_item.auto_monitor_next_season:
+                            next_s_stmt = select(Season).where(
+                                Season.media_item_id == season.media_item_id,
+                                Season.season_number == season.season_number + 1,
                             )
-                            await session.commit()
-                    return
+                            next_s = (
+                                (await session.execute(next_s_stmt)).scalars().first()
+                            )
+                            if next_s and not next_s.monitored:
+                                next_s.monitored = True
+                                next_s.status = SeasonStatus.SEARCHING
+                                logger.info(
+                                    "    🔄 Automatically enabling next season: S%02d",
+                                    next_s.season_number,
+                                )
+                                await session.commit()
+                        return
 
                 all_season_results.extend(results)
+
+            if all_season_results and is_anime_unified:
+                unique_candidates = []
+                seen_guids = set()
+                for r in all_season_results:
+                    guid = r.get("guid") or r.get("link", "")
+                    if guid and guid not in seen_guids:
+                        seen_guids.add(guid)
+                        unique_candidates.append(r)
+                all_season_results = unique_candidates
 
             if all_season_results:
                 grabbed = await _evaluate_and_download(
@@ -1467,6 +1489,10 @@ async def _process_season(session: AsyncSession, season: Season) -> None:
                 is_ep_fallback = False
                 early_grabbed = False
 
+                is_anime_unified = (
+                    season.media_item.media_type == MediaType.ANIME
+                    and season.season_number > 1
+                )
                 for indexer in active_indexers:
                     ep_results, is_fallback = await _search_show_id_first(
                         season.season_number,
@@ -1475,37 +1501,51 @@ async def _process_season(session: AsyncSession, season: Season) -> None:
                         api_key=indexer.api_key,
                     )
 
-                    # Absolute Episode Numbering is now handled internally by _search_show_id_first for Anime
-
                     if not ep_results:
                         continue
                     if is_fallback:
                         is_ep_fallback = True
 
-                    grabbed = await _evaluate_and_download(
-                        session,
-                        ep_results,
-                        episode=ep,
-                        reject_words=reject_words,
-                        required_language=required_language,
-                        is_title_fallback=is_fallback,
-                        filters=filters,
-                        indexer_name=indexer.name,
-                        indexer_url=indexer.api_url,
-                        indexer_key=indexer.api_key,
-                        early_exit_on_cutoff=True,
-                    )
-                    if grabbed:
-                        logger.info(
-                            "    🎯 Target cutoff met for S%02dE%02d on indexer '%s'.",
-                            season.season_number,
-                            ep.episode_number,
-                            indexer.name,
+                    for r in ep_results:
+                        r["_indexer_name"] = indexer.name
+                        r["_indexer_url"] = indexer.api_url
+                        r["_indexer_key"] = indexer.api_key
+
+                    if not is_anime_unified:
+                        grabbed = await _evaluate_and_download(
+                            session,
+                            ep_results,
+                            episode=ep,
+                            reject_words=reject_words,
+                            required_language=required_language,
+                            is_title_fallback=is_fallback,
+                            filters=filters,
+                            indexer_name=indexer.name,
+                            indexer_url=indexer.api_url,
+                            indexer_key=indexer.api_key,
+                            early_exit_on_cutoff=True,
                         )
-                        early_grabbed = True
-                        break
+                        if grabbed:
+                            logger.info(
+                                "    🎯 Target cutoff met for S%02dE%02d on indexer '%s'.",
+                                season.season_number,
+                                ep.episode_number,
+                                indexer.name,
+                            )
+                            early_grabbed = True
+                            break
 
                     all_ep_results.extend(ep_results)
+
+                if all_ep_results and is_anime_unified:
+                    unique_candidates = []
+                    seen_guids = set()
+                    for r in all_ep_results:
+                        guid = r.get("guid") or r.get("link", "")
+                        if guid and guid not in seen_guids:
+                            seen_guids.add(guid)
+                            unique_candidates.append(r)
+                    all_ep_results = unique_candidates
 
                 if not early_grabbed:
                     if all_ep_results:
@@ -1845,6 +1885,9 @@ async def _evaluate_and_download(
                 "parsed": parsed,
                 "score_res": score_res,
                 "score": score_res.score,
+                "indexer_name": item.get("_indexer_name", indexer_name),
+                "indexer_url": item.get("_indexer_url", indexer_url),
+                "indexer_key": item.get("_indexer_key", indexer_key),
             }
         )
 
@@ -1993,8 +2036,8 @@ async def _evaluate_and_download(
         try:
             nzb_bytes, filename = await treasure_maps.fetch_nzb_bytes(
                 best_candidate["guid"],
-                api_url=indexer_url,
-                api_key=indexer_key,
+                api_url=best_candidate.get("indexer_url"),
+                api_key=best_candidate.get("indexer_key"),
                 session=session,
             )
 

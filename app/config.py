@@ -112,7 +112,7 @@ async def reload_settings_from_db(session: AsyncSession) -> None:
 
     stmt = select(SystemSettings).where(SystemSettings.id == 1)
     result = await session.execute(stmt)
-    db_settings = result.scalar_one_or_none()
+    db_settings = result.scalars().first()
 
     if not db_settings:
         # Create default from current environment/defaults if not in DB

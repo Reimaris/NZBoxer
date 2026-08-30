@@ -29,7 +29,7 @@ async def get_today_grab_count(session: AsyncSession) -> int:
     today = get_today_str()
     stmt = select(DailyGrabCounter).where(DailyGrabCounter.date_str == today)
     result = await session.execute(stmt)
-    counter = result.scalar_one_or_none()
+    counter = result.scalars().first()
     return counter.count if counter else 0
 
 
@@ -44,7 +44,7 @@ async def increment_today_grab_count(session: AsyncSession) -> int:
     today = get_today_str()
     stmt = select(DailyGrabCounter).where(DailyGrabCounter.date_str == today)
     result = await session.execute(stmt)
-    counter = result.scalar_one_or_none()
+    counter = result.scalars().first()
 
     if counter is None:
         counter = DailyGrabCounter(date_str=today, count=1)

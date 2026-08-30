@@ -416,7 +416,7 @@ async def init_db(database_url: str) -> None:
             except Exception:
                 pass
 
-            # Season external identifiers (simkl_id, anilist_id, title)
+            # Season external identifiers (simkl_id, anilist_id)
             for col in ["simkl_id", "anilist_id"]:
                 try:
                     await session.execute(
