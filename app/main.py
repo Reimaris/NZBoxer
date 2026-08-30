@@ -1,3 +1,4 @@
+
 """
 NZBoxer Main Application Entrypoint
 ====================================
@@ -18,7 +19,7 @@ from typing import Any
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import BackgroundTasks, FastAPI, Form, HTTPException, Request, Response
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -987,7 +988,10 @@ async def ignore_item(item_id: int):
 
 @app.post("/api/items/{item_id}/change-type")
 async def change_type_endpoint(
-    item_id: int, target_type: str = Form(...), background_tasks: BackgroundTasks = None
+    request: Request,
+    item_id: int,
+    target_type: str = Form(...),
+    background_tasks: BackgroundTasks = None,
 ):
     from sqlalchemy.orm import selectinload
 
@@ -1090,7 +1094,7 @@ async def change_type_endpoint(
 
             background_tasks.add_task(_bg_enrich)
 
-    return HTMLResponse("<script>window.location.reload();</script>")
+    return RedirectResponse(url=request.headers.get("referer", "/"), status_code=303)
 
 
 @app.post("/items/{item_id}/toggle_auto_monitor")
