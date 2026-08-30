@@ -2045,6 +2045,9 @@ async def _evaluate_and_download(
             "resolution": best_candidate["parsed"].resolution,
             "source": best_candidate["parsed"].source,
             "release_group": best_candidate["parsed"].release_group,
+            "indexer_name": best_candidate.get("indexer_name"),
+            "indexer_url": best_candidate.get("indexer_url"),
+            "indexer_key": best_candidate.get("indexer_key"),
         }
         target.pending_candidate_json = pending
         new_manual_status = (

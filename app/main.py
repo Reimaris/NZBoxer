@@ -882,8 +882,15 @@ async def retry_item(item_id: int):
 @app.post("/items/{item_id}/confirm_grab")
 async def confirm_grab_item(item_id: int):
     """Manually confirm and send the pending_candidate_json to TorBox for a MANUAL_GRAB item."""
+    from app.core.automation import increment_today_grab_count
+    from app.core.fake_detector import is_nzb_content_fake
     from app.db.database import async_session_factory
-    from app.db.models import DownloadHistory, MediaItem, MediaStatus
+    from app.db.models import (
+        BlacklistedRelease,
+        DownloadHistory,
+        MediaItem,
+        MediaStatus,
+    )
     from app.services import torbox, treasure_maps
 
     async with async_session_factory() as session:
@@ -897,10 +904,39 @@ async def confirm_grab_item(item_id: int):
         candidate = item.pending_candidate_json
         guid = candidate.get("guid", "")
         title = candidate.get("title", "")
+        indexer_url = candidate.get("indexer_url")
+        indexer_key = candidate.get("indexer_key")
 
         try:
-            nzb_bytes, filename = await treasure_maps.fetch_nzb_bytes(guid)
-            torbox_result = await torbox.send_nzb_file(nzb_bytes, filename=filename)
+            nzb_bytes, filename = await treasure_maps.fetch_nzb_bytes(
+                guid,
+                api_url=indexer_url,
+                api_key=indexer_key,
+                session=session,
+            )
+            is_fake, fake_reason = is_nzb_content_fake(nzb_bytes, media_type="movie")
+            if is_fake:
+                err_msg = f"NZB flagged as fake/executable: {fake_reason}"
+                bl = BlacklistedRelease(
+                    media_item_id=item.id,
+                    nzb_guid=guid,
+                    nzb_title=title,
+                    reason=err_msg,
+                )
+                session.add(bl)
+                item.status = MediaStatus.SEARCHING
+                item.pending_candidate_json = None
+                item.last_error = err_msg
+                await session.commit()
+                return HTMLResponse(
+                    content=f'<div class="text-red-500">{err_msg}</div>',
+                    status_code=400,
+                    headers={"HX-Refresh": "true"},
+                )
+
+            torbox_result = await torbox.send_nzb_file(
+                nzb_bytes, filename=filename, session=session
+            )
         except treasure_maps.IndexerError as e:
             return HTMLResponse(
                 content=f'<div class="text-red-500">NZB Download Error: {e}</div>',
@@ -920,6 +956,7 @@ async def confirm_grab_item(item_id: int):
                 status_code=500,
             )
 
+        await increment_today_grab_count(session)
         history = DownloadHistory(
             media_item_id=item.id,
             nzb_title=title,
@@ -940,7 +977,10 @@ async def confirm_grab_item(item_id: int):
         item.fail_count = 0
         item.last_error = None
         await session.commit()
-        return HTMLResponse(content="<script>window.location.reload();</script>")
+        return HTMLResponse(
+            content="<script>window.location.reload();</script>",
+            headers={"HX-Refresh": "true"},
+        )
 
 
 @app.post("/items/{item_id}/decline_grab")
@@ -970,7 +1010,10 @@ async def decline_grab_item(item_id: int):
         item.fail_count = 0
         item.last_error = None
         await session.commit()
-        return HTMLResponse(content="<script>window.location.reload();</script>")
+        return HTMLResponse(
+            content="<script>window.location.reload();</script>",
+            headers={"HX-Refresh": "true"},
+        )
 
 
 @app.post("/items/{item_id}/seasons/{season_number}/confirm_grab")
@@ -978,8 +1021,11 @@ async def confirm_grab_season(item_id: int, season_number: int):
     """Manually confirm and send season pack pending candidate to TorBox."""
     from sqlalchemy import select
 
+    from app.core.automation import increment_today_grab_count
+    from app.core.fake_detector import is_nzb_content_fake
     from app.db.database import async_session_factory
     from app.db.models import (
+        BlacklistedRelease,
         DownloadHistory,
         Episode,
         EpisodeStatus,
@@ -1003,10 +1049,41 @@ async def confirm_grab_season(item_id: int, season_number: int):
         candidate = season.pending_candidate_json
         guid = candidate.get("guid", "")
         title = candidate.get("title", "")
+        indexer_url = candidate.get("indexer_url")
+        indexer_key = candidate.get("indexer_key")
 
         try:
-            nzb_bytes, filename = await treasure_maps.fetch_nzb_bytes(guid)
-            torbox_result = await torbox.send_nzb_file(nzb_bytes, filename=filename)
+            nzb_bytes, filename = await treasure_maps.fetch_nzb_bytes(
+                guid,
+                api_url=indexer_url,
+                api_key=indexer_key,
+                session=session,
+            )
+            is_fake, fake_reason = is_nzb_content_fake(nzb_bytes, media_type="episode")
+            if is_fake:
+                err_msg = f"NZB flagged as fake/executable: {fake_reason}"
+                bl = BlacklistedRelease(
+                    media_item_id=item_id,
+                    nzb_guid=guid,
+                    nzb_title=title,
+                    reason=err_msg,
+                )
+                session.add(bl)
+                season.status = (
+                    SeasonStatus.SEARCHING if season.monitored else SeasonStatus.PENDING
+                )
+                season.pending_candidate_json = None
+                season.last_error = err_msg
+                await session.commit()
+                return HTMLResponse(
+                    content=f'<div class="text-red-500">{err_msg}</div>',
+                    status_code=400,
+                    headers={"HX-Refresh": "true"},
+                )
+
+            torbox_result = await torbox.send_nzb_file(
+                nzb_bytes, filename=filename, session=session
+            )
         except treasure_maps.IndexerError as e:
             return HTMLResponse(
                 content=f'<div class="text-red-500">NZB Download Error: {e}</div>',
@@ -1026,6 +1103,7 @@ async def confirm_grab_season(item_id: int, season_number: int):
                 status_code=500,
             )
 
+        await increment_today_grab_count(session)
         history = DownloadHistory(
             media_item_id=item_id,
             season_id=season.id,
@@ -1058,7 +1136,10 @@ async def confirm_grab_season(item_id: int, season_number: int):
                 ep.last_error = None
 
         await session.commit()
-        return HTMLResponse(content="<script>window.location.reload();</script>")
+        return HTMLResponse(
+            content="<script>window.location.reload();</script>",
+            headers={"HX-Refresh": "true"},
+        )
 
 
 @app.post("/items/{item_id}/seasons/{season_number}/decline_grab")
@@ -1115,7 +1196,10 @@ async def decline_grab_season(item_id: int, season_number: int):
                 ep.last_error = None
 
         await session.commit()
-        return HTMLResponse(content="<script>window.location.reload();</script>")
+        return HTMLResponse(
+            content="<script>window.location.reload();</script>",
+            headers={"HX-Refresh": "true"},
+        )
 
 
 @app.post("/episodes/{episode_id}/confirm_grab")
@@ -1124,8 +1208,15 @@ async def confirm_grab_episode(episode_id: int):
     from sqlalchemy import select
     from sqlalchemy.orm import selectinload
 
+    from app.core.automation import increment_today_grab_count
+    from app.core.fake_detector import is_nzb_content_fake
     from app.db.database import async_session_factory
-    from app.db.models import DownloadHistory, Episode, EpisodeStatus
+    from app.db.models import (
+        BlacklistedRelease,
+        DownloadHistory,
+        Episode,
+        EpisodeStatus,
+    )
     from app.services import torbox, treasure_maps
 
     async with async_session_factory() as session:
@@ -1144,10 +1235,44 @@ async def confirm_grab_episode(episode_id: int):
         candidate = episode.pending_candidate_json
         guid = candidate.get("guid", "")
         title = candidate.get("title", "")
+        indexer_url = candidate.get("indexer_url")
+        indexer_key = candidate.get("indexer_key")
 
         try:
-            nzb_bytes, filename = await treasure_maps.fetch_nzb_bytes(guid)
-            torbox_result = await torbox.send_nzb_file(nzb_bytes, filename=filename)
+            nzb_bytes, filename = await treasure_maps.fetch_nzb_bytes(
+                guid,
+                api_url=indexer_url,
+                api_key=indexer_key,
+                session=session,
+            )
+            is_fake, fake_reason = is_nzb_content_fake(nzb_bytes, media_type="episode")
+            if is_fake:
+                media_item_id = episode.season.media_item_id if episode.season else None
+                err_msg = f"NZB flagged as fake/executable: {fake_reason}"
+                bl = BlacklistedRelease(
+                    media_item_id=media_item_id,
+                    nzb_guid=guid,
+                    nzb_title=title,
+                    reason=err_msg,
+                )
+                session.add(bl)
+                episode.status = (
+                    EpisodeStatus.SEARCHING
+                    if episode.monitored
+                    else EpisodeStatus.PENDING
+                )
+                episode.pending_candidate_json = None
+                episode.last_error = err_msg
+                await session.commit()
+                return HTMLResponse(
+                    content=f'<div class="text-red-500">{err_msg}</div>',
+                    status_code=400,
+                    headers={"HX-Refresh": "true"},
+                )
+
+            torbox_result = await torbox.send_nzb_file(
+                nzb_bytes, filename=filename, session=session
+            )
         except treasure_maps.IndexerError as e:
             return HTMLResponse(
                 content=f'<div class="text-red-500">NZB Download Error: {e}</div>',
@@ -1167,6 +1292,7 @@ async def confirm_grab_episode(episode_id: int):
                 status_code=500,
             )
 
+        await increment_today_grab_count(session)
         media_item_id = episode.season.media_item_id if episode.season else None
         history = DownloadHistory(
             media_item_id=media_item_id,
@@ -1190,7 +1316,10 @@ async def confirm_grab_episode(episode_id: int):
         episode.fail_count = 0
         episode.last_error = None
         await session.commit()
-        return HTMLResponse(content="<script>window.location.reload();</script>")
+        return HTMLResponse(
+            content="<script>window.location.reload();</script>",
+            headers={"HX-Refresh": "true"},
+        )
 
 
 @app.post("/episodes/{episode_id}/decline_grab")
@@ -1231,7 +1360,10 @@ async def decline_grab_episode(episode_id: int):
         episode.fail_count = 0
         episode.last_error = None
         await session.commit()
-        return HTMLResponse(content="<script>window.location.reload();</script>")
+        return HTMLResponse(
+            content="<script>window.location.reload();</script>",
+            headers={"HX-Refresh": "true"},
+        )
 
 
 @app.post("/api/torbox/add", response_class=HTMLResponse)

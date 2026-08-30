@@ -383,11 +383,11 @@
                     <td class="px-6 py-4 text-right whitespace-nowrap w-1">
                         <div class="flex justify-end gap-2">
                             {% if item.status.value == 'manual_grab' and item.pending_candidate_json %}
-                                <button hx-post="/items/{{ item.id }}/confirm_grab" hx-swap="none" title="Send candidate to TorBox: {{ item.pending_candidate_json.title }}" class="bg-yellow-500 hover:bg-yellow-400 text-black font-bold transition-colors p-1.5 rounded flex items-center gap-1 text-xs px-2">
+                                <button hx-post="/items/{{ item.id }}/confirm_grab" title="Send candidate to TorBox: {{ item.pending_candidate_json.title }}" class="bg-yellow-500 hover:bg-yellow-400 text-black font-bold transition-colors p-1.5 rounded flex items-center gap-1 text-xs px-2">
                                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg>
                                     Send
                                 </button>
-                                <button hx-post="/items/{{ item.id }}/decline_grab" hx-swap="none" title="Decline candidate and blacklist: {{ item.pending_candidate_json.title }}" class="bg-red-800 hover:bg-red-700 text-white font-bold transition-colors p-1.5 rounded flex items-center gap-1 text-xs px-2">
+                                <button hx-post="/items/{{ item.id }}/decline_grab" title="Decline candidate and blacklist: {{ item.pending_candidate_json.title }}" class="bg-red-800 hover:bg-red-700 text-white font-bold transition-colors p-1.5 rounded flex items-center gap-1 text-xs px-2">
                                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
                                     Decline
                                 </button>
