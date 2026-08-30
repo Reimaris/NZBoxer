@@ -896,6 +896,7 @@ async def confirm_grab_item(item_id: int):
     async with async_session_factory() as session:
         item = await session.get(MediaItem, item_id)
         if not item or not item.pending_candidate_json:
+            logger.warning("confirm_grab_item called on item %s with no pending candidate", item_id)
             return HTMLResponse(
                 content='<div class="text-red-500">No pending candidate found.</div>',
                 status_code=400,
@@ -907,6 +908,8 @@ async def confirm_grab_item(item_id: int):
         indexer_url = candidate.get("indexer_url")
         indexer_key = candidate.get("indexer_key")
 
+        logger.info("📥 [Manual Grab] Confirming movie grab for '%s' (%s) [guid=%s]", item.title, title, guid)
+
         try:
             nzb_bytes, filename = await treasure_maps.fetch_nzb_bytes(
                 guid,
@@ -917,6 +920,7 @@ async def confirm_grab_item(item_id: int):
             is_fake, fake_reason = is_nzb_content_fake(nzb_bytes, media_type="movie")
             if is_fake:
                 err_msg = f"NZB flagged as fake/executable: {fake_reason}"
+                logger.warning("🚫 [Manual Grab] Rejected movie '%s': %s", title, err_msg)
                 bl = BlacklistedRelease(
                     media_item_id=item.id,
                     nzb_guid=guid,
@@ -938,8 +942,15 @@ async def confirm_grab_item(item_id: int):
                 nzb_bytes, filename=filename, session=session
             )
         except treasure_maps.IndexerError as e:
+            logger.error("❌ [Manual Grab] Indexer error fetching NZB for '%s': %s", title, e)
             return HTMLResponse(
                 content=f'<div class="text-red-500">NZB Download Error: {e}</div>',
+                status_code=500,
+            )
+        except Exception as e:
+            logger.error("❌ [Manual Grab] Unexpected error grabbing movie '%s': %s", title, e, exc_info=True)
+            return HTMLResponse(
+                content=f'<div class="text-red-500">Error: {e}</div>',
                 status_code=500,
             )
 
@@ -951,11 +962,13 @@ async def confirm_grab_item(item_id: int):
                 if isinstance(torbox_result, dict) and torbox_result.get("error")
                 else "Error sending to TorBox."
             )
+            logger.error("❌ [Manual Grab] TorBox dispatch failed for '%s': %s", title, err_msg)
             return HTMLResponse(
                 content=f'<div class="text-red-500">{err_msg}</div>',
                 status_code=500,
             )
 
+        logger.info("✅ [Manual Grab] Dispatched '%s' to TorBox successfully (id=%s, hash=%s)", title, torbox_result.get("id"), torbox_result.get("hash"))
         await increment_today_grab_count(session)
         history = DownloadHistory(
             media_item_id=item.id,
@@ -998,10 +1011,13 @@ async def decline_grab_item(item_id: int):
             )
 
         candidate = item.pending_candidate_json
+        title = candidate.get("title", "")
+        guid = candidate.get("guid")
+        logger.info("🚫 [Manual Grab] User declined candidate '%s' for item %s", title, item_id)
         bl = BlacklistedRelease(
             media_item_id=item.id,
-            nzb_title=candidate.get("title", ""),
-            nzb_guid=candidate.get("guid"),
+            nzb_title=title,
+            nzb_guid=guid,
             reason="Manually declined by user",
         )
         session.add(bl)
@@ -1041,6 +1057,7 @@ async def confirm_grab_season(item_id: int, season_number: int):
         )
         season = (await session.execute(stmt)).scalars().first()
         if not season or not season.pending_candidate_json:
+            logger.warning("confirm_grab_season called on item %s S%s with no pending candidate", item_id, season_number)
             return HTMLResponse(
                 content='<div class="text-red-500">No pending candidate found.</div>',
                 status_code=400,
@@ -1052,6 +1069,8 @@ async def confirm_grab_season(item_id: int, season_number: int):
         indexer_url = candidate.get("indexer_url")
         indexer_key = candidate.get("indexer_key")
 
+        logger.info("📥 [Manual Grab] Confirming season pack grab for item %s S%s: '%s' [guid=%s]", item_id, season_number, title, guid)
+
         try:
             nzb_bytes, filename = await treasure_maps.fetch_nzb_bytes(
                 guid,
@@ -1062,6 +1081,7 @@ async def confirm_grab_season(item_id: int, season_number: int):
             is_fake, fake_reason = is_nzb_content_fake(nzb_bytes, media_type="episode")
             if is_fake:
                 err_msg = f"NZB flagged as fake/executable: {fake_reason}"
+                logger.warning("🚫 [Manual Grab] Rejected season pack '%s': %s", title, err_msg)
                 bl = BlacklistedRelease(
                     media_item_id=item_id,
                     nzb_guid=guid,
@@ -1085,8 +1105,15 @@ async def confirm_grab_season(item_id: int, season_number: int):
                 nzb_bytes, filename=filename, session=session
             )
         except treasure_maps.IndexerError as e:
+            logger.error("❌ [Manual Grab] Indexer error fetching NZB for season '%s': %s", title, e)
             return HTMLResponse(
                 content=f'<div class="text-red-500">NZB Download Error: {e}</div>',
+                status_code=500,
+            )
+        except Exception as e:
+            logger.error("❌ [Manual Grab] Unexpected error grabbing season '%s': %s", title, e, exc_info=True)
+            return HTMLResponse(
+                content=f'<div class="text-red-500">Error: {e}</div>',
                 status_code=500,
             )
 
@@ -1098,11 +1125,13 @@ async def confirm_grab_season(item_id: int, season_number: int):
                 if isinstance(torbox_result, dict) and torbox_result.get("error")
                 else "Error sending to TorBox."
             )
+            logger.error("❌ [Manual Grab] TorBox dispatch failed for season '%s': %s", title, err_msg)
             return HTMLResponse(
                 content=f'<div class="text-red-500">{err_msg}</div>',
                 status_code=500,
             )
 
+        logger.info("✅ [Manual Grab] Dispatched season '%s' to TorBox successfully (id=%s, hash=%s)", title, torbox_result.get("id"), torbox_result.get("hash"))
         await increment_today_grab_count(session)
         history = DownloadHistory(
             media_item_id=item_id,
@@ -1169,10 +1198,13 @@ async def decline_grab_season(item_id: int, season_number: int):
             )
 
         candidate = season.pending_candidate_json
+        title = candidate.get("title", "")
+        guid = candidate.get("guid")
+        logger.info("🚫 [Manual Grab] User declined season candidate '%s' for item %s S%s", title, item_id, season_number)
         bl = BlacklistedRelease(
             media_item_id=item_id,
-            nzb_title=candidate.get("title", ""),
-            nzb_guid=candidate.get("guid"),
+            nzb_title=title,
+            nzb_guid=guid,
             reason="Manually declined by user",
         )
         session.add(bl)
@@ -1227,6 +1259,7 @@ async def confirm_grab_episode(episode_id: int):
         )
         episode = (await session.execute(stmt)).scalars().first()
         if not episode or not episode.pending_candidate_json:
+            logger.warning("confirm_grab_episode called on episode %s with no pending candidate", episode_id)
             return HTMLResponse(
                 content='<div class="text-red-500">No pending candidate found.</div>',
                 status_code=400,
@@ -1237,6 +1270,8 @@ async def confirm_grab_episode(episode_id: int):
         title = candidate.get("title", "")
         indexer_url = candidate.get("indexer_url")
         indexer_key = candidate.get("indexer_key")
+
+        logger.info("📥 [Manual Grab] Confirming episode grab for ep %s: '%s' [guid=%s]", episode_id, title, guid)
 
         try:
             nzb_bytes, filename = await treasure_maps.fetch_nzb_bytes(
@@ -1249,6 +1284,7 @@ async def confirm_grab_episode(episode_id: int):
             if is_fake:
                 media_item_id = episode.season.media_item_id if episode.season else None
                 err_msg = f"NZB flagged as fake/executable: {fake_reason}"
+                logger.warning("🚫 [Manual Grab] Rejected episode '%s': %s", title, err_msg)
                 bl = BlacklistedRelease(
                     media_item_id=media_item_id,
                     nzb_guid=guid,
@@ -1274,8 +1310,15 @@ async def confirm_grab_episode(episode_id: int):
                 nzb_bytes, filename=filename, session=session
             )
         except treasure_maps.IndexerError as e:
+            logger.error("❌ [Manual Grab] Indexer error fetching NZB for ep '%s': %s", title, e)
             return HTMLResponse(
                 content=f'<div class="text-red-500">NZB Download Error: {e}</div>',
+                status_code=500,
+            )
+        except Exception as e:
+            logger.error("❌ [Manual Grab] Unexpected error grabbing ep '%s': %s", title, e, exc_info=True)
+            return HTMLResponse(
+                content=f'<div class="text-red-500">Error: {e}</div>',
                 status_code=500,
             )
 
@@ -1287,11 +1330,13 @@ async def confirm_grab_episode(episode_id: int):
                 if isinstance(torbox_result, dict) and torbox_result.get("error")
                 else "Error sending to TorBox."
             )
+            logger.error("❌ [Manual Grab] TorBox dispatch failed for ep '%s': %s", title, err_msg)
             return HTMLResponse(
                 content=f'<div class="text-red-500">{err_msg}</div>',
                 status_code=500,
             )
 
+        logger.info("✅ [Manual Grab] Dispatched ep '%s' to TorBox successfully (id=%s, hash=%s)", title, torbox_result.get("id"), torbox_result.get("hash"))
         await increment_today_grab_count(session)
         media_item_id = episode.season.media_item_id if episode.season else None
         history = DownloadHistory(
@@ -1345,11 +1390,14 @@ async def decline_grab_episode(episode_id: int):
             )
 
         candidate = episode.pending_candidate_json
+        title = candidate.get("title", "")
+        guid = candidate.get("guid")
+        logger.info("🚫 [Manual Grab] User declined candidate '%s' for episode %s", title, episode_id)
         media_item_id = episode.season.media_item_id if episode.season else None
         bl = BlacklistedRelease(
             media_item_id=media_item_id,
-            nzb_title=candidate.get("title", ""),
-            nzb_guid=candidate.get("guid"),
+            nzb_title=title,
+            nzb_guid=guid,
             reason="Manually declined by user",
         )
         session.add(bl)

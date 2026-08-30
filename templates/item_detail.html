@@ -42,6 +42,22 @@
                     {% if item.failure_logs|length > 0 %}
                     <span class="bg-red-900 text-white text-[10px] font-bold px-2 py-0.5 rounded ml-2 border border-red-700 cursor-help" title="{% for log in item.failure_logs[-5:] %}{{ log.created_at.strftime('%Y-%m-%d %H:%M') }}: {{ log.message }}&#10;{% endfor %}">❌ {{ item.failure_logs|length }} Fails</span>
                     {% endif %}
+                    {% if item.status.value == 'manual_grab' and item.pending_candidate_json %}
+                    <div class="flex items-center gap-1.5 ml-2">
+                        <button hx-post="/items/{{ item.id }}/confirm_grab"
+                                class="bg-yellow-500 hover:bg-yellow-400 text-black px-2.5 py-1 rounded text-xs font-bold transition-colors shadow-sm flex items-center gap-1"
+                                title="Send candidate to TorBox: {{ item.pending_candidate_json.title }}">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg>
+                            Send
+                        </button>
+                        <button hx-post="/items/{{ item.id }}/decline_grab"
+                                class="bg-red-800 hover:bg-red-700 text-white px-2.5 py-1 rounded text-xs font-bold transition-colors shadow-sm flex items-center gap-1"
+                                title="Decline candidate and blacklist: {{ item.pending_candidate_json.title }}">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                            Decline
+                        </button>
+                    </div>
+                    {% endif %}
                 </div>
                     {% if item.media_type.value == 'movie' %}
                         {% if item.status.value == 'downloaded' %}

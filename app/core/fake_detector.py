@@ -41,12 +41,25 @@ DOCUMENT_EXTENSIONS = {".epub", ".pdf", ".cbz", ".cbr", ".azw3", ".mobi"}
 VIDEO_ARCHIVE_EXTENSIONS = {
     ".mkv",
     ".mp4",
+    ".avi",
     ".ts",
+    ".m4v",
+    ".mov",
+    ".wmv",
+    ".flv",
+    ".webm",
+    ".mpg",
+    ".mpeg",
+    ".vob",
+    ".iso",
     ".rar",
     ".r00",
     ".r01",
     ".part01.rar",
     ".part1.rar",
+    ".7z",
+    ".zip",
+    ".par2",
 }
 
 
@@ -137,6 +150,19 @@ def is_nzb_content_fake(
                 if vid_ext in subject_lower:
                     has_valid_payload = True
                     break
+            if not has_valid_payload:
+                # Check for multipart rar / par2 / numeric extensions like .001, .r02, .vol01, or yEnc
+                if re.search(
+                    r"\.(par2|r\d{2}|\d{3}|part\d+|vol\d+)|yenc", subject_lower
+                ):
+                    has_valid_payload = True
+                    break
+
+    if not has_valid_payload:
+        # If segments exist and no bad extension or phishing file was detected, allow obfuscated usenet files
+        has_segments = bool(re.search(r"<segment", content, re.IGNORECASE))
+        if has_segments and media_type not in ["manga", "book", "magazine"]:
+            has_valid_payload = True
 
     if not has_valid_payload:
         expected = (
