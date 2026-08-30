@@ -1,4 +1,3 @@
-
 """
 NZBoxer Main Application Entrypoint
 ====================================
@@ -253,10 +252,14 @@ async def dashboard(request: Request):
     from sqlalchemy import select
     from sqlalchemy.orm import selectinload
 
+    from app.core.automation import consolidate_standalone_anime_sequels
     from app.db.database import async_session_factory
     from app.db.models import MediaItem, MediaType
 
     async with async_session_factory() as session:
+        # Auto-consolidate any legacy standalone sequels before rendering
+        await consolidate_standalone_anime_sequels(session)
+
         # Fetch items
         stmt = (
             select(MediaItem)
@@ -274,9 +277,18 @@ async def dashboard(request: Request):
         items = [i for i in all_items if not i.is_fully_completed]
 
         # Detailed stats calculations
-        movie_items = [i for i in items if i.media_type == MediaType.MOVIE and not getattr(i, 'is_anime_movie', False)]
+        movie_items = [
+            i
+            for i in items
+            if i.media_type == MediaType.MOVIE
+            and not getattr(i, "is_anime_movie", False)
+        ]
         series_items = [i for i in items if i.media_type == MediaType.SHOW]
-        anime_items = [i for i in items if i.media_type == MediaType.ANIME or getattr(i, 'is_anime_movie', False)]
+        anime_items = [
+            i
+            for i in items
+            if i.media_type == MediaType.ANIME or getattr(i, "is_anime_movie", False)
+        ]
 
         movie_stats = {
             "total": len(movie_items),

@@ -607,6 +607,9 @@ async def run_automation_cycle(force: bool = False) -> None:
                 if season.media_item and season.media_item.tmdb_id:
                     await _sync_season_episodes(session, season)
 
+            # 1.6 Consolidate any standalone anime sequel MediaItems into their parent seasons
+            await consolidate_standalone_anime_sequels(session)
+
             # Update pending/future items that have reached their release date
             stmt_reached = select(MediaItem).where(
                 MediaItem.status.in_([MediaStatus.PENDING, MediaStatus.FUTURE]),
@@ -3255,3 +3258,65 @@ async def enrich_anime_metadata(session: AsyncSession, item: MediaItem) -> None:
 
         for idx, node in enumerate(hierarchy_list):
             await _create_anilist_season(idx + 1, node)
+
+        await consolidate_standalone_anime_sequels(session)
+
+
+async def consolidate_standalone_anime_sequels(session: AsyncSession) -> None:
+    """Detects standalone MediaItems that are tracked as child Seasons on parent series, and marks them IGNORED."""
+    from sqlalchemy import func, or_, select
+    from sqlalchemy.orm import selectinload
+
+    from app.db.models import MediaItem, MediaStatus, MediaType
+
+    # Find all anime parent items that have multiple seasons
+    parent_stmt = (
+        select(MediaItem)
+        .where(
+            MediaItem.media_type == MediaType.ANIME,
+            MediaItem.status != MediaStatus.IGNORED,
+        )
+        .options(selectinload(MediaItem.seasons))
+    )
+    parents = (await session.execute(parent_stmt)).scalars().unique().all()
+
+    for parent in parents:
+        for season in parent.seasons:
+            if season.season_number <= 1:
+                continue
+
+            conditions = []
+            if season.anilist_id:
+                conditions.append(MediaItem.anilist_id == season.anilist_id)
+            if season.simkl_id:
+                conditions.append(MediaItem.simkl_id == season.simkl_id)
+            if season.title:
+                s_title = season.title.strip().lower()
+                conditions.append(func.lower(MediaItem.title) == s_title)
+                conditions.append(func.lower(MediaItem.alt_title) == s_title)
+
+            if not conditions:
+                continue
+
+            standalone_stmt = select(MediaItem).where(
+                MediaItem.id != parent.id,
+                MediaItem.status != MediaStatus.IGNORED,
+                or_(*conditions),
+            )
+            standalone_items = (await session.execute(standalone_stmt)).scalars().all()
+            for s_item in standalone_items:
+                logger.info(
+                    "    ⏩ Auto-consolidating sequel MediaItem '%s' (ID %d) -> Soft-ignored (tracked as Season %d of '%s' ID %d).",
+                    s_item.title,
+                    s_item.id,
+                    season.season_number,
+                    parent.title,
+                    parent.id,
+                )
+                s_item.status = MediaStatus.IGNORED
+                if not season.simkl_id and s_item.simkl_id:
+                    season.simkl_id = s_item.simkl_id
+                if not season.anilist_id and s_item.anilist_id:
+                    season.anilist_id = s_item.anilist_id
+                if not season.title and s_item.title:
+                    season.title = s_item.title
