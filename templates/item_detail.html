@@ -69,8 +69,7 @@
                 
                 <div class="grid grid-cols-2 gap-4 pt-4 border-t border-slate-700">
                     <div>
-                        <div class="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Type</div>
-                        <div class="text-slate-300 text-sm capitalize">{{ item.media_type.value }}</div>
+                        {% include "components/type_dropdown.html" %}
                     </div>
                     <div>
                         <div class="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Year</div>
@@ -107,7 +106,10 @@
         <!-- Details Column -->
         <div class="p-6 md:p-8 flex-1">
             <div class="flex items-center gap-3 mb-2">
-                <h1 class="text-3xl font-bold text-slate-100">{{ item.title }}</h1>
+                <h1 class="text-3xl font-bold text-slate-100 flex items-center gap-3">
+                    {{ item.title }}
+                    {% include "components/type_badge.html" %}
+                </h1>
                 {% if item.media_type.value == 'movie' or item.media_type.value == 'anime' and not item.seasons %}
                 <button hx-post="/items/{{ item.id }}/search"
                         class="ml-2 text-slate-400 hover:text-indigo-400 transition-colors focus:outline-none"

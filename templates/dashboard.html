@@ -279,7 +279,10 @@
                     
                     <td class="px-6 py-4">
                         <div class="block">
-                            <a href="/items/{{ item.id }}" class="font-bold text-white hover:text-indigo-400 transition-colors">{{ item.title }}</a>
+                            <div class="flex items-center gap-2">
+                                <a href="/items/{{ item.id }}" class="font-bold text-white hover:text-indigo-400 transition-colors">{{ item.title }}</a>
+                                {% include "components/type_badge.html" %}
+                            </div>
                             {% if item.alt_title %}
                             <div class="text-xs text-[#a1a1aa] mt-0.5">{{ item.alt_title }}</div>
                             {% endif %}

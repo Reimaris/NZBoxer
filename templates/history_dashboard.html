@@ -66,7 +66,12 @@
                 {% for item in movie_items %}
                 <tr class="hover:bg-[#2a2a32] transition-colors" 
                     x-show="tab === 'movies' && ('{{ item.title|replace('\'', '\\\'') }}'.toLowerCase().includes(search.toLowerCase()))">
-                    <td class="px-6 py-4"><a href="/items/{{ item.id }}" class="font-bold text-white hover:text-indigo-400 transition-colors">{{ item.title }}</a></td>
+                    <td class="px-6 py-4">
+                        <div class="flex items-center gap-2">
+                            <a href="/items/{{ item.id }}" class="font-bold text-white hover:text-indigo-400 transition-colors">{{ item.title }}</a>
+                            {% include "components/type_badge.html" %}
+                        </div>
+                    </td>
                     <td class="px-6 py-4">
                         <span class="bg-slate-700 text-slate-300 text-[11px] font-bold px-2 py-1 rounded uppercase tracking-wider">{{ item.status.value }}</span>
                     </td>
@@ -83,7 +88,12 @@
                 {% for item in series_items %}
                 <tr class="hover:bg-[#2a2a32] transition-colors" 
                     x-show="tab === 'series' && ('{{ item.title|replace('\'', '\\\'') }}'.toLowerCase().includes(search.toLowerCase()))">
-                    <td class="px-6 py-4"><a href="/items/{{ item.id }}" class="font-bold text-white hover:text-indigo-400 transition-colors">{{ item.title }}</a></td>
+                    <td class="px-6 py-4">
+                        <div class="flex items-center gap-2">
+                            <a href="/items/{{ item.id }}" class="font-bold text-white hover:text-indigo-400 transition-colors">{{ item.title }}</a>
+                            {% include "components/type_badge.html" %}
+                        </div>
+                    </td>
                     <td class="px-6 py-4">
                         <span class="bg-slate-700 text-slate-300 text-[11px] font-bold px-2 py-1 rounded uppercase tracking-wider">{{ item.downloaded_seasons }}/{{ item.total_seasons }} Seasons</span>
                     </td>
@@ -100,7 +110,12 @@
                 {% for item in anime_items %}
                 <tr class="hover:bg-[#2a2a32] transition-colors" 
                     x-show="tab === 'anime' && ('{{ item.title|replace('\'', '\\\'') }}'.toLowerCase().includes(search.toLowerCase()))">
-                    <td class="px-6 py-4"><a href="/items/{{ item.id }}" class="font-bold text-white hover:text-indigo-400 transition-colors">{{ item.title }}</a></td>
+                    <td class="px-6 py-4">
+                        <div class="flex items-center gap-2">
+                            <a href="/items/{{ item.id }}" class="font-bold text-white hover:text-indigo-400 transition-colors">{{ item.title }}</a>
+                            {% include "components/type_badge.html" %}
+                        </div>
+                    </td>
                     <td class="px-6 py-4">
                         <span class="bg-slate-700 text-slate-300 text-[11px] font-bold px-2 py-1 rounded uppercase tracking-wider">{{ item.downloaded_seasons }}/{{ item.total_seasons }} Seasons</span>
                     </td>

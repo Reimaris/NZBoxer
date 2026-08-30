@@ -1,0 +1,9 @@
+{% if item.media_type.value == 'movie' and item.is_anime_movie %}
+<span class="bg-pink-900/50 text-pink-300 border border-pink-700/50 px-2 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wider shadow-sm">Anime Movie</span>
+{% elif item.media_type.value == 'movie' %}
+<span class="bg-blue-900/50 text-blue-300 border border-blue-700/50 px-2 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wider shadow-sm">Movie</span>
+{% elif item.media_type.value == 'anime' %}
+<span class="bg-rose-900/50 text-rose-300 border border-rose-700/50 px-2 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wider shadow-sm">Anime</span>
+{% elif item.media_type.value == 'show' %}
+<span class="bg-purple-900/50 text-purple-300 border border-purple-700/50 px-2 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wider shadow-sm">Series</span>
+{% endif %}
