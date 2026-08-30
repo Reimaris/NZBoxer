@@ -197,7 +197,7 @@
 
     <!-- Watchlist Table -->
     <div class="overflow-x-auto min-h-[400px]">
-        <table class="w-full text-left border-collapse whitespace-nowrap">
+        <table class="w-full text-left border-collapse">
             <thead class="bg-[#1e1e24] text-[#a1a1aa] font-semibold text-xs uppercase tracking-wider border-b border-[#3f3f46]">
                 <tr>
                     <th class="px-6 py-3.5 cursor-pointer select-none group hover:text-white transition-colors" @click="sortBy('title')" title="Sort by Title">
@@ -207,6 +207,16 @@
                                 <span x-show="sortCol === 'title' && sortDir === 'desc'">▼</span>
                                 <span x-show="sortCol === 'title' && sortDir === 'asc'">▲</span>
                                 <span x-show="sortCol !== 'title'" class="opacity-0 group-hover:opacity-100">▲</span>
+                            </span>
+                        </div>
+                    </th>
+                    <th class="px-6 py-3.5 cursor-pointer select-none group hover:text-white transition-colors" @click="sortBy('type')" title="Sort by Type">
+                        <div class="flex items-center gap-1.5">
+                            <span>Type</span>
+                            <span class="text-[10px] transition-colors" :class="sortCol === 'type' ? 'text-[#d40060]' : 'text-[#52525b] group-hover:text-[#a1a1aa]'">
+                                <span x-show="sortCol === 'type' && sortDir === 'desc'">▼</span>
+                                <span x-show="sortCol === 'type' && sortDir === 'asc'">▲</span>
+                                <span x-show="sortCol !== 'type'" class="opacity-0 group-hover:opacity-100">▲</span>
                             </span>
                         </div>
                     </th>
@@ -260,15 +270,16 @@
                             </span>
                         </div>
                     </th>
-                    <th class="px-6 py-3.5 text-right">Actions</th>
+                    <th class="px-6 py-3.5 text-right whitespace-nowrap w-1">Actions</th>
                 </tr>
             </thead>
             <tbody id="video-table-body" class="divide-y divide-[#3f3f46] text-sm">
                 {% for item in items %}
-                {% set display_category = item.media_type.value %}
+                {% set display_category = 'anime' if (item.media_type.value == 'movie' and item.is_anime_movie) else item.media_type.value %}
                 <tr class="hover:bg-[#2a2a32] transition-colors group" 
                     data-sortable="true"
                     data-title="{{ (item.title or '') | lower }}"
+                    data-type="{% if item.media_type.value == 'movie' and item.is_anime_movie %}anime movie{% elif item.media_type.value == 'movie' %}movie{% elif item.media_type.value == 'anime' %}anime{% elif item.media_type.value == 'show' %}series{% endif %}"
                     data-profile="simkl"
                     data-year="{{ item.year or '' }}"
                     data-release-date="{{ item.release_date.strftime('%Y-%m-%d') if item.release_date else '' }}"
@@ -277,11 +288,10 @@
                     x-show="tab === '{{ display_category }}' && ('{{ item.title|replace('\'', '\\\'') }}'.toLowerCase().includes(search.toLowerCase()) || ('{{ item.alt_title|replace('\'', '\\\'') if item.alt_title else '' }}'.toLowerCase().includes(search.toLowerCase())) || '{{ item.tvdb_id or '' }}'.includes(search) || '{{ item.tmdb_id or '' }}'.includes(search) || '{{ item.imdb_id or '' }}'.includes(search) || '{{ item.simkl_id or '' }}'.includes(search))" 
                     style="display: none;">
                     
-                    <td class="px-6 py-4">
+                    <td class="px-6 py-4 max-w-[240px] md:max-w-xs break-words">
                         <div class="block">
                             <div class="flex items-center gap-2">
                                 <a href="/items/{{ item.id }}" class="font-bold text-white hover:text-indigo-400 transition-colors">{{ item.title }}</a>
-                                {% include "components/type_badge.html" %}
                             </div>
                             {% if item.alt_title %}
                             <div class="text-xs text-[#a1a1aa] mt-0.5">{{ item.alt_title }}</div>
@@ -299,13 +309,16 @@
                             </div>
                         </div>
                     </td>
-                    <td class="px-6 py-4">
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        {% include "components/type_badge.html" %}
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap">
                         <span class="bg-[#3f3f46] text-gray-200 text-xs font-bold px-2 py-1 rounded">SIMKL</span>
                     </td>
-                    <td class="px-6 py-4 text-gray-300">
+                    <td class="px-6 py-4 text-gray-300 whitespace-nowrap">
                         {{ item.year or '-' }}
                     </td>
-                    <td class="px-6 py-4 text-gray-300">
+                    <td class="px-6 py-4 text-gray-300 whitespace-nowrap">
                         {% if item.release_date %}
                             <div>{{ item.release_date.strftime('%Y-%m-%d') }}</div>
                             <div class="text-[#a1a1aa] text-xs mt-0.5">{{ item.release_date | relative_date }}</div>
@@ -313,7 +326,7 @@
                             -
                         {% endif %}
                     </td>
-                    <td class="px-6 py-4">
+                    <td class="px-6 py-4 whitespace-nowrap">
                         <div class="flex flex-col gap-1 items-start">
                             {% if item.status.value == 'downloaded' or item.status.value == 'completed' %}
                                 <span class="bg-emerald-600 text-white text-[11px] font-bold px-2 py-1 rounded uppercase tracking-wider shadow-sm">DONE</span>
@@ -356,10 +369,10 @@
                             {% endif %}
                         </div>
                     </td>
-                    <td class="px-6 py-4 text-gray-400 text-xs font-mono">
+                    <td class="px-6 py-4 text-gray-400 text-xs font-mono whitespace-nowrap">
                         {{ item.updated_at.strftime('%Y-%m-%d %H:%M:%S') }}
                     </td>
-                    <td class="px-6 py-4 text-right">
+                    <td class="px-6 py-4 text-right whitespace-nowrap w-1">
                         <div class="flex justify-end gap-2">
                             {% if item.status.value == 'manual_grab' and item.pending_candidate_json %}
                                 <button hx-post="/items/{{ item.id }}/confirm_grab" hx-swap="none" title="Send candidate to TorBox (Manual grab)" class="bg-yellow-500 hover:bg-yellow-400 text-black font-bold transition-colors p-1.5 rounded flex items-center gap-1 text-xs px-2">

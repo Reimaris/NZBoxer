@@ -157,27 +157,43 @@ async def _sync_items(
         # Check if incoming item is actually a consolidated season
         from sqlalchemy import and_, or_
 
-        season_stmt = select(Season).where(
-            or_(
-                Season.simkl_id == simkl_id,
+        season_conditions = [Season.simkl_id == simkl_id]
+        if anilist_id:
+            season_conditions.append(
                 and_(Season.anilist_id.isnot(None), Season.anilist_id == anilist_id)
-                if anilist_id
-                else False,
             )
-        )
+
+        season_stmt = select(Season).where(or_(*season_conditions))
         existing_season = (await session.execute(season_stmt)).scalars().first()
-        if existing_season and not item:
-            logger.info(
-                "    ⏩ Item '%s' is already tracked as Season %d of a consolidated parent series. Skipping standalone creation.",
-                movie_data.get("title"),
-                existing_season.season_number,
-            )
+        if existing_season:
+            if item and item.id != existing_season.media_item_id:
+                logger.info(
+                    "    ⏩ Soft-ignoring standalone sequel MediaItem '%s' (ID %d) as it is consolidated under parent series ID %d Season %d.",
+                    item.title,
+                    item.id,
+                    existing_season.media_item_id,
+                    existing_season.season_number,
+                )
+                item.status = MediaStatus.IGNORED
+            elif not item:
+                logger.info(
+                    "    ⏩ Item '%s' is already tracked as Season %d of a consolidated parent series. Skipping standalone creation.",
+                    movie_data.get("title"),
+                    existing_season.season_number,
+                )
             if not existing_season.simkl_id:
                 existing_season.simkl_id = simkl_id
             if anilist_id and not existing_season.anilist_id:
                 existing_season.anilist_id = anilist_id
+
+            if not existing_season.monitored:
+                existing_season.monitored = True
+                existing_season.status = SeasonStatus.SEARCHING
+                logger.info(
+                    "    🔄 Activated previously unmonitored consolidated Season %d.",
+                    existing_season.season_number,
+                )
             continue
-        anilist_id = int(anilist_id_str) if anilist_id_str else None
         if not item:
             item = MediaItem(
                 provider_id=provider_id,
@@ -298,7 +314,11 @@ async def _sync_items(
                 item.release_date = release_date
 
                 # Determine status
-                if item.status in (MediaStatus.PENDING, MediaStatus.SEARCHING, MediaStatus.FUTURE):
+                if item.status in (
+                    MediaStatus.PENDING,
+                    MediaStatus.SEARCHING,
+                    MediaStatus.FUTURE,
+                ):
                     if release_date and release_date > datetime.now(timezone.utc):
                         item.status = MediaStatus.FUTURE
                     elif item.year and item.year > datetime.now().year:
@@ -352,7 +372,11 @@ async def _sync_items(
                         item.release_date = show_release_date
 
                     # Determine status
-                    if item.status in (MediaStatus.PENDING, MediaStatus.SEARCHING, MediaStatus.FUTURE):
+                    if item.status in (
+                        MediaStatus.PENDING,
+                        MediaStatus.SEARCHING,
+                        MediaStatus.FUTURE,
+                    ):
                         if item.release_date and item.release_date > datetime.now(
                             timezone.utc
                         ):
@@ -481,15 +505,9 @@ async def _sync_season_episodes(
     if "episodes" in inspect(season).unloaded:
         await session.refresh(season, ["episodes"])
 
-    # Optimization: if we already have all episodes and none are FUTURE, skip TMDB API call
-    expected_eps = season.episode_count or 0
-    if expected_eps > 0 and len(season.episodes) >= expected_eps:
-        # Check if any episode is in FUTURE state
-        has_future_eps = any(
-            ep.status == EpisodeStatus.FUTURE for ep in season.episodes
-        )
-        if not has_future_eps:
-            return
+    # If season already has episodes, skip external TMDB API call
+    if len(season.episodes) > 0:
+        return
 
     season_details = await tmdb.get_season_details(
         effective_tmdb_id, season.season_number
@@ -762,7 +780,8 @@ async def run_automation_cycle(force: bool = False) -> None:
                         ):
                             continue
                         if movie.last_upgrade_search_at and (
-                            datetime.now(timezone.utc) - movie.last_upgrade_search_at
+                            datetime.now(timezone.utc)
+                            - movie.last_upgrade_search_at.replace(tzinfo=timezone.utc)
                         ) < timedelta(hours=settings.upgrade_search_interval_hours):
                             continue
                         if automation_state_manager.is_aborting():
@@ -801,7 +820,8 @@ async def run_automation_cycle(force: bool = False) -> None:
                         ):
                             continue
                         if season.last_upgrade_search_at and (
-                            datetime.now(timezone.utc) - season.last_upgrade_search_at
+                            datetime.now(timezone.utc)
+                            - season.last_upgrade_search_at.replace(tzinfo=timezone.utc)
                         ) < timedelta(hours=settings.upgrade_search_interval_hours):
                             continue
                         if automation_state_manager.is_aborting():
@@ -1158,6 +1178,14 @@ async def _process_season(session: AsyncSession, season: Season) -> None:
                 is_missing = True
         if is_missing:
             missing_episodes.append(ep)
+
+    # Sort candidate episodes strictly by (upgrade_attempts_count ASC, episode_number ASC)
+    missing_episodes.sort(
+        key=lambda e: (
+            e.upgrade_attempts_count or 0,
+            e.episode_number or 0,
+        )
+    )
 
     if not missing_episodes:
         logger.info("    ✅ No pending episodes for S%02d.", season.season_number)
@@ -3065,7 +3093,8 @@ async def run_print_automation_cycle(force: bool = False) -> None:
                     if book.best_score is not None and book.best_score >= 1000:
                         continue
                     if book.last_upgrade_search_at and (
-                        datetime.now(timezone.utc) - book.last_upgrade_search_at
+                        datetime.now(timezone.utc)
+                        - book.last_upgrade_search_at.replace(tzinfo=timezone.utc)
                     ) < timedelta(hours=settings.upgrade_search_interval_hours):
                         continue
                     if automation_state_manager.is_aborting():
@@ -3097,7 +3126,9 @@ async def run_print_automation_cycle(force: bool = False) -> None:
                                 v.last_upgrade_search_at is None
                                 or (
                                     datetime.now(timezone.utc)
-                                    - v.last_upgrade_search_at
+                                    - v.last_upgrade_search_at.replace(
+                                        tzinfo=timezone.utc
+                                    )
                                 )
                                 >= timedelta(
                                     hours=settings.upgrade_search_interval_hours
@@ -3138,7 +3169,9 @@ async def enrich_anime_metadata(session: AsyncSession, item: MediaItem) -> None:
     )
 
     original_anilist_id = item.anilist_id
-    hierarchy_data = await anilist.get_anime_root_and_hierarchy(item.anilist_id)
+    if not original_anilist_id:
+        return
+    hierarchy_data = await anilist.get_anime_root_and_hierarchy(original_anilist_id)
 
     if hierarchy_data:
         root_node = hierarchy_data["root"]

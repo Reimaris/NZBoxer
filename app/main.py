@@ -274,9 +274,9 @@ async def dashboard(request: Request):
         items = [i for i in all_items if not i.is_fully_completed]
 
         # Detailed stats calculations
-        movie_items = [i for i in items if i.media_type == MediaType.MOVIE]
+        movie_items = [i for i in items if i.media_type == MediaType.MOVIE and not getattr(i, 'is_anime_movie', False)]
         series_items = [i for i in items if i.media_type == MediaType.SHOW]
-        anime_items = [i for i in items if i.media_type == MediaType.ANIME]
+        anime_items = [i for i in items if i.media_type == MediaType.ANIME or getattr(i, 'is_anime_movie', False)]
 
         movie_stats = {
             "total": len(movie_items),
