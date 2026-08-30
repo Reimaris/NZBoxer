@@ -201,6 +201,8 @@ async def _sync_items(
             is_new = True
         else:
             is_new = False
+            # PRESERVE existing DB media_type for sync logic to prevent watchlist sync from overwriting user classifications
+            media_type = item.media_type
 
         # Fetch metadata from TMDB/AniList if available (for new items, items missing release date, or items missing seasons)
         if (tmdb_id or item.imdb_id or item.anilist_id) and (

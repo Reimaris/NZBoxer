@@ -2767,9 +2767,18 @@ async def history_dashboard(request: Request):
         video_items = (await session.execute(video_stmt)).scalars().all()
         history_video = [i for i in video_items if i.is_fully_completed]
 
-        movie_items = [i for i in history_video if i.media_type == MediaType.MOVIE]
+        movie_items = [
+            i
+            for i in history_video
+            if i.media_type == MediaType.MOVIE
+            and not getattr(i, "is_anime_movie", False)
+        ]
         series_items = [i for i in history_video if i.media_type == MediaType.SHOW]
-        anime_items = [i for i in history_video if i.media_type == MediaType.ANIME]
+        anime_items = [
+            i
+            for i in history_video
+            if i.media_type == MediaType.ANIME or getattr(i, "is_anime_movie", False)
+        ]
 
         # Fetch Print Media
         manga_stmt = (
