@@ -50,6 +50,9 @@ def is_eligible_for_search(
     if last_searched_at is None:
         return True
 
+    if last_searched_at.tzinfo is None:
+        last_searched_at = last_searched_at.replace(tzinfo=timezone.utc)
+
     now = datetime.now(timezone.utc)
     if empty_search_count < 10:
         return (now - last_searched_at) >= timedelta(hours=settings.backoff_tier2_skip)
