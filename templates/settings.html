@@ -166,20 +166,40 @@
                         </div>
                     </div>
 
-                    <div class="pt-2 flex items-center gap-3">
-                        <label class="relative inline-flex items-center cursor-pointer">
-                            <input type="checkbox" name="dry_run" value="true" class="sr-only peer" {% if db_settings and db_settings.dry_run %}checked{% endif %}>
-                            <div class="w-11 h-6 bg-[#3f3f46] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#d40060]"></div>
-                            <span class="ml-3 text-sm font-medium text-white flex items-center gap-2">
-                                🧪 Dry Run Mode (Searches and scores without pushing to TorBox)
-                            </span>
-                        </label>
-                        <div class="relative inline-flex items-center group">
-                            <svg class="w-3.5 h-3.5 text-[#71717a] group-hover:text-[#d1d5db] transition-colors cursor-help" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                            </svg>
-                            <div class="opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 absolute bottom-full left-0 mb-2 w-64 max-w-[calc(100vw-2rem)] bg-[#2a2a32] border border-[#3f3f46] text-gray-200 text-[11px] normal-case tracking-normal font-normal rounded-lg p-2.5 shadow-2xl z-30 pointer-events-none leading-relaxed">
-                                When enabled, NZBoxer performs full search queries and release scoring but skips dispatching NZB payloads to TorBox.
+                    <div class="pt-2 flex flex-col sm:flex-row gap-6">
+                        <div class="flex items-center gap-3">
+                            <label class="relative inline-flex items-center cursor-pointer">
+                                <input type="checkbox" name="dry_run" value="true" class="sr-only peer" {% if db_settings and db_settings.dry_run %}checked{% endif %}>
+                                <div class="w-11 h-6 bg-[#3f3f46] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#d40060]"></div>
+                                <span class="ml-3 text-sm font-medium text-white flex items-center gap-2">
+                                    🧪 Dry Run Mode (Searches and scores without pushing to TorBox)
+                                </span>
+                            </label>
+                            <div class="relative inline-flex items-center group">
+                                <svg class="w-3.5 h-3.5 text-[#71717a] group-hover:text-[#d1d5db] transition-colors cursor-help" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                </svg>
+                                <div class="opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 absolute bottom-full left-0 mb-2 w-64 max-w-[calc(100vw-2rem)] bg-[#2a2a32] border border-[#3f3f46] text-gray-200 text-[11px] normal-case tracking-normal font-normal rounded-lg p-2.5 shadow-2xl z-30 pointer-events-none leading-relaxed">
+                                    When enabled, NZBoxer performs full search queries and release scoring but skips dispatching NZB payloads to TorBox.
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="flex items-center gap-3">
+                            <label class="relative inline-flex items-center cursor-pointer">
+                                <input type="checkbox" name="auto_grab_title_fallbacks" value="true" class="sr-only peer" {% if db_settings and db_settings.auto_grab_title_fallbacks %}checked{% endif %}>
+                                <div class="w-11 h-6 bg-[#3f3f46] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#d40060]"></div>
+                                <span class="ml-3 text-sm font-medium text-white flex items-center gap-2">
+                                    ⚡ Auto-Grab Title Fallbacks
+                                </span>
+                            </label>
+                            <div class="relative inline-flex items-center group">
+                                <svg class="w-3.5 h-3.5 text-[#71717a] group-hover:text-[#d1d5db] transition-colors cursor-help" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                </svg>
+                                <div class="opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 absolute bottom-full left-0 mb-2 w-64 max-w-[calc(100vw-2rem)] bg-[#2a2a32] border border-[#3f3f46] text-gray-200 text-[11px] normal-case tracking-normal font-normal rounded-lg p-2.5 shadow-2xl z-30 pointer-events-none leading-relaxed">
+                                    Automatically dispatch title-search fallback releases directly to TorBox without requiring manual approval in the UI.
+                                </div>
                             </div>
                         </div>
                     </div>

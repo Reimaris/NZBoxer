@@ -226,6 +226,15 @@ async def init_db(database_url: str) -> None:
             try:
                 await session.execute(
                     __import__("sqlalchemy").text(
+                        "ALTER TABLE system_settings ADD COLUMN auto_grab_title_fallbacks BOOLEAN NOT NULL DEFAULT 0;"
+                    )
+                )
+            except Exception:
+                pass
+
+            try:
+                await session.execute(
+                    __import__("sqlalchemy").text(
                         "ALTER TABLE system_settings ADD COLUMN automation_state VARCHAR(50) NOT NULL DEFAULT 'ACTIVE';"
                     )
                 )

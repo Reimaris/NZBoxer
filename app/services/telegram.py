@@ -36,7 +36,7 @@ async def send_notification(message: str, token: str, chat_id: str) -> bool:
         try:
             response = await client.post(url, json=payload)
             response.raise_for_status()
-            logger.info("Telegram notification sent successfully.")
+            logger.debug("Telegram notification sent successfully.")
             return True
         except httpx.HTTPError as e:
             logger.error("Failed to send Telegram notification: %s", e)

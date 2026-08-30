@@ -161,6 +161,9 @@ class SystemSettings(Base):
     dry_run: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="0"
     )
+    auto_grab_title_fallbacks: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="0"
+    )
 
     # Structured Scoring Settings
     scoring_settings: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=True)
@@ -524,9 +527,13 @@ class MediaItem(Base):
     @property
     def best_score(self) -> float | None:
         """Returns the highest score from all associated download history entries."""
-        if not self.download_history:
+        from sqlalchemy.orm import attributes
+
+        hist = attributes.instance_state(self).dict.get("download_history")
+        if not hist:
             return None
-        return max(h.score for h in self.download_history if h.score is not None)
+        scores = [h.score for h in hist if getattr(h, "score", None) is not None]
+        return max(scores) if scores else None
 
     # ---------------------------------------------------------------------------
     # Season Model
@@ -689,9 +696,13 @@ class Season(Base):
     @property
     def best_score(self) -> float | None:
         """Returns the highest score from all download history entries for this season."""
-        if not self.download_history:
+        from sqlalchemy.orm import attributes
+
+        hist = attributes.instance_state(self).dict.get("download_history")
+        if not hist:
             return None
-        return max(h.score for h in self.download_history if h.score is not None)
+        scores = [h.score for h in hist if getattr(h, "score", None) is not None]
+        return max(scores) if scores else None
 
     # ---------------------------------------------------------------------------
     # Episode Model
@@ -795,9 +806,13 @@ class Episode(Base):
     @property
     def best_score(self) -> float | None:
         """Returns the highest score from all download history entries for this episode."""
-        if not self.download_history:
+        from sqlalchemy.orm import attributes
+
+        hist = attributes.instance_state(self).dict.get("download_history")
+        if not hist:
             return None
-        return max(h.score for h in self.download_history if h.score is not None)
+        scores = [h.score for h in hist if getattr(h, "score", None) is not None]
+        return max(scores) if scores else None
 
     @property
     def is_released(self) -> bool:

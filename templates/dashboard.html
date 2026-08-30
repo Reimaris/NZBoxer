@@ -84,11 +84,19 @@
 <!-- Main Table Area -->
 <div class="bg-[#24242b] border border-[#3f3f46] rounded-lg shadow overflow-hidden" 
      x-data="{ 
-        tab: 'movie', 
+        tab: new URLSearchParams(window.location.search).get('tab') || localStorage.getItem('video_dashboard_tab') || 'movie', 
         search: '', 
         showStatus: false,
         sortCol: 'title',
         sortDir: 'asc',
+        setTab(newTab) {
+            this.tab = newTab;
+            this.search = '';
+            localStorage.setItem('video_dashboard_tab', newTab);
+            const url = new URL(window.location);
+            url.searchParams.set('tab', newTab);
+            window.history.replaceState({}, '', url);
+        },
         sortBy(col) {
             if (this.sortCol === col) {
                 this.sortDir = this.sortDir === 'asc' ? 'desc' : 'asc';
@@ -135,19 +143,19 @@
             rows.forEach(r => tbody.appendChild(r));
         }
      }"
-     x-init="applySort()">
+     x-init="applySort(); if (['movie', 'show', 'anime'].includes(tab)) { const url = new URL(window.location); url.searchParams.set('tab', tab); window.history.replaceState({}, '', url); }">
     
     <!-- Table Toolbar: Tabs & Search -->
     <div class="p-4 border-b border-[#3f3f46] flex flex-col md:flex-row justify-between items-center gap-4">
         <!-- Tabs with Icons -->
         <div class="flex gap-2 bg-[#1e1e24] p-1 rounded-lg border border-[#3f3f46]">
-            <button @click="tab = 'movie'; search = ''" :class="{'bg-[#d40060] text-white': tab === 'movie', 'text-[#a1a1aa] hover:text-white': tab !== 'movie'}" class="px-4 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-2">
+            <button @click="setTab('movie')" :class="{'bg-[#d40060] text-white': tab === 'movie', 'text-[#a1a1aa] hover:text-white': tab !== 'movie'}" class="px-4 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-2">
                 <span>🎬 Movies</span>
             </button>
-            <button @click="tab = 'show'; search = ''" :class="{'bg-[#d40060] text-white': tab === 'show', 'text-[#a1a1aa] hover:text-white': tab !== 'show'}" class="px-4 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-2">
+            <button @click="setTab('show')" :class="{'bg-[#d40060] text-white': tab === 'show', 'text-[#a1a1aa] hover:text-white': tab !== 'show'}" class="px-4 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-2">
                 <span>📺 Series</span>
             </button>
-            <button @click="tab = 'anime'; search = ''" :class="{'bg-[#d40060] text-white': tab === 'anime', 'text-[#a1a1aa] hover:text-white': tab !== 'anime'}" class="px-4 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-2">
+            <button @click="setTab('anime')" :class="{'bg-[#d40060] text-white': tab === 'anime', 'text-[#a1a1aa] hover:text-white': tab !== 'anime'}" class="px-4 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-2">
                 <span>😊 Anime</span>
             </button>
         </div>
@@ -375,9 +383,13 @@
                     <td class="px-6 py-4 text-right whitespace-nowrap w-1">
                         <div class="flex justify-end gap-2">
                             {% if item.status.value == 'manual_grab' and item.pending_candidate_json %}
-                                <button hx-post="/items/{{ item.id }}/confirm_grab" hx-swap="none" title="Send candidate to TorBox (Manual grab)" class="bg-yellow-500 hover:bg-yellow-400 text-black font-bold transition-colors p-1.5 rounded flex items-center gap-1 text-xs px-2">
+                                <button hx-post="/items/{{ item.id }}/confirm_grab" hx-swap="none" title="Send candidate to TorBox: {{ item.pending_candidate_json.title }}" class="bg-yellow-500 hover:bg-yellow-400 text-black font-bold transition-colors p-1.5 rounded flex items-center gap-1 text-xs px-2">
                                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg>
                                     Send
+                                </button>
+                                <button hx-post="/items/{{ item.id }}/decline_grab" hx-swap="none" title="Decline candidate and blacklist: {{ item.pending_candidate_json.title }}" class="bg-red-800 hover:bg-red-700 text-white font-bold transition-colors p-1.5 rounded flex items-center gap-1 text-xs px-2">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                                    Decline
                                 </button>
                             {% endif %}
 

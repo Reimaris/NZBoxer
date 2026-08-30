@@ -863,17 +863,18 @@ async def _get_anime_aliases(item) -> list[str]:
 
 
 async def _process_movie(session: AsyncSession, movie: MediaItem) -> None:
-    from app.db.models import MediaType, ProviderProfile
+    from app.db.models import MediaStatus, MediaType, ProviderProfile
 
     logger.info("🎬 Processing movie: %s", movie.title)
 
-    if not is_eligible_for_search(movie.empty_search_count, movie.last_searched_at):
-        logger.info(
-            "    ⏳ Movie '%s' is in backoff tier (Empty searches: %d). Skipping.",
-            movie.title,
-            movie.empty_search_count,
-        )
-        return
+    if movie.status != MediaStatus.DOWNLOADED:
+        if not is_eligible_for_search(movie.empty_search_count, movie.last_searched_at):
+            logger.info(
+                "    ⏳ Movie '%s' is in backoff tier (Empty searches: %d). Skipping.",
+                movie.title,
+                movie.empty_search_count,
+            )
+            return
 
     movie.last_searched_at = datetime.now(timezone.utc)
 
@@ -1083,6 +1084,13 @@ async def _process_season(session: AsyncSession, season: Season) -> None:
         SeasonStatus,
     )
 
+    if season.status == SeasonStatus.MANUAL_GRAB:
+        logger.info(
+            "    ⏸️ Season S%02d is awaiting manual grab confirmation. Skipping.",
+            season.season_number,
+        )
+        return
+
     logger.info(
         "📺 Loading episode data for series: %s S%02d",
         season.media_item.title,
@@ -1172,6 +1180,8 @@ async def _process_season(session: AsyncSession, season: Season) -> None:
 
     missing_episodes = []
     for ep in all_monitored:
+        if ep.status == EpisodeStatus.MANUAL_GRAB:
+            continue
         is_missing = False
         if ep.status == EpisodeStatus.SEARCHING:
             is_missing = True
@@ -1366,15 +1376,16 @@ async def _process_season(session: AsyncSession, season: Season) -> None:
     try:
         run_season_search = prefer_seasons and loaded_count == 0
         if run_season_search:
-            if not is_eligible_for_search(
-                season.empty_search_count, season.last_searched_at
-            ):
-                logger.info(
-                    "    ⏳ Season pack search is in backoff tier (Empty searches: %d). Skipping.",
-                    season.empty_search_count,
-                )
-                run_season_search = False
-            else:
+            if season.status != SeasonStatus.DOWNLOADED:
+                if not is_eligible_for_search(
+                    season.empty_search_count, season.last_searched_at
+                ):
+                    logger.info(
+                        "    ⏳ Season pack search is in backoff tier (Empty searches: %d). Skipping.",
+                        season.empty_search_count,
+                    )
+                    run_season_search = False
+            if run_season_search:
                 season.last_searched_at = datetime.now(timezone.utc)
 
         if run_season_search:
@@ -1503,14 +1514,18 @@ async def _process_season(session: AsyncSession, season: Season) -> None:
                 )
                 break
 
-            if not is_eligible_for_search(ep.empty_search_count, ep.last_searched_at):
-                logger.info(
-                    "    ⏳ Episode S%02dE%02d is in backoff tier (Empty searches: %d). Skipping.",
-                    season.season_number,
-                    ep.episode_number,
-                    ep.empty_search_count,
-                )
+            if ep.status == EpisodeStatus.MANUAL_GRAB:
                 continue
+
+            if ep.status != EpisodeStatus.DOWNLOADED:
+                if not is_eligible_for_search(ep.empty_search_count, ep.last_searched_at):
+                    logger.info(
+                        "    ⏳ Episode S%02dE%02d is in backoff tier (Empty searches: %d). Skipping.",
+                        season.season_number,
+                        ep.episode_number,
+                        ep.empty_search_count,
+                    )
+                    continue
 
             ep.last_searched_at = datetime.now(timezone.utc)
 
@@ -1760,7 +1775,24 @@ async def _evaluate_and_download(
         if early_exit_on_cutoff:
             return False
 
-        if target.best_score is not None:
+        is_upgrading = (
+            target.best_score is not None
+            or (
+                movie
+                and movie.status in (MediaStatus.DOWNLOADED, MediaStatus.COMPLETED)
+            )
+            or (
+                season
+                and season.status in (SeasonStatus.DOWNLOADED, SeasonStatus.COMPLETED)
+            )
+            or (
+                episode
+                and episode.status
+                in (EpisodeStatus.DOWNLOADED, EpisodeStatus.COMPLETED)
+            )
+        )
+
+        if is_upgrading:
             await _handle_upgrade_failure(
                 session,
                 target,
@@ -1932,7 +1964,24 @@ async def _evaluate_and_download(
         if early_exit_on_cutoff:
             return False
 
-        if target.best_score is not None:
+        is_upgrading = (
+            target.best_score is not None
+            or (
+                movie
+                and movie.status in (MediaStatus.DOWNLOADED, MediaStatus.COMPLETED)
+            )
+            or (
+                season
+                and season.status in (SeasonStatus.DOWNLOADED, SeasonStatus.COMPLETED)
+            )
+            or (
+                episode
+                and episode.status
+                in (EpisodeStatus.DOWNLOADED, EpisodeStatus.COMPLETED)
+            )
+        )
+
+        if is_upgrading:
             await _handle_upgrade_failure(
                 session,
                 target,
@@ -1979,9 +2028,10 @@ async def _evaluate_and_download(
             indexer_name or "active",
         )
 
-    # If this was a title-search fallback, don't auto-send to TorBox.
-    # Instead store the best candidate for manual approval.
-    if is_title_fallback:
+    # If this was a title-search fallback, check if auto_grab_title_fallbacks is enabled.
+    from app.config import settings
+
+    if is_title_fallback and not getattr(settings, "auto_grab_title_fallbacks", False):
         from app.db.models import EpisodeStatus, MediaStatus, SeasonStatus
 
         logger.warning(
@@ -2012,6 +2062,10 @@ async def _evaluate_and_download(
                 ep.pending_candidate_json = pending
         await session.commit()
         return True
+    elif is_title_fallback:
+        logger.info(
+            "    ⚡ Title search fallback matched with auto_grab_title_fallbacks enabled — proceeding to download."
+        )
 
     # Check if we should download
     should_download = False

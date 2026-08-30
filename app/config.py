@@ -61,6 +61,9 @@ class Settings:
     backoff_tier2_skip: int = int(os.getenv("BACKOFF_TIER2_SKIP", "6"))
     backoff_tier3_skip: int = int(os.getenv("BACKOFF_TIER3_SKIP", "24"))
     dry_run: bool = os.getenv("DRY_RUN", "False").lower() == "true"
+    auto_grab_title_fallbacks: bool = (
+        os.getenv("AUTO_GRAB_TITLE_FALLBACKS", "False").lower() == "true"
+    )
 
     # Print Media Configuration
     reading_download_dir: str = os.getenv("READING_DOWNLOAD_DIR", "downloads")
@@ -134,6 +137,7 @@ async def reload_settings_from_db(session: AsyncSession) -> None:
             backoff_tier2_skip=settings.backoff_tier2_skip,
             backoff_tier3_skip=settings.backoff_tier3_skip,
             dry_run=settings.dry_run,
+            auto_grab_title_fallbacks=settings.auto_grab_title_fallbacks,
             automation_state=settings.automation_state,
             scoring_settings=scoring_config,
         )
@@ -172,6 +176,9 @@ async def reload_settings_from_db(session: AsyncSession) -> None:
         db_settings, "backoff_tier3_skip", settings.backoff_tier3_skip
     )
     settings.dry_run = db_settings.dry_run
+    settings.auto_grab_title_fallbacks = getattr(
+        db_settings, "auto_grab_title_fallbacks", False
+    )
     settings.automation_state = (
         db_settings.automation_state.value
         if hasattr(db_settings.automation_state, "value")

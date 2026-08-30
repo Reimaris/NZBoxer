@@ -943,6 +943,297 @@ async def confirm_grab_item(item_id: int):
         return HTMLResponse(content="<script>window.location.reload();</script>")
 
 
+@app.post("/items/{item_id}/decline_grab")
+async def decline_grab_item(item_id: int):
+    """Manually decline and blacklist the pending_candidate_json for a MANUAL_GRAB movie item."""
+    from app.db.database import async_session_factory
+    from app.db.models import BlacklistedRelease, MediaItem, MediaStatus
+
+    async with async_session_factory() as session:
+        item = await session.get(MediaItem, item_id)
+        if not item or not item.pending_candidate_json:
+            return HTMLResponse(
+                content='<div class="text-red-500">No pending candidate found.</div>',
+                status_code=400,
+            )
+
+        candidate = item.pending_candidate_json
+        bl = BlacklistedRelease(
+            media_item_id=item.id,
+            nzb_title=candidate.get("title", ""),
+            nzb_guid=candidate.get("guid"),
+            reason="Manually declined by user",
+        )
+        session.add(bl)
+        item.status = MediaStatus.SEARCHING
+        item.pending_candidate_json = None
+        item.fail_count = 0
+        item.last_error = None
+        await session.commit()
+        return HTMLResponse(content="<script>window.location.reload();</script>")
+
+
+@app.post("/items/{item_id}/seasons/{season_number}/confirm_grab")
+async def confirm_grab_season(item_id: int, season_number: int):
+    """Manually confirm and send season pack pending candidate to TorBox."""
+    from sqlalchemy import select
+
+    from app.db.database import async_session_factory
+    from app.db.models import (
+        DownloadHistory,
+        Episode,
+        EpisodeStatus,
+        Season,
+        SeasonStatus,
+    )
+    from app.services import torbox, treasure_maps
+
+    async with async_session_factory() as session:
+        stmt = select(Season).where(
+            Season.media_item_id == item_id,
+            Season.season_number == season_number,
+        )
+        season = (await session.execute(stmt)).scalars().first()
+        if not season or not season.pending_candidate_json:
+            return HTMLResponse(
+                content='<div class="text-red-500">No pending candidate found.</div>',
+                status_code=400,
+            )
+
+        candidate = season.pending_candidate_json
+        guid = candidate.get("guid", "")
+        title = candidate.get("title", "")
+
+        try:
+            nzb_bytes, filename = await treasure_maps.fetch_nzb_bytes(guid)
+            torbox_result = await torbox.send_nzb_file(nzb_bytes, filename=filename)
+        except treasure_maps.IndexerError as e:
+            return HTMLResponse(
+                content=f'<div class="text-red-500">NZB Download Error: {e}</div>',
+                status_code=500,
+            )
+
+        if not torbox_result or (
+            not torbox_result.get("hash") and not torbox_result.get("id")
+        ):
+            err_msg = (
+                torbox_result.get("error")
+                if isinstance(torbox_result, dict) and torbox_result.get("error")
+                else "Error sending to TorBox."
+            )
+            return HTMLResponse(
+                content=f'<div class="text-red-500">{err_msg}</div>',
+                status_code=500,
+            )
+
+        history = DownloadHistory(
+            media_item_id=item_id,
+            season_id=season.id,
+            nzb_title=title,
+            nzb_guid=guid,
+            score=candidate.get("score"),
+            size_bytes=candidate.get("size_bytes"),
+            resolution=candidate.get("resolution"),
+            source=candidate.get("source"),
+            release_group=candidate.get("release_group"),
+            torbox_hash=str(torbox_result.get("hash"))
+            if torbox_result.get("hash")
+            else None,
+            torbox_id=str(torbox_result.get("id")) if torbox_result.get("id") else None,
+        )
+        session.add(history)
+        season.status = SeasonStatus.DOWNLOADING
+        season.pending_candidate_json = None
+        season.fail_count = 0
+        season.last_error = None
+
+        # Update child episodes
+        ep_stmt = select(Episode).where(Episode.season_id == season.id)
+        episodes = (await session.execute(ep_stmt)).scalars().all()
+        for ep in episodes:
+            if ep.monitored or ep.status == EpisodeStatus.MANUAL_GRAB:
+                ep.status = EpisodeStatus.DOWNLOADING
+                ep.pending_candidate_json = None
+                ep.fail_count = 0
+                ep.last_error = None
+
+        await session.commit()
+        return HTMLResponse(content="<script>window.location.reload();</script>")
+
+
+@app.post("/items/{item_id}/seasons/{season_number}/decline_grab")
+async def decline_grab_season(item_id: int, season_number: int):
+    """Manually decline and blacklist season pack candidate."""
+    from sqlalchemy import select
+
+    from app.db.database import async_session_factory
+    from app.db.models import (
+        BlacklistedRelease,
+        Episode,
+        EpisodeStatus,
+        Season,
+        SeasonStatus,
+    )
+
+    async with async_session_factory() as session:
+        stmt = select(Season).where(
+            Season.media_item_id == item_id,
+            Season.season_number == season_number,
+        )
+        season = (await session.execute(stmt)).scalars().first()
+        if not season or not season.pending_candidate_json:
+            return HTMLResponse(
+                content='<div class="text-red-500">No pending candidate found.</div>',
+                status_code=400,
+            )
+
+        candidate = season.pending_candidate_json
+        bl = BlacklistedRelease(
+            media_item_id=item_id,
+            nzb_title=candidate.get("title", ""),
+            nzb_guid=candidate.get("guid"),
+            reason="Manually declined by user",
+        )
+        session.add(bl)
+        season.status = (
+            SeasonStatus.SEARCHING if season.monitored else SeasonStatus.PENDING
+        )
+        season.pending_candidate_json = None
+        season.fail_count = 0
+        season.last_error = None
+
+        # Clear child episodes if they had this candidate
+        ep_stmt = select(Episode).where(Episode.season_id == season.id)
+        episodes = (await session.execute(ep_stmt)).scalars().all()
+        for ep in episodes:
+            if ep.status == EpisodeStatus.MANUAL_GRAB:
+                ep.status = (
+                    EpisodeStatus.SEARCHING if ep.monitored else EpisodeStatus.PENDING
+                )
+                ep.pending_candidate_json = None
+                ep.fail_count = 0
+                ep.last_error = None
+
+        await session.commit()
+        return HTMLResponse(content="<script>window.location.reload();</script>")
+
+
+@app.post("/episodes/{episode_id}/confirm_grab")
+async def confirm_grab_episode(episode_id: int):
+    """Manually confirm and send episode pending candidate to TorBox."""
+    from sqlalchemy import select
+    from sqlalchemy.orm import selectinload
+
+    from app.db.database import async_session_factory
+    from app.db.models import DownloadHistory, Episode, EpisodeStatus
+    from app.services import torbox, treasure_maps
+
+    async with async_session_factory() as session:
+        stmt = (
+            select(Episode)
+            .where(Episode.id == episode_id)
+            .options(selectinload(Episode.season))
+        )
+        episode = (await session.execute(stmt)).scalars().first()
+        if not episode or not episode.pending_candidate_json:
+            return HTMLResponse(
+                content='<div class="text-red-500">No pending candidate found.</div>',
+                status_code=400,
+            )
+
+        candidate = episode.pending_candidate_json
+        guid = candidate.get("guid", "")
+        title = candidate.get("title", "")
+
+        try:
+            nzb_bytes, filename = await treasure_maps.fetch_nzb_bytes(guid)
+            torbox_result = await torbox.send_nzb_file(nzb_bytes, filename=filename)
+        except treasure_maps.IndexerError as e:
+            return HTMLResponse(
+                content=f'<div class="text-red-500">NZB Download Error: {e}</div>',
+                status_code=500,
+            )
+
+        if not torbox_result or (
+            not torbox_result.get("hash") and not torbox_result.get("id")
+        ):
+            err_msg = (
+                torbox_result.get("error")
+                if isinstance(torbox_result, dict) and torbox_result.get("error")
+                else "Error sending to TorBox."
+            )
+            return HTMLResponse(
+                content=f'<div class="text-red-500">{err_msg}</div>',
+                status_code=500,
+            )
+
+        media_item_id = episode.season.media_item_id if episode.season else None
+        history = DownloadHistory(
+            media_item_id=media_item_id,
+            season_id=episode.season_id,
+            episode_id=episode.id,
+            nzb_title=title,
+            nzb_guid=guid,
+            score=candidate.get("score"),
+            size_bytes=candidate.get("size_bytes"),
+            resolution=candidate.get("resolution"),
+            source=candidate.get("source"),
+            release_group=candidate.get("release_group"),
+            torbox_hash=str(torbox_result.get("hash"))
+            if torbox_result.get("hash")
+            else None,
+            torbox_id=str(torbox_result.get("id")) if torbox_result.get("id") else None,
+        )
+        session.add(history)
+        episode.status = EpisodeStatus.DOWNLOADING
+        episode.pending_candidate_json = None
+        episode.fail_count = 0
+        episode.last_error = None
+        await session.commit()
+        return HTMLResponse(content="<script>window.location.reload();</script>")
+
+
+@app.post("/episodes/{episode_id}/decline_grab")
+async def decline_grab_episode(episode_id: int):
+    """Manually decline and blacklist episode candidate."""
+    from sqlalchemy import select
+    from sqlalchemy.orm import selectinload
+
+    from app.db.database import async_session_factory
+    from app.db.models import BlacklistedRelease, Episode, EpisodeStatus
+
+    async with async_session_factory() as session:
+        stmt = (
+            select(Episode)
+            .where(Episode.id == episode_id)
+            .options(selectinload(Episode.season))
+        )
+        episode = (await session.execute(stmt)).scalars().first()
+        if not episode or not episode.pending_candidate_json:
+            return HTMLResponse(
+                content='<div class="text-red-500">No pending candidate found.</div>',
+                status_code=400,
+            )
+
+        candidate = episode.pending_candidate_json
+        media_item_id = episode.season.media_item_id if episode.season else None
+        bl = BlacklistedRelease(
+            media_item_id=media_item_id,
+            nzb_title=candidate.get("title", ""),
+            nzb_guid=candidate.get("guid"),
+            reason="Manually declined by user",
+        )
+        session.add(bl)
+        episode.status = (
+            EpisodeStatus.SEARCHING if episode.monitored else EpisodeStatus.PENDING
+        )
+        episode.pending_candidate_json = None
+        episode.fail_count = 0
+        episode.last_error = None
+        await session.commit()
+        return HTMLResponse(content="<script>window.location.reload();</script>")
+
+
 @app.post("/api/torbox/add", response_class=HTMLResponse)
 async def manual_push_to_torbox(magnet: str = Form(...)):
     """Push a search result directly to TorBox."""
@@ -1800,6 +2091,7 @@ async def export_settings():
     )
 
 
+@app.post("/settings")
 @app.post("/settings/global")
 async def save_global_settings(
     request: Request,
@@ -1814,6 +2106,7 @@ async def save_global_settings(
     sh_retry_wait_hours: float = Form(24.0),
     max_upgrade_attempts: int = Form(7),
     dry_run: bool = Form(False),
+    auto_grab_title_fallbacks: bool = Form(False),
     upgrade_threshold: int = Form(500),
     backoff_tier2_skip: int = Form(6),
     backoff_tier3_skip: int = Form(24),
@@ -1856,6 +2149,7 @@ async def save_global_settings(
             db_settings.sh_retry_wait_hours = sh_retry_wait_hours
             db_settings.max_upgrade_attempts = max_upgrade_attempts
             db_settings.dry_run = dry_run
+            db_settings.auto_grab_title_fallbacks = auto_grab_title_fallbacks
             db_settings.upgrade_threshold = upgrade_threshold
             db_settings.backoff_tier2_skip = backoff_tier2_skip
             db_settings.backoff_tier3_skip = backoff_tier3_skip
