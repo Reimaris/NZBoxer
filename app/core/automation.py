@@ -173,9 +173,6 @@ async def _sync_items(
                 existing_season.simkl_id = simkl_id
             if anilist_id and not existing_season.anilist_id:
                 existing_season.anilist_id = anilist_id
-            existing_season.monitored = True
-            if existing_season.status == SeasonStatus.PENDING:
-                existing_season.status = SeasonStatus.SEARCHING
             continue
         anilist_id = int(anilist_id_str) if anilist_id_str else None
         if not item:
@@ -298,13 +295,14 @@ async def _sync_items(
                 item.release_date = release_date
 
                 # Determine status
-                if release_date and release_date > datetime.now(timezone.utc):
-                    item.status = MediaStatus.FUTURE
-                elif item.year and item.year > datetime.now().year:
-                    # Fallback if no release date but year is in the future
-                    item.status = MediaStatus.FUTURE
-                else:
-                    item.status = MediaStatus.SEARCHING
+                if item.status in (MediaStatus.PENDING, MediaStatus.SEARCHING, MediaStatus.FUTURE):
+                    if release_date and release_date > datetime.now(timezone.utc):
+                        item.status = MediaStatus.FUTURE
+                    elif item.year and item.year > datetime.now().year:
+                        # Fallback if no release date but year is in the future
+                        item.status = MediaStatus.FUTURE
+                    else:
+                        item.status = MediaStatus.SEARCHING
 
             elif media_type in (MediaType.SHOW, MediaType.ANIME):
                 if details:
@@ -351,14 +349,15 @@ async def _sync_items(
                         item.release_date = show_release_date
 
                     # Determine status
-                    if item.release_date and item.release_date > datetime.now(
-                        timezone.utc
-                    ):
-                        item.status = MediaStatus.FUTURE
-                    elif item.year and item.year > datetime.now().year:
-                        item.status = MediaStatus.FUTURE
-                    else:
-                        item.status = MediaStatus.SEARCHING
+                    if item.status in (MediaStatus.PENDING, MediaStatus.SEARCHING, MediaStatus.FUTURE):
+                        if item.release_date and item.release_date > datetime.now(
+                            timezone.utc
+                        ):
+                            item.status = MediaStatus.FUTURE
+                        elif item.year and item.year > datetime.now().year:
+                            item.status = MediaStatus.FUTURE
+                        else:
+                            item.status = MediaStatus.SEARCHING
 
                     for s in details.get("seasons", []):
                         s_num = s.get("season_number")
@@ -3217,10 +3216,6 @@ async def enrich_anime_metadata(session: AsyncSession, item: MediaItem) -> None:
             else:
                 if not existing_season.anilist_id:
                     existing_season.anilist_id = anilist_node.get("id")
-                if is_monitored and not existing_season.monitored:
-                    existing_season.monitored = True
-                    if existing_season.status == SeasonStatus.PENDING:
-                        existing_season.status = SeasonStatus.SEARCHING
 
         for idx, node in enumerate(hierarchy_list):
             await _create_anilist_season(idx + 1, node)
