@@ -66,6 +66,50 @@ async def search_manga(query: str) -> list[dict[str, Any]]:
             return []
 
 
+async def search_anime_id_by_title(
+    title: str, year: int | None = None
+) -> int | None:
+    """
+    Searches AniList for an Anime by title (and optionally matches year).
+    Returns the matching AniList ID or None.
+    """
+    query_str = """
+    query ($search: String) {
+      Page(page: 1, perPage: 10) {
+        media(search: $search, type: ANIME) {
+          id
+          title { romaji english native }
+          startDate { year }
+          format
+        }
+      }
+    }
+    """
+    variables = {"search": title}
+
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        try:
+            resp = await _post_with_retry(
+                client, {"query": query_str, "variables": variables}
+            )
+            data = resp.json()
+            media_list = data.get("data", {}).get("Page", {}).get("media", [])
+            if not media_list:
+                return None
+            if year:
+                for item in media_list:
+                    item_year = item.get("startDate", {}).get("year")
+                    if item_year and item_year == year:
+                        return item.get("id")
+            return media_list[0].get("id")
+        except Exception as e:
+            logger.error(
+                f"AniList search_anime_id_by_title failed for '{title}': {e}"
+            )
+            return None
+
+
+
 async def get_manga_details(anilist_id: int) -> dict[str, Any] | None:
     """Fetches details for a specific AniList Manga ID."""
     query_str = """
@@ -169,9 +213,10 @@ async def get_anime_sequels(anilist_id: int) -> list[dict[str, Any]]:
     We will just fetch the immediate sequels. We can recursively fetch in the caller or here.
     Let's fetch recursively here."""
     sequels = []
-    current_id = anilist_id
+    current_id: int | None = anilist_id
 
     query_str = """
+
     query ($id: Int) {
       Media(id: $id, type: ANIME) {
         relations {
@@ -273,8 +318,9 @@ async def get_anime_root_and_hierarchy(anilist_id: int) -> dict[str, Any] | None
 
     async with httpx.AsyncClient(timeout=10.0) as client:
         # Step 1: Traverse up to find root
-        current_id = anilist_id
+        current_id: int | None = anilist_id
         root_node = None
+
         visited_up = {current_id}
 
         while current_id:

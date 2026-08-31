@@ -1004,7 +1004,7 @@ async def confirm_grab_item(item_id: int):
         if not torbox_result or (
             not torbox_result.get("hash") and not torbox_result.get("id")
         ):
-            err_msg = (
+            err_msg = str(
                 torbox_result.get("error")
                 if isinstance(torbox_result, dict) and torbox_result.get("error")
                 else "Error sending to TorBox."
@@ -1012,6 +1012,7 @@ async def confirm_grab_item(item_id: int):
             logger.error(
                 "❌ [Manual Grab] TorBox dispatch failed for '%s': %s", title, err_msg
             )
+
             return HTMLResponse(
                 content=f'<div class="text-red-500">{err_msg}</div>',
                 status_code=500,
@@ -1197,7 +1198,7 @@ async def confirm_grab_season(item_id: int, season_number: int):
         if not torbox_result or (
             not torbox_result.get("hash") and not torbox_result.get("id")
         ):
-            err_msg = (
+            err_msg = str(
                 torbox_result.get("error")
                 if isinstance(torbox_result, dict) and torbox_result.get("error")
                 else "Error sending to TorBox."
@@ -1207,6 +1208,7 @@ async def confirm_grab_season(item_id: int, season_number: int):
                 title,
                 err_msg,
             )
+
             return HTMLResponse(
                 content=f'<div class="text-red-500">{err_msg}</div>',
                 status_code=500,
@@ -1433,7 +1435,7 @@ async def confirm_grab_episode(episode_id: int):
         if not torbox_result or (
             not torbox_result.get("hash") and not torbox_result.get("id")
         ):
-            err_msg = (
+            err_msg = str(
                 torbox_result.get("error")
                 if isinstance(torbox_result, dict) and torbox_result.get("error")
                 else "Error sending to TorBox."
@@ -1443,6 +1445,7 @@ async def confirm_grab_episode(episode_id: int):
                 title,
                 err_msg,
             )
+
             return HTMLResponse(
                 content=f'<div class="text-red-500">{err_msg}</div>',
                 status_code=500,
@@ -1594,9 +1597,10 @@ async def ignore_item(item_id: int):
 async def change_type_endpoint(
     request: Request,
     item_id: int,
+    background_tasks: BackgroundTasks,
     target_type: str = Form(...),
-    background_tasks: BackgroundTasks = None,
 ):
+
     from sqlalchemy.orm import selectinload
 
     from app.db.database import async_session_factory
@@ -1637,7 +1641,7 @@ async def change_type_endpoint(
                 dh.season_id = season_1.id
 
         elif currently_is_series and not target_is_series:
-            from sqlalchemy import update
+            from sqlalchemy import delete, update
 
             from app.db.models import DownloadHistory, Season
 
@@ -1651,7 +1655,7 @@ async def change_type_endpoint(
             )
 
             await session.execute(
-                Season.__table__.delete().where(Season.media_item_id == item.id)
+                delete(Season).where(Season.media_item_id == item.id)
             )
 
             # Reload item
@@ -1659,29 +1663,31 @@ async def change_type_endpoint(
                 MediaItem, item_id, options=[selectinload(MediaItem.seasons)]
             )
 
-        # 2. Field updates
-        if target_type == "movie":
-            item.media_type = MediaType.MOVIE
-            item.is_anime_movie = False
-        elif target_type == "anime-movie":
-            item.media_type = MediaType.MOVIE
-            item.is_anime_movie = True
-        elif target_type == "series":
-            item.media_type = MediaType.SHOW
-            item.is_anime_movie = False
-        elif target_type == "anime":
-            item.media_type = MediaType.ANIME
-            item.is_anime_movie = False
+        if item is not None:
+            # 2. Field updates
+            if target_type == "movie":
+                item.media_type = MediaType.MOVIE
+                item.is_anime_movie = False
+            elif target_type == "anime-movie":
+                item.media_type = MediaType.MOVIE
+                item.is_anime_movie = True
+            elif target_type == "series":
+                item.media_type = MediaType.SHOW
+                item.is_anime_movie = False
+            elif target_type == "anime":
+                item.media_type = MediaType.ANIME
+                item.is_anime_movie = False
 
-        # 3. Search Resets
-        item.empty_search_count = 0
-        item.last_searched_at = None
-        if target_is_series:
-            for s in item.seasons:
-                s.empty_search_count = 0
-                s.last_searched_at = None
+            # 3. Search Resets
+            item.empty_search_count = 0
+            item.last_searched_at = None
+            if target_is_series:
+                for s in item.seasons:
+                    s.empty_search_count = 0
+                    s.last_searched_at = None
 
-        await session.commit()
+            await session.commit()
+
 
         # 4. Dispatch background task
         if target_type in ("anime", "anime-movie") and background_tasks:

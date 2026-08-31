@@ -264,28 +264,25 @@ async def _sync_items(
             media_type = item.media_type
 
         # Fetch metadata from TMDB/AniList if available (for new items, items missing release date, or items missing seasons)
-        if (tmdb_id or item.imdb_id or item.anilist_id) and (
+        if media_type == MediaType.ANIME or getattr(item, "is_anime_movie", False):
+            if not item.anilist_id:
+                from app.services import anilist
+
+                item.anilist_id = await anilist.search_anime_id_by_title(
+                    item.title, item.year
+                )
+            if item.anilist_id and media_type == MediaType.ANIME:
+                await enrich_anime_metadata(session, item)
+        elif (tmdb_id or item.imdb_id) and (
             is_new
             or not item.release_date
             or (not item.seasons and item.media_type != MediaType.MOVIE)
         ):
             details = None
             if tmdb_id:
-                if media_type in (MediaType.SHOW, MediaType.ANIME):
+                if media_type == MediaType.SHOW:
                     details = await tmdb.get_show_details(tmdb_id)
-                    if not details and media_type == MediaType.ANIME:
-                        # Might be an anime movie
-                        details_movie = await tmdb.get_movie_details(tmdb_id)
-                        if details_movie:
-                            logger.info(
-                                "    🔄 '%s' is identified as a movie by TMDB, updating media type to MOVIE.",
-                                item.title,
-                            )
-                            item.media_type = MediaType.MOVIE
-                            media_type = MediaType.MOVIE
-                            details = details_movie
-
-                if media_type == MediaType.MOVIE and not details:
+                elif media_type == MediaType.MOVIE and not details:
                     details = await tmdb.get_movie_details(tmdb_id)
 
             # IMDB Fallback if TMDB ID failed or was missing
@@ -318,6 +315,7 @@ async def _sync_items(
                             item.media_type = MediaType.SHOW
                             media_type = MediaType.SHOW
                         details = await tmdb.get_show_details(tmdb_id)
+
 
             if media_type == MediaType.MOVIE:
                 if details:
@@ -495,11 +493,6 @@ async def _sync_items(
                                             else SeasonStatus.PENDING
                                         )
 
-            # --- AniList Anime GraphQL Metadata & Sequel Consolidation ---
-            seasons = details.get("seasons", []) if details else []
-            if media_type == MediaType.ANIME and not seasons and item.anilist_id:
-                await enrich_anime_metadata(session, item)
-
         else:
             # Update existing
             item.title = movie_data.get("title", item.title)
@@ -509,8 +502,17 @@ async def _sync_items(
                 item.mal_id = mal_id
             if not item.anilist_id:
                 item.anilist_id = anilist_id
+                if not item.anilist_id and (
+                    media_type == MediaType.ANIME or getattr(item, "is_anime_movie", False)
+                ):
+                    from app.services import anilist
+
+                    item.anilist_id = await anilist.search_anime_id_by_title(
+                        item.title, item.year
+                    )
             # Ensure provider matches
             item.provider_id = provider_id
+
 
             # Sync status based on release date / year for existing items
             if item.status in (
@@ -621,17 +623,19 @@ async def _refresh_series_metadata(session: AsyncSession, item: MediaItem) -> No
     """Incremental metadata synchronization engine for TV shows and Anime series."""
     now = datetime.now(timezone.utc)
 
-    if item.media_type in (MediaType.SHOW, MediaType.ANIME):
+    if item.media_type == MediaType.ANIME:
+        if not item.anilist_id:
+            from app.services import anilist
+
+            item.anilist_id = await anilist.search_anime_id_by_title(
+                item.title, item.year
+            )
+        if item.anilist_id:
+            await enrich_anime_metadata(session, item)
+    elif item.media_type == MediaType.SHOW:
         details = None
-        if item.media_type == MediaType.SHOW and item.tmdb_id:
+        if item.tmdb_id:
             details = await tmdb.get_show_details(item.tmdb_id)
-        elif item.media_type == MediaType.ANIME:
-            if item.anilist_id:
-                await enrich_anime_metadata(session, item)
-                if item.tmdb_id:
-                    details = await tmdb.get_show_details(item.tmdb_id)
-            elif item.tmdb_id:
-                details = await tmdb.get_show_details(item.tmdb_id)
 
         if details:
             seasons_data = details.get("seasons", [])
@@ -641,6 +645,7 @@ async def _refresh_series_metadata(session: AsyncSession, item: MediaItem) -> No
             for s_data in seasons_data:
                 s_num = s_data.get("season_number")
                 if s_num is None or s_num <= 0:
+
                     continue
 
                 s_air_date_str = s_data.get("air_date")
