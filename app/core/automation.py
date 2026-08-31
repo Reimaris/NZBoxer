@@ -3662,3 +3662,266 @@ async def consolidate_standalone_anime_sequels(session: AsyncSession) -> None:
                         season.title = cand.title
 
     await session.commit()
+
+
+async def reset_anime_metadata(
+    session: AsyncSession, item_id: int
+) -> MediaItem | None:
+    """Rebuilds anime metadata and franchise season/episode hierarchy cleanly from AniList.
+
+    - Purges invalid/phantom episodes and seasons.
+    - Preserves existing DOWNLOADED and COMPLETED statuses and DownloadHistory.
+    - Resets search backoff counters (empty_search_count = 0, last_searched_at = None,
+      upgrade_attempts_count = 0).
+    """
+    from datetime import datetime, timezone
+
+    from sqlalchemy import select
+    from sqlalchemy.orm import selectinload
+
+    from app.db.models import (
+        Episode,
+        EpisodeStatus,
+        MediaItem,
+        MediaStatus,
+        MediaType,
+        Season,
+        SeasonStatus,
+    )
+    from app.services import anilist
+
+    stmt = (
+        select(MediaItem)
+        .where(MediaItem.id == item_id)
+        .options(selectinload(MediaItem.seasons).selectinload(Season.episodes))
+    )
+    item = (await session.execute(stmt)).scalars().first()
+    if not item:
+        logger.warning("reset_anime_metadata: Item ID %d not found.", item_id)
+        return None
+
+    if item.media_type != MediaType.ANIME and not getattr(item, "is_anime_movie", False):
+        logger.warning(
+            "reset_anime_metadata: Item ID %d is not an Anime (type=%s).",
+            item_id,
+            item.media_type,
+        )
+        return item
+
+    if not item.anilist_id:
+        resolved_id = await anilist.search_anime_id_by_title(item.title, item.year)
+        if resolved_id:
+            item.anilist_id = resolved_id
+        else:
+            logger.warning(
+                "reset_anime_metadata: Unable to resolve AniList ID for '%s'.",
+                item.title,
+            )
+            return item
+
+    # Query AniList hierarchy
+    hierarchy_data = await anilist.get_anime_root_and_hierarchy(item.anilist_id)
+    if hierarchy_data:
+        root_node = hierarchy_data["root"]
+        hierarchy_list = hierarchy_data["hierarchy"]
+
+        if root_node.get("id") != item.anilist_id:
+            logger.info(
+                "    🔄 Out-of-order sequel detected during reset. Updating MediaItem '%s' to root franchise metadata.",
+                item.title,
+            )
+            item.anilist_id = root_node.get("id")
+            item.mal_id = root_node.get("idMal") or item.mal_id
+            titles = root_node.get("title", {})
+            item.title = (
+                titles.get("english") or titles.get("romaji") or item.title
+            )
+        else:
+            titles = root_node.get("title", {})
+            if titles.get("english"):
+                item.title = titles["english"]
+            elif titles.get("romaji"):
+                item.title = titles["romaji"]
+    else:
+        single_details = await anilist.get_anime_season_details(item.anilist_id)
+        if single_details:
+            hierarchy_list = [single_details]
+            root_node = single_details
+            titles = single_details.get("title", {})
+            if titles.get("english"):
+                item.title = titles["english"]
+            elif titles.get("romaji"):
+                item.title = titles["romaji"]
+        else:
+            logger.warning(
+                "reset_anime_metadata: No AniList data returned for ID %d.",
+                item.anilist_id,
+            )
+            return item
+
+    now = datetime.now(timezone.utc)
+
+    # Map existing seasons and episodes
+    existing_seasons_map = {s.season_number: s for s in item.seasons}
+    existing_episodes_map = {
+        (s.season_number, ep.episode_number): ep
+        for s in item.seasons
+        for ep in s.episodes
+    }
+
+    # Reconcile seasons according to AniList hierarchy
+    valid_season_numbers = set()
+    for idx, node in enumerate(hierarchy_list):
+        s_num = idx + 1
+        valid_season_numbers.add(s_num)
+        ep_count = node.get("episodes")
+        s_air_date = None
+        start_date = node.get("startDate")
+        if start_date and start_date.get("year"):
+            try:
+                s_air_date = datetime(
+                    start_date["year"],
+                    start_date.get("month") or 1,
+                    start_date.get("day") or 1,
+                    tzinfo=timezone.utc,
+                )
+            except ValueError:
+                pass
+
+        is_season_future = (
+            s_air_date is not None and s_air_date > now
+        ) or (item.status == MediaStatus.FUTURE)
+
+        season_title = node.get("title", {})
+        formatted_title = (
+            season_title.get("english")
+            or season_title.get("romaji")
+            or season_title.get("native")
+        )
+
+        season_obj = existing_seasons_map.get(s_num)
+        if not season_obj:
+            is_monitored = True if s_num == 1 else False
+            season_obj = Season(
+                media_item_id=item.id,
+                season_number=s_num,
+                monitored=is_monitored,
+                episode_count=ep_count,
+                air_date=s_air_date,
+                anilist_id=node.get("id"),
+                title=formatted_title,
+                status=SeasonStatus.FUTURE
+                if is_season_future
+                else (SeasonStatus.SEARCHING if is_monitored else SeasonStatus.PENDING),
+            )
+            session.add(season_obj)
+            await session.flush()
+            item.seasons.append(season_obj)
+            existing_seasons_map[s_num] = season_obj
+        else:
+            season_obj.anilist_id = node.get("id")
+            season_obj.episode_count = ep_count
+            season_obj.air_date = s_air_date
+            if formatted_title:
+                season_obj.title = formatted_title
+            if is_season_future:
+                season_obj.status = SeasonStatus.FUTURE
+            elif season_obj.status == SeasonStatus.FUTURE:
+                season_obj.status = (
+                    SeasonStatus.SEARCHING
+                    if season_obj.monitored
+                    else SeasonStatus.PENDING
+                )
+
+        # Reset season search counters
+        season_obj.empty_search_count = 0
+        season_obj.last_searched_at = None
+        season_obj.upgrade_attempts_count = 0
+
+        # Reconcile episodes for this season
+        if ep_count:
+            for ep_num in range(1, ep_count + 1):
+                ep_obj = existing_episodes_map.pop((s_num, ep_num), None)
+                if ep_obj:
+                    # Episode exists: preserve downloaded/completed/downloading state
+                    if ep_obj.status in (
+                        EpisodeStatus.DOWNLOADED,
+                        EpisodeStatus.COMPLETED,
+                        EpisodeStatus.DOWNLOADING,
+                        EpisodeStatus.MANUAL_GRAB,
+                    ):
+                        pass  # Preserve downloaded file details & status
+                    else:
+                        # Reset unfulfilled episode status
+                        ep_obj.status = (
+                            EpisodeStatus.FUTURE
+                            if is_season_future
+                            else (
+                                EpisodeStatus.SEARCHING
+                                if season_obj.monitored
+                                else EpisodeStatus.PENDING
+                            )
+                        )
+                        ep_obj.upgrade_attempts_count = 0
+                    if s_air_date and ep_num == 1 and not ep_obj.air_date:
+                        ep_obj.air_date = s_air_date
+                else:
+                    # Newly added episode from AniList
+                    new_ep = Episode(
+                        season_id=season_obj.id,
+                        episode_number=ep_num,
+                        air_date=s_air_date if ep_num == 1 else None,
+                        status=EpisodeStatus.FUTURE
+                        if is_season_future
+                        else (
+                            EpisodeStatus.SEARCHING
+                            if season_obj.monitored
+                            else EpisodeStatus.PENDING
+                        ),
+                    )
+                    session.add(new_ep)
+
+    # Purge remaining phantom episodes
+    phantom_ep_ids = [ep.id for ep in existing_episodes_map.values()]
+    if phantom_ep_ids:
+        from sqlalchemy import delete
+
+        await session.execute(
+            delete(Episode).where(Episode.id.in_(phantom_ep_ids))
+        )
+        for phantom_ep in existing_episodes_map.values():
+            session.expunge(phantom_ep)
+
+    # Purge obsolete seasons
+    obsolete_seasons = [
+        old_season
+        for s_num, old_season in existing_seasons_map.items()
+        if s_num not in valid_season_numbers
+    ]
+    if obsolete_seasons:
+        from sqlalchemy import delete
+
+        obsolete_season_ids = [s.id for s in obsolete_seasons]
+        await session.execute(
+            delete(Season).where(Season.id.in_(obsolete_season_ids))
+        )
+        for old_season in obsolete_seasons:
+            session.expunge(old_season)
+
+
+
+    # Reset parent item search & upgrade counters
+    item.empty_search_count = 0
+    item.last_searched_at = None
+    item.upgrade_attempts_count = 0
+    item.last_metadata_refreshed_at = now
+
+    await session.commit()
+    session.expire_all()
+    await consolidate_standalone_anime_sequels(session)
+    logger.info(
+        "✅ Anime metadata reset completed for '%s' (ID %d).", item.title, item.id
+    )
+    return item
+
+
