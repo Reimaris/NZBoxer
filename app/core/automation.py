@@ -532,7 +532,10 @@ async def _sync_items(
 
 
 async def _sync_season_episodes(
-    session: AsyncSession, season: Season, tmdb_id: int | None = None
+    session: AsyncSession,
+    season: Season,
+    tmdb_id: int | None = None,
+    force_refresh: bool = False,
 ) -> None:
     from app.db.models import Episode, EpisodeStatus
 
@@ -548,8 +551,8 @@ async def _sync_season_episodes(
     if "episodes" in inspect(season).unloaded:
         await session.refresh(season, ["episodes"])
 
-    # If season already has episodes, skip external TMDB API call
-    if len(season.episodes) > 0:
+    # If season already has episodes, skip external TMDB API call unless forced
+    if len(season.episodes) > 0 and not force_refresh:
         return
 
     season_details = await tmdb.get_season_details(
@@ -596,13 +599,138 @@ async def _sync_season_episodes(
                         else EpisodeStatus.PENDING
                     )
         else:
+            if ep_is_future:
+                initial_status = EpisodeStatus.FUTURE
+            else:
+                initial_status = (
+                    EpisodeStatus.SEARCHING
+                    if season.monitored
+                    else EpisodeStatus.PENDING
+                )
+
             new_ep = Episode(
                 season_id=season.id,
                 episode_number=ep_num,
                 air_date=air_date,
-                status=EpisodeStatus.FUTURE if ep_is_future else EpisodeStatus.PENDING,
+                status=initial_status,
             )
             session.add(new_ep)
+
+
+async def _refresh_series_metadata(session: AsyncSession, item: MediaItem) -> None:
+    """Incremental metadata synchronization engine for TV shows and Anime series."""
+    now = datetime.now(timezone.utc)
+
+    if item.media_type in (MediaType.SHOW, MediaType.ANIME):
+        details = None
+        if item.media_type == MediaType.SHOW and item.tmdb_id:
+            details = await tmdb.get_show_details(item.tmdb_id)
+        elif item.media_type == MediaType.ANIME:
+            if item.anilist_id:
+                await enrich_anime_metadata(session, item)
+                if item.tmdb_id:
+                    details = await tmdb.get_show_details(item.tmdb_id)
+            elif item.tmdb_id:
+                details = await tmdb.get_show_details(item.tmdb_id)
+
+        if details:
+            seasons_data = details.get("seasons", [])
+            existing_seasons = sorted(item.seasons, key=lambda s: s.season_number)
+            existing_season_nums = {s.season_number for s in item.seasons}
+
+            for s_data in seasons_data:
+                s_num = s_data.get("season_number")
+                if s_num is None or s_num <= 0:
+                    continue
+
+                s_air_date_str = s_data.get("air_date")
+                s_air_date = None
+                if s_air_date_str:
+                    try:
+                        s_air_date = datetime.strptime(
+                            s_air_date_str, "%Y-%m-%d"
+                        ).replace(tzinfo=timezone.utc)
+                    except ValueError:
+                        pass
+
+                if s_num not in existing_season_nums:
+                    # New season discovery logic
+                    should_monitor = False
+                    initial_status = SeasonStatus.PENDING
+
+                    if item.auto_monitor_next_season and s_num > 1:
+                        preceding = next(
+                            (
+                                s
+                                for s in existing_seasons
+                                if s.season_number == s_num - 1
+                            ),
+                            None,
+                        )
+                        if preceding and preceding.status in (
+                            SeasonStatus.COMPLETED,
+                            SeasonStatus.DOWNLOADED,
+                        ):
+                            should_monitor = True
+                            if s_air_date and s_air_date > now:
+                                initial_status = SeasonStatus.FUTURE
+                            else:
+                                initial_status = SeasonStatus.SEARCHING
+
+                    new_season = Season(
+                        media_item_id=item.id,
+                        season_number=s_num,
+                        monitored=should_monitor,
+                        episode_count=s_data.get("episode_count"),
+                        air_date=s_air_date,
+                        status=initial_status,
+                    )
+                    session.add(new_season)
+                    await session.flush()
+                    item.seasons.append(new_season)
+                    existing_seasons.append(new_season)
+                    existing_seasons.sort(key=lambda s: s.season_number)
+                    existing_season_nums.add(s_num)
+
+                    target_season = new_season
+                else:
+                    target_season = next(
+                        s for s in item.seasons if s.season_number == s_num
+                    )
+                    if s_air_date:
+                        target_season.air_date = s_air_date
+
+                # Sync episodes for the season
+                await _sync_season_episodes(
+                    session, target_season, tmdb_id=item.tmdb_id, force_refresh=True
+                )
+
+        # Premiere date wakeup logic for FUTURE seasons and episodes
+        for season in item.seasons:
+            if season.status == SeasonStatus.FUTURE and season.air_date:
+                ad = season.air_date
+                if ad.tzinfo is None:
+                    ad = ad.replace(tzinfo=timezone.utc)
+                if ad <= now:
+                    season.status = (
+                        SeasonStatus.SEARCHING
+                        if season.monitored
+                        else SeasonStatus.PENDING
+                    )
+
+            for episode in season.episodes:
+                if episode.status == EpisodeStatus.FUTURE and episode.air_date:
+                    ead = episode.air_date
+                    if ead.tzinfo is None:
+                        ead = ead.replace(tzinfo=timezone.utc)
+                    if ead <= now:
+                        episode.status = (
+                            EpisodeStatus.SEARCHING
+                            if season.monitored
+                            else EpisodeStatus.PENDING
+                        )
+
+    item.last_metadata_refreshed_at = now
 
 
 async def run_automation_cycle(force: bool = False) -> None:
@@ -638,17 +766,21 @@ async def run_automation_cycle(force: bool = False) -> None:
             return
 
         async with async_session_factory() as session:
-            # 1.5 Sync episodes for all seasons (optimized to skip TMDB if already loaded)
-            stmt_s = select(Season).options(selectinload(Season.media_item))
-            seasons_result = await session.execute(stmt_s)
-            for season in seasons_result.scalars().unique():
+            # 1.5 Metadata Refresh (Stage 4 of standard pipeline)
+            stmt_refresh = (
+                select(MediaItem)
+                .where(MediaItem.media_type.in_([MediaType.SHOW, MediaType.ANIME]))
+                .options(selectinload(MediaItem.seasons).selectinload(Season.episodes))
+            )
+            refresh_result = await session.execute(stmt_refresh)
+            for item in refresh_result.scalars().unique():
                 if automation_state_manager.is_aborting():
                     logger.info(
-                        "🛑 Automation cycle abort requested. Halting season sync."
+                        "🛑 Automation cycle abort requested. Halting metadata refresh."
                     )
                     return
-                if season.media_item and season.media_item.tmdb_id:
-                    await _sync_season_episodes(session, season)
+                if is_eligible_for_metadata_refresh(item):
+                    await _refresh_series_metadata(session, item)
 
             # 1.6 Consolidate any standalone anime sequel MediaItems into their parent seasons
             await consolidate_standalone_anime_sequels(session)
