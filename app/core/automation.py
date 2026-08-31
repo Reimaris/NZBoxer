@@ -3852,6 +3852,34 @@ async def reset_anime_metadata(
         root_node = hierarchy_data["root"]
         hierarchy_list = hierarchy_data["hierarchy"]
 
+        root_id = root_node.get("id")
+        if root_id:
+            other_root_stmt = select(MediaItem).where(
+                MediaItem.anilist_id == root_id,
+                MediaItem.id != item.id,
+            )
+            other_root = (await session.execute(other_root_stmt)).scalars().first()
+            if other_root:
+                logger.info(
+                    "    🗑️ Auto-consolidating duplicate franchise MediaItem '%s' (ID %d) into existing root ID %d.",
+                    item.title,
+                    item.id,
+                    other_root.id,
+                )
+                if not other_root.tmdb_id and item.tmdb_id:
+                    other_root.tmdb_id = item.tmdb_id
+                if not other_root.imdb_id and item.imdb_id:
+                    other_root.imdb_id = item.imdb_id
+                if not other_root.tvdb_id and item.tvdb_id:
+                    other_root.tvdb_id = item.tvdb_id
+                if not other_root.mal_id and item.mal_id:
+                    other_root.mal_id = item.mal_id
+                if not other_root.poster_url and item.poster_url:
+                    other_root.poster_url = item.poster_url
+                await session.delete(item)
+                await session.commit()
+                return other_root
+
         if root_node.get("id") != item.anilist_id:
             logger.info(
                 "    🔄 Out-of-order sequel detected during reset. Updating MediaItem '%s' to root franchise metadata.",
@@ -3919,15 +3947,10 @@ async def reset_anime_metadata(
             s_air_date is not None and s_air_date > now
         ) or (item.status == MediaStatus.FUTURE)
 
-        season_title = node.get("title", {})
-        formatted_title = (
-            season_title.get("english")
-            or season_title.get("romaji")
-            or season_title.get("native")
-        )
-
         season_obj = existing_seasons_map.get(s_num)
         if not season_obj:
+            # Create new season
+            season_title = node.get("title", {})
             is_monitored = True if s_num == 1 else False
             season_obj = Season(
                 media_item_id=item.id,
@@ -3936,24 +3959,33 @@ async def reset_anime_metadata(
                 episode_count=ep_count,
                 air_date=s_air_date,
                 anilist_id=node.get("id"),
-                title=formatted_title,
+                title=season_title.get("english")
+                or season_title.get("romaji")
+                or season_title.get("native"),
                 status=SeasonStatus.FUTURE
                 if is_season_future
-                else (SeasonStatus.SEARCHING if is_monitored else SeasonStatus.PENDING),
+                else (
+                    SeasonStatus.SEARCHING if is_monitored else SeasonStatus.PENDING
+                ),
             )
             session.add(season_obj)
             await session.flush()
-            item.seasons.append(season_obj)
             existing_seasons_map[s_num] = season_obj
+
         else:
-            season_obj.anilist_id = node.get("id")
-            season_obj.episode_count = ep_count
-            season_obj.air_date = s_air_date
-            if formatted_title:
-                season_obj.title = formatted_title
-            if is_season_future:
-                season_obj.status = SeasonStatus.FUTURE
-            elif season_obj.status == SeasonStatus.FUTURE:
+            # Update existing season metadata
+            season_title = node.get("title", {})
+            season_obj.title = (
+                season_title.get("english")
+                or season_title.get("romaji")
+                or season_title.get("native")
+                or season_obj.title
+            )
+            season_obj.episode_count = ep_count or season_obj.episode_count
+            season_obj.air_date = s_air_date or season_obj.air_date
+            season_obj.anilist_id = node.get("id") or season_obj.anilist_id
+
+            if season_obj.status in (SeasonStatus.PENDING, SeasonStatus.SEARCHING, SeasonStatus.CANCELED):
                 season_obj.status = (
                     SeasonStatus.SEARCHING
                     if season_obj.monitored
@@ -4009,31 +4041,15 @@ async def reset_anime_metadata(
                     session.add(new_ep)
 
     # Purge remaining phantom episodes
-    phantom_ep_ids = [ep.id for ep in existing_episodes_map.values()]
-    if phantom_ep_ids:
-        from sqlalchemy import delete
-
-        await session.execute(
-            delete(Episode).where(Episode.id.in_(phantom_ep_ids))
-        )
-        for phantom_ep in existing_episodes_map.values():
-            session.expunge(phantom_ep)
+    for phantom_ep in existing_episodes_map.values():
+        await session.delete(phantom_ep)
 
     # Purge obsolete seasons
-    obsolete_seasons = [
-        old_season
-        for s_num, old_season in existing_seasons_map.items()
-        if s_num not in valid_season_numbers
-    ]
-    if obsolete_seasons:
-        from sqlalchemy import delete
+    for s_num, old_season in existing_seasons_map.items():
+        if s_num not in valid_season_numbers:
+            await session.delete(old_season)
 
-        obsolete_season_ids = [s.id for s in obsolete_seasons]
-        await session.execute(
-            delete(Season).where(Season.id.in_(obsolete_season_ids))
-        )
-        for old_season in obsolete_seasons:
-            session.expunge(old_season)
+
 
 
 
@@ -4043,12 +4059,16 @@ async def reset_anime_metadata(
     item.upgrade_attempts_count = 0
     item.last_metadata_refreshed_at = now
 
+    item_title = item.title
+    item_id = item.id
+
     await session.commit()
     session.expire_all()
-    await consolidate_standalone_anime_sequels(session)
     logger.info(
-        "✅ Anime metadata reset completed for '%s' (ID %d).", item.title, item.id
+        "✅ Anime metadata reset completed for '%s' (ID %d).", item_title, item_id
     )
     return item
+
+
 
 
