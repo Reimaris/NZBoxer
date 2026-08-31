@@ -733,12 +733,232 @@ async def _refresh_series_metadata(session: AsyncSession, item: MediaItem) -> No
     item.last_metadata_refreshed_at = now
 
 
-async def run_automation_cycle(force: bool = False) -> None:
-    """Background job that searches for NZBs and pushes them to TorBox.
+async def run_video_metadata_refresh_cycle(session: AsyncSession) -> None:
+    logger.info("🔄 Starting Stage 4: Metadata Refresh...")
+    stmt_refresh = (
+        select(MediaItem)
+        .where(MediaItem.media_type.in_([MediaType.SHOW, MediaType.ANIME]))
+        .options(selectinload(MediaItem.seasons).selectinload(Season.episodes))
+    )
+    refresh_result = await session.execute(stmt_refresh)
+    for item in refresh_result.scalars().unique():
+        if automation_state_manager.is_aborting():
+            logger.info(
+                "🛑 Automation cycle abort requested. Halting metadata refresh."
+            )
+            return
+        if is_eligible_for_metadata_refresh(item):
+            await _refresh_series_metadata(session, item)
 
-    Args:
-        force: If True, bypass the per-provider cycle skip throttle and always run.
-    """
+    await consolidate_standalone_anime_sequels(session)
+
+    # Date progression logic
+    stmt_reached = select(MediaItem).where(
+        MediaItem.status.in_([MediaStatus.PENDING, MediaStatus.FUTURE]),
+        MediaItem.release_date.isnot(None),
+        MediaItem.release_date <= datetime.now(timezone.utc),
+    )
+    for m in (await session.execute(stmt_reached)).scalars():
+        m.status = MediaStatus.SEARCHING
+        logger.info(
+            "🔄 Item '%s' has reached its release date and is now being searched.",
+            m.title,
+        )
+
+    stmt_future = select(MediaItem).where(
+        MediaItem.status.in_([MediaStatus.SEARCHING, MediaStatus.PENDING]),
+    )
+    for m in (await session.execute(stmt_future)).scalars().all():
+        rd = m.release_date
+        if rd and rd.tzinfo is None:
+            rd = rd.replace(tzinfo=timezone.utc)
+        if rd and rd > datetime.now(timezone.utc):
+            m.status = MediaStatus.FUTURE
+            m.fail_count = 0
+            logger.info(
+                "    🔄 Item '%s' set to FUTURE (Release Date: %s is in the future)",
+                m.title,
+                rd.strftime("%Y-%m-%d"),
+            )
+        elif not m.release_date and m.year and m.year > datetime.now().year:
+            m.status = MediaStatus.FUTURE
+            m.fail_count = 0
+            logger.info(
+                "    🔄 Item '%s' set to FUTURE (Year %s is in the future)",
+                m.title,
+                m.year,
+            )
+
+    stmt_s_future = (
+        select(Season)
+        .join(MediaItem)
+        .where(
+            Season.status.in_([SeasonStatus.SEARCHING, SeasonStatus.PENDING]),
+            MediaItem.status == MediaStatus.FUTURE,
+        )
+    )
+    for s in (await session.execute(stmt_s_future)).scalars().all():
+        s.status = SeasonStatus.FUTURE
+
+    await session.commit()
+
+    from app.db.models import Episode, EpisodeStatus
+
+    stmt_e = select(Episode).where(
+        Episode.status.in_([EpisodeStatus.PENDING, EpisodeStatus.FUTURE]),
+        Episode.air_date.isnot(None),
+        Episode.air_date <= datetime.now(timezone.utc),
+    )
+    for pending_ep in (await session.execute(stmt_e)).scalars():
+        pending_ep.status = EpisodeStatus.SEARCHING
+
+    stmt_e_future = select(Episode).where(
+        Episode.status.in_([EpisodeStatus.PENDING, EpisodeStatus.SEARCHING]),
+        Episode.air_date.isnot(None),
+        Episode.air_date > datetime.now(timezone.utc),
+    )
+    for future_ep in (await session.execute(stmt_e_future)).scalars():
+        future_ep.status = EpisodeStatus.FUTURE
+
+    await session.commit()
+
+
+async def _run_video_acquisition_search_cycle(session: AsyncSession) -> None:
+    logger.info("🔄 Starting Stage 5: Initial Acquisition Search...")
+    from app.db.models import ProviderProfile
+
+    profiles = (await session.execute(select(ProviderProfile))).scalars().all()
+    active_movie_provider_ids = [
+        p.provider_id for p in profiles if p.media_type == "movies"
+    ]
+    active_shows_provider_ids = [
+        p.provider_id for p in profiles if p.media_type == "shows"
+    ]
+
+    if active_movie_provider_ids:
+        stmt_movies = (
+            select(MediaItem)
+            .where(
+                MediaItem.media_type == MediaType.MOVIE,
+                MediaItem.provider_id.in_(active_movie_provider_ids),
+                MediaItem.status == MediaStatus.SEARCHING,
+            )
+            .options(selectinload(MediaItem.download_history))
+        )
+        for movie in (await session.execute(stmt_movies)).scalars():
+            if automation_state_manager.is_aborting():
+                logger.info(
+                    "🛑 Automation cycle abort requested. Stopping movie processing."
+                )
+                return
+            await _process_movie(session, movie)
+    else:
+        logger.info("⏩ Skipping movie search in this cycle.")
+
+    if active_shows_provider_ids and not automation_state_manager.is_aborting():
+        season_stmt = (
+            select(Season)
+            .join(MediaItem)
+            .where(
+                Season.monitored == True,
+                MediaItem.status != MediaStatus.IGNORED,
+                MediaItem.provider_id.in_(active_shows_provider_ids),
+                Season.status.in_([SeasonStatus.SEARCHING, SeasonStatus.PENDING]),
+            )
+            .options(
+                selectinload(Season.media_item).selectinload(MediaItem.provider),
+                selectinload(Season.download_history),
+            )
+        )
+        for season in (await session.execute(season_stmt)).scalars().unique():
+            if automation_state_manager.is_aborting():
+                logger.info(
+                    "🛑 Automation cycle abort requested. Stopping season processing."
+                )
+                return
+            await _process_season(session, season)
+    else:
+        logger.info("⏩ Skipping series search in this cycle.")
+
+
+async def _run_video_upgrade_cycle(session: AsyncSession) -> None:
+    if automation_state_manager.is_aborting():
+        return
+
+    logger.info("🔄 Starting Stage 6: Dedicated Upgrade Search...")
+    from datetime import timedelta
+
+    from app.db.models import ProviderProfile
+
+    profiles = (await session.execute(select(ProviderProfile))).scalars().all()
+    active_movie_provider_ids = [
+        p.provider_id for p in profiles if p.media_type == "movies"
+    ]
+    active_shows_provider_ids = [
+        p.provider_id for p in profiles if p.media_type == "shows"
+    ]
+    target_score = scoring_config.get("cutoffs", {}).get("target_score", 8000)
+
+    if active_movie_provider_ids:
+        stmt_movies_upg = (
+            select(MediaItem)
+            .where(
+                MediaItem.media_type == MediaType.MOVIE,
+                MediaItem.provider_id.in_(active_movie_provider_ids),
+                MediaItem.status == MediaStatus.DOWNLOADED,
+                MediaItem.upgrade_attempts_count < settings.max_upgrade_attempts,
+            )
+            .options(selectinload(MediaItem.download_history))
+        )
+        for movie in (await session.execute(stmt_movies_upg)).scalars():
+            if movie.best_score is not None and movie.best_score >= target_score:
+                continue
+            if movie.last_upgrade_search_at and (
+                datetime.now(timezone.utc)
+                - movie.last_upgrade_search_at.replace(tzinfo=timezone.utc)
+            ) < timedelta(hours=settings.upgrade_search_interval_hours):
+                continue
+            if automation_state_manager.is_aborting():
+                return
+            logger.info("  ⬆️ Upgrade Evaluation for Movie: %s", movie.title)
+            await _process_movie(session, movie)
+
+    if active_shows_provider_ids and not automation_state_manager.is_aborting():
+        season_stmt_upg = (
+            select(Season)
+            .join(MediaItem)
+            .where(
+                Season.monitored == True,
+                MediaItem.status != MediaStatus.IGNORED,
+                MediaItem.provider_id.in_(active_shows_provider_ids),
+                Season.status == SeasonStatus.DOWNLOADED,
+                Season.upgrade_attempts_count < settings.max_upgrade_attempts,
+            )
+            .options(
+                selectinload(Season.media_item).selectinload(MediaItem.provider),
+                selectinload(Season.download_history),
+            )
+        )
+        for season in (await session.execute(season_stmt_upg)).scalars().unique():
+            if season.best_score is not None and season.best_score >= target_score:
+                continue
+            if season.last_upgrade_search_at and (
+                datetime.now(timezone.utc)
+                - season.last_upgrade_search_at.replace(tzinfo=timezone.utc)
+            ) < timedelta(hours=settings.upgrade_search_interval_hours):
+                continue
+            if automation_state_manager.is_aborting():
+                return
+            logger.info(
+                "  ⬆️ Upgrade Evaluation for Season Pack: S%02d of %s",
+                season.season_number,
+                season.media_item.title,
+            )
+            await _process_season(session, season)
+
+
+async def run_automation_cycle(force: bool = False) -> None:
+    """Background job that searches for NZBs and pushes them to TorBox."""
     automation_state_manager.set_running(AutomationStatus.RUNNING_VIDEO)
     log_process_start(logger, "Automation Cycle")
     try:
@@ -749,270 +969,42 @@ async def run_automation_cycle(force: bool = False) -> None:
         else:
             logger.info("🔄 Starting automation cycle...")
 
-        # 0. Self-healing: fix failed downloads before searching
+        # Stage 1: Self-healing
         if force:
             await run_self_healing_cycle()
-            await run_download_check_cycle()
 
         if automation_state_manager.is_aborting():
             logger.info("🛑 Automation cycle abort requested early. Halting.")
             return
 
-        # 1. Sync watchlist first
+        # Stage 2: Download State (Pre-Search)
+        await run_download_check_cycle()
+
+        if automation_state_manager.is_aborting():
+            return
+
+        # Stage 3: Watchlist Sync
         await sync_simkl_watchlist()
 
         if automation_state_manager.is_aborting():
-            logger.info("🛑 Automation cycle abort requested after sync. Halting.")
             return
 
         async with async_session_factory() as session:
-            # 1.5 Metadata Refresh (Stage 4 of standard pipeline)
-            stmt_refresh = (
-                select(MediaItem)
-                .where(MediaItem.media_type.in_([MediaType.SHOW, MediaType.ANIME]))
-                .options(selectinload(MediaItem.seasons).selectinload(Season.episodes))
-            )
-            refresh_result = await session.execute(stmt_refresh)
-            for item in refresh_result.scalars().unique():
-                if automation_state_manager.is_aborting():
-                    logger.info(
-                        "🛑 Automation cycle abort requested. Halting metadata refresh."
-                    )
-                    return
-                if is_eligible_for_metadata_refresh(item):
-                    await _refresh_series_metadata(session, item)
+            # Stage 4: Metadata Refresh
+            await run_video_metadata_refresh_cycle(session)
+            if automation_state_manager.is_aborting():
+                return
 
-            # 1.6 Consolidate any standalone anime sequel MediaItems into their parent seasons
-            await consolidate_standalone_anime_sequels(session)
+            # Stage 5: Initial Acquisition Search
+            await _run_video_acquisition_search_cycle(session)
+            if automation_state_manager.is_aborting():
+                return
 
-            # Update pending/future items that have reached their release date
-            stmt_reached = select(MediaItem).where(
-                MediaItem.status.in_([MediaStatus.PENDING, MediaStatus.FUTURE]),
-                MediaItem.release_date.isnot(None),
-                MediaItem.release_date <= datetime.now(timezone.utc),
-            )
-            reached_result = await session.execute(stmt_reached)
-            for m in reached_result.scalars():
-                m.status = MediaStatus.SEARCHING
-                logger.info(
-                    "🔄 Item '%s' has reached its release date and is now being searched.",
-                    m.title,
-                )
+            # Stage 6: Dedicated Upgrade Search
+            await _run_video_upgrade_cycle(session)
 
-            # Revert searching/pending items that have a future release date or future year
-            stmt_future = select(MediaItem).where(
-                MediaItem.status.in_([MediaStatus.SEARCHING, MediaStatus.PENDING]),
-            )
-            items_to_check = (await session.execute(stmt_future)).scalars().all()
-            for m in items_to_check:
-                # Ensure release_date is timezone-aware for comparison
-                rd = m.release_date
-                if rd and rd.tzinfo is None:
-                    rd = rd.replace(tzinfo=timezone.utc)
-                if rd and rd > datetime.now(timezone.utc):
-                    m.status = MediaStatus.FUTURE
-                    m.fail_count = 0
-                    logger.info(
-                        "    🔄 Item '%s' set to FUTURE (Release Date: %s is in the future)",
-                        m.title,
-                        rd.strftime("%Y-%m-%d"),
-                    )
-                elif not m.release_date and m.year and m.year > datetime.now().year:
-                    m.status = MediaStatus.FUTURE
-                    m.fail_count = 0
-                    logger.info(
-                        "    🔄 Item '%s' set to FUTURE (Year %s is in the future)",
-                        m.title,
-                        m.year,
-                    )
-
-            # Sync season status with parent item if parent is FUTURE
-            stmt_s_future = (
-                select(Season)
-                .join(MediaItem)
-                .where(
-                    Season.status.in_([SeasonStatus.SEARCHING, SeasonStatus.PENDING]),
-                    MediaItem.status == MediaStatus.FUTURE,
-                )
-            )
-            for s in (await session.execute(stmt_s_future)).scalars().all():
-                s.status = SeasonStatus.FUTURE
-
-            await session.commit()
-
-            # Update pending/future episodes that have reached their air date
-            from app.db.models import Episode, EpisodeStatus
-
-            stmt_e = select(Episode).where(
-                Episode.status.in_([EpisodeStatus.PENDING, EpisodeStatus.FUTURE]),
-                Episode.air_date.isnot(None),
-                Episode.air_date <= datetime.now(timezone.utc),
-            )
-            result_e = await session.execute(stmt_e)
-            for pending_ep in result_e.scalars():
-                pending_ep.status = EpisodeStatus.SEARCHING
-
-            # Set episodes with future air date to FUTURE
-            stmt_e_future = select(Episode).where(
-                Episode.status.in_([EpisodeStatus.PENDING, EpisodeStatus.SEARCHING]),
-                Episode.air_date.isnot(None),
-                Episode.air_date > datetime.now(timezone.utc),
-            )
-            result_e_future = await session.execute(stmt_e_future)
-            for future_ep in result_e_future.scalars():
-                future_ep.status = EpisodeStatus.FUTURE
-
-            await session.commit()
-
-            # Active Provider Profiles
-            from app.db.models import ProviderProfile
-
-            profiles = (await session.execute(select(ProviderProfile))).scalars().all()
-            active_movie_provider_ids = [
-                p.provider_id for p in profiles if p.media_type == "movies"
-            ]
-            active_shows_provider_ids = [
-                p.provider_id for p in profiles if p.media_type == "shows"
-            ]
-
-            if active_movie_provider_ids:
-                # 2. Process Movies (Acquisition)
-                target_score = scoring_config.get("cutoffs", {}).get(
-                    "target_score", 8000
-                )
-                stmt_movies = (
-                    select(MediaItem)
-                    .where(
-                        MediaItem.media_type == MediaType.MOVIE,
-                        MediaItem.provider_id.in_(active_movie_provider_ids),
-                        MediaItem.status == MediaStatus.SEARCHING,
-                    )
-                    .options(selectinload(MediaItem.download_history))
-                )
-
-                movies_result = await session.execute(stmt_movies)
-                for movie in movies_result.scalars():
-                    if automation_state_manager.is_aborting():
-                        logger.info(
-                            "🛑 Automation cycle abort requested. Stopping movie processing."
-                        )
-                        break
-                    await _process_movie(session, movie)
-            else:
-                logger.info("⏩ Skipping movie search in this cycle.")
-
-            if active_shows_provider_ids and not automation_state_manager.is_aborting():
-                # 3. Process Shows (Seasons Acquisition)
-                season_stmt = (
-                    select(Season)
-                    .join(MediaItem)
-                    .where(
-                        Season.monitored == True,
-                        MediaItem.status != MediaStatus.IGNORED,
-                        MediaItem.provider_id.in_(active_shows_provider_ids),
-                        Season.status.in_(
-                            [SeasonStatus.SEARCHING, SeasonStatus.PENDING]
-                        ),
-                    )
-                    .options(
-                        selectinload(Season.media_item).selectinload(
-                            MediaItem.provider
-                        ),
-                        selectinload(Season.download_history),
-                    )
-                )
-
-                seasons_result = await session.execute(season_stmt)
-                for season in seasons_result.scalars().unique():
-                    if automation_state_manager.is_aborting():
-                        logger.info(
-                            "🛑 Automation cycle abort requested. Stopping season processing."
-                        )
-                        break
-                    await _process_season(session, season)
-            else:
-                logger.info("⏩ Skipping series search in this cycle.")
-
-            # --- Upgrade Evaluation Engine (Video) ---
-            if not automation_state_manager.is_aborting():
-                from datetime import timedelta
-
-                logger.info("🔄 Starting Upgrade Evaluation Engine (Video)...")
-
-                if active_movie_provider_ids:
-                    stmt_movies_upg = (
-                        select(MediaItem)
-                        .where(
-                            MediaItem.media_type == MediaType.MOVIE,
-                            MediaItem.provider_id.in_(active_movie_provider_ids),
-                            MediaItem.status == MediaStatus.DOWNLOADED,
-                            MediaItem.upgrade_attempts_count
-                            < settings.max_upgrade_attempts,
-                        )
-                        .options(selectinload(MediaItem.download_history))
-                    )
-                    for movie in (await session.execute(stmt_movies_upg)).scalars():
-                        if (
-                            movie.best_score is not None
-                            and movie.best_score >= target_score
-                        ):
-                            continue
-                        if movie.last_upgrade_search_at and (
-                            datetime.now(timezone.utc)
-                            - movie.last_upgrade_search_at.replace(tzinfo=timezone.utc)
-                        ) < timedelta(hours=settings.upgrade_search_interval_hours):
-                            continue
-                        if automation_state_manager.is_aborting():
-                            break
-                        logger.info("  ⬆️ Upgrade Evaluation for Movie: %s", movie.title)
-                        await _process_movie(session, movie)
-
-                if (
-                    active_shows_provider_ids
-                    and not automation_state_manager.is_aborting()
-                ):
-                    season_stmt_upg = (
-                        select(Season)
-                        .join(MediaItem)
-                        .where(
-                            Season.monitored == True,
-                            MediaItem.status != MediaStatus.IGNORED,
-                            MediaItem.provider_id.in_(active_shows_provider_ids),
-                            Season.status == SeasonStatus.DOWNLOADED,
-                            Season.upgrade_attempts_count
-                            < settings.max_upgrade_attempts,
-                        )
-                        .options(
-                            selectinload(Season.media_item).selectinload(
-                                MediaItem.provider
-                            ),
-                            selectinload(Season.download_history),
-                        )
-                    )
-                    for season in (
-                        (await session.execute(season_stmt_upg)).scalars().unique()
-                    ):
-                        if (
-                            season.best_score is not None
-                            and season.best_score >= target_score
-                        ):
-                            continue
-                        if season.last_upgrade_search_at and (
-                            datetime.now(timezone.utc)
-                            - season.last_upgrade_search_at.replace(tzinfo=timezone.utc)
-                        ) < timedelta(hours=settings.upgrade_search_interval_hours):
-                            continue
-                        if automation_state_manager.is_aborting():
-                            break
-                        logger.info(
-                            "  ⬆️ Upgrade Evaluation for Season Pack: S%02d of %s",
-                            season.season_number,
-                            season.media_item.title,
-                        )
-                        await _process_season(session, season)
-
-        # 4. Download-Check: update status for items already sent to TorBox
-        if force and not automation_state_manager.is_aborting():
+        # Stage 7: Download State (Post-Grab)
+        if not automation_state_manager.is_aborting():
             await run_download_check_cycle()
     finally:
         automation_state_manager.reset()

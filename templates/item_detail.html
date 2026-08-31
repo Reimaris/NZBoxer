@@ -136,6 +136,16 @@
                     </svg>
                 </button>
                 {% endif %}
+                {% if item.media_type.value in ('show', 'anime') %}
+                <button hx-post="/items/{{ item.id }}/refresh_metadata"
+                        class="ml-2 text-slate-400 hover:text-emerald-400 transition-colors focus:outline-none"
+                        title="Force Metadata Refresh (TMDB/AniList)"
+                        onclick="this.classList.add('animate-spin', 'text-emerald-500')">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                    </svg>
+                </button>
+                {% endif %}
                 <a href="/manual-search?query={{ item.title|urlencode }}&imdb_id={{ item.imdb_id or '' }}&tmdb_id={{ item.tmdb_id or '' }}&tvdb_id={{ item.tvdb_id or '' }}&category={{ 'movie' if item.media_type.value == 'movie' else 'series' if item.media_type.value == 'show' else 'anime' if item.media_type.value == 'anime' else 'any' }}"
                    class="ml-2 text-slate-400 hover:text-[#d40060] transition-colors focus:outline-none"
                    title="Switch to Advanced Manual Search">
