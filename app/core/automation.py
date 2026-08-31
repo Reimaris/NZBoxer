@@ -231,7 +231,19 @@ async def _sync_items(
 
             if not existing_season.monitored:
                 existing_season.monitored = True
-                existing_season.status = SeasonStatus.SEARCHING
+                if existing_season.status != SeasonStatus.FUTURE:
+                    existing_season.status = SeasonStatus.SEARCHING
+                from app.db.models import Episode, EpisodeStatus
+
+                ep_stmt = select(Episode).where(Episode.season_id == existing_season.id)
+                eps = (await session.execute(ep_stmt)).scalars().all()
+                for ep in eps:
+                    if ep.status not in (
+                        EpisodeStatus.DOWNLOADED,
+                        EpisodeStatus.COMPLETED,
+                        EpisodeStatus.FUTURE,
+                    ):
+                        ep.status = EpisodeStatus.SEARCHING
                 logger.info(
                     "    🔄 Activated previously unmonitored consolidated Season %d.",
                     existing_season.season_number,
@@ -272,7 +284,37 @@ async def _sync_items(
                     item.title, item.year
                 )
             if item.anilist_id and media_type == MediaType.ANIME:
-                await enrich_anime_metadata(session, item)
+                # Check if item.anilist_id matches an existing Season on another MediaItem
+                dup_stmt = (
+                    select(Season)
+                    .where(
+                        Season.anilist_id == item.anilist_id,
+                        Season.media_item_id != item.id,
+                    )
+                    .options(selectinload(Season.media_item))
+                )
+                parent_season = (await session.execute(dup_stmt)).scalars().first()
+                if parent_season:
+                    logger.info(
+                        "    ⏩ Soft-ignoring MediaItem '%s' (ID %d) as AniList ID %d is tracked as Season %d of parent series ID %d.",
+                        item.title,
+                        item.id,
+                        item.anilist_id,
+                        parent_season.season_number,
+                        parent_season.media_item_id,
+                    )
+                    item.status = MediaStatus.IGNORED
+                    for s in item.seasons:
+                        s.status = SeasonStatus.IGNORED
+                    if not parent_season.simkl_id and item.simkl_id:
+                        parent_season.simkl_id = item.simkl_id
+                    if not parent_season.monitored:
+                        parent_season.monitored = True
+                        if parent_season.status != SeasonStatus.FUTURE:
+                            parent_season.status = SeasonStatus.SEARCHING
+                else:
+                    await enrich_anime_metadata(session, item)
+
         elif (tmdb_id or item.imdb_id) and (
             is_new
             or not item.release_date
@@ -3444,7 +3486,7 @@ async def enrich_anime_metadata(session: AsyncSession, item: MediaItem) -> None:
             is_season_future = (
                 s_air_date and s_air_date > datetime.now(timezone.utc)
             ) or (item.status == MediaStatus.FUTURE)
-            is_monitored = anilist_node.get("id") == original_anilist_id
+            is_monitored = True if s_num == 1 else False
 
             existing_season_stmt = select(Season).where(
                 Season.media_item_id == item.id,
@@ -3485,7 +3527,11 @@ async def enrich_anime_metadata(session: AsyncSession, item: MediaItem) -> None:
                             air_date=s_air_date if ep_num == 1 else None,
                             status=EpisodeStatus.FUTURE
                             if is_season_future
-                            else EpisodeStatus.PENDING,
+                            else (
+                                EpisodeStatus.SEARCHING
+                                if is_monitored
+                                else EpisodeStatus.PENDING
+                            ),
                         )
                         session.add(new_ep)
             else:
@@ -3495,7 +3541,11 @@ async def enrich_anime_metadata(session: AsyncSession, item: MediaItem) -> None:
         for idx, node in enumerate(hierarchy_list):
             await _create_anilist_season(idx + 1, node)
 
+        if item.status == MediaStatus.PENDING:
+            item.status = MediaStatus.SEARCHING
+
         await consolidate_standalone_anime_sequels(session)
+
 
 
 async def consolidate_standalone_anime_sequels(session: AsyncSession) -> None:
