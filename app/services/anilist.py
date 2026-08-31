@@ -314,93 +314,116 @@ async def get_anime_root_and_hierarchy(anilist_id: int) -> dict[str, Any] | None
     }
     """
 
-    ALLOWED_FORMATS = {"TV", "TV_SHORT", "ONA"}
+    SEASON_FORMATS = {"TV", "TV_SHORT", "ONA"}
+    BRIDGE_FORMATS = {"TV", "TV_SHORT", "ONA", "OVA", "MOVIE", "SPECIAL"}
 
     async with httpx.AsyncClient(timeout=10.0) as client:
-        # Step 1: Traverse up to find root
-        current_id: int | None = anilist_id
-        root_node = None
+        media_cache: dict[int, dict[str, Any]] = {}
 
-        visited_up = {current_id}
-
-        while current_id:
+        async def fetch_media(mid: int) -> dict[str, Any] | None:
+            if mid in media_cache:
+                return media_cache[mid]
             try:
-                variables = {"id": current_id}
+                variables = {"id": mid}
                 resp = await _post_with_retry(
                     client, {"query": query_str, "variables": variables}
                 )
                 data = resp.json()
-                media = data.get("data", {}).get("Media")
-                if not media:
-                    break
-
-                root_node = media
-
-                edges = media.get("relations", {}).get("edges", [])
-                next_id = None
-                for edge in edges:
-                    if edge.get("relationType") == "PREQUEL":
-                        node = edge.get("node")
-                        if (
-                            node
-                            and node.get("type") == "ANIME"
-                            and node.get("format") in ALLOWED_FORMATS
-                        ):
-                            node_id = node.get("id")
-                            if node_id not in visited_up:
-                                next_id = node_id
-                                visited_up.add(node_id)
-                                break
-
-                current_id = next_id
-
+                media_item = data.get("data", {}).get("Media")
+                if media_item:
+                    media_cache[mid] = media_item
+                return media_item
             except Exception as e:
-                logger.error(f"AniList prequel traversal failed: {e}")
+                logger.error(f"AniList fetch_media failed for ID {mid}: {e}")
+                return None
+
+        # Step 1: Traverse up to find root
+        current_id: int | None = anilist_id
+        root_node: dict[str, Any] | None = None
+        visited_up: set[int] = set()
+
+        while current_id and current_id not in visited_up:
+            visited_up.add(current_id)
+            media = await fetch_media(current_id)
+            if not media:
                 break
 
-        if not root_node:
-            return None
+            if media.get("format") in SEASON_FORMATS or root_node is None:
+                root_node = media
 
-        # Step 2: Traverse down to build hierarchy
-        hierarchy = [root_node]
-        current_id = root_node.get("id")
-        visited_down = {current_id}
-
-        current_media = root_node
-
-        while current_media:
-            edges = current_media.get("relations", {}).get("edges", [])
+            edges = media.get("relations", {}).get("edges", [])
             next_id = None
             for edge in edges:
-                if edge.get("relationType") == "SEQUEL":
+                if edge.get("relationType") in ("PREQUEL", "PARENT"):
                     node = edge.get("node")
                     if (
                         node
                         and node.get("type") == "ANIME"
-                        and node.get("format") in ALLOWED_FORMATS
+                        and node.get("format") in BRIDGE_FORMATS
                     ):
                         node_id = node.get("id")
-                        if node_id not in visited_down:
+                        if node_id and node_id not in visited_up:
                             next_id = node_id
-                            visited_down.add(node_id)
                             break
 
-            if not next_id:
-                break
+            current_id = next_id
 
-            try:
-                variables = {"id": next_id}
-                resp = await _post_with_retry(
-                    client, {"query": query_str, "variables": variables}
-                )
-                data = resp.json()
-                current_media = data.get("data", {}).get("Media")
-                if current_media:
-                    hierarchy.append(current_media)
-                else:
-                    break
-            except Exception as e:
-                logger.error(f"AniList sequel traversal failed: {e}")
-                break
+        if not root_node:
+            return None
 
-        return {"root": root_node, "hierarchy": hierarchy}
+        # Step 2: Traverse down following SEQUELs across intermediate bridges
+        hierarchy: list[dict[str, Any]] = []
+        hierarchy_ids: set[int] = set()
+        root_id = int(root_node["id"]) if root_node.get("id") else 0
+        visited_down: set[int] = {root_id} if root_id else set()
+        queue: list[dict[str, Any]] = [root_node]
+
+        while queue:
+            curr = queue.pop(0)
+            curr_id = curr.get("id")
+            if (
+                curr.get("format") in SEASON_FORMATS
+                and isinstance(curr_id, int)
+                and curr_id not in hierarchy_ids
+            ):
+                hierarchy.append(curr)
+                hierarchy_ids.add(curr_id)
+
+
+            edges = curr.get("relations", {}).get("edges", [])
+            # Collect outgoing sequels and bridge relations
+            for edge in edges:
+                rel = edge.get("relationType")
+                node = edge.get("node")
+                if not node or node.get("type") != "ANIME":
+                    continue
+                node_id = node.get("id")
+                if not node_id or node_id in visited_down:
+                    continue
+                node_format = node.get("format")
+                if node_format not in BRIDGE_FORMATS:
+                    continue
+
+                if rel == "SEQUEL":
+                    visited_down.add(node_id)
+                    child_media = await fetch_media(node_id)
+                    if child_media:
+                        queue.append(child_media)
+                elif rel in ("SIDE_STORY", "ALTERNATIVE") and curr.get("format") not in SEASON_FORMATS:
+                    visited_down.add(node_id)
+                    child_media = await fetch_media(node_id)
+                    if child_media:
+                        queue.append(child_media)
+
+        # Sort hierarchy by start date to guarantee chronological order
+        hierarchy.sort(
+            key=lambda m: (
+                m.get("startDate", {}).get("year") or 9999,
+                m.get("startDate", {}).get("month") or 99,
+                m.get("startDate", {}).get("day") or 99,
+            )
+        )
+
+        canonical_root = hierarchy[0] if hierarchy else root_node
+        return {"root": canonical_root, "hierarchy": hierarchy}
+
