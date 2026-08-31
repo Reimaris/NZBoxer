@@ -851,7 +851,31 @@ async def refresh_item_metadata_route(item_id: int):
         return HTMLResponse(content="<script>window.location.reload();</script>")
 
 
+@app.post("/items/{item_id}/reset-metadata")
+async def reset_anime_metadata_endpoint(item_id: int):
+    """Rebuilds anime metadata cleanly from AniList, purges phantom episodes, and resets backoff counters."""
+    from app.core.automation import reset_anime_metadata
+    from app.db.database import async_session_factory
+    from app.db.models import MediaItem, MediaType
+
+    async with async_session_factory() as session:
+        item = await session.get(MediaItem, item_id)
+        if not item or (
+            item.media_type != MediaType.ANIME
+            and not getattr(item, "is_anime_movie", False)
+        ):
+            return HTMLResponse(content="Invalid Item", status_code=400)
+
+        await reset_anime_metadata(session, item_id)
+
+    return HTMLResponse(
+        content="<script>window.location.reload();</script>",
+        headers={"HX-Refresh": "true"},
+    )
+
+
 @app.post("/items/{item_id}/retry")
+
 async def retry_item(item_id: int):
     """Reset item and season status to pending and delete blacklisted releases for this item."""
     from datetime import datetime, timezone

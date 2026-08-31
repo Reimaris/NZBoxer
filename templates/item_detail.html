@@ -146,6 +146,53 @@
                     </svg>
                 </button>
                 {% endif %}
+                {% if item.media_type.value == 'anime' or item.is_anime_movie %}
+                <div x-data="{ resetModalOpen: false }" class="inline-flex items-center">
+                    <button type="button"
+                            @click="resetModalOpen = true"
+                            class="ml-2 text-slate-400 hover:text-rose-400 transition-colors focus:outline-none"
+                            title="Reset Anime Metadata from AniList">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                        </svg>
+                    </button>
+
+                    <!-- Reset Metadata Modal -->
+                    <div x-show="resetModalOpen"
+                         class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+                         style="display: none;"
+                         x-transition>
+                        <div @click.away="resetModalOpen = false" class="bg-slate-900 border border-slate-700 rounded-xl p-6 max-w-md w-full shadow-2xl mx-4 text-left">
+                            <h3 class="text-xl font-bold text-slate-100 mb-4 flex items-center gap-2">
+                                <svg class="w-6 h-6 text-rose-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                                Reset Anime Metadata
+                            </h3>
+                            <p class="text-slate-300 text-sm mb-4 leading-relaxed">
+                                This will query <strong>AniList</strong> to completely rebuild the season and episode hierarchy for <span class="text-indigo-400 font-semibold">{{ item.title }}</span>.
+                            </p>
+                            <div class="bg-rose-950/40 border border-rose-800/50 rounded-lg p-3.5 mb-6 text-xs text-rose-300 space-y-1.5">
+                                <div class="font-semibold text-rose-200">What will happen:</div>
+                                <ul class="list-disc list-inside space-y-1">
+                                    <li>Invalid or phantom episodes not present in AniList will be purged.</li>
+                                    <li>Existing downloaded episodes and history will be preserved and re-linked.</li>
+                                    <li>Search backoff counters will be reset to 0.</li>
+                                </ul>
+                            </div>
+                            <div class="flex justify-end gap-3">
+                                <button type="button" @click="resetModalOpen = false" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm font-medium rounded-lg transition-colors border border-slate-600">
+                                    Cancel
+                                </button>
+                                <button hx-post="/items/{{ item.id }}/reset-metadata"
+                                        @click="resetModalOpen = false"
+                                        class="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white text-sm font-medium rounded-lg transition-colors shadow-lg shadow-rose-900/20">
+                                    Confirm Reset
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+
                 <a href="/manual-search?query={{ item.title|urlencode }}&imdb_id={{ item.imdb_id or '' }}&tmdb_id={{ item.tmdb_id or '' }}&tvdb_id={{ item.tvdb_id or '' }}&category={{ 'movie' if item.media_type.value == 'movie' else 'series' if item.media_type.value == 'show' else 'anime' if item.media_type.value == 'anime' else 'any' }}"
                    class="ml-2 text-slate-400 hover:text-[#d40060] transition-colors focus:outline-none"
                    title="Switch to Advanced Manual Search">
