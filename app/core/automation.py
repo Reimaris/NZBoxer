@@ -176,15 +176,8 @@ async def _sync_items(
             continue
 
         # Check if item exists
-        stmt = (
-            select(MediaItem)
-            .where(MediaItem.simkl_id == simkl_id)
-            .options(selectinload(MediaItem.seasons))
-        )
-        result = await session.execute(stmt)
-        item = result.scalars().first()
-
         ids = movie_data.get("ids", {})
+
         tmdb_id_str = ids.get("tmdb")
         tmdb_id = int(tmdb_id_str) if tmdb_id_str else None
 
@@ -197,18 +190,47 @@ async def _sync_items(
         anilist_id_str = ids.get("anilist")
         anilist_id = int(anilist_id_str) if anilist_id_str else None
 
-        # Check if incoming item is actually a consolidated season
         from sqlalchemy import and_, or_
 
+        item_conditions = [MediaItem.simkl_id == simkl_id]
+        if anilist_id:
+            item_conditions.append(
+                and_(MediaItem.anilist_id.isnot(None), MediaItem.anilist_id == anilist_id)
+            )
+
+        stmt = (
+            select(MediaItem)
+            .where(or_(*item_conditions))
+            .options(selectinload(MediaItem.seasons))
+        )
+        result = await session.execute(stmt)
+        item = result.scalars().first()
+
+        # Check if incoming item is actually a consolidated season
         season_conditions = [Season.simkl_id == simkl_id]
         if anilist_id:
             season_conditions.append(
                 and_(Season.anilist_id.isnot(None), Season.anilist_id == anilist_id)
             )
 
-        season_stmt = select(Season).where(or_(*season_conditions))
+        season_stmt = (
+            select(Season)
+            .where(or_(*season_conditions))
+            .options(selectinload(Season.media_item))
+        )
         existing_season = (await session.execute(season_stmt)).scalars().first()
         if existing_season:
+            parent_item = existing_season.media_item
+            if parent_item:
+                if not parent_item.tmdb_id and tmdb_id:
+                    parent_item.tmdb_id = tmdb_id
+                if not parent_item.imdb_id and ids.get("imdb"):
+                    parent_item.imdb_id = ids.get("imdb")
+                if not parent_item.tvdb_id and tvdb_id:
+                    parent_item.tvdb_id = tvdb_id
+                if not parent_item.mal_id and mal_id:
+                    parent_item.mal_id = mal_id
+
             if item and item.id != existing_season.media_item_id:
                 logger.info(
                     "    ⏩ Soft-ignoring standalone sequel MediaItem '%s' (ID %d) as it is consolidated under parent series ID %d Season %d.",
@@ -228,6 +250,7 @@ async def _sync_items(
                 existing_season.simkl_id = simkl_id
             if anilist_id and not existing_season.anilist_id:
                 existing_season.anilist_id = anilist_id
+
 
             if not existing_season.monitored:
                 existing_season.monitored = True
@@ -274,6 +297,17 @@ async def _sync_items(
             is_new = False
             # PRESERVE existing DB media_type for sync logic to prevent watchlist sync from overwriting user classifications
             media_type = item.media_type
+            if not item.tmdb_id and tmdb_id:
+                item.tmdb_id = tmdb_id
+            if not item.imdb_id and ids.get("imdb"):
+                item.imdb_id = ids.get("imdb")
+            if not item.tvdb_id and tvdb_id:
+                item.tvdb_id = tvdb_id
+            if not item.mal_id and mal_id:
+                item.mal_id = mal_id
+            if not item.anilist_id and anilist_id:
+                item.anilist_id = anilist_id
+
 
         # Fetch metadata from TMDB/AniList if available (for new items, items missing release date, or items missing seasons)
         if media_type == MediaType.ANIME or getattr(item, "is_anime_movie", False):
@@ -3467,6 +3501,34 @@ async def enrich_anime_metadata(session: AsyncSession, item: MediaItem) -> None:
         root_node = hierarchy_data["root"]
         hierarchy_list = hierarchy_data["hierarchy"]
 
+        root_id = root_node.get("id")
+        if root_id:
+            other_root_stmt = select(MediaItem).where(
+                MediaItem.anilist_id == root_id,
+                MediaItem.id != item.id,
+            )
+            other_root = (await session.execute(other_root_stmt)).scalars().first()
+            if other_root:
+                logger.info(
+                    "    🗑️ Auto-consolidating duplicate franchise MediaItem '%s' (ID %d) into existing root ID %d.",
+                    item.title,
+                    item.id,
+                    other_root.id,
+                )
+                if not other_root.tmdb_id and item.tmdb_id:
+                    other_root.tmdb_id = item.tmdb_id
+                if not other_root.imdb_id and item.imdb_id:
+                    other_root.imdb_id = item.imdb_id
+                if not other_root.tvdb_id and item.tvdb_id:
+                    other_root.tvdb_id = item.tvdb_id
+                if not other_root.mal_id and item.mal_id:
+                    other_root.mal_id = item.mal_id
+                if not other_root.poster_url and item.poster_url:
+                    other_root.poster_url = item.poster_url
+                await session.delete(item)
+                await session.flush()
+                return
+
         if root_node.get("id") != original_anilist_id:
             logger.info(
                 "    🔄 Out-of-order sequel detected. Updating MediaItem '%s' to root franchise metadata.",
@@ -3476,6 +3538,7 @@ async def enrich_anime_metadata(session: AsyncSession, item: MediaItem) -> None:
             item.mal_id = root_node.get("idMal") or item.mal_id
             titles = root_node.get("title", {})
             item.title = titles.get("english") or titles.get("romaji") or item.title
+
 
         async def _create_anilist_season(s_num: int, anilist_node: dict):
             ep_count = anilist_node.get("episodes")
