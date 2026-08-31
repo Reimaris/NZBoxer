@@ -66,9 +66,7 @@ async def search_manga(query: str) -> list[dict[str, Any]]:
             return []
 
 
-async def search_anime_id_by_title(
-    title: str, year: int | None = None
-) -> int | None:
+async def search_anime_id_by_title(title: str, year: int | None = None) -> int | None:
     """
     Searches AniList for an Anime by title (and optionally matches year).
     Returns the matching AniList ID or None.
@@ -103,11 +101,8 @@ async def search_anime_id_by_title(
                         return item.get("id")
             return media_list[0].get("id")
         except Exception as e:
-            logger.error(
-                f"AniList search_anime_id_by_title failed for '{title}': {e}"
-            )
+            logger.error(f"AniList search_anime_id_by_title failed for '{title}': {e}")
             return None
-
 
 
 async def get_manga_details(anilist_id: int) -> dict[str, Any] | None:
@@ -389,7 +384,6 @@ async def get_anime_root_and_hierarchy(anilist_id: int) -> dict[str, Any] | None
                 hierarchy.append(curr)
                 hierarchy_ids.add(curr_id)
 
-
             edges = curr.get("relations", {}).get("edges", [])
             # Collect outgoing sequels and bridge relations
             for edge in edges:
@@ -409,7 +403,10 @@ async def get_anime_root_and_hierarchy(anilist_id: int) -> dict[str, Any] | None
                     child_media = await fetch_media(node_id)
                     if child_media:
                         queue.append(child_media)
-                elif rel in ("SIDE_STORY", "ALTERNATIVE") and curr.get("format") not in SEASON_FORMATS:
+                elif (
+                    rel in ("SIDE_STORY", "ALTERNATIVE")
+                    and curr.get("format") not in SEASON_FORMATS
+                ):
                     visited_down.add(node_id)
                     child_media = await fetch_media(node_id)
                     if child_media:
@@ -426,4 +423,3 @@ async def get_anime_root_and_hierarchy(anilist_id: int) -> dict[str, Any] | None
 
         canonical_root = hierarchy[0] if hierarchy else root_node
         return {"root": canonical_root, "hierarchy": hierarchy}
-

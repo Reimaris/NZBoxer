@@ -8,12 +8,19 @@ Evaluates whitelists, blacklists, and minimum constraints.
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass
 
 from app.config import scoring_config
 from app.core.parser import ParsedRelease
 
 logger = logging.getLogger(__name__)
+
+_TOKEN_REGEX = re.compile(r"[a-z0-9]+")
+
+
+def _tokenize(t: str) -> set[str]:
+    return set(_TOKEN_REGEX.findall(t.lower()))
 
 
 @dataclass
@@ -126,16 +133,11 @@ def score_release(
             and expected_season_title
             and expected_title
         ):
-            import re
-
-            def tokenize(t: str) -> set[str]:
-                return set(re.findall(r"[a-z0-9]+", t.lower()))
-
-            base_tokens = tokenize(expected_title)
-            season_tokens = tokenize(expected_season_title)
+            base_tokens = _tokenize(expected_title)
+            season_tokens = _tokenize(expected_season_title)
             distinctive_tokens = season_tokens - base_tokens
 
-            parsed_tokens = tokenize(parsed.title or "")
+            parsed_tokens = _tokenize(parsed.title or "")
 
             if distinctive_tokens and not (distinctive_tokens & parsed_tokens):
                 return ScoreResult(
@@ -144,7 +146,6 @@ def score_release(
                     f"Cross-season isolation: Release '{parsed.title}' missing required season subtitle keywords {distinctive_tokens} for Season {expected_season}",
                     None,
                 )
-
 
         if expected_episode is not None:
             # We are looking for a specific episode
@@ -172,7 +173,6 @@ def score_release(
                     f"Rejected single episode {parsed.episode} for season pack search",
                     None,
                 )
-
 
     # Language check — normalize common variants then hard-reject if language not present
     # We check both the parsed languages from the title and the api_language provided by the indexer.

@@ -875,7 +875,6 @@ async def reset_anime_metadata_endpoint(item_id: int):
 
 
 @app.post("/items/{item_id}/retry")
-
 async def retry_item(item_id: int):
     """Reset item and season status to pending and delete blacklisted releases for this item."""
     from datetime import datetime, timezone
@@ -1678,9 +1677,7 @@ async def change_type_endpoint(
                 .values(season_id=None, episode_id=None)
             )
 
-            await session.execute(
-                delete(Season).where(Season.media_item_id == item.id)
-            )
+            await session.execute(delete(Season).where(Season.media_item_id == item.id))
 
             # Reload item
             item = await session.get(
@@ -1711,7 +1708,6 @@ async def change_type_endpoint(
                     s.last_searched_at = None
 
             await session.commit()
-
 
         # 4. Dispatch background task
         if target_type in ("anime", "anime-movie") and background_tasks:

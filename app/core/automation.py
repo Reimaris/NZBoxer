@@ -195,7 +195,9 @@ async def _sync_items(
         item_conditions = [MediaItem.simkl_id == simkl_id]
         if anilist_id:
             item_conditions.append(
-                and_(MediaItem.anilist_id.isnot(None), MediaItem.anilist_id == anilist_id)
+                and_(
+                    MediaItem.anilist_id.isnot(None), MediaItem.anilist_id == anilist_id
+                )
             )
 
         stmt = (
@@ -250,7 +252,6 @@ async def _sync_items(
                 existing_season.simkl_id = simkl_id
             if anilist_id and not existing_season.anilist_id:
                 existing_season.anilist_id = anilist_id
-
 
             if not existing_season.monitored:
                 existing_season.monitored = True
@@ -307,7 +308,6 @@ async def _sync_items(
                 item.mal_id = mal_id
             if not item.anilist_id and anilist_id:
                 item.anilist_id = anilist_id
-
 
         # Fetch metadata from TMDB/AniList if available (for new items, items missing release date, or items missing seasons)
         if media_type == MediaType.ANIME or getattr(item, "is_anime_movie", False):
@@ -391,7 +391,6 @@ async def _sync_items(
                             item.media_type = MediaType.SHOW
                             media_type = MediaType.SHOW
                         details = await tmdb.get_show_details(tmdb_id)
-
 
             if media_type == MediaType.MOVIE:
                 if details:
@@ -579,7 +578,8 @@ async def _sync_items(
             if not item.anilist_id:
                 item.anilist_id = anilist_id
                 if not item.anilist_id and (
-                    media_type == MediaType.ANIME or getattr(item, "is_anime_movie", False)
+                    media_type == MediaType.ANIME
+                    or getattr(item, "is_anime_movie", False)
                 ):
                     from app.services import anilist
 
@@ -588,7 +588,6 @@ async def _sync_items(
                     )
             # Ensure provider matches
             item.provider_id = provider_id
-
 
             # Sync status based on release date / year for existing items
             if item.status in (
@@ -721,7 +720,6 @@ async def _refresh_series_metadata(session: AsyncSession, item: MediaItem) -> No
             for s_data in seasons_data:
                 s_num = s_data.get("season_number")
                 if s_num is None or s_num <= 0:
-
                     continue
 
                 s_air_date_str = s_data.get("air_date")
@@ -1879,7 +1877,6 @@ async def _process_season(session: AsyncSession, season: Season) -> None:
                     ep_err,
                 )
 
-
             finally:
                 # Politeness delay between consecutive indexer requests
                 await asyncio.sleep(1.0)
@@ -2185,7 +2182,10 @@ async def _evaluate_and_download(
             expected_alt_title = episode.season.media_item.alt_title
             expected_season = episode.season.season_number
             expected_episode = episode.episode_number
-            if episode.season.title and episode.season.title != episode.season.media_item.title:
+            if (
+                episode.season.title
+                and episode.season.title != episode.season.media_item.title
+            ):
                 expected_season_title = episode.season.title
 
         score_res = score_release(
@@ -2201,7 +2201,6 @@ async def _evaluate_and_download(
             required_language=required_language,
             api_language=item.get("api_language"),
         )
-
 
         if score_res.is_rejected:
             continue
@@ -3539,7 +3538,6 @@ async def enrich_anime_metadata(session: AsyncSession, item: MediaItem) -> None:
             titles = root_node.get("title", {})
             item.title = titles.get("english") or titles.get("romaji") or item.title
 
-
         async def _create_anilist_season(s_num: int, anilist_node: dict):
             ep_count = anilist_node.get("episodes")
             s_air_date = None
@@ -3617,7 +3615,6 @@ async def enrich_anime_metadata(session: AsyncSession, item: MediaItem) -> None:
             item.status = MediaStatus.SEARCHING
 
         await consolidate_standalone_anime_sequels(session)
-
 
 
 async def consolidate_standalone_anime_sequels(session: AsyncSession) -> None:
@@ -3791,9 +3788,7 @@ async def consolidate_standalone_anime_sequels(session: AsyncSession) -> None:
     await session.commit()
 
 
-async def reset_anime_metadata(
-    session: AsyncSession, item_id: int
-) -> MediaItem | None:
+async def reset_anime_metadata(session: AsyncSession, item_id: int) -> MediaItem | None:
     """Rebuilds anime metadata and franchise season/episode hierarchy cleanly from AniList.
 
     - Purges invalid/phantom episodes and seasons.
@@ -3827,7 +3822,9 @@ async def reset_anime_metadata(
         logger.warning("reset_anime_metadata: Item ID %d not found.", item_id)
         return None
 
-    if item.media_type != MediaType.ANIME and not getattr(item, "is_anime_movie", False):
+    if item.media_type != MediaType.ANIME and not getattr(
+        item, "is_anime_movie", False
+    ):
         logger.warning(
             "reset_anime_metadata: Item ID %d is not an Anime (type=%s).",
             item_id,
@@ -3888,9 +3885,7 @@ async def reset_anime_metadata(
             item.anilist_id = root_node.get("id")
             item.mal_id = root_node.get("idMal") or item.mal_id
             titles = root_node.get("title", {})
-            item.title = (
-                titles.get("english") or titles.get("romaji") or item.title
-            )
+            item.title = titles.get("english") or titles.get("romaji") or item.title
         else:
             titles = root_node.get("title", {})
             if titles.get("english"):
@@ -3943,9 +3938,9 @@ async def reset_anime_metadata(
             except ValueError:
                 pass
 
-        is_season_future = (
-            s_air_date is not None and s_air_date > now
-        ) or (item.status == MediaStatus.FUTURE)
+        is_season_future = (s_air_date is not None and s_air_date > now) or (
+            item.status == MediaStatus.FUTURE
+        )
 
         season_obj = existing_seasons_map.get(s_num)
         if not season_obj:
@@ -3964,9 +3959,7 @@ async def reset_anime_metadata(
                 or season_title.get("native"),
                 status=SeasonStatus.FUTURE
                 if is_season_future
-                else (
-                    SeasonStatus.SEARCHING if is_monitored else SeasonStatus.PENDING
-                ),
+                else (SeasonStatus.SEARCHING if is_monitored else SeasonStatus.PENDING),
             )
             session.add(season_obj)
             await session.flush()
@@ -3985,7 +3978,11 @@ async def reset_anime_metadata(
             season_obj.air_date = s_air_date or season_obj.air_date
             season_obj.anilist_id = node.get("id") or season_obj.anilist_id
 
-            if season_obj.status in (SeasonStatus.PENDING, SeasonStatus.SEARCHING, SeasonStatus.CANCELED):
+            if season_obj.status in (
+                SeasonStatus.PENDING,
+                SeasonStatus.SEARCHING,
+                SeasonStatus.CANCELED,
+            ):
                 season_obj.status = (
                     SeasonStatus.SEARCHING
                     if season_obj.monitored
@@ -4049,10 +4046,6 @@ async def reset_anime_metadata(
         if s_num not in valid_season_numbers:
             await session.delete(old_season)
 
-
-
-
-
     # Reset parent item search & upgrade counters
     item.empty_search_count = 0
     item.last_searched_at = None
@@ -4068,7 +4061,3 @@ async def reset_anime_metadata(
         "✅ Anime metadata reset completed for '%s' (ID %d).", item_title, item_id
     )
     return item
-
-
-
-
