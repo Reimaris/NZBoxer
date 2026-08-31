@@ -49,6 +49,7 @@ def score_release(
     expected_alt_title: str | None = None,
     expected_season: int | None = None,
     expected_episode: int | None = None,
+    expected_season_title: str | None = None,
     required_language: str | None = None,
     api_language: str | None = None,
 ) -> ScoreResult:
@@ -90,11 +91,15 @@ def score_release(
             norm_alt = normalize(expected_alt_title)
             match_found = (norm_alt in norm_parsed) or (norm_parsed in norm_alt)
 
+        if not match_found and expected_season_title:
+            norm_st = normalize(expected_season_title)
+            match_found = (norm_st in norm_parsed) or (norm_parsed in norm_st)
+
         if not match_found:
             return ScoreResult(
                 0,
                 True,
-                f"Title mismatch: '{parsed.title}' vs '{expected_title}' (alt: '{expected_alt_title}')",
+                f"Title mismatch: '{parsed.title}' vs '{expected_title}' (alt: '{expected_alt_title}', season: '{expected_season_title}')",
                 None,
             )
 
@@ -111,6 +116,35 @@ def score_release(
             return ScoreResult(
                 0, True, f"Season mismatch: {parsed.season} != {expected_season}", None
             )
+
+        # Cross-season anime subtitle isolation check:
+        # If expected_season >= 2, parsed has no explicit season tag,
+        # and a distinct expected_season_title exists (e.g. "Motto To LOVE-Ru" vs "To LOVE-Ru"):
+        if (
+            expected_season >= 2
+            and parsed.season is None
+            and expected_season_title
+            and expected_title
+        ):
+            import re
+
+            def tokenize(t: str) -> set[str]:
+                return set(re.findall(r"[a-z0-9]+", t.lower()))
+
+            base_tokens = tokenize(expected_title)
+            season_tokens = tokenize(expected_season_title)
+            distinctive_tokens = season_tokens - base_tokens
+
+            parsed_tokens = tokenize(parsed.title or "")
+
+            if distinctive_tokens and not (distinctive_tokens & parsed_tokens):
+                return ScoreResult(
+                    0,
+                    True,
+                    f"Cross-season isolation: Release '{parsed.title}' missing required season subtitle keywords {distinctive_tokens} for Season {expected_season}",
+                    None,
+                )
+
 
         if expected_episode is not None:
             # We are looking for a specific episode
@@ -138,6 +172,7 @@ def score_release(
                     f"Rejected single episode {parsed.episode} for season pack search",
                     None,
                 )
+
 
     # Language check — normalize common variants then hard-reject if language not present
     # We check both the parsed languages from the title and the api_language provided by the indexer.

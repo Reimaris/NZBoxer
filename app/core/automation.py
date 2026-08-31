@@ -1844,6 +1844,8 @@ async def _process_season(session: AsyncSession, season: Season) -> None:
                     ep.episode_number,
                     ep_err,
                 )
+
+
             finally:
                 # Politeness delay between consecutive indexer requests
                 await asyncio.sleep(1.0)
@@ -2133,6 +2135,7 @@ async def _evaluate_and_download(
         expected_alt_title = None
         expected_season = None
         expected_episode = None
+        expected_season_title = None
         if movie:
             expected_title = movie.title
             expected_year = movie.year
@@ -2141,11 +2144,15 @@ async def _evaluate_and_download(
             expected_title = season.media_item.title
             expected_alt_title = season.media_item.alt_title
             expected_season = season.season_number
+            if season.title and season.title != season.media_item.title:
+                expected_season_title = season.title
         elif episode:
             expected_title = episode.season.media_item.title
             expected_alt_title = episode.season.media_item.alt_title
             expected_season = episode.season.season_number
             expected_episode = episode.episode_number
+            if episode.season.title and episode.season.title != episode.season.media_item.title:
+                expected_season_title = episode.season.title
 
         score_res = score_release(
             parsed,
@@ -2156,9 +2163,11 @@ async def _evaluate_and_download(
             expected_alt_title=expected_alt_title,
             expected_season=expected_season,
             expected_episode=expected_episode,
+            expected_season_title=expected_season_title,
             required_language=required_language,
             api_language=item.get("api_language"),
         )
+
 
         if score_res.is_rejected:
             continue
