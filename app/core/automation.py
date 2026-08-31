@@ -976,6 +976,7 @@ async def run_automation_cycle(force: bool = False) -> None:
 
         # Stage 1: Self-healing
         if force:
+            logger.info("🔄 Starting Stage 1: Self-Healing...")
             await run_self_healing_cycle()
 
         if automation_state_manager.is_aborting():
@@ -983,12 +984,14 @@ async def run_automation_cycle(force: bool = False) -> None:
             return
 
         # Stage 2: Download State (Pre-Search)
+        logger.info("🔄 Starting Stage 2: Download State (Pre-Search)...")
         await run_download_check_cycle()
 
         if automation_state_manager.is_aborting():
             return
 
         # Stage 3: Watchlist Sync
+        logger.info("🔄 Starting Stage 3: Watchlist Sync...")
         await sync_simkl_watchlist()
 
         if automation_state_manager.is_aborting():
@@ -1010,7 +1013,9 @@ async def run_automation_cycle(force: bool = False) -> None:
 
         # Stage 7: Download State (Post-Grab)
         if not automation_state_manager.is_aborting():
+            logger.info("🔄 Starting Stage 7: Download State (Post-Grab)...")
             await run_download_check_cycle()
+
     finally:
         automation_state_manager.reset()
         log_process_end(logger, "Automation Cycle")
