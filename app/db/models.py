@@ -452,6 +452,9 @@ class MediaItem(Base):
     last_upgrade_search_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    last_metadata_refreshed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     # --- Audit timestamps ---
     created_at: Mapped[datetime] = mapped_column(

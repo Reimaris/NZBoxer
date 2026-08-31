@@ -28,6 +28,7 @@ from app.db.grab_tracker import can_grab_today, increment_today_grab_count
 from app.db.models import (
     BookItem,
     DownloadHistory,
+    EpisodeStatus,
     MangaItem,
     MediaItem,
     MediaStatus,
@@ -58,6 +59,46 @@ def is_eligible_for_search(
         return (now - last_searched_at) >= timedelta(hours=settings.backoff_tier2_skip)
     else:
         return (now - last_searched_at) >= timedelta(hours=settings.backoff_tier3_skip)
+
+
+def is_eligible_for_metadata_refresh(item: MediaItem) -> bool:
+    """Determine if a series/anime is eligible for a metadata refresh (24h TTL or premiere wakeup)."""
+    if item.media_type == MediaType.MOVIE:
+        return False
+
+    if item.status in (MediaStatus.COMPLETED, MediaStatus.CANCELED):
+        # Enforce Archival Freeze policy
+        return False
+
+    now = datetime.now(timezone.utc)
+
+    # Premiere Date Immediate Wakeup
+    if getattr(item, "seasons", None):
+        for season in item.seasons:
+            if season.status == SeasonStatus.FUTURE and season.air_date:
+                ad = season.air_date
+                if ad.tzinfo is None:
+                    ad = ad.replace(tzinfo=timezone.utc)
+                if ad <= now:
+                    return True
+
+            if getattr(season, "episodes", None):
+                for episode in season.episodes:
+                    if episode.status == EpisodeStatus.FUTURE and episode.air_date:
+                        ad = episode.air_date
+                        if ad.tzinfo is None:
+                            ad = ad.replace(tzinfo=timezone.utc)
+                        if ad <= now:
+                            return True
+
+    if item.last_metadata_refreshed_at is None:
+        return True
+
+    last_refreshed = item.last_metadata_refreshed_at
+    if last_refreshed.tzinfo is None:
+        last_refreshed = last_refreshed.replace(tzinfo=timezone.utc)
+
+    return (now - last_refreshed) >= timedelta(hours=24)
 
 
 async def sync_all_providers() -> None:
@@ -1518,7 +1559,9 @@ async def _process_season(session: AsyncSession, season: Season) -> None:
                 continue
 
             if ep.status != EpisodeStatus.DOWNLOADED:
-                if not is_eligible_for_search(ep.empty_search_count, ep.last_searched_at):
+                if not is_eligible_for_search(
+                    ep.empty_search_count, ep.last_searched_at
+                ):
                     logger.info(
                         "    ⏳ Episode S%02dE%02d is in backoff tier (Empty searches: %d). Skipping.",
                         season.season_number,

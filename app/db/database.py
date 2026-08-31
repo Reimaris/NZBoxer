@@ -470,6 +470,16 @@ async def init_db(database_url: str) -> None:
                 except Exception:
                     pass
 
+            # Metadata TTL tracking
+            try:
+                await session.execute(
+                    __import__("sqlalchemy").text(
+                        "ALTER TABLE media_items ADD COLUMN last_metadata_refreshed_at DATETIME;"
+                    )
+                )
+            except Exception:
+                pass
+
             # Backfill existing providers category
             try:
                 await session.execute(
