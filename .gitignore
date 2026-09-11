@@ -1,5 +1,7 @@
 # Environment and Python
 .env
+.env.*
+!.env.example
 __pycache__/
 *.py[cod]
 *$py.class
@@ -15,6 +17,8 @@ build/
 *.db
 *.db-shm
 *.db-wal
+*.sqlite
+*.sqlite3
 file:testdb*
 *.log
 config/logs/*.log
