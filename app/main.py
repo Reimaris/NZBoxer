@@ -3178,11 +3178,11 @@ async def manual_sync(background_tasks: BackgroundTasks):
         content=f"""
         <div class="bg-[#3f3f46] text-white px-4 py-3 rounded-md shadow-lg border border-[#52525b] flex items-center justify-between animate-fade-in-down mb-4">
             <div class="flex items-center gap-3">
-                <svg class="w-5 h-5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                <svg class="w-5 h-5 shrink-0 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
                 <span class="text-sm font-medium">{msg}</span>
             </div>
-            <button onclick="this.parentElement.remove()" class="text-gray-400 hover:text-white">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+            <button onclick="this.parentElement.remove()" class="p-1 text-gray-400 hover:text-white hover:bg-black/20 rounded transition-colors focus:outline-none">
+                <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
             </button>
         </div>
     """
@@ -3212,7 +3212,7 @@ async def rescan_torbox_cache():
                 await adopt_torbox_downloads_for_video(session)
                 await adopt_torbox_downloads_for_print(session)
                 return HTMLResponse(
-                    content='<span class="text-green-500 font-medium text-sm flex items-center gap-1.5"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>Rescan complete! Reload to see changes.</span>'
+                    content='<span class="text-green-500 font-medium text-sm flex items-center gap-1.5"><svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>Rescan complete! Reload to see changes.</span>'
                 )
             else:
                 return HTMLResponse(
@@ -3238,11 +3238,11 @@ async def run_video_automation_endpoint(background_tasks: BackgroundTasks):
             content="""
             <div class="bg-amber-600 text-white px-4 py-3 rounded-md shadow-lg border border-amber-700 flex items-center justify-between animate-fade-in-down mb-4">
                 <div class="flex items-center gap-3">
-                    <svg class="w-5 h-5 text-amber-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+                    <svg class="w-5 h-5 shrink-0 text-amber-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
                     <span class="text-sm font-medium">An automation run is already active or aborting!</span>
                 </div>
-                <button onclick="this.parentElement.remove()" class="text-gray-200 hover:text-white">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                <button onclick="this.parentElement.remove()" class="p-1 text-gray-200 hover:text-white hover:bg-black/20 rounded transition-colors focus:outline-none">
+                    <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                 </button>
             </div>
             """
@@ -3254,11 +3254,11 @@ async def run_video_automation_endpoint(background_tasks: BackgroundTasks):
         content="""
         <div class="bg-[#d40060] text-white px-4 py-3 rounded-md shadow-lg border border-[#a3004a] flex items-center justify-between animate-fade-in-down mb-4">
             <div class="flex items-center gap-3">
-                <svg class="w-5 h-5 text-pink-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                <svg class="w-5 h-5 shrink-0 text-pink-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
                 <span class="text-sm font-medium">Video media search started in background!</span>
             </div>
-            <button onclick="this.parentElement.remove()" class="text-gray-300 hover:text-white">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+            <button onclick="this.parentElement.remove()" class="p-1 text-gray-300 hover:text-white hover:bg-black/20 rounded transition-colors focus:outline-none">
+                <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
             </button>
         </div>
         """
@@ -3276,11 +3276,11 @@ async def run_print_automation_endpoint(background_tasks: BackgroundTasks):
             content="""
             <div class="bg-amber-600 text-white px-4 py-3 rounded-md shadow-lg border border-amber-700 flex items-center justify-between animate-fade-in-down mb-4">
                 <div class="flex items-center gap-3">
-                    <svg class="w-5 h-5 text-amber-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+                    <svg class="w-5 h-5 shrink-0 text-amber-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
                     <span class="text-sm font-medium">An automation run is already active or aborting!</span>
                 </div>
-                <button onclick="this.parentElement.remove()" class="text-gray-200 hover:text-white">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                <button onclick="this.parentElement.remove()" class="p-1 text-gray-200 hover:text-white hover:bg-black/20 rounded transition-colors focus:outline-none">
+                    <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                 </button>
             </div>
             """
@@ -3292,11 +3292,11 @@ async def run_print_automation_endpoint(background_tasks: BackgroundTasks):
         content="""
         <div class="bg-[#d40060] text-white px-4 py-3 rounded-md shadow-lg border border-[#a3004a] flex items-center justify-between animate-fade-in-down mb-4">
             <div class="flex items-center gap-3">
-                <svg class="w-5 h-5 text-pink-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                <svg class="w-5 h-5 shrink-0 text-pink-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
                 <span class="text-sm font-medium">Print media search started in background!</span>
             </div>
-            <button onclick="this.parentElement.remove()" class="text-gray-300 hover:text-white">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+            <button onclick="this.parentElement.remove()" class="p-1 text-gray-300 hover:text-white hover:bg-black/20 rounded transition-colors focus:outline-none">
+                <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
             </button>
         </div>
         """
@@ -3314,14 +3314,14 @@ async def abort_automation_endpoint():
             content="""
             <div class="bg-amber-600 text-white px-4 py-3 rounded-md shadow-lg border border-amber-700 flex items-center justify-between animate-fade-in-down mb-4">
                 <div class="flex items-center gap-3">
-                    <svg class="w-5 h-5 animate-spin text-amber-200" fill="none" viewBox="0 0 24 24">
+                    <svg class="w-5 h-5 shrink-0 animate-spin text-amber-200" fill="none" viewBox="0 0 24 24">
                         <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                         <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                     </svg>
                     <span class="text-sm font-medium">Search will gracefully abort after current item...</span>
                 </div>
-                <button onclick="this.parentElement.remove()" class="text-gray-200 hover:text-white">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                <button onclick="this.parentElement.remove()" class="p-1 text-gray-200 hover:text-white hover:bg-black/20 rounded transition-colors focus:outline-none">
+                    <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                 </button>
             </div>
             """
@@ -3330,11 +3330,11 @@ async def abort_automation_endpoint():
         content="""
         <div class="bg-slate-700 text-white px-4 py-3 rounded-md shadow-lg border border-slate-600 flex items-center justify-between animate-fade-in-down mb-4">
             <div class="flex items-center gap-3">
-                <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                <svg class="w-5 h-5 shrink-0 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
                 <span class="text-sm font-medium">No active search run found.</span>
             </div>
-            <button onclick="this.parentElement.remove()" class="text-gray-300 hover:text-white">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+            <button onclick="this.parentElement.remove()" class="p-1 text-gray-300 hover:text-white hover:bg-black/20 rounded transition-colors focus:outline-none">
+                <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
             </button>
         </div>
         """

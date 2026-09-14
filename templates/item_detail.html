@@ -3,7 +3,7 @@
 {% block content %}
 <div class="mb-6">
     <a href="/?tab={{ 'anime' if item.media_type.value == 'anime' else 'show' if item.media_type.value == 'show' else 'movie' }}" class="inline-flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-sm font-medium rounded-lg border border-slate-600 transition-colors shadow-sm w-max">
-        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
+        <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
         Back to Dashboard
     </a>
 </div>
@@ -47,13 +47,13 @@
                         <button hx-post="/items/{{ item.id }}/confirm_grab"
                                 class="bg-yellow-500 hover:bg-yellow-400 text-black px-2.5 py-1 rounded text-xs font-bold transition-colors shadow-sm flex items-center gap-1"
                                 title="Send candidate to TorBox: {{ item.pending_candidate_json.title }}">
-                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg>
+                            <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg>
                             Send
                         </button>
                         <button hx-post="/items/{{ item.id }}/decline_grab"
                                 class="bg-red-800 hover:bg-red-700 text-white px-2.5 py-1 rounded text-xs font-bold transition-colors shadow-sm flex items-center gap-1"
                                 title="Decline candidate and blacklist: {{ item.pending_candidate_json.title }}">
-                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                            <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
                             Decline
                         </button>
                     </div>
@@ -128,20 +128,20 @@
                 </h1>
                 {% if item.media_type.value == 'movie' or item.media_type.value == 'anime' and not item.seasons %}
                 <button hx-post="/items/{{ item.id }}/search"
-                        class="ml-2 text-slate-400 hover:text-indigo-400 transition-colors focus:outline-none"
+                        class="p-1.5 text-slate-400 hover:text-indigo-400 hover:bg-slate-800 rounded-lg transition-colors focus:outline-none"
                         title="Trigger Automated Search"
                         onclick="this.classList.add('animate-pulse', 'text-indigo-500')">
-                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
                     </svg>
                 </button>
                 {% endif %}
                 {% if item.media_type.value in ('show', 'anime') %}
                 <button hx-post="/items/{{ item.id }}/refresh_metadata"
-                        class="ml-2 text-slate-400 hover:text-emerald-400 transition-colors focus:outline-none"
+                        class="p-1.5 text-slate-400 hover:text-emerald-400 hover:bg-slate-800 rounded-lg transition-colors focus:outline-none"
                         title="Force Metadata Refresh (TMDB/AniList)"
                         onclick="this.classList.add('animate-spin', 'text-emerald-500')">
-                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
                     </svg>
                 </button>
@@ -150,9 +150,9 @@
                 <div x-data="{ resetModalOpen: false }" class="inline-flex items-center">
                     <button type="button"
                             @click="resetModalOpen = true"
-                            class="ml-2 text-slate-400 hover:text-rose-400 transition-colors focus:outline-none"
+                            class="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded-lg transition-colors focus:outline-none"
                             title="Reset Anime Metadata from AniList">
-                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
                         </svg>
                     </button>
@@ -164,7 +164,7 @@
                          x-transition>
                         <div @click.away="resetModalOpen = false" class="bg-slate-900 border border-slate-700 rounded-xl p-6 max-w-md w-full shadow-2xl mx-4 text-left">
                             <h3 class="text-xl font-bold text-slate-100 mb-4 flex items-center gap-2">
-                                <svg class="w-6 h-6 text-rose-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                                <svg class="w-5 h-5 shrink-0 text-rose-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
                                 Reset Anime Metadata
                             </h3>
                             <p class="text-slate-300 text-sm mb-4 leading-relaxed">
@@ -194,9 +194,9 @@
                 {% endif %}
 
                 <a href="/manual-search?query={{ item.title|urlencode }}&imdb_id={{ item.imdb_id or '' }}&tmdb_id={{ item.tmdb_id or '' }}&tvdb_id={{ item.tvdb_id or '' }}&category={{ 'movie' if item.media_type.value == 'movie' else 'series' if item.media_type.value == 'show' else 'anime' if item.media_type.value == 'anime' else 'any' }}"
-                   class="ml-2 text-slate-400 hover:text-[#d40060] transition-colors focus:outline-none"
+                   class="p-1.5 text-slate-400 hover:text-[#d40060] hover:bg-slate-800 rounded-lg transition-colors focus:outline-none"
                    title="Switch to Advanced Manual Search">
-                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"></path>
                     </svg>
                 </a>
@@ -205,7 +205,7 @@
 
             {% if item.media_type.value in ['show', 'anime'] and item.seasons %}
             <h2 class="text-xl font-semibold mb-4 text-slate-200 flex items-center gap-2">
-                <svg class="w-5 h-5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 002-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
+                <svg class="w-5 h-5 shrink-0 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 002-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
                 Season Management
             </h2>
             
@@ -215,7 +215,7 @@
                     <!-- Season Header Row -->
                     <div @click="open = !open" class="p-4 flex items-center justify-between cursor-pointer hover:bg-slate-800/60 transition-colors">
                         <div class="flex items-center gap-3">
-                            <svg class="w-5 h-5 text-indigo-400 transform transition-transform duration-200" :class="{'rotate-90': open}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+                            <svg class="w-4 h-4 shrink-0 text-indigo-400 transform transition-transform duration-200" :class="{'rotate-90': open}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
                             <span class="font-bold text-slate-100 text-lg">Season {{ season.season_number }}</span>
                             <span class="text-xs text-slate-400 bg-slate-800 px-2 py-0.5 rounded border border-slate-700 capitalize">{{ season.status.value }}</span>
                             {% if season.status.value == 'manual_grab' and season.pending_candidate_json %}
@@ -296,10 +296,10 @@
                                     </div>
                                     {% endif %}
                                     <button hx-post="/episodes/{{ ep.id }}/search"
-                                            class="ml-1 text-slate-400 hover:text-indigo-400 transition-colors focus:outline-none"
+                                            class="p-1 text-slate-400 hover:text-indigo-400 hover:bg-slate-800 rounded transition-colors focus:outline-none"
                                             title="Search episode manually"
                                             onclick="this.classList.add('animate-pulse', 'text-indigo-500')">
-                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
                                         </svg>
                                     </button>
@@ -328,7 +328,7 @@
             
             {% if item.download_history %}
             <h2 class="text-xl font-semibold mb-4 text-slate-200 flex items-center gap-2 mt-8">
-                <svg class="w-5 h-5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                <svg class="w-5 h-5 shrink-0 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
                 Download History
             </h2>
             <div class="space-y-3">
