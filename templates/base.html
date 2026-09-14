@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>NZBoxer</title>
+    <link rel="icon" type="image/svg+xml" href="/static/icon.svg">
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
     <!-- AlpineJS for basic interactions like modals/tabs if needed -->
@@ -52,10 +53,7 @@
                 <!-- Left side: Brand -->
                 <div class="flex items-center gap-4">
                     <div class="flex items-center gap-2.5">
-                        <!-- Cloud Icon -->
-                        <svg class="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 20 20">
-                            <path d="M5.5 16a3.5 3.5 0 01-.369-6.98 4 4 0 117.759-1.549V8a3.5 3.5 0 116.71 1.694A4.002 4.002 0 0115 16H5.5z" />
-                        </svg>
+                        <img src="/static/icon.svg" alt="NZBoxer Logo" class="w-11 h-11 shrink-0">
                         <a href="/" class="text-lg font-semibold text-white tracking-wide">NZBoxer</a>
                         <span class="bg-[#3f3f46] text-[#d1d5db] text-xs font-mono font-medium px-2.5 py-0.5 rounded-full mt-0.5 shadow-sm">
                             v{{ app_version }}

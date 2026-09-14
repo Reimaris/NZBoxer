@@ -1,4 +1,20 @@
-# NZBoxer
+<p align="center">
+  <img src="app/static/icon.svg" width="128" height="128" alt="NZBoxer Logo" />
+</p>
+
+<h1 align="center">NZBoxer</h1>
+
+<p align="center">
+  <strong>Lightweight, autonomous service connecting Simkl, TMDB, Newznab indexers, and TorBox.</strong>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/version-v2.7.0-pink" alt="Version" />
+  <img src="https://img.shields.io/badge/docker-ready-blue" alt="Docker Ready" />
+  <img src="https://img.shields.io/badge/license-MIT-green" alt="License" />
+</p>
+
+---
 
 NZBoxer is a lightweight, autonomous service that connects Simkl, TMDB, Newznab indexers, and TorBox to completely automate the search, scoring, and downloading of your favorite movies and TV shows.
 

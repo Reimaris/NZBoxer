@@ -26,7 +26,6 @@ if TYPE_CHECKING:
 DEFAULT_USER_AGENT = "NZBoxer/2.7.0 (Linux; x64)"
 
 
-
 class Settings:
     """Application settings loaded from environment variables.
 

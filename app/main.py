@@ -81,7 +81,7 @@ scheduler = AsyncIOScheduler()
 # Templates setup
 _ROOT = Path(__file__).parent.parent
 templates_dir = _ROOT / "templates"
-static_dir = _ROOT / "static"
+static_dir = Path(__file__).parent / "static"
 
 # Ensure directories exist
 templates_dir.mkdir(exist_ok=True)
