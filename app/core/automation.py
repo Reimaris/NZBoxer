@@ -4176,8 +4176,6 @@ def classify_video_item_partition(item: MediaItem) -> str:
       - 'missing'   (Top table: Not Yet Downloaded / Unacquired)
       - 'upgrading' (Bottom table: Awaiting Upgrades)
     """
-    from app.config import settings
-
     target_score = 8000
 
     # 1. Standalone Movies (and anime movies without seasons)
@@ -4199,27 +4197,26 @@ def classify_video_item_partition(item: MediaItem) -> str:
     if not seasons:
         return "missing"
 
-    monitored_seasons = [s for s in seasons if s.monitored]
-    if not monitored_seasons:
-        return "missing"
-
-    # Check for any missing non-future seasons (Mixed-Season Anchor Rule)
-    for s in monitored_seasons:
+    # Any standard season (or monitored special) that is open/unacquired anchors to missing:
+    for s in seasons:
+        if s.season_number == 0 and not s.monitored:
+            continue
         if s.status == SeasonStatus.FUTURE:
             continue
         if s.status in (
-            SeasonStatus.SEARCHING,
-            SeasonStatus.DOWNLOADING,
-            SeasonStatus.MANUAL_GRAB,
-            SeasonStatus.PENDING,
+            SeasonStatus.DOWNLOADED,
+            SeasonStatus.COMPLETED,
+            SeasonStatus.IGNORED,
         ):
-            return "missing"
+            continue
+        return "missing"
 
-    # If all released seasons are acquired, check if any is hunting for upgrades
+    # If all released non-ignored seasons are acquired, check if any is hunting for upgrades
     has_upgrading_season = any(
         s.status == SeasonStatus.DOWNLOADED
         and (s.upgrade_attempts_count or 0) < settings.max_upgrade_attempts
-        for s in monitored_seasons
+        for s in seasons
+        if s.season_number > 0 or s.monitored
     )
     if has_upgrading_season:
         return "upgrading"
