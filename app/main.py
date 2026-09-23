@@ -803,6 +803,17 @@ async def toggle_season(item_id: int, season_number: int):
     return HTMLResponse(content="Error", status_code=400)
 
 
+@app.post("/items/{item_id}/seasons/{season_number}/search")
+async def manual_search_season_route(item_id: int, season_number: int):
+    """Manually search and download a whole season synchronously, bypassing episode batch limits."""
+    from app.core.automation import manual_search_season
+    from app.db.database import async_session_factory
+
+    async with async_session_factory() as session:
+        await manual_search_season(session, item_id, season_number)
+        return HTMLResponse(content="<script>window.location.reload();</script>")
+
+
 @app.post("/episodes/{episode_id}/search")
 async def manual_search_episode_route(episode_id: int):
     """Manually search and download a single episode synchronously."""

@@ -1336,7 +1336,9 @@ async def _process_movie(session: AsyncSession, movie: MediaItem) -> None:
         )
 
 
-async def _process_season(session: AsyncSession, season: Season) -> None:
+async def _process_season(
+    session: AsyncSession, season: Season, ignore_episode_limit: bool = False
+) -> None:
     from app.db.models import (
         Episode,
         EpisodeStatus,
@@ -1637,7 +1639,7 @@ async def _process_season(session: AsyncSession, season: Season) -> None:
     try:
         run_season_search = prefer_seasons and loaded_count == 0
         if run_season_search:
-            if season.status != SeasonStatus.DOWNLOADED:
+            if not ignore_episode_limit and season.status != SeasonStatus.DOWNLOADED:
                 if not is_eligible_for_search(
                     season.empty_search_count, season.last_searched_at
                 ):
@@ -1764,11 +1766,14 @@ async def _process_season(session: AsyncSession, season: Season) -> None:
                             await session.commit()
                     return
 
-        # Process individual episodes (up to 5 per cycle, configurable via block_size)
+        # Process individual episodes (up to 5 per cycle, configurable via block_size, or all if ignore_episode_limit is True)
         block_size = (
             profile.episode_block_size if profile and profile.episode_block_size else 5
         )
-        for ep in missing_episodes[:block_size]:
+        episodes_to_search = (
+            missing_episodes if ignore_episode_limit else missing_episodes[:block_size]
+        )
+        for ep in episodes_to_search:
             if automation_state_manager.is_aborting():
                 logger.info(
                     "🛑 Automation cycle abort requested. Stopping episode processing."
@@ -1778,17 +1783,18 @@ async def _process_season(session: AsyncSession, season: Season) -> None:
             if ep.status == EpisodeStatus.MANUAL_GRAB:
                 continue
 
-            if ep.status != EpisodeStatus.DOWNLOADED:
-                if not is_eligible_for_search(
-                    ep.empty_search_count, ep.last_searched_at
-                ):
-                    logger.info(
-                        "    ⏳ Episode S%02dE%02d is in backoff tier (Empty searches: %d). Skipping.",
-                        season.season_number,
-                        ep.episode_number,
-                        ep.empty_search_count,
-                    )
-                    continue
+            if not ignore_episode_limit:
+                if ep.status != EpisodeStatus.DOWNLOADED:
+                    if not is_eligible_for_search(
+                        ep.empty_search_count, ep.last_searched_at
+                    ):
+                        logger.info(
+                            "    ⏳ Episode S%02dE%02d is in backoff tier (Empty searches: %d). Skipping.",
+                            season.season_number,
+                            ep.episode_number,
+                            ep.empty_search_count,
+                        )
+                        continue
 
             ep.last_searched_at = datetime.now(timezone.utc)
 
@@ -2640,6 +2646,66 @@ async def manual_search_episode(session: AsyncSession, episode_id: int) -> bool:
     # Refresh to see if status changed
     await session.refresh(episode)
     return episode.status in [EpisodeStatus.DOWNLOADED, EpisodeStatus.COMPLETED]
+
+
+async def manual_search_season(
+    session: AsyncSession, item_id: int, season_number: int
+) -> bool:
+    """Manually search and download a whole season synchronously, bypassing episode batch limits.
+
+    Re-arms unmonitored or completed seasons:
+    - Sets season.monitored = True.
+    - If season.status == SeasonStatus.COMPLETED: sets status = SeasonStatus.SEARCHING and resets upgrade_attempts_count = 0.
+    - For released child episodes: ensures monitored = True, resets upgrade_attempts_count = 0 (if completed),
+      and clears backoff counters (empty_search_count = 0, last_searched_at = None).
+    """
+    from sqlalchemy.orm import selectinload
+
+    from app.db.models import Episode, EpisodeStatus, MediaItem, Season, SeasonStatus
+
+    stmt = (
+        select(Season)
+        .where(Season.media_item_id == item_id, Season.season_number == season_number)
+        .options(
+            selectinload(Season.media_item).selectinload(MediaItem.provider),
+            selectinload(Season.episodes).selectinload(Episode.download_history),
+        )
+    )
+    season = (await session.execute(stmt)).scalars().first()
+
+    if not season or not season.media_item:
+        logger.warning(
+            "❌ Season S%02d not found for MediaItem ID %d.", season_number, item_id
+        )
+        return False
+
+    logger.info(
+        "⚡ Manual Whole-Season Search triggered for: %s S%02d",
+        season.media_item.title,
+        season.season_number,
+    )
+
+    # Re-arm Season
+    season.monitored = True
+    if season.status == SeasonStatus.COMPLETED:
+        season.status = SeasonStatus.SEARCHING
+        season.upgrade_attempts_count = 0
+
+    # Re-arm released child episodes
+    for ep in season.episodes:
+        if ep.status != EpisodeStatus.FUTURE:
+            ep.monitored = True
+            if ep.status == EpisodeStatus.COMPLETED:
+                ep.status = EpisodeStatus.SEARCHING
+                ep.upgrade_attempts_count = 0
+            ep.empty_search_count = 0
+            ep.last_searched_at = None
+
+    await session.commit()
+
+    # Process season bypassing batch limit and backoffs
+    await _process_season(session, season, ignore_episode_limit=True)
+    return True
 
 
 async def manual_search_movie(session: AsyncSession, item_id: int) -> bool:
