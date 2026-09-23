@@ -89,9 +89,30 @@
         showStatus: false,
         sortCol: 'title',
         sortDir: 'asc',
+        items: [
+            {% for item in items %}
+            {% set cat = 'anime' if (item.media_type.value == 'movie' and item.is_anime_movie) else item.media_type.value %}
+            {
+                category: '{{ cat }}',
+                title: {{ (item.title or '') | lower | tojson }},
+                alt_title: {{ (item.alt_title or '') | lower | tojson }},
+                ids: {{ ((item.tvdb_id or '') ~ ' ' ~ (item.tmdb_id or '') ~ ' ' ~ (item.imdb_id or '') ~ ' ' ~ (item.simkl_id or '')) | lower | tojson }}
+            }{% if not loop.last %},{% endif %}
+            {% endfor %}
+        ],
+        getTabCount(category) {
+            if (!this.search || !this.search.trim()) return 0;
+            const q = this.search.trim().toLowerCase();
+            return this.items.filter(i => 
+                i.category === category && (
+                    i.title.includes(q) ||
+                    i.alt_title.includes(q) ||
+                    i.ids.includes(q)
+                )
+            ).length;
+        },
         setTab(newTab) {
             this.tab = newTab;
-            this.search = '';
             localStorage.setItem('video_dashboard_tab', newTab);
             const url = new URL(window.location);
             url.searchParams.set('tab', newTab);
@@ -151,12 +172,15 @@
         <div class="flex gap-2 bg-[#1e1e24] p-1 rounded-lg border border-[#3f3f46]">
             <button @click="setTab('movie')" :class="{'bg-[#d40060] text-white': tab === 'movie', 'text-[#a1a1aa] hover:text-white': tab !== 'movie'}" class="px-4 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-2">
                 <span>🎬 Movies</span>
+                <span x-show="search.trim().length > 0 && getTabCount('movie') > 0" x-text="`(${getTabCount('movie')})`" class="bg-black/40 text-xs px-1.5 py-0.5 rounded-full font-bold ml-0.5"></span>
             </button>
             <button @click="setTab('show')" :class="{'bg-[#d40060] text-white': tab === 'show', 'text-[#a1a1aa] hover:text-white': tab !== 'show'}" class="px-4 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-2">
                 <span>📺 Series</span>
+                <span x-show="search.trim().length > 0 && getTabCount('show') > 0" x-text="`(${getTabCount('show')})`" class="bg-black/40 text-xs px-1.5 py-0.5 rounded-full font-bold ml-0.5"></span>
             </button>
             <button @click="setTab('anime')" :class="{'bg-[#d40060] text-white': tab === 'anime', 'text-[#a1a1aa] hover:text-white': tab !== 'anime'}" class="px-4 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-2">
                 <span>😊 Anime</span>
+                <span x-show="search.trim().length > 0 && getTabCount('anime') > 0" x-text="`(${getTabCount('anime')})`" class="bg-black/40 text-xs px-1.5 py-0.5 rounded-full font-bold ml-0.5"></span>
             </button>
         </div>
 
