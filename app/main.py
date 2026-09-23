@@ -3292,14 +3292,30 @@ async def run_video_automation_endpoint(background_tasks: BackgroundTasks):
             """
         )
 
-    background_tasks.add_task(run_automation_cycle, force=True)
+    from app.config import settings
+
+    current_state = (
+        settings.automation_state.value
+        if hasattr(settings.automation_state, "value")
+        else str(settings.automation_state)
+    ).lower()
+    is_upgrades_only = current_state == "upgrades_only"
+    background_tasks.add_task(
+        run_automation_cycle, force=True, upgrades_only=is_upgrades_only
+    )
+
+    toast_msg = (
+        "Video upgrades evaluation started in background!"
+        if is_upgrades_only
+        else "Video media search started in background!"
+    )
 
     return HTMLResponse(
-        content="""
+        content=f"""
         <div class="bg-[#d40060] text-white px-4 py-3 rounded-md shadow-lg border border-[#a3004a] flex items-center justify-between animate-fade-in-down mb-4">
             <div class="flex items-center gap-3">
                 <svg class="w-5 h-5 shrink-0 text-pink-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
-                <span class="text-sm font-medium">Video media search started in background!</span>
+                <span class="text-sm font-medium">{toast_msg}</span>
             </div>
             <button onclick="this.parentElement.remove()" class="p-1 text-gray-300 hover:text-white hover:bg-black/20 rounded transition-colors focus:outline-none">
                 <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
@@ -3330,14 +3346,30 @@ async def run_print_automation_endpoint(background_tasks: BackgroundTasks):
             """
         )
 
-    background_tasks.add_task(run_print_automation_cycle, force=True)
+    from app.config import settings
+
+    current_state = (
+        settings.automation_state.value
+        if hasattr(settings.automation_state, "value")
+        else str(settings.automation_state)
+    ).lower()
+    is_upgrades_only = current_state == "upgrades_only"
+    background_tasks.add_task(
+        run_print_automation_cycle, force=True, upgrades_only=is_upgrades_only
+    )
+
+    toast_msg = (
+        "Print upgrades evaluation started in background!"
+        if is_upgrades_only
+        else "Print media search started in background!"
+    )
 
     return HTMLResponse(
-        content="""
+        content=f"""
         <div class="bg-[#d40060] text-white px-4 py-3 rounded-md shadow-lg border border-[#a3004a] flex items-center justify-between animate-fade-in-down mb-4">
             <div class="flex items-center gap-3">
                 <svg class="w-5 h-5 shrink-0 text-pink-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
-                <span class="text-sm font-medium">Print media search started in background!</span>
+                <span class="text-sm font-medium">{toast_msg}</span>
             </div>
             <button onclick="this.parentElement.remove()" class="p-1 text-gray-300 hover:text-white hover:bg-black/20 rounded transition-colors focus:outline-none">
                 <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>

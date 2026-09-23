@@ -1037,15 +1037,24 @@ async def _run_video_upgrade_cycle(session: AsyncSession) -> None:
 
 
 async def run_automation_cycle(
-    force: bool = False, upgrades_only: bool = False
+    force: bool = False, upgrades_only: bool | None = None
 ) -> None:
     """Background job that searches for NZBs and pushes them to TorBox."""
+    if upgrades_only is None:
+        current_state = (
+            settings.automation_state.value
+            if hasattr(settings.automation_state, "value")
+            else str(settings.automation_state)
+        ).lower()
+        upgrades_only = current_state == "upgrades_only"
+
     automation_state_manager.set_running(AutomationStatus.RUNNING_VIDEO)
     log_process_start(logger, "Automation Cycle")
     try:
         if force:
             logger.info(
-                "🔍 Manual search run started (bypassing interval multiplier)..."
+                "🔍 Manual search run started (bypassing interval multiplier, Upgrades Only: %s)...",
+                upgrades_only,
             )
         else:
             logger.info(
@@ -3421,13 +3430,21 @@ async def process_print_manga(session: AsyncSession, manga: MangaItem) -> bool:
 
 
 async def run_print_automation_cycle(
-    force: bool = False, upgrades_only: bool = False
+    force: bool = False, upgrades_only: bool | None = None
 ) -> None:
     """
     Background job for Print Media (Books & Manga).
     - Processes Books (Immediate Wanted search & grab).
     - Processes Manga (Pack-First search cascade with individual volume search suppression).
     """
+    if upgrades_only is None:
+        current_state = (
+            settings.automation_state.value
+            if hasattr(settings.automation_state, "value")
+            else str(settings.automation_state)
+        ).lower()
+        upgrades_only = current_state == "upgrades_only"
+
     automation_state_manager.set_running(AutomationStatus.RUNNING_PRINT)
     logger.info(
         "=== Start Print Media Automation Cycle (Upgrades Only: %s) ===",
