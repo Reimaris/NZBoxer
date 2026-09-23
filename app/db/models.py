@@ -529,8 +529,23 @@ class MediaItem(Base):
         return datetime.now(tz=self.release_date.tzinfo) >= self.release_date
 
     @property
+    def partition(self) -> str:
+        """Dashboard partition ('missing' or 'upgrading')."""
+        if hasattr(self, "_partition"):
+            return self._partition
+        from app.core.automation import classify_video_item_partition
+
+        return classify_video_item_partition(self)
+
+    @partition.setter
+    def partition(self, val: str) -> None:
+        self._partition = val
+
+    @property
     def best_score(self) -> float | None:
         """Returns the highest score from all associated download history entries."""
+        if hasattr(self, "_best_score_override"):
+            return self._best_score_override
         from sqlalchemy.orm import attributes
 
         hist = attributes.instance_state(self).dict.get("download_history")
@@ -538,6 +553,10 @@ class MediaItem(Base):
             return None
         scores = [h.score for h in hist if getattr(h, "score", None) is not None]
         return max(scores) if scores else None
+
+    @best_score.setter
+    def best_score(self, value: float | None) -> None:
+        self._best_score_override = value
 
     # ---------------------------------------------------------------------------
     # Season Model
@@ -700,6 +719,8 @@ class Season(Base):
     @property
     def best_score(self) -> float | None:
         """Returns the highest score from all download history entries for this season."""
+        if hasattr(self, "_best_score_override"):
+            return self._best_score_override
         from sqlalchemy.orm import attributes
 
         hist = attributes.instance_state(self).dict.get("download_history")
@@ -707,6 +728,10 @@ class Season(Base):
             return None
         scores = [h.score for h in hist if getattr(h, "score", None) is not None]
         return max(scores) if scores else None
+
+    @best_score.setter
+    def best_score(self, value: float | None) -> None:
+        self._best_score_override = value
 
     # ---------------------------------------------------------------------------
     # Episode Model

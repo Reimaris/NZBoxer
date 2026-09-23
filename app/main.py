@@ -282,6 +282,14 @@ async def dashboard(request: Request):
         all_items = result.scalars().all()
         items = [i for i in all_items if not i.is_fully_completed]
 
+        from app.core.automation import classify_video_item_partition
+
+        for item in items:
+            item.partition = classify_video_item_partition(item)
+
+        missing_items = [i for i in items if i.partition == "missing"]
+        upgrading_items = [i for i in items if i.partition == "upgrading"]
+
         # Detailed stats calculations
         movie_items = [
             i
@@ -338,6 +346,8 @@ async def dashboard(request: Request):
         name="dashboard.html",
         context={
             "items": items,
+            "missing_items": missing_items,
+            "upgrading_items": upgrading_items,
             "movie_items": movie_items,
             "series_items": series_items,
             "anime_items": anime_items,

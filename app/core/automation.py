@@ -4151,3 +4151,60 @@ async def reset_anime_metadata(session: AsyncSession, item_id: int) -> MediaItem
         "✅ Anime metadata reset completed for '%s' (ID %d).", item_title, item_id
     )
     return item
+
+
+def classify_video_item_partition(item: MediaItem) -> str:
+    """
+    Classifies a MediaItem for the active video dashboard into either:
+      - 'missing'   (Top table: Not Yet Downloaded / Unacquired)
+      - 'upgrading' (Bottom table: Awaiting Upgrades)
+    """
+    from app.config import settings
+
+    target_score = 8000
+
+    # 1. Standalone Movies (and anime movies without seasons)
+    if (
+        item.media_type == MediaType.MOVIE
+        and not getattr(item, "is_anime_movie", False)
+    ) or (
+        getattr(item, "is_anime_movie", False) and not getattr(item, "seasons", None)
+    ):
+        if item.status == MediaStatus.DOWNLOADED:
+            if (item.best_score or 0) < target_score and (
+                item.upgrade_attempts_count or 0
+            ) < settings.max_upgrade_attempts:
+                return "upgrading"
+        return "missing"
+
+    # 2. Episodic Media (Series and Anime)
+    seasons = getattr(item, "seasons", None) or []
+    if not seasons:
+        return "missing"
+
+    monitored_seasons = [s for s in seasons if s.monitored]
+    if not monitored_seasons:
+        return "missing"
+
+    # Check for any missing non-future seasons (Mixed-Season Anchor Rule)
+    for s in monitored_seasons:
+        if s.status == SeasonStatus.FUTURE:
+            continue
+        if s.status in (
+            SeasonStatus.SEARCHING,
+            SeasonStatus.DOWNLOADING,
+            SeasonStatus.MANUAL_GRAB,
+            SeasonStatus.PENDING,
+        ):
+            return "missing"
+
+    # If all released seasons are acquired, check if any is hunting for upgrades
+    has_upgrading_season = any(
+        s.status == SeasonStatus.DOWNLOADED
+        and (s.upgrade_attempts_count or 0) < settings.max_upgrade_attempts
+        for s in monitored_seasons
+    )
+    if has_upgrading_season:
+        return "upgrading"
+
+    return "missing"

@@ -94,12 +94,21 @@
             {% set cat = 'anime' if (item.media_type.value == 'movie' and item.is_anime_movie) else item.media_type.value %}
             {
                 category: '{{ cat }}',
+                partition: '{{ item.partition }}',
                 title: {{ (item.title or '') | lower | tojson }},
                 alt_title: {{ (item.alt_title or '') | lower | tojson }},
                 ids: {{ ((item.tvdb_id or '') ~ ' ' ~ (item.tmdb_id or '') ~ ' ' ~ (item.imdb_id or '') ~ ' ' ~ (item.simkl_id or '')) | lower | tojson }}
             }{% if not loop.last %},{% endif %}
             {% endfor %}
         ],
+        hasVisibleRows(partition) {
+            const q = (this.search || '').trim().toLowerCase();
+            return this.items.some(i => 
+                i.category === this.tab &&
+                i.partition === partition &&
+                (!q || i.title.includes(q) || i.alt_title.includes(q) || i.ids.includes(q))
+            );
+        },
         getTabCount(category) {
             if (!this.search || !this.search.trim()) return 0;
             const q = this.search.trim().toLowerCase();
@@ -128,40 +137,45 @@
             this.applySort();
         },
         applySort() {
-            const tbody = document.getElementById('video-table-body');
-            if (!tbody) return;
-            const rows = Array.from(tbody.querySelectorAll('tr[data-sortable=\'true\']'));
-            if (!rows.length) return;
-            const col = this.sortCol;
-            const dir = this.sortDir;
-            const isNumeric = (col === 'year' || col === 'status-rank');
-            
-            rows.sort((a, b) => {
-                const valA = a.getAttribute('data-' + col) || '';
-                const valB = b.getAttribute('data-' + col) || '';
+            const bodyIds = ['video-table-body-missing', 'video-table-body-upgrading'];
+            bodyIds.forEach(id => {
+                const tbody = document.getElementById(id);
+                if (!tbody) return;
+                const rows = Array.from(tbody.querySelectorAll('tr[data-sortable=\'true\']'));
+                if (!rows.length) return;
+                const emptyRow = tbody.querySelector('tr[data-empty-row=\'true\']');
+                const col = this.sortCol;
+                const dir = this.sortDir;
+                const isNumeric = (col === 'year' || col === 'status-rank');
                 
-                const aEmpty = (valA === '');
-                const bEmpty = (valB === '');
-                
-                // Nulls/empty values always sink to the bottom
-                if (aEmpty && bEmpty) return 0;
-                if (aEmpty) return 1;
-                if (bEmpty) return -1;
-                
-                let cmp = 0;
-                if (isNumeric) {
-                    const numA = parseFloat(valA);
-                    const numB = parseFloat(valB);
-                    if (isNaN(numA) && isNaN(numB)) cmp = 0;
-                    else if (isNaN(numA)) return 1;
-                    else if (isNaN(numB)) return -1;
-                    else cmp = numA - numB;
-                } else {
-                    cmp = valA.localeCompare(valB, undefined, { numeric: true, sensitivity: 'base' });
-                }
-                return dir === 'asc' ? cmp : -cmp;
+                rows.sort((a, b) => {
+                    const valA = a.getAttribute('data-' + col) || '';
+                    const valB = b.getAttribute('data-' + col) || '';
+                    
+                    const aEmpty = (valA === '');
+                    const bEmpty = (valB === '');
+                    
+                    // Nulls/empty values always sink to the bottom
+                    if (aEmpty && bEmpty) return 0;
+                    if (aEmpty) return 1;
+                    if (bEmpty) return -1;
+                    
+                    let cmp = 0;
+                    if (isNumeric) {
+                        const numA = parseFloat(valA);
+                        const numB = parseFloat(valB);
+                        if (isNaN(numA) && isNaN(numB)) cmp = 0;
+                        else if (isNaN(numA)) return 1;
+                        else if (isNaN(numB)) return -1;
+                        else cmp = numA - numB;
+                    } else {
+                        cmp = valA.localeCompare(valB, undefined, { numeric: true, sensitivity: 'base' });
+                    }
+                    return dir === 'asc' ? cmp : -cmp;
+                });
+                rows.forEach(r => tbody.appendChild(r));
+                if (emptyRow) tbody.appendChild(emptyRow);
             });
-            rows.forEach(r => tbody.appendChild(r));
         }
      }"
      x-init="applySort(); if (['movie', 'show', 'anime'].includes(tab)) { const url = new URL(window.location); url.searchParams.set('tab', tab); window.history.replaceState({}, '', url); }">
@@ -227,221 +241,266 @@
         </div>
     </div>
 
-    <!-- Watchlist Table -->
-    <div class="overflow-x-auto min-h-[400px]">
-        <table class="w-full text-left border-collapse">
-            <thead class="bg-[#1e1e24] text-[#a1a1aa] font-semibold text-xs uppercase tracking-wider border-b border-[#3f3f46]">
-                <tr>
-                    <th class="px-6 py-3.5 cursor-pointer select-none group hover:text-white transition-colors" @click="sortBy('title')" title="Sort by Title">
-                        <div class="flex items-center gap-1.5">
-                            <span>Title</span>
-                            <span class="text-[10px] transition-colors" :class="sortCol === 'title' ? 'text-[#d40060]' : 'text-[#52525b] group-hover:text-[#a1a1aa]'">
-                                <span x-show="sortCol === 'title' && sortDir === 'desc'">▼</span>
-                                <span x-show="sortCol === 'title' && sortDir === 'asc'">▲</span>
-                                <span x-show="sortCol !== 'title'" class="opacity-0 group-hover:opacity-100">▲</span>
-                            </span>
-                        </div>
-                    </th>
-                    <th class="px-6 py-3.5 cursor-pointer select-none group hover:text-white transition-colors" @click="sortBy('type')" title="Sort by Type">
-                        <div class="flex items-center gap-1.5">
-                            <span>Type</span>
-                            <span class="text-[10px] transition-colors" :class="sortCol === 'type' ? 'text-[#d40060]' : 'text-[#52525b] group-hover:text-[#a1a1aa]'">
-                                <span x-show="sortCol === 'type' && sortDir === 'desc'">▼</span>
-                                <span x-show="sortCol === 'type' && sortDir === 'asc'">▲</span>
-                                <span x-show="sortCol !== 'type'" class="opacity-0 group-hover:opacity-100">▲</span>
-                            </span>
-                        </div>
-                    </th>
-                    <th class="px-6 py-3.5 cursor-pointer select-none group hover:text-white transition-colors" @click="sortBy('profile')" title="Sort by Profile">
-                        <div class="flex items-center gap-1.5">
-                            <span>Profile</span>
-                            <span class="text-[10px] transition-colors" :class="sortCol === 'profile' ? 'text-[#d40060]' : 'text-[#52525b] group-hover:text-[#a1a1aa]'">
-                                <span x-show="sortCol === 'profile' && sortDir === 'desc'">▼</span>
-                                <span x-show="sortCol === 'profile' && sortDir === 'asc'">▲</span>
-                                <span x-show="sortCol !== 'profile'" class="opacity-0 group-hover:opacity-100">▲</span>
-                            </span>
-                        </div>
-                    </th>
-                    <th class="px-6 py-3.5 cursor-pointer select-none group hover:text-white transition-colors" @click="sortBy('year')" title="Sort by Year">
-                        <div class="flex items-center gap-1.5">
-                            <span>Year</span>
-                            <span class="text-[10px] transition-colors" :class="sortCol === 'year' ? 'text-[#d40060]' : 'text-[#52525b] group-hover:text-[#a1a1aa]'">
-                                <span x-show="sortCol === 'year' && sortDir === 'desc'">▼</span>
-                                <span x-show="sortCol === 'year' && sortDir === 'asc'">▲</span>
-                                <span x-show="sortCol !== 'year'" class="opacity-0 group-hover:opacity-100">▲</span>
-                            </span>
-                        </div>
-                    </th>
-                    <th class="px-6 py-3.5 cursor-pointer select-none group hover:text-white transition-colors" @click="sortBy('release-date')" title="Sort by Release Date">
-                        <div class="flex items-center gap-1.5">
-                            <span>Release Date</span>
-                            <span class="text-[10px] transition-colors" :class="sortCol === 'release-date' ? 'text-[#d40060]' : 'text-[#52525b] group-hover:text-[#a1a1aa]'">
-                                <span x-show="sortCol === 'release-date' && sortDir === 'desc'">▼</span>
-                                <span x-show="sortCol === 'release-date' && sortDir === 'asc'">▲</span>
-                                <span x-show="sortCol !== 'release-date'" class="opacity-0 group-hover:opacity-100">▲</span>
-                            </span>
-                        </div>
-                    </th>
-                    <th class="px-6 py-3.5 cursor-pointer select-none group hover:text-white transition-colors" @click="sortBy('status-rank')" title="Sort by Status">
-                        <div class="flex items-center gap-1.5">
-                            <span>Status</span>
-                            <span class="text-[10px] transition-colors" :class="sortCol === 'status-rank' ? 'text-[#d40060]' : 'text-[#52525b] group-hover:text-[#a1a1aa]'">
-                                <span x-show="sortCol === 'status-rank' && sortDir === 'desc'">▼</span>
-                                <span x-show="sortCol === 'status-rank' && sortDir === 'asc'">▲</span>
-                                <span x-show="sortCol !== 'status-rank'" class="opacity-0 group-hover:opacity-100">▲</span>
-                            </span>
-                        </div>
-                    </th>
-                    <th class="px-6 py-3.5 cursor-pointer select-none group hover:text-white transition-colors" @click="sortBy('last-checked')" title="Sort by Last Checked">
-                        <div class="flex items-center gap-1.5">
-                            <span>Last Checked</span>
-                            <span class="text-[10px] transition-colors" :class="sortCol === 'last-checked' ? 'text-[#d40060]' : 'text-[#52525b] group-hover:text-[#a1a1aa]'">
-                                <span x-show="sortCol === 'last-checked' && sortDir === 'desc'">▼</span>
-                                <span x-show="sortCol === 'last-checked' && sortDir === 'asc'">▲</span>
-                                <span x-show="sortCol !== 'last-checked'" class="opacity-0 group-hover:opacity-100">▲</span>
-                            </span>
-                        </div>
-                    </th>
-                    <th class="px-6 py-3.5 text-right whitespace-nowrap w-1">Actions</th>
-                </tr>
-            </thead>
-            <tbody id="video-table-body" class="divide-y divide-[#3f3f46] text-sm">
-                {% for item in items %}
-                {% set display_category = 'anime' if (item.media_type.value == 'movie' and item.is_anime_movie) else item.media_type.value %}
-                <tr class="hover:bg-[#2a2a32] transition-colors group" 
-                    data-sortable="true"
-                    data-title="{{ (item.title or '') | lower }}"
-                    data-type="{% if item.media_type.value == 'movie' and item.is_anime_movie %}anime movie{% elif item.media_type.value == 'movie' %}movie{% elif item.media_type.value == 'anime' %}anime{% elif item.media_type.value == 'show' %}series{% endif %}"
-                    data-profile="simkl"
-                    data-year="{{ item.year or '' }}"
-                    data-release-date="{{ item.release_date.strftime('%Y-%m-%d') if item.release_date else '' }}"
-                    data-status-rank="{% if item.status.value == 'manual_grab' %}1{% elif item.status.value == 'downloading' %}2{% elif item.status.value == 'searching' or item.status.value == 'pending' %}3{% elif item.status.value == 'future' %}4{% elif item.status.value == 'downloaded' %}5{% elif item.status.value == 'completed' %}6{% else %}7{% endif %}"
-                    data-last-checked="{{ item.updated_at.strftime('%Y-%m-%d %H:%M:%S') if item.updated_at else '' }}"
-                    x-show="tab === '{{ display_category }}' && ('{{ item.title|replace('\'', '\\\'') }}'.toLowerCase().includes(search.toLowerCase()) || ('{{ item.alt_title|replace('\'', '\\\'') if item.alt_title else '' }}'.toLowerCase().includes(search.toLowerCase())) || '{{ item.tvdb_id or '' }}'.includes(search) || '{{ item.tmdb_id or '' }}'.includes(search) || '{{ item.imdb_id or '' }}'.includes(search) || '{{ item.simkl_id or '' }}'.includes(search))" 
-                    style="display: none;">
-                    
-                    <td class="px-6 py-4 max-w-[240px] md:max-w-xs break-words">
-                        <div class="block">
-                            <div class="flex items-center gap-2">
-                                <a href="/items/{{ item.id }}" class="font-bold text-white hover:text-indigo-400 transition-colors">{{ item.title }}</a>
-                            </div>
-                            {% if item.alt_title %}
-                            <div class="text-xs text-[#a1a1aa] mt-0.5">{{ item.alt_title }}</div>
-                            {% endif %}
-                            <div class="flex gap-2 mt-2 text-[10px] font-bold">
-                                {% if item.simkl_id %}
-                                <a href="https://simkl.com/{{ 'movies' if item.media_type.value == 'movie' else ('anime' if item.media_type.value == 'anime' else 'shows') }}/{{ item.simkl_id }}" target="_blank" class="bg-[#2a2a32] text-gray-400 hover:text-white px-2 py-0.5 rounded border border-[#3f3f46] transition-colors">SIMKL</a>
-                                {% endif %}
-                                {% if item.tmdb_id %}
-                                <a href="https://themoviedb.org/{{ 'movie' if item.media_type.value == 'movie' else 'tv' }}/{{ item.tmdb_id }}" target="_blank" class="bg-[#2a2a32] text-blue-400 hover:text-white px-2 py-0.5 rounded border border-[#3f3f46] transition-colors">TMDB</a>
-                                {% endif %}
-                                {% if item.imdb_id %}
-                                <a href="https://imdb.com/title/{{ item.imdb_id }}" target="_blank" class="bg-[#2a2a32] text-yellow-500 hover:text-white px-2 py-0.5 rounded border border-[#3f3f46] transition-colors">IMDB</a>
-                                {% endif %}
-                            </div>
-                        </div>
-                    </td>
-                    <td class="px-6 py-4 whitespace-nowrap">
-                        {% include "components/type_badge.html" %}
-                    </td>
-                    <td class="px-6 py-4 whitespace-nowrap">
-                        <span class="bg-[#3f3f46] text-gray-200 text-xs font-bold px-2 py-1 rounded">SIMKL</span>
-                    </td>
-                    <td class="px-6 py-4 text-gray-300 whitespace-nowrap">
-                        {{ item.year or '-' }}
-                    </td>
-                    <td class="px-6 py-4 text-gray-300 whitespace-nowrap">
-                        {% if item.release_date %}
-                            <div>{{ item.release_date.strftime('%Y-%m-%d') }}</div>
-                            <div class="text-[#a1a1aa] text-xs mt-0.5">{{ item.release_date | relative_date }}</div>
-                        {% else %}
-                            -
-                        {% endif %}
-                    </td>
-                    <td class="px-6 py-4 whitespace-nowrap">
-                        <div class="flex flex-col gap-1 items-start">
-                            {% if item.status.value == 'downloaded' or item.status.value == 'completed' %}
-                                <span class="bg-emerald-600 text-white text-[11px] font-bold px-2 py-1 rounded uppercase tracking-wider shadow-sm">DONE</span>
-                                {% if item.status.value == 'downloaded' %}
-                                <span class="bg-blue-900 text-blue-200 text-[10px] font-bold px-2 py-0.5 rounded border border-blue-700 w-fit">Upgrade: {{ item.aggregated_upgrade_attempts }}/{{ max_upgrade_attempts }}</span>
-                                {% elif item.status.value == 'completed' and item.best_score and item.best_score < 8000 %}
-                                <span class="bg-[#1e1e24] text-gray-400 text-[10px] font-bold px-2 py-0.5 rounded border border-[#3f3f46] w-fit">Cutoff unmet ({{ item.aggregated_upgrade_attempts }}/{{ max_upgrade_attempts }} attempts)</span>
-                                {% endif %}
-                            {% elif item.status.value == 'downloading' %}
-                                <span class="bg-orange-600 animate-pulse text-white text-[11px] font-bold px-2 py-1 rounded uppercase tracking-wider shadow-sm">DOWNLOADING</span>
-                            {% elif item.status.value == 'manual_grab' %}
-                                <span class="bg-yellow-500 text-black text-[11px] font-bold px-2 py-1 rounded uppercase tracking-wider shadow-sm animate-pulse">⚠ MANUAL</span>
-                                {% if item.pending_candidate_json %}
-                                <span class="text-[10px] text-yellow-300 font-mono max-w-[200px] truncate" title="{{ item.pending_candidate_json.title }}">{{ item.pending_candidate_json.title[:40] }}…</span>
-                                {% endif %}
-                            {% elif item.status.value == 'future' %}
-                                <span class="bg-blue-600 text-white text-[11px] font-bold px-2 py-1 rounded uppercase tracking-wider shadow-sm">FUTURE</span>
-                            {% elif item.status.value == 'searching' or item.status.value == 'pending' %}
-                                <span class="bg-[#d40060] text-white text-[11px] font-bold px-2 py-1 rounded uppercase tracking-wider shadow-sm">WANTED</span>
-                            {% else %}
-                                <span class="bg-slate-600 text-white text-[11px] font-bold px-2 py-1 rounded uppercase tracking-wider shadow-sm">{{ item.status.value }}</span>
-                            {% endif %}
+    <!-- Reusable Macros for Dual Table Layout -->
+    {% macro render_table_header() %}
+    <thead class="bg-[#1e1e24] text-[#a1a1aa] font-semibold text-xs uppercase tracking-wider border-b border-[#3f3f46]">
+        <tr>
+            <th class="px-6 py-3.5 cursor-pointer select-none group hover:text-white transition-colors" @click="sortBy('title')" title="Sort by Title">
+                <div class="flex items-center gap-1.5">
+                    <span>Title</span>
+                    <span class="text-[10px] transition-colors" :class="sortCol === 'title' ? 'text-[#d40060]' : 'text-[#52525b] group-hover:text-[#a1a1aa]'">
+                        <span x-show="sortCol === 'title' && sortDir === 'desc'">▼</span>
+                        <span x-show="sortCol === 'title' && sortDir === 'asc'">▲</span>
+                        <span x-show="sortCol !== 'title'" class="opacity-0 group-hover:opacity-100">▲</span>
+                    </span>
+                </div>
+            </th>
+            <th class="px-6 py-3.5 cursor-pointer select-none group hover:text-white transition-colors" @click="sortBy('type')" title="Sort by Type">
+                <div class="flex items-center gap-1.5">
+                    <span>Type</span>
+                    <span class="text-[10px] transition-colors" :class="sortCol === 'type' ? 'text-[#d40060]' : 'text-[#52525b] group-hover:text-[#a1a1aa]'">
+                        <span x-show="sortCol === 'type' && sortDir === 'desc'">▼</span>
+                        <span x-show="sortCol === 'type' && sortDir === 'asc'">▲</span>
+                        <span x-show="sortCol !== 'type'" class="opacity-0 group-hover:opacity-100">▲</span>
+                    </span>
+                </div>
+            </th>
+            <th class="px-6 py-3.5 cursor-pointer select-none group hover:text-white transition-colors" @click="sortBy('profile')" title="Sort by Profile">
+                <div class="flex items-center gap-1.5">
+                    <span>Profile</span>
+                    <span class="text-[10px] transition-colors" :class="sortCol === 'profile' ? 'text-[#d40060]' : 'text-[#52525b] group-hover:text-[#a1a1aa]'">
+                        <span x-show="sortCol === 'profile' && sortDir === 'desc'">▼</span>
+                        <span x-show="sortCol === 'profile' && sortDir === 'asc'">▲</span>
+                        <span x-show="sortCol !== 'profile'" class="opacity-0 group-hover:opacity-100">▲</span>
+                    </span>
+                </div>
+            </th>
+            <th class="px-6 py-3.5 cursor-pointer select-none group hover:text-white transition-colors" @click="sortBy('year')" title="Sort by Year">
+                <div class="flex items-center gap-1.5">
+                    <span>Year</span>
+                    <span class="text-[10px] transition-colors" :class="sortCol === 'year' ? 'text-[#d40060]' : 'text-[#52525b] group-hover:text-[#a1a1aa]'">
+                        <span x-show="sortCol === 'year' && sortDir === 'desc'">▼</span>
+                        <span x-show="sortCol === 'year' && sortDir === 'asc'">▲</span>
+                        <span x-show="sortCol !== 'year'" class="opacity-0 group-hover:opacity-100">▲</span>
+                    </span>
+                </div>
+            </th>
+            <th class="px-6 py-3.5 cursor-pointer select-none group hover:text-white transition-colors" @click="sortBy('release-date')" title="Sort by Release Date">
+                <div class="flex items-center gap-1.5">
+                    <span>Release Date</span>
+                    <span class="text-[10px] transition-colors" :class="sortCol === 'release-date' ? 'text-[#d40060]' : 'text-[#52525b] group-hover:text-[#a1a1aa]'">
+                        <span x-show="sortCol === 'release-date' && sortDir === 'desc'">▼</span>
+                        <span x-show="sortCol === 'release-date' && sortDir === 'asc'">▲</span>
+                        <span x-show="sortCol !== 'release-date'" class="opacity-0 group-hover:opacity-100">▲</span>
+                    </span>
+                </div>
+            </th>
+            <th class="px-6 py-3.5 cursor-pointer select-none group hover:text-white transition-colors" @click="sortBy('status-rank')" title="Sort by Status">
+                <div class="flex items-center gap-1.5">
+                    <span>Status</span>
+                    <span class="text-[10px] transition-colors" :class="sortCol === 'status-rank' ? 'text-[#d40060]' : 'text-[#52525b] group-hover:text-[#a1a1aa]'">
+                        <span x-show="sortCol === 'status-rank' && sortDir === 'desc'">▼</span>
+                        <span x-show="sortCol === 'status-rank' && sortDir === 'asc'">▲</span>
+                        <span x-show="sortCol !== 'status-rank'" class="opacity-0 group-hover:opacity-100">▲</span>
+                    </span>
+                </div>
+            </th>
+            <th class="px-6 py-3.5 cursor-pointer select-none group hover:text-white transition-colors" @click="sortBy('last-checked')" title="Sort by Last Checked">
+                <div class="flex items-center gap-1.5">
+                    <span>Last Checked</span>
+                    <span class="text-[10px] transition-colors" :class="sortCol === 'last-checked' ? 'text-[#d40060]' : 'text-[#52525b] group-hover:text-[#a1a1aa]'">
+                        <span x-show="sortCol === 'last-checked' && sortDir === 'desc'">▼</span>
+                        <span x-show="sortCol === 'last-checked' && sortDir === 'asc'">▲</span>
+                        <span x-show="sortCol !== 'last-checked'" class="opacity-0 group-hover:opacity-100">▲</span>
+                    </span>
+                </div>
+            </th>
+            <th class="px-6 py-3.5 text-right whitespace-nowrap w-1">Actions</th>
+        </tr>
+    </thead>
+    {% endmacro %}
 
-                            {% if item.media_type.value in ['show', 'anime'] and item.total_seasons > 0 %}
-                                {% set pct = (item.downloaded_seasons / item.total_seasons) * 100 %}
-                                {% if pct == 100 %}
-                                    {% set badge_color = "bg-emerald-700 text-white border-emerald-600" %}
-                                {% elif pct > 0 %}
-                                    {% set badge_color = "bg-amber-700 text-white border-amber-600" %}
-                                {% else %}
-                                    {% set badge_color = "bg-blue-900 text-blue-200 border-blue-700" %}
-                                {% endif %}
-                                <span class="{{ badge_color }} text-[10px] font-bold px-2 py-0.5 rounded border w-fit whitespace-nowrap shadow-sm mt-1">
-                                    {{ item.downloaded_seasons }}/{{ item.total_seasons }} Seasons Downloaded
-                                </span>
-                            {% endif %}
-                            
-                            {% if item.failure_logs|length > 0 %}
-                            <span class="bg-red-900 text-white text-[10px] font-bold px-2 py-0.5 rounded cursor-help border border-red-700" title="{% for log in item.failure_logs[-5:] %}{{ log.created_at.strftime('%Y-%m-%d %H:%M') }}: {{ log.message }}&#10;{% endfor %}">❌ {{ item.failure_logs|length }} Fails</span>
-                            {% endif %}
-                        </div>
-                    </td>
-                    <td class="px-6 py-4 text-gray-400 text-xs font-mono whitespace-nowrap">
-                        {{ item.updated_at.strftime('%Y-%m-%d %H:%M:%S') }}
-                    </td>
-                    <td class="px-6 py-4 text-right whitespace-nowrap w-1">
-                        <div class="flex justify-end gap-2">
-                            {% if item.status.value == 'manual_grab' and item.pending_candidate_json %}
-                                <button hx-post="/items/{{ item.id }}/confirm_grab" title="Send candidate to TorBox: {{ item.pending_candidate_json.title }}" class="bg-yellow-500 hover:bg-yellow-400 text-black font-bold transition-colors p-1.5 rounded flex items-center gap-1 text-xs px-2">
-                                    <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg>
-                                    Send
-                                </button>
-                                <button hx-post="/items/{{ item.id }}/decline_grab" title="Decline candidate and blacklist: {{ item.pending_candidate_json.title }}" class="bg-red-800 hover:bg-red-700 text-white font-bold transition-colors p-1.5 rounded flex items-center gap-1 text-xs px-2">
-                                    <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
-                                    Decline
-                                </button>
-                            {% endif %}
-
-                            <button hx-post="/items/{{ item.id }}/ignore" title="Ignore" class="bg-transparent border border-gray-600 text-gray-500 hover:bg-gray-600 hover:text-white transition-colors p-1.5 rounded">
-                                <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"></path></svg>
-                            </button>
-                            <button hx-post="/items/{{ item.id }}/retry" title="Retry (Reset status)" class="bg-transparent border border-yellow-600 text-yellow-500 hover:bg-yellow-600 hover:text-white transition-colors p-1.5 rounded">
-                                <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
-                            </button>
-                            <button hx-delete="/items/{{ item.id }}" hx-target="closest tr" hx-swap="outerHTML" hx-confirm="Are you sure you want to delete this item?" title="Delete item" class="bg-transparent border border-red-800 text-red-500 hover:bg-red-600 hover:text-white transition-colors p-1.5 rounded">
-                                <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
-                            </button>
-                        </div>
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
+    {% macro render_item_row(item) %}
+    {% set display_category = 'anime' if (item.media_type.value == 'movie' and item.is_anime_movie) else item.media_type.value %}
+    <tr class="hover:bg-[#2a2a32] transition-colors group" 
+        data-sortable="true"
+        data-title="{{ (item.title or '') | lower }}"
+        data-type="{% if item.media_type.value == 'movie' and item.is_anime_movie %}anime movie{% elif item.media_type.value == 'movie' %}movie{% elif item.media_type.value == 'anime' %}anime{% elif item.media_type.value == 'show' %}series{% endif %}"
+        data-profile="simkl"
+        data-year="{{ item.year or '' }}"
+        data-release-date="{{ item.release_date.strftime('%Y-%m-%d') if item.release_date else '' }}"
+        data-status-rank="{% if item.status.value == 'manual_grab' %}1{% elif item.status.value == 'downloading' %}2{% elif item.status.value == 'searching' or item.status.value == 'pending' %}3{% elif item.status.value == 'future' %}4{% elif item.status.value == 'downloaded' %}5{% elif item.status.value == 'completed' %}6{% else %}7{% endif %}"
+        data-last-checked="{{ item.updated_at.strftime('%Y-%m-%d %H:%M:%S') if item.updated_at else '' }}"
+        x-show="tab === '{{ display_category }}' && ('{{ item.title|replace('\'', '\\\'') }}'.toLowerCase().includes(search.toLowerCase()) || ('{{ item.alt_title|replace('\'', '\\\'') if item.alt_title else '' }}'.toLowerCase().includes(search.toLowerCase())) || '{{ item.tvdb_id or '' }}'.includes(search) || '{{ item.tmdb_id or '' }}'.includes(search) || '{{ item.imdb_id or '' }}'.includes(search) || '{{ item.simkl_id or '' }}'.includes(search))" 
+        style="display: none;">
         
-        <!-- Empty State (Shows when no items match the filter) -->
-        <div class="px-6 py-12 text-center text-[#a1a1aa]" 
-             x-show="!Array.from(document.querySelectorAll('tbody tr')).some(el => el.style.display !== 'none')" 
-             style="display: none;">
-            <svg class="mx-auto h-12 w-12 text-[#52525b] mb-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 4v16M17 4v16M3 8h4m10 0h4M3 12h18M3 16h4m10 0h4M4 20h16a1 1 0 001-1V5a1 1 0 00-1-1H4a1 1 0 00-1 1v14a1 1 0 001 1z" />
-            </svg>
-            <h3 class="text-lg font-medium text-gray-300 mb-1">No entries found</h3>
-            <p class="max-w-sm mx-auto text-sm">There are no entries in this category matching your search.</p>
+        <td class="px-6 py-4 max-w-[240px] md:max-w-xs break-words">
+            <div class="block">
+                <div class="flex items-center gap-2">
+                    <a href="/items/{{ item.id }}" class="font-bold text-white hover:text-indigo-400 transition-colors">{{ item.title }}</a>
+                </div>
+                {% if item.alt_title %}
+                <div class="text-xs text-[#a1a1aa] mt-0.5">{{ item.alt_title }}</div>
+                {% endif %}
+                <div class="flex gap-2 mt-2 text-[10px] font-bold">
+                    {% if item.simkl_id %}
+                    <a href="https://simkl.com/{{ 'movies' if item.media_type.value == 'movie' else ('anime' if item.media_type.value == 'anime' else 'shows') }}/{{ item.simkl_id }}" target="_blank" class="bg-[#2a2a32] text-gray-400 hover:text-white px-2 py-0.5 rounded border border-[#3f3f46] transition-colors">SIMKL</a>
+                    {% endif %}
+                    {% if item.tmdb_id %}
+                    <a href="https://themoviedb.org/{{ 'movie' if item.media_type.value == 'movie' else 'tv' }}/{{ item.tmdb_id }}" target="_blank" class="bg-[#2a2a32] text-blue-400 hover:text-white px-2 py-0.5 rounded border border-[#3f3f46] transition-colors">TMDB</a>
+                    {% endif %}
+                    {% if item.imdb_id %}
+                    <a href="https://imdb.com/title/{{ item.imdb_id }}" target="_blank" class="bg-[#2a2a32] text-yellow-500 hover:text-white px-2 py-0.5 rounded border border-[#3f3f46] transition-colors">IMDB</a>
+                    {% endif %}
+                </div>
+            </div>
+        </td>
+        <td class="px-6 py-4 whitespace-nowrap">
+            {% include "components/type_badge.html" %}
+        </td>
+        <td class="px-6 py-4 whitespace-nowrap">
+            <span class="bg-[#3f3f46] text-gray-200 text-xs font-bold px-2 py-1 rounded">SIMKL</span>
+        </td>
+        <td class="px-6 py-4 text-gray-300 whitespace-nowrap">
+            {{ item.year or '-' }}
+        </td>
+        <td class="px-6 py-4 text-gray-300 whitespace-nowrap">
+            {% if item.release_date %}
+                <div>{{ item.release_date.strftime('%Y-%m-%d') }}</div>
+                <div class="text-[#a1a1aa] text-xs mt-0.5">{{ item.release_date | relative_date }}</div>
+            {% else %}
+                -
+            {% endif %}
+        </td>
+        <td class="px-6 py-4 whitespace-nowrap">
+            <div class="flex flex-col gap-1 items-start">
+                {% if item.status.value == 'downloaded' or item.status.value == 'completed' %}
+                    <span class="bg-emerald-600 text-white text-[11px] font-bold px-2 py-1 rounded uppercase tracking-wider shadow-sm">DONE</span>
+                    {% if item.status.value == 'downloaded' %}
+                    <span class="bg-blue-900 text-blue-200 text-[10px] font-bold px-2 py-0.5 rounded border border-blue-700 w-fit">Upgrade: {{ item.aggregated_upgrade_attempts }}/{{ max_upgrade_attempts }}</span>
+                    {% elif item.status.value == 'completed' and item.best_score and item.best_score < 8000 %}
+                    <span class="bg-[#1e1e24] text-gray-400 text-[10px] font-bold px-2 py-0.5 rounded border border-[#3f3f46] w-fit">Cutoff unmet ({{ item.aggregated_upgrade_attempts }}/{{ max_upgrade_attempts }} attempts)</span>
+                    {% endif %}
+                {% elif item.status.value == 'downloading' %}
+                    <span class="bg-orange-600 animate-pulse text-white text-[11px] font-bold px-2 py-1 rounded uppercase tracking-wider shadow-sm">DOWNLOADING</span>
+                {% elif item.status.value == 'manual_grab' %}
+                    <span class="bg-yellow-500 text-black text-[11px] font-bold px-2 py-1 rounded uppercase tracking-wider shadow-sm animate-pulse">⚠ MANUAL</span>
+                    {% if item.pending_candidate_json %}
+                    <span class="text-[10px] text-yellow-300 font-mono max-w-[200px] truncate" title="{{ item.pending_candidate_json.title }}">{{ item.pending_candidate_json.title[:40] }}…</span>
+                    {% endif %}
+                {% elif item.status.value == 'future' %}
+                    <span class="bg-blue-600 text-white text-[11px] font-bold px-2 py-1 rounded uppercase tracking-wider shadow-sm">FUTURE</span>
+                {% elif item.status.value == 'searching' or item.status.value == 'pending' %}
+                    <span class="bg-[#d40060] text-white text-[11px] font-bold px-2 py-1 rounded uppercase tracking-wider shadow-sm">WANTED</span>
+                {% else %}
+                    <span class="bg-slate-600 text-white text-[11px] font-bold px-2 py-1 rounded uppercase tracking-wider shadow-sm">{{ item.status.value }}</span>
+                {% endif %}
+
+                {% if item.media_type.value in ['show', 'anime'] and item.total_seasons > 0 %}
+                    {% set pct = (item.downloaded_seasons / item.total_seasons) * 100 %}
+                    {% if pct == 100 %}
+                        {% set badge_color = "bg-emerald-700 text-white border-emerald-600" %}
+                    {% elif pct > 0 %}
+                        {% set badge_color = "bg-amber-700 text-white border-amber-600" %}
+                    {% else %}
+                        {% set badge_color = "bg-blue-900 text-blue-200 border-blue-700" %}
+                    {% endif %}
+                    <span class="{{ badge_color }} text-[10px] font-bold px-2 py-0.5 rounded border w-fit whitespace-nowrap shadow-sm mt-1">
+                        {{ item.downloaded_seasons }}/{{ item.total_seasons }} Seasons Downloaded
+                    </span>
+                {% endif %}
+                
+                {% if item.failure_logs|length > 0 %}
+                <span class="bg-red-900 text-white text-[10px] font-bold px-2 py-0.5 rounded cursor-help border border-red-700" title="{% for log in item.failure_logs[-5:] %}{{ log.created_at.strftime('%Y-%m-%d %H:%M') }}: {{ log.message }}&#10;{% endfor %}">❌ {{ item.failure_logs|length }} Fails</span>
+                {% endif %}
+            </div>
+        </td>
+        <td class="px-6 py-4 text-gray-400 text-xs font-mono whitespace-nowrap">
+            {{ item.updated_at.strftime('%Y-%m-%d %H:%M:%S') }}
+        </td>
+        <td class="px-6 py-4 text-right whitespace-nowrap w-1">
+            <div class="flex justify-end gap-2">
+                {% if item.status.value == 'manual_grab' and item.pending_candidate_json %}
+                    <button hx-post="/items/{{ item.id }}/confirm_grab" title="Send candidate to TorBox: {{ item.pending_candidate_json.title }}" class="bg-yellow-500 hover:bg-yellow-400 text-black font-bold transition-colors p-1.5 rounded flex items-center gap-1 text-xs px-2">
+                        <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg>
+                        Send
+                    </button>
+                    <button hx-post="/items/{{ item.id }}/decline_grab" title="Decline candidate and blacklist: {{ item.pending_candidate_json.title }}" class="bg-red-800 hover:bg-red-700 text-white font-bold transition-colors p-1.5 rounded flex items-center gap-1 text-xs px-2">
+                        <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                        Decline
+                    </button>
+                {% endif %}
+
+                <button hx-post="/items/{{ item.id }}/ignore" title="Ignore" class="bg-transparent border border-gray-600 text-gray-500 hover:bg-gray-600 hover:text-white transition-colors p-1.5 rounded">
+                    <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"></path></svg>
+                </button>
+                <button hx-post="/items/{{ item.id }}/retry" title="Retry (Reset status)" class="bg-transparent border border-yellow-600 text-yellow-500 hover:bg-yellow-600 hover:text-white transition-colors p-1.5 rounded">
+                    <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                </button>
+                <button hx-delete="/items/{{ item.id }}" hx-target="closest tr" hx-swap="outerHTML" hx-confirm="Are you sure you want to delete this item?" title="Delete item" class="bg-transparent border border-red-800 text-red-500 hover:bg-red-600 hover:text-white transition-colors p-1.5 rounded">
+                    <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                </button>
+            </div>
+        </td>
+    </tr>
+    {% endmacro %}
+
+    <!-- Bipartite Dual Table Layout -->
+    <div class="p-4 space-y-6">
+        <!-- Top Section: Not Yet Downloaded (Unacquired) -->
+        <div class="space-y-3">
+            <div class="flex items-center justify-between px-1">
+                <div class="flex items-center gap-2">
+                    <span class="inline-flex rounded-full h-2.5 w-2.5 bg-[#d40060]"></span>
+                    <h3 class="text-sm font-bold text-white uppercase tracking-wider">Not Yet Downloaded</h3>
+                </div>
+            </div>
+            <div class="border border-[#3f3f46] rounded-lg overflow-x-auto bg-[#1e1e24]/40 min-h-[160px]">
+                <table class="w-full text-left border-collapse">
+                    {{ render_table_header() }}
+                    <tbody id="video-table-body-missing" class="divide-y divide-[#3f3f46] text-sm">
+                        {% for item in items if item.partition == 'missing' %}
+                            {{ render_item_row(item) }}
+                        {% endfor %}
+                        <tr data-empty-row="true" x-show="!hasVisibleRows('missing')" style="display: none;">
+                            <td colspan="8" class="px-6 py-8 text-center text-[#a1a1aa]">
+                                <div class="flex flex-col items-center justify-center">
+                                    <p class="text-sm font-medium text-gray-400">No unacquired titles in this category</p>
+                                    <p class="text-xs text-[#71717a] mt-0.5">All monitored titles are acquired or match no search query.</p>
+                                </div>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Bottom Section: Awaiting Upgrades (Hunting Higher Quality) -->
+        <div class="space-y-3">
+            <div class="flex items-center justify-between px-1">
+                <div class="flex items-center gap-2">
+                    <span class="inline-flex rounded-full h-2.5 w-2.5 bg-blue-500"></span>
+                    <h3 class="text-sm font-bold text-white uppercase tracking-wider">Awaiting Upgrades</h3>
+                </div>
+            </div>
+            <div class="border border-[#3f3f46] rounded-lg overflow-x-auto bg-[#1e1e24]/40 min-h-[160px]">
+                <table class="w-full text-left border-collapse">
+                    {{ render_table_header() }}
+                    <tbody id="video-table-body-upgrading" class="divide-y divide-[#3f3f46] text-sm">
+                        {% for item in items if item.partition == 'upgrading' %}
+                            {{ render_item_row(item) }}
+                        {% endfor %}
+                        <tr data-empty-row="true" x-show="!hasVisibleRows('upgrading')" style="display: none;">
+                            <td colspan="8" class="px-6 py-8 text-center text-[#a1a1aa]">
+                                <div class="flex flex-col items-center justify-center">
+                                    <p class="text-sm font-medium text-gray-400">No titles currently awaiting upgrades in this category</p>
+                                    <p class="text-xs text-[#71717a] mt-0.5">Downloaded titles are at maximum cutoff or attempts have ended.</p>
+                                </div>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
         </div>
     </div>
 </div>
