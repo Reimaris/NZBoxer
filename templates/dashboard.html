@@ -81,26 +81,37 @@
     </div>
 </div>
 
-<!-- Main Table Area -->
-<div class="bg-[#24242b] border border-[#3f3f46] rounded-lg shadow overflow-hidden" 
-     x-data="{ 
-        tab: new URLSearchParams(window.location.search).get('tab') || localStorage.getItem('video_dashboard_tab') || 'movie', 
-        search: '', 
+<script id="video-items-payload" type="application/json">
+{{ items_payload | tojson | safe }}
+</script>
+
+<script>
+function initVideoDashboard() {
+    let rawItems = [];
+    try {
+        const el = document.getElementById('video-items-payload');
+        if (el && el.textContent) {
+            rawItems = JSON.parse(el.textContent);
+        }
+    } catch (e) {
+        console.error('Failed to parse video items payload:', e);
+    }
+
+    return {
+        tab: new URLSearchParams(window.location.search).get('tab') || localStorage.getItem('video_dashboard_tab') || 'movie',
+        search: '',
         showStatus: false,
         sortCol: 'title',
         sortDir: 'asc',
-        items: [
-            {% for item in items %}
-            {% set cat = 'anime' if (item.media_type.value == 'movie' and item.is_anime_movie) else item.media_type.value %}
-            {
-                category: '{{ cat }}',
-                partition: '{{ item.partition }}',
-                title: {{ (item.title or '') | lower | tojson }},
-                alt_title: {{ (item.alt_title or '') | lower | tojson }},
-                ids: {{ ((item.tvdb_id or '') ~ ' ' ~ (item.tmdb_id or '') ~ ' ' ~ (item.imdb_id or '') ~ ' ' ~ (item.simkl_id or '')) | lower | tojson }}
-            }{% if not loop.last %},{% endif %}
-            {% endfor %}
-        ],
+        items: rawItems,
+        init() {
+            this.applySort();
+            if (['movie', 'show', 'anime'].includes(this.tab)) {
+                const url = new URL(window.location);
+                url.searchParams.set('tab', this.tab);
+                window.history.replaceState({}, '', url);
+            }
+        },
         hasVisibleRows(partition) {
             const q = (this.search || '').trim().toLowerCase();
             return this.items.some(i => 
@@ -141,9 +152,9 @@
             bodyIds.forEach(id => {
                 const tbody = document.getElementById(id);
                 if (!tbody) return;
-                const rows = Array.from(tbody.querySelectorAll('tr[data-sortable=\'true\']'));
+                const rows = Array.from(tbody.querySelectorAll("tr[data-sortable='true']"));
                 if (!rows.length) return;
-                const emptyRow = tbody.querySelector('tr[data-empty-row=\'true\']');
+                const emptyRow = tbody.querySelector("tr[data-empty-row='true']");
                 const col = this.sortCol;
                 const dir = this.sortDir;
                 const isNumeric = (col === 'year' || col === 'status-rank');
@@ -155,7 +166,6 @@
                     const aEmpty = (valA === '');
                     const bEmpty = (valB === '');
                     
-                    // Nulls/empty values always sink to the bottom
                     if (aEmpty && bEmpty) return 0;
                     if (aEmpty) return 1;
                     if (bEmpty) return -1;
@@ -177,8 +187,17 @@
                 if (emptyRow) tbody.appendChild(emptyRow);
             });
         }
-     }"
-     x-init="applySort(); if (['movie', 'show', 'anime'].includes(tab)) { const url = new URL(window.location); url.searchParams.set('tab', tab); window.history.replaceState({}, '', url); }">
+    };
+}
+window.videoDashboard = initVideoDashboard;
+document.addEventListener('alpine:init', () => {
+    Alpine.data('videoDashboard', initVideoDashboard);
+});
+</script>
+
+<!-- Main Table Area -->
+<div class="bg-[#24242b] border border-[#3f3f46] rounded-lg shadow overflow-hidden" 
+     x-data="videoDashboard()">
     
     <!-- Table Toolbar: Tabs & Search -->
     <div class="p-4 border-b border-[#3f3f46] flex flex-col md:flex-row justify-between items-center gap-4">

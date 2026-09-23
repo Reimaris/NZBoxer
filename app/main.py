@@ -290,6 +290,22 @@ async def dashboard(request: Request):
         missing_items = [i for i in items if i.partition == "missing"]
         upgrading_items = [i for i in items if i.partition == "upgrading"]
 
+        items_payload = [
+            {
+                "category": "anime"
+                if (
+                    i.media_type.value == "movie"
+                    and getattr(i, "is_anime_movie", False)
+                )
+                else i.media_type.value,
+                "partition": getattr(i, "partition", "missing"),
+                "title": (i.title or "").lower(),
+                "alt_title": (i.alt_title or "").lower(),
+                "ids": f"{i.tvdb_id or ''} {i.tmdb_id or ''} {i.imdb_id or ''} {i.simkl_id or ''}".lower(),
+            }
+            for i in items
+        ]
+
         # Detailed stats calculations
         movie_items = [
             i
@@ -346,6 +362,7 @@ async def dashboard(request: Request):
         name="dashboard.html",
         context={
             "items": items,
+            "items_payload": items_payload,
             "missing_items": missing_items,
             "upgrading_items": upgrading_items,
             "movie_items": movie_items,
