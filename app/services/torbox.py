@@ -723,3 +723,33 @@ async def get_usenet_downloads(
         except httpx.HTTPError as e:
             logger.error(f"Failed to get TorBox usenet downloads: {e}")
             return []
+
+
+async def get_torrent_downloads(
+    api_key: str | None = None,
+    session: AsyncSession | None = None,
+    explicit_key: str | None = None,
+) -> list[dict[str, Any]]:
+    """Retrieve list of active Torrent downloads from TorBox."""
+    key = await resolve_api_key(session=session, explicit_key=explicit_key or api_key)
+    if not key:
+        return []
+
+    url = f"{TORBOX_BASE_URL}/api/torrents/mylist"
+    headers = {
+        "Authorization": f"Bearer {key}",
+        "User-Agent": DEFAULT_USER_AGENT,
+    }
+
+    await _poll_limiter.wait()
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        try:
+            response = await client.get(url, headers=headers)
+            response.raise_for_status()
+            result = response.json()
+            if result.get("success"):
+                return result.get("data", []) or []
+            return []
+        except httpx.HTTPError as e:
+            logger.error(f"Failed to get TorBox torrent downloads: {e}")
+            return []

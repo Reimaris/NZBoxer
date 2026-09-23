@@ -13,17 +13,21 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
+from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.logging_config import log_process_end, log_process_start
 from app.db.database import async_session_factory
 from app.db.models import (
     BlacklistedRelease,
+    BookItem,
     DownloadHistory,
     Episode,
     EpisodeStatus,
+    MangaVolume,
     MediaItem,
     MediaStatus,
     MediaType,
@@ -36,7 +40,54 @@ from app.services import telegram, torbox
 logger = logging.getLogger(__name__)
 
 
-async def run_self_healing_cycle() -> None:
+async def count_downloading_entities(session: AsyncSession) -> int:
+    """Counts active downloading entities across all supported media models."""
+    movies_c = (
+        await session.execute(
+            select(func.count(MediaItem.id)).where(
+                MediaItem.status == MediaStatus.DOWNLOADING
+            )
+        )
+    ).scalar() or 0
+
+    seasons_c = (
+        await session.execute(
+            select(func.count(Season.id)).where(
+                Season.status == SeasonStatus.DOWNLOADING
+            )
+        )
+    ).scalar() or 0
+
+    episodes_c = (
+        await session.execute(
+            select(func.count(Episode.id)).where(
+                Episode.status == EpisodeStatus.DOWNLOADING
+            )
+        )
+    ).scalar() or 0
+
+    manga_c = (
+        await session.execute(
+            select(func.count(MangaVolume.id)).where(
+                MangaVolume.status == EpisodeStatus.DOWNLOADING
+            )
+        )
+    ).scalar() or 0
+
+    books_c = (
+        await session.execute(
+            select(func.count(BookItem.id)).where(
+                BookItem.status == MediaStatus.DOWNLOADING
+            )
+        )
+    ).scalar() or 0
+
+    return int(movies_c + seasons_c + episodes_c + manga_c + books_c)
+
+
+async def run_self_healing_cycle(
+    pre_fetched_downloads: list[dict[str, Any]] | None = None,
+) -> None:
     """Checks all active downloads in TorBox for failures."""
     log_process_start(logger, "Self-Healing Engine")
     try:
@@ -45,9 +96,25 @@ async def run_self_healing_cycle() -> None:
             logger.debug("TorBox API key missing. Skipping self-healing cycle.")
             return
 
-        logger.info("🔧 Starting Self-Healing cycle...")
-
         async with async_session_factory() as session:
+            if pre_fetched_downloads is None:
+                active_count = await count_downloading_entities(session)
+                if active_count == 0:
+                    logger.info(
+                        "⏩ No active downloads found in DB. Bypassing Self-Healing TorBox polling."
+                    )
+                    return
+                raw_downloads = await torbox.get_usenet_downloads(session=session)
+            else:
+                raw_downloads = pre_fetched_downloads
+
+            logger.info("🔧 Starting Self-Healing cycle...")
+
+            tb_map: dict[str, dict[str, Any]] = {}
+            for d in raw_downloads:
+                if d.get("id") is not None:
+                    tb_map[str(d["id"])] = d
+
             stmt = (
                 select(MediaItem)
                 .where(MediaItem.status == MediaStatus.DOWNLOADING)
@@ -111,12 +178,28 @@ async def run_self_healing_cycle() -> None:
                     )
                     items_to_check.append((e, latest))
 
+            now_utc = datetime.now(timezone.utc)
+
             for target, history in items_to_check:
                 if not history.torbox_id:
                     continue
 
-                status_res = await torbox.check_download_status(history.torbox_id)
-                status = status_res.get("status", "")
+                tb_item = tb_map.get(str(history.torbox_id))
+                if tb_item is not None:
+                    status = tb_item.get("download_state", "unknown")
+                else:
+                    sent_at = history.torbox_sent_at
+                    if sent_at and sent_at.tzinfo is None:
+                        sent_at = sent_at.replace(tzinfo=timezone.utc)
+                    if sent_at and (now_utc - sent_at).total_seconds() < 900:
+                        logger.debug(
+                            "Download %s for '%s' missing from TorBox but within 15m grace period (%ss elapsed). Skipping.",
+                            history.torbox_id,
+                            history.nzb_title,
+                            int((now_utc - sent_at).total_seconds()),
+                        )
+                        continue
+                    status = "not_found"
 
                 logger.debug("TorBox status for %s: %s", history.nzb_title, status)
 
@@ -205,7 +288,6 @@ async def run_self_healing_cycle() -> None:
 
             # --- Auto-Adoption from TorBox ---
             try:
-                raw_downloads = await torbox.get_usenet_downloads(session=session)
                 if raw_downloads:
                     await sync_torbox_cache(session, raw_downloads)
                     await adopt_torbox_downloads_for_video(session)
@@ -218,7 +300,9 @@ async def run_self_healing_cycle() -> None:
         log_process_end(logger, "Self-Healing Engine")
 
 
-async def run_download_check_cycle() -> None:
+async def run_download_check_cycle(
+    pre_fetched_downloads: list[dict[str, Any]] | None = None,
+) -> None:
     """Checks TorBox for all DOWNLOADING items and updates their status.
 
     - completed / cached → set to DOWNLOADED or COMPLETED (if score >= target)
@@ -232,42 +316,36 @@ async def run_download_check_cycle() -> None:
             logger.debug("TorBox API key missing. Skipping download check.")
             return
 
-        logger.info("🔎 Checking download status on TorBox...")
-
-        try:
-            import httpx
-
-            headers = {"Authorization": f"Bearer {tb_key}"}
-            tb_items: dict[str, dict] = {}
-
-            async with httpx.AsyncClient(timeout=15.0) as client:
-                # Fetch Usenet
-                resp = await client.get(
-                    "https://api.torbox.app/v1/api/usenet/mylist", headers=headers
-                )
-                if resp.status_code == 200:
-                    tb_data = resp.json()
-                    if tb_data.get("success"):
-                        for item in tb_data.get("data", []) or []:
-                            item["_type"] = "usenet"
-                            tb_items[str(item.get("id", ""))] = item
-
-                # Fetch Torrents
-                resp_t = await client.get(
-                    "https://api.torbox.app/v1/api/torrents/mylist", headers=headers
-                )
-                if resp_t.status_code == 200:
-                    tb_data_t = resp_t.json()
-                    if tb_data_t.get("success"):
-                        for item in tb_data_t.get("data", []) or []:
-                            item["_type"] = "torrent"
-                            tb_items[str(item.get("id", ""))] = item
-
-        except Exception as e:
-            logger.error("❌ Failed to fetch TorBox list: %s", e)
-            return
-
         async with async_session_factory() as session:
+            if pre_fetched_downloads is None:
+                active_count = await count_downloading_entities(session)
+                if active_count == 0:
+                    logger.info(
+                        "⏩ No active downloads found in DB. Bypassing Download Check TorBox polling."
+                    )
+                    return
+                raw_downloads = await torbox.get_usenet_downloads(session=session)
+            else:
+                raw_downloads = pre_fetched_downloads
+
+            logger.info("🔎 Checking download status on TorBox...")
+
+            tb_items: dict[str, dict] = {}
+            for item in raw_downloads:
+                item["_type"] = "usenet"
+                if item.get("id") is not None:
+                    tb_items[str(item.get("id"))] = item
+
+            # Fetch Torrents via service
+            try:
+                raw_torrents = await torbox.get_torrent_downloads(session=session)
+                for item in raw_torrents:
+                    item["_type"] = "torrent"
+                    if item.get("id") is not None:
+                        tb_items[str(item.get("id"))] = item
+            except Exception as e:
+                logger.debug("Failed to fetch torrent downloads in check cycle: %s", e)
+
             from app.config import scoring_config
 
             cutoffs = scoring_config.get("cutoffs", {})
@@ -330,7 +408,15 @@ async def run_download_check_cycle() -> None:
                             break
 
                 if not tb:
-                    return "no_id" if not history.torbox_id else "not_found", {}
+                    if not history.torbox_id:
+                        return "no_id", {}
+                    now_utc = datetime.now(timezone.utc)
+                    sent_at = history.torbox_sent_at
+                    if sent_at and sent_at.tzinfo is None:
+                        sent_at = sent_at.replace(tzinfo=timezone.utc)
+                    if sent_at and (now_utc - sent_at).total_seconds() < 900:
+                        return "downloading", {}
+                    return "not_found", {}
 
                 return tb.get("download_state", "unknown"), tb
 

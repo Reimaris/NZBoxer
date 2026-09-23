@@ -41,6 +41,25 @@ from app.services.torbox import DownloaderNetworkError
 
 logger = logging.getLogger(__name__)
 
+_grabs_dispatched_in_cycle: int = 0
+
+
+def get_grabs_dispatched_in_cycle() -> int:
+    """Return count of grabs dispatched in the active automation cycle."""
+    return _grabs_dispatched_in_cycle
+
+
+def reset_grabs_dispatched_in_cycle() -> None:
+    """Reset the grab dispatch counter for a new automation cycle."""
+    global _grabs_dispatched_in_cycle
+    _grabs_dispatched_in_cycle = 0
+
+
+def increment_grabs_dispatched_in_cycle() -> None:
+    """Increment the grab dispatch counter."""
+    global _grabs_dispatched_in_cycle
+    _grabs_dispatched_in_cycle += 1
+
 
 def is_eligible_for_search(
     empty_search_count: int, last_searched_at: datetime | None
@@ -1050,6 +1069,7 @@ async def run_automation_cycle(
 
     automation_state_manager.set_running(AutomationStatus.RUNNING_VIDEO)
     log_process_start(logger, "Automation Cycle")
+    reset_grabs_dispatched_in_cycle()
     try:
         if force:
             logger.info(
@@ -1108,8 +1128,13 @@ async def run_automation_cycle(
 
         # Stage 7: Download State (Post-Grab)
         if not automation_state_manager.is_aborting():
-            logger.info("🔄 Starting Stage 7: Download State (Post-Grab)...")
-            await run_download_check_cycle()
+            if _grabs_dispatched_in_cycle > 0:
+                logger.info("🔄 Starting Stage 7: Download State (Post-Grab)...")
+                await run_download_check_cycle()
+            else:
+                logger.info(
+                    "⏩ Zero releases grabbed in cycle. Bypassing Stage 7: Download State (Post-Grab)."
+                )
 
     finally:
         automation_state_manager.reset()
@@ -2471,6 +2496,7 @@ async def _evaluate_and_download(
             return False
 
         if torbox_result and (torbox_result.get("hash") or torbox_result.get("id")):
+            increment_grabs_dispatched_in_cycle()
             await increment_today_grab_count(session)
             history = DownloadHistory(
                 media_item_id=media_item_id,
@@ -3031,6 +3057,7 @@ async def process_print_book(session: AsyncSession, book: BookItem) -> bool:
         await session.commit()
         return False
 
+    increment_grabs_dispatched_in_cycle()
     await increment_today_grab_count(session)
     book.status = MediaStatus.DOWNLOADING
     book.best_score = best_candidate["score"]
@@ -3243,6 +3270,7 @@ async def process_print_manga(session: AsyncSession, manga: MangaItem) -> bool:
                         session=session,
                     )
                     if torbox_res and (torbox_res.get("hash") or torbox_res.get("id")):
+                        increment_grabs_dispatched_in_cycle()
                         await increment_today_grab_count(session)
 
                         # CRITICAL: Suppress individual searches by marking all covered volumes DOWNLOADING
@@ -3409,6 +3437,7 @@ async def process_print_manga(session: AsyncSession, manga: MangaItem) -> bool:
                 session=session,
             )
             if torbox_res and (torbox_res.get("hash") or torbox_res.get("id")):
+                increment_grabs_dispatched_in_cycle()
                 await increment_today_grab_count(session)
                 vol.status = EpisodeStatus.DOWNLOADING
                 vol.best_score = best_vol_cand["score"]
