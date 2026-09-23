@@ -48,6 +48,7 @@ class AutomationState(str, enum.Enum):
     """Global state of background automation runner."""
 
     ACTIVE = "active"
+    UPGRADES_ONLY = "upgrades_only"
     PAUSED = "paused"
     DISABLED = "disabled"
 

@@ -125,6 +125,7 @@ async def run_orchestrator_tick(now: datetime | None = None) -> None:
     State rules:
     - DISABLED: Halts immediately (no self-healing, download checks, or searches).
     - PAUSED: Runs Self-Healing & Download Checks on schedule, but skips Video & Print searches.
+    - UPGRADES_ONLY: Runs Self-Healing & Download Checks, and runs Video & Print automation in upgrades-only mode.
     - ACTIVE: Runs all due domain tasks (Self-Healing/Download Checks, Video Search, Print Search).
     """
     from datetime import datetime
@@ -159,7 +160,7 @@ async def run_orchestrator_tick(now: datetime | None = None) -> None:
         current_state,
     )
 
-    # 1. Self-Healing & Download Check (Runs in ACTIVE and PAUSED states)
+    # 1. Self-Healing & Download Check (Runs in ACTIVE, UPGRADES_ONLY, and PAUSED states)
     if is_interval_due(settings.self_healing_interval, now):
         logger.info(
             "⏰ Running scheduled Self-Healing & Download Check (Interval: %dm)",
@@ -176,25 +177,29 @@ async def run_orchestrator_tick(now: datetime | None = None) -> None:
         logger.info("Automation is PAUSED. Skipping Video and Print search automation.")
         return
 
-    # 2. Video Media Automation (Runs strictly in ACTIVE state)
+    is_upgrades_only = current_state == "upgrades_only"
+
+    # 2. Video Media Automation (Runs in ACTIVE and UPGRADES_ONLY states)
     if is_interval_due(settings.video_search_interval, now):
         logger.info(
-            "⏰ Running scheduled Video Automation (Interval: %dm)",
+            "⏰ Running scheduled Video Automation (Interval: %dm, Upgrades Only: %s)",
             settings.video_search_interval,
+            is_upgrades_only,
         )
-        await run_automation_cycle()
+        await run_automation_cycle(upgrades_only=is_upgrades_only)
 
     if automation_state_manager.is_aborting():
         logger.info("🛑 Automation abort detected after video cycle. Halting tick.")
         return
 
-    # 3. Print Media Automation (Runs strictly in ACTIVE state)
+    # 3. Print Media Automation (Runs in ACTIVE and UPGRADES_ONLY states)
     if is_interval_due(settings.print_search_interval, now):
         logger.info(
-            "⏰ Running scheduled Print Automation (Interval: %dm)",
+            "⏰ Running scheduled Print Automation (Interval: %dm, Upgrades Only: %s)",
             settings.print_search_interval,
+            is_upgrades_only,
         )
-        await run_print_automation_cycle()
+        await run_print_automation_cycle(upgrades_only=is_upgrades_only)
 
 
 @asynccontextmanager
@@ -1771,6 +1776,7 @@ async def set_automation_state(state: str = Form(...)):
 
     valid_states = {
         "active": AutomationState.ACTIVE,
+        "upgrades_only": AutomationState.UPGRADES_ONLY,
         "paused": AutomationState.PAUSED,
         "disabled": AutomationState.DISABLED,
     }

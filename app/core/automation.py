@@ -1036,7 +1036,9 @@ async def _run_video_upgrade_cycle(session: AsyncSession) -> None:
             await _process_season(session, season)
 
 
-async def run_automation_cycle(force: bool = False) -> None:
+async def run_automation_cycle(
+    force: bool = False, upgrades_only: bool = False
+) -> None:
     """Background job that searches for NZBs and pushes them to TorBox."""
     automation_state_manager.set_running(AutomationStatus.RUNNING_VIDEO)
     log_process_start(logger, "Automation Cycle")
@@ -1046,7 +1048,10 @@ async def run_automation_cycle(force: bool = False) -> None:
                 "🔍 Manual search run started (bypassing interval multiplier)..."
             )
         else:
-            logger.info("🔄 Starting automation cycle...")
+            logger.info(
+                "🔄 Starting automation cycle (Upgrades Only: %s)...",
+                upgrades_only,
+            )
 
         # Stage 1: Self-healing
         if force:
@@ -1078,11 +1083,18 @@ async def run_automation_cycle(force: bool = False) -> None:
                 return
 
             # Stage 5: Initial Acquisition Search
-            await _run_video_acquisition_search_cycle(session)
-            if automation_state_manager.is_aborting():
-                return
+            if not upgrades_only:
+                logger.info("🔄 Starting Stage 5: Initial Acquisition Search...")
+                await _run_video_acquisition_search_cycle(session)
+                if automation_state_manager.is_aborting():
+                    return
+            else:
+                logger.info(
+                    "⏩ Skipping Stage 5: Initial Acquisition Search (Upgrades Only mode)."
+                )
 
             # Stage 6: Dedicated Upgrade Search
+            logger.info("🔄 Starting Stage 6: Dedicated Upgrade Search...")
             await _run_video_upgrade_cycle(session)
 
         # Stage 7: Download State (Post-Grab)
@@ -3342,14 +3354,19 @@ async def process_print_manga(session: AsyncSession, manga: MangaItem) -> bool:
     return any_volume_grabbed
 
 
-async def run_print_automation_cycle(force: bool = False) -> None:
+async def run_print_automation_cycle(
+    force: bool = False, upgrades_only: bool = False
+) -> None:
     """
     Background job for Print Media (Books & Manga).
     - Processes Books (Immediate Wanted search & grab).
     - Processes Manga (Pack-First search cascade with individual volume search suppression).
     """
     automation_state_manager.set_running(AutomationStatus.RUNNING_PRINT)
-    logger.info("=== Start Print Media Automation Cycle ===")
+    logger.info(
+        "=== Start Print Media Automation Cycle (Upgrades Only: %s) ===",
+        upgrades_only,
+    )
     try:
         from sqlalchemy import select
         from sqlalchemy.orm import selectinload
@@ -3358,48 +3375,55 @@ async def run_print_automation_cycle(force: bool = False) -> None:
         from app.db.models import BookItem, EpisodeStatus, MangaItem, MediaStatus
 
         async with async_session_factory() as session:
-            # 1. Process Books (Acquisition)
-            stmt_books = select(BookItem).where(
-                BookItem.status.in_([MediaStatus.PENDING, MediaStatus.SEARCHING])
-            )
-            books = (await session.execute(stmt_books)).scalars().all()
-            for book in books:
-                if automation_state_manager.is_aborting():
-                    logger.info(
-                        "🛑 Print automation cycle abort requested. Stopping book processing."
-                    )
-                    break
-                try:
-                    await process_print_book(session, book)
-                except Exception as e:
-                    logger.error("Error processing Book '%s': %s", book.title, e)
-
-            # 2. Process Manga with wanted volumes (Acquisition)
-            if not automation_state_manager.is_aborting():
-                stmt_manga = (
-                    select(MangaItem)
-                    .options(selectinload(MangaItem.volumes))
-                    .where(
-                        MangaItem.status.in_(
-                            [
-                                MediaStatus.PENDING,
-                                MediaStatus.SEARCHING,
-                                MediaStatus.DOWNLOADING,
-                            ]
-                        )
-                    )
+            if not upgrades_only:
+                # 1. Process Books (Acquisition)
+                stmt_books = select(BookItem).where(
+                    BookItem.status.in_([MediaStatus.PENDING, MediaStatus.SEARCHING])
                 )
-                mangas = (await session.execute(stmt_manga)).scalars().all()
-                for manga in mangas:
+                books = (await session.execute(stmt_books)).scalars().all()
+                for book in books:
                     if automation_state_manager.is_aborting():
                         logger.info(
-                            "🛑 Print automation cycle abort requested. Stopping manga processing."
+                            "🛑 Print automation cycle abort requested. Stopping book processing."
                         )
                         break
                     try:
-                        await process_print_manga(session, manga)
+                        await process_print_book(session, book)
                     except Exception as e:
-                        logger.error("Error processing Manga '%s': %s", manga.title, e)
+                        logger.error("Error processing Book '%s': %s", book.title, e)
+
+                # 2. Process Manga with wanted volumes (Acquisition)
+                if not automation_state_manager.is_aborting():
+                    stmt_manga = (
+                        select(MangaItem)
+                        .options(selectinload(MangaItem.volumes))
+                        .where(
+                            MangaItem.status.in_(
+                                [
+                                    MediaStatus.PENDING,
+                                    MediaStatus.SEARCHING,
+                                    MediaStatus.DOWNLOADING,
+                                ]
+                            )
+                        )
+                    )
+                    mangas = (await session.execute(stmt_manga)).scalars().all()
+                    for manga in mangas:
+                        if automation_state_manager.is_aborting():
+                            logger.info(
+                                "🛑 Print automation cycle abort requested. Stopping manga processing."
+                            )
+                            break
+                        try:
+                            await process_print_manga(session, manga)
+                        except Exception as e:
+                            logger.error(
+                                "Error processing Manga '%s': %s", manga.title, e
+                            )
+            else:
+                logger.info(
+                    "⏩ Skipping Book & Manga initial acquisitions (Upgrades Only mode)."
+                )
 
             # --- Upgrade Evaluation Engine (Print) ---
             if not automation_state_manager.is_aborting():
