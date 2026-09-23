@@ -922,6 +922,14 @@ async def run_video_metadata_refresh_cycle(session: AsyncSession) -> None:
 
 
 async def _run_video_acquisition_search_cycle(session: AsyncSession) -> None:
+    cooldown = torbox.get_cooldown_remaining()
+    if cooldown > 0:
+        logger.info(
+            "⏳ TorBox is in cooldown (%ds remaining). Postponing video acquisition search.",
+            int(cooldown),
+        )
+        return
+
     logger.info("🔄 Starting Stage 5: Initial Acquisition Search...")
     from app.db.models import ProviderProfile
 
@@ -949,7 +957,14 @@ async def _run_video_acquisition_search_cycle(session: AsyncSession) -> None:
                     "🛑 Automation cycle abort requested. Stopping movie processing."
                 )
                 return
-            await _process_movie(session, movie)
+            try:
+                await _process_movie(session, movie)
+            except (torbox.DownloaderNetworkError, torbox.TorBoxError) as e:
+                logger.warning(
+                    "⚠️ Downloader error encountered (%s). Halting video acquisition search cascade.",
+                    e,
+                )
+                break
     else:
         logger.info("⏩ Skipping movie search in this cycle.")
 
@@ -974,13 +989,28 @@ async def _run_video_acquisition_search_cycle(session: AsyncSession) -> None:
                     "🛑 Automation cycle abort requested. Stopping season processing."
                 )
                 return
-            await _process_season(session, season)
+            try:
+                await _process_season(session, season)
+            except (torbox.DownloaderNetworkError, torbox.TorBoxError) as e:
+                logger.warning(
+                    "⚠️ Downloader error encountered (%s). Halting video acquisition search cascade.",
+                    e,
+                )
+                break
     else:
         logger.info("⏩ Skipping series search in this cycle.")
 
 
 async def _run_video_upgrade_cycle(session: AsyncSession) -> None:
     if automation_state_manager.is_aborting():
+        return
+
+    cooldown = torbox.get_cooldown_remaining()
+    if cooldown > 0:
+        logger.info(
+            "⏳ TorBox is in cooldown (%ds remaining). Postponing video upgrade search.",
+            int(cooldown),
+        )
         return
 
     logger.info("🔄 Starting Stage 6: Dedicated Upgrade Search...")
@@ -1019,7 +1049,14 @@ async def _run_video_upgrade_cycle(session: AsyncSession) -> None:
             if automation_state_manager.is_aborting():
                 return
             logger.info("  ⬆️ Upgrade Evaluation for Movie: %s", movie.title)
-            await _process_movie(session, movie)
+            try:
+                await _process_movie(session, movie)
+            except (torbox.DownloaderNetworkError, torbox.TorBoxError) as e:
+                logger.warning(
+                    "⚠️ Downloader error encountered (%s). Halting video upgrade cascade.",
+                    e,
+                )
+                break
 
     if active_shows_provider_ids and not automation_state_manager.is_aborting():
         season_stmt_upg = (
@@ -1052,7 +1089,14 @@ async def _run_video_upgrade_cycle(session: AsyncSession) -> None:
                 season.season_number,
                 season.media_item.title,
             )
-            await _process_season(session, season)
+            try:
+                await _process_season(session, season)
+            except (torbox.DownloaderNetworkError, torbox.TorBoxError) as e:
+                logger.warning(
+                    "⚠️ Downloader error encountered (%s). Halting video upgrade cascade.",
+                    e,
+                )
+                break
 
 
 async def run_automation_cycle(
@@ -2468,9 +2512,17 @@ async def _evaluate_and_download(
                 await session.commit()
                 return False
 
-            torbox_result = await torbox.send_nzb_file(
-                nzb_bytes, filename=filename, session=session
-            )
+            try:
+                torbox_result = await torbox.send_nzb_file(
+                    nzb_bytes, filename=filename, session=session
+                )
+            except (torbox.DownloaderNetworkError, torbox.TorBoxError) as e:
+                logger.warning(
+                    "⚠️ Downloader error encountered during dispatch (%s). Rolling back and halting search cascade.",
+                    e,
+                )
+                await session.rollback()
+                raise
         except treasure_maps.IndexerError as e:
             from app.core.failure_logger import log_failure
 
@@ -3039,9 +3091,20 @@ async def process_print_book(session: AsyncSession, book: BookItem) -> bool:
             await session.commit()
             return False
 
-        torbox_res = await torbox.send_nzb_file(
-            nzb_bytes, filename=filename or f"{book.title}.nzb", session=session
-        )
+        try:
+            torbox_res = await torbox.send_nzb_file(
+                nzb_bytes, filename=filename or f"{book.title}.nzb", session=session
+            )
+        except (torbox.DownloaderNetworkError, torbox.TorBoxError) as e:
+            logger.warning(
+                "⚠️ Downloader error encountered during Book '%s' dispatch (%s). Rolling back and halting cascade.",
+                book.title,
+                e,
+            )
+            await session.rollback()
+            raise
+    except (torbox.DownloaderNetworkError, torbox.TorBoxError):
+        raise
     except Exception as e:
         book.last_error = f"NZB fetch or dispatch error: {e}"
         logger.error("  ❌ %s", book.last_error)
@@ -3264,11 +3327,20 @@ async def process_print_manga(session: AsyncSession, manga: MangaItem) -> bool:
                 )
                 is_fake_content, _ = is_nzb_content_fake(nzb_bytes, media_type="manga")
                 if not is_fake_content:
-                    torbox_res = await torbox.send_nzb_file(
-                        nzb_bytes,
-                        filename=filename or f"{manga.title}_Pack.nzb",
-                        session=session,
-                    )
+                    try:
+                        torbox_res = await torbox.send_nzb_file(
+                            nzb_bytes,
+                            filename=filename or f"{manga.title}_Pack.nzb",
+                            session=session,
+                        )
+                    except (torbox.DownloaderNetworkError, torbox.TorBoxError) as e:
+                        logger.warning(
+                            "⚠️ Downloader error encountered during Manga '%s' pack dispatch (%s). Rolling back and halting cascade.",
+                            manga.title,
+                            e,
+                        )
+                        await session.rollback()
+                        raise
                     if torbox_res and (torbox_res.get("hash") or torbox_res.get("id")):
                         increment_grabs_dispatched_in_cycle()
                         await increment_today_grab_count(session)
@@ -3431,11 +3503,22 @@ async def process_print_manga(session: AsyncSession, manga: MangaItem) -> bool:
             if is_fake_content:
                 continue
 
-            torbox_res = await torbox.send_nzb_file(
-                nzb_bytes,
-                filename=filename or f"{manga.title}_Vol_{n}.nzb",
-                session=session,
-            )
+            try:
+                torbox_res = await torbox.send_nzb_file(
+                    nzb_bytes,
+                    filename=filename or f"{manga.title}_Vol_{n}.nzb",
+                    session=session,
+                )
+            except (torbox.DownloaderNetworkError, torbox.TorBoxError) as dl_err:
+                logger.warning(
+                    "  ⚠️ Downloader error grabbing Volume %d for '%s': %s — rolling back and halting volume grabs.",
+                    n,
+                    manga.title,
+                    dl_err,
+                )
+                await session.rollback()
+                raise
+
             if torbox_res and (torbox_res.get("hash") or torbox_res.get("id")):
                 increment_grabs_dispatched_in_cycle()
                 await increment_today_grab_count(session)
@@ -3449,6 +3532,8 @@ async def process_print_manga(session: AsyncSession, manga: MangaItem) -> bool:
                     n,
                     manga.title,
                 )
+        except (torbox.DownloaderNetworkError, torbox.TorBoxError):
+            raise
         except Exception as e:
             logger.error(
                 "  ❌ Failed to grab Volume %d for '%s': %s", n, manga.title, e
@@ -3479,6 +3564,17 @@ async def run_print_automation_cycle(
         "=== Start Print Media Automation Cycle (Upgrades Only: %s) ===",
         upgrades_only,
     )
+
+    # Cooldown pre-flight: skip all searching if TorBox is still cooling down.
+    cooldown_remaining = torbox.get_cooldown_remaining()
+    if cooldown_remaining > 0:
+        logger.info(
+            "⏳ TorBox is cooling down (%.0fs remaining). Skipping print automation cycle.",
+            cooldown_remaining,
+        )
+        automation_state_manager.reset()
+        return
+
     try:
         from sqlalchemy import select
         from sqlalchemy.orm import selectinload
@@ -3501,6 +3597,13 @@ async def run_print_automation_cycle(
                         break
                     try:
                         await process_print_book(session, book)
+                    except (torbox.DownloaderNetworkError, torbox.TorBoxError) as e:
+                        logger.warning(
+                            "⚠️ Downloader error while processing Book '%s': %s — halting print cycle.",
+                            book.title,
+                            e,
+                        )
+                        break
                     except Exception as e:
                         logger.error("Error processing Book '%s': %s", book.title, e)
 
@@ -3528,6 +3631,13 @@ async def run_print_automation_cycle(
                             break
                         try:
                             await process_print_manga(session, manga)
+                        except (torbox.DownloaderNetworkError, torbox.TorBoxError) as e:
+                            logger.warning(
+                                "⚠️ Downloader error while processing Manga '%s': %s — halting print cycle.",
+                                manga.title,
+                                e,
+                            )
+                            break
                         except Exception as e:
                             logger.error(
                                 "Error processing Manga '%s': %s", manga.title, e
@@ -3561,6 +3671,13 @@ async def run_print_automation_cycle(
                     try:
                         logger.info("  ⬆️ Upgrade Evaluation for Book: %s", book.title)
                         await process_print_book(session, book)
+                    except (torbox.DownloaderNetworkError, torbox.TorBoxError) as e:
+                        logger.warning(
+                            "⚠️ Downloader error upgrading Book '%s': %s — halting upgrade engine.",
+                            book.title,
+                            e,
+                        )
+                        break
                     except Exception as e:
                         logger.error("Error processing Book '%s': %s", book.title, e)
 
@@ -3604,6 +3721,13 @@ async def run_print_automation_cycle(
                                 "  ⬆️ Upgrade Evaluation for Manga: %s", manga.title
                             )
                             await process_print_manga(session, manga)
+                        except (torbox.DownloaderNetworkError, torbox.TorBoxError) as e:
+                            logger.warning(
+                                "⚠️ Downloader error upgrading Manga '%s': %s — halting upgrade engine.",
+                                manga.title,
+                                e,
+                            )
+                            break
                         except Exception as e:
                             logger.error(
                                 "Error processing Manga '%s': %s", manga.title, e
