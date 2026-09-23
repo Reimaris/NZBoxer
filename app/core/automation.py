@@ -4176,7 +4176,7 @@ def classify_video_item_partition(item: MediaItem) -> str:
       - 'missing'   (Top table: Not Yet Downloaded / Unacquired)
       - 'upgrading' (Bottom table: Awaiting Upgrades)
     """
-    target_score = 8000
+    target_score = scoring_config.get("cutoffs", {}).get("target_score", 8000)
 
     # 1. Standalone Movies (and anime movies without seasons)
     if (

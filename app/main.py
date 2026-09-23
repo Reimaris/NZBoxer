@@ -274,7 +274,6 @@ async def dashboard(request: Request):
                 selectinload(MediaItem.seasons),
                 selectinload(MediaItem.failure_logs),
                 selectinload(MediaItem.download_history),
-                selectinload(MediaItem.failure_logs),
                 selectinload(MediaItem.provider),
             )
         )
