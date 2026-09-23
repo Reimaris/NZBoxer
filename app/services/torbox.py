@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+import time
 from typing import TYPE_CHECKING, Any
 
 import httpx
@@ -21,8 +22,40 @@ if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
-_send_limiter = RollingWindowRateLimiter(60, 3600.0)  # 60/hour rolling window limit
+_auto_send_limiter = RollingWindowRateLimiter(
+    50, 3600.0
+)  # 50/hour for background automation
+_manual_send_limiter = RollingWindowRateLimiter(
+    60, 3600.0
+)  # 60/hour hard ceiling for manual grabs
+_send_limiter = _manual_send_limiter  # Backwards compatibility alias
 _poll_limiter = RateLimiter(10.0)
+
+_torbox_cooldown_until: float = 0.0
+
+_cached_usenet_downloads: list[dict[str, Any]] = []
+_cached_usenet_downloads_at: float = 0.0
+_cache_lock = asyncio.Lock()
+
+
+def get_cooldown_remaining() -> float:
+    """Return remaining cooldown seconds, or 0.0 if not in cooldown."""
+    now = time.monotonic()
+    return max(0.0, _torbox_cooldown_until - now)
+
+
+def set_cooldown(seconds: float) -> None:
+    """Activate global TorBox cooldown for the specified duration."""
+    global _torbox_cooldown_until
+    _torbox_cooldown_until = time.monotonic() + max(seconds, 0.0)
+
+
+def clear_usenet_cache() -> None:
+    """Clear in-memory Usenet download cache."""
+    global _cached_usenet_downloads, _cached_usenet_downloads_at
+    _cached_usenet_downloads = []
+    _cached_usenet_downloads_at = 0.0
+
 
 TORBOX_BASE_URL = "https://api.torbox.app/v1"
 
@@ -74,6 +107,8 @@ async def send_nzb_link(
     nzb_url: str,
     api_key: str | None = None,
     session: AsyncSession | None = None,
+    explicit_key: str | None = None,
+    is_manual: bool = False,
 ) -> dict[str, str | int | None]:
     """Send an NZB URL to TorBox to initiate a Usenet download.
 
@@ -81,14 +116,24 @@ async def send_nzb_link(
         nzb_url: The URL to the NZB file (from Treasure Maps).
         api_key: Optional explicit API key.
         session: Optional DB session to resolve active provider.
+        explicit_key: Optional explicit key override.
+        is_manual: Whether the upload was triggered by interactive manual action.
 
     Returns:
         A dictionary with "hash" and "id" if successful, else empty dict.
     """
-    key = await resolve_api_key(session=session, explicit_key=api_key)
+    key = await resolve_api_key(session=session, explicit_key=explicit_key or api_key)
     if not key:
         logger.warning("TorBox API key missing.")
         return {}
+
+    remaining = get_cooldown_remaining()
+    if remaining > 0:
+        raise DownloaderNetworkError(
+            f"TorBox cooldown active ({int(remaining)}s remaining)"
+        )
+
+    limiter = _manual_send_limiter if is_manual else _auto_send_limiter
 
     url = f"{TORBOX_BASE_URL}/api/usenet/createusenetdownload"
 
@@ -101,7 +146,7 @@ async def send_nzb_link(
 
     max_retries = 3
     for attempt in range(max_retries):
-        await _send_limiter.wait()
+        await limiter.wait()
         async with httpx.AsyncClient(timeout=60.0) as client:
             try:
                 response = await client.post(url, headers=headers, data=data)
@@ -136,6 +181,23 @@ async def send_nzb_link(
                 err_detail = str(e)
                 if isinstance(e, httpx.HTTPStatusError):
                     status = e.response.status_code
+                    if status == 429:
+                        retry_after_hdr = e.response.headers.get("Retry-After")
+                        cooldown_secs = 300.0
+                        if retry_after_hdr:
+                            try:
+                                cooldown_secs = float(retry_after_hdr)
+                            except (ValueError, TypeError):
+                                cooldown_secs = 300.0
+                        set_cooldown(cooldown_secs)
+                        logger.warning(
+                            "⚠️ TorBox rate limit hit (429). Activating cooldown for %ss.",
+                            int(cooldown_secs),
+                        )
+                        raise DownloaderNetworkError(
+                            f"TorBox rate limit exceeded (cooldown: {int(cooldown_secs)}s)"
+                        ) from e
+
                     if not (
                         500 <= status < 600
                         or status in (429, 520, 521, 522, 523, 524, 525, 526, 530)
@@ -186,6 +248,8 @@ async def send_nzb_file(
     filename: str = "file.nzb",
     api_key: str | None = None,
     session: AsyncSession | None = None,
+    explicit_key: str | None = None,
+    is_manual: bool = False,
 ) -> dict[str, str | int | None]:
     """Send an NZB file directly to TorBox.
 
@@ -194,14 +258,24 @@ async def send_nzb_file(
         filename: Optional filename for the upload.
         api_key: Optional explicit API key.
         session: Optional DB session to resolve active provider.
+        explicit_key: Optional explicit key override.
+        is_manual: Whether the upload was triggered by interactive manual action.
 
     Returns:
         A dictionary with "hash" and "id" if successful, else error dict.
     """
-    key = await resolve_api_key(session=session, explicit_key=api_key)
+    key = await resolve_api_key(session=session, explicit_key=explicit_key or api_key)
     if not key:
         logger.warning("TorBox API key missing.")
         return {}
+
+    remaining = get_cooldown_remaining()
+    if remaining > 0:
+        raise DownloaderNetworkError(
+            f"TorBox cooldown active ({int(remaining)}s remaining)"
+        )
+
+    limiter = _manual_send_limiter if is_manual else _auto_send_limiter
 
     url = f"{TORBOX_BASE_URL}/api/usenet/createusenetdownload"
     headers = {
@@ -212,7 +286,7 @@ async def send_nzb_file(
 
     max_retries = 3
     for attempt in range(max_retries):
-        await _send_limiter.wait()
+        await limiter.wait()
         async with httpx.AsyncClient(timeout=60.0) as client:
             try:
                 response = await client.post(url, headers=headers, files=files)
@@ -247,6 +321,23 @@ async def send_nzb_file(
                 err_detail = str(e)
                 if isinstance(e, httpx.HTTPStatusError):
                     status = e.response.status_code
+                    if status == 429:
+                        retry_after_hdr = e.response.headers.get("Retry-After")
+                        cooldown_secs = 300.0
+                        if retry_after_hdr:
+                            try:
+                                cooldown_secs = float(retry_after_hdr)
+                            except (ValueError, TypeError):
+                                cooldown_secs = 300.0
+                        set_cooldown(cooldown_secs)
+                        logger.warning(
+                            "⚠️ TorBox rate limit hit (429). Activating cooldown for %ss.",
+                            int(cooldown_secs),
+                        )
+                        raise DownloaderNetworkError(
+                            f"TorBox rate limit exceeded (cooldown: {int(cooldown_secs)}s)"
+                        ) from e
+
                     if not (
                         500 <= status < 600
                         or status in (429, 520, 521, 522, 523, 524, 525, 526, 530)
@@ -296,6 +387,8 @@ async def send_magnet_link(
     magnet_url: str,
     api_key: str | None = None,
     session: AsyncSession | None = None,
+    explicit_key: str | None = None,
+    is_manual: bool = False,
 ) -> dict[str, str | int | None]:
     """Send a Magnet/Torrent URL to TorBox.
 
@@ -303,14 +396,24 @@ async def send_magnet_link(
         magnet_url: The magnet URI or torrent URL.
         api_key: Optional explicit API key.
         session: Optional DB session to resolve active provider.
+        explicit_key: Optional explicit key override.
+        is_manual: Whether the upload was triggered by interactive manual action.
 
     Returns:
         A dictionary with "hash" and "id" if successful, else empty dict.
     """
-    key = await resolve_api_key(session=session, explicit_key=api_key)
+    key = await resolve_api_key(session=session, explicit_key=explicit_key or api_key)
     if not key:
         logger.warning("TorBox API key missing.")
         return {}
+
+    remaining = get_cooldown_remaining()
+    if remaining > 0:
+        raise DownloaderNetworkError(
+            f"TorBox cooldown active ({int(remaining)}s remaining)"
+        )
+
+    limiter = _manual_send_limiter if is_manual else _auto_send_limiter
 
     url = f"{TORBOX_BASE_URL}/api/torrents/createtorrent"
 
@@ -323,7 +426,7 @@ async def send_magnet_link(
 
     max_retries = 3
     for attempt in range(max_retries):
-        await _send_limiter.wait()
+        await limiter.wait()
         async with httpx.AsyncClient(timeout=60.0) as client:
             try:
                 response = await client.post(url, headers=headers, data=data)
@@ -358,6 +461,23 @@ async def send_magnet_link(
                 err_detail = str(e)
                 if isinstance(e, httpx.HTTPStatusError):
                     status = e.response.status_code
+                    if status == 429:
+                        retry_after_hdr = e.response.headers.get("Retry-After")
+                        cooldown_secs = 300.0
+                        if retry_after_hdr:
+                            try:
+                                cooldown_secs = float(retry_after_hdr)
+                            except (ValueError, TypeError):
+                                cooldown_secs = 300.0
+                        set_cooldown(cooldown_secs)
+                        logger.warning(
+                            "⚠️ TorBox rate limit hit (429). Activating cooldown for %ss.",
+                            int(cooldown_secs),
+                        )
+                        raise DownloaderNetworkError(
+                            f"TorBox rate limit exceeded (cooldown: {int(cooldown_secs)}s)"
+                        ) from e
+
                     if not (
                         500 <= status < 600
                         or status in (429, 520, 521, 522, 523, 524, 525, 526, 530)
@@ -558,14 +678,25 @@ async def download_file_payload(
 
 
 async def get_usenet_downloads(
-    bypass_cache: bool = True,
+    bypass_cache: bool = False,
     api_key: str | None = None,
     session: AsyncSession | None = None,
+    explicit_key: str | None = None,
 ) -> list[dict[str, Any]]:
     """Retrieve list of active Usenet downloads from TorBox."""
-    key = await resolve_api_key(session=session, explicit_key=api_key)
+    global _cached_usenet_downloads, _cached_usenet_downloads_at
+
+    key = await resolve_api_key(session=session, explicit_key=explicit_key or api_key)
     if not key:
         return []
+
+    now = time.monotonic()
+    if (
+        not bypass_cache
+        and (now - _cached_usenet_downloads_at < 20.0)
+        and _cached_usenet_downloads
+    ):
+        return _cached_usenet_downloads
 
     url = f"{TORBOX_BASE_URL}/api/usenet/mylist"
     if bypass_cache:
@@ -584,6 +715,9 @@ async def get_usenet_downloads(
             result = response.json()
             if result.get("success"):
                 data: list[dict[str, Any]] = result.get("data", [])
+                async with _cache_lock:
+                    _cached_usenet_downloads = data
+                    _cached_usenet_downloads_at = time.monotonic()
                 return data
             return []
         except httpx.HTTPError as e:
