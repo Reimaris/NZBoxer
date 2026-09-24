@@ -429,6 +429,10 @@ document.addEventListener('alpine:init', () => {
                     </span>
                 {% endif %}
                 
+                {% if item.is_fallback %}
+                <span class="bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[10px] font-semibold px-2 py-0.5 rounded uppercase tracking-wider w-fit mt-1">Fallback Language</span>
+                {% endif %}
+
                 {% if item.failure_logs|length > 0 %}
                 <span class="bg-red-900 text-white text-[10px] font-bold px-2 py-0.5 rounded cursor-help border border-red-700" title="{% for log in item.failure_logs[-5:] %}{{ log.created_at.strftime('%Y-%m-%d %H:%M') }}: {{ log.message }}&#10;{% endfor %}">❌ {{ item.failure_logs|length }} Fails</span>
                 {% endif %}

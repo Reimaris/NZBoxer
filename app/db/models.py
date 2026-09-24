@@ -12,7 +12,7 @@ Models:
 from __future__ import annotations
 
 import enum
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy import (
@@ -567,6 +567,40 @@ class MediaItem(Base):
     def best_score(self, value: float | None) -> None:
         self._best_score_override = value
 
+    @property
+    def is_fallback(self) -> bool:
+        """Returns True if the active download (or any season/episode download) is in fallback language."""
+        if hasattr(self, "_is_fallback_override"):
+            return self._is_fallback_override
+        from sqlalchemy.orm import attributes
+
+        hist = attributes.instance_state(self).dict.get("download_history")
+        if not hist:
+            return False
+        if self.media_type == MediaType.MOVIE:
+            latest = max(
+                hist,
+                key=lambda h: (
+                    getattr(h, "torbox_sent_at", None)
+                    or datetime.min.replace(tzinfo=timezone.utc),
+                    getattr(h, "id", 0) or 0,
+                ),
+            )
+            return bool(getattr(latest, "is_fallback", False))
+        else:
+            grouped: dict[tuple[int | None, int | None], Any] = {}
+            for h in hist:
+                key = (getattr(h, "season_id", None), getattr(h, "episode_id", None))
+                if key not in grouped or (getattr(h, "id", 0) or 0) > (
+                    getattr(grouped[key], "id", 0) or 0
+                ):
+                    grouped[key] = h
+            return any(bool(getattr(h, "is_fallback", False)) for h in grouped.values())
+
+    @is_fallback.setter
+    def is_fallback(self, value: bool) -> None:
+        self._is_fallback_override = value
+
     # ---------------------------------------------------------------------------
     # Season Model
     # ---------------------------------------------------------------------------
@@ -742,6 +776,30 @@ class Season(Base):
     def best_score(self, value: float | None) -> None:
         self._best_score_override = value
 
+    @property
+    def is_fallback(self) -> bool:
+        """Returns True if the latest download history entry for this season is in fallback language."""
+        if hasattr(self, "_is_fallback_override"):
+            return self._is_fallback_override
+        from sqlalchemy.orm import attributes
+
+        hist = attributes.instance_state(self).dict.get("download_history")
+        if not hist:
+            return False
+        latest = max(
+            hist,
+            key=lambda h: (
+                getattr(h, "torbox_sent_at", None)
+                or datetime.min.replace(tzinfo=timezone.utc),
+                getattr(h, "id", 0) or 0,
+            ),
+        )
+        return bool(getattr(latest, "is_fallback", False))
+
+    @is_fallback.setter
+    def is_fallback(self, value: bool) -> None:
+        self._is_fallback_override = value
+
     # ---------------------------------------------------------------------------
     # Episode Model
     # ---------------------------------------------------------------------------
@@ -851,6 +909,30 @@ class Episode(Base):
             return None
         scores = [h.score for h in hist if getattr(h, "score", None) is not None]
         return max(scores) if scores else None
+
+    @property
+    def is_fallback(self) -> bool:
+        """Returns True if the latest download history entry for this episode is in fallback language."""
+        if hasattr(self, "_is_fallback_override"):
+            return self._is_fallback_override
+        from sqlalchemy.orm import attributes
+
+        hist = attributes.instance_state(self).dict.get("download_history")
+        if not hist:
+            return False
+        latest = max(
+            hist,
+            key=lambda h: (
+                getattr(h, "torbox_sent_at", None)
+                or datetime.min.replace(tzinfo=timezone.utc),
+                getattr(h, "id", 0) or 0,
+            ),
+        )
+        return bool(getattr(latest, "is_fallback", False))
+
+    @is_fallback.setter
+    def is_fallback(self, value: bool) -> None:
+        self._is_fallback_override = value
 
     @property
     def is_released(self) -> bool:

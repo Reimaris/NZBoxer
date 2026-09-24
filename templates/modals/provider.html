@@ -344,8 +344,8 @@
                                     <span class="text-xs text-[#a1a1aa]" x-text="enable_movies ? 'Click to collapse' : 'Click to expand'"></span>
                                 </div>
                                 <div x-show="enable_movies" class="p-6 space-y-6 animate-fade-in">
-                                    <!-- Row 1: Category & Rejections & Languages -->
-                                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                    <!-- Row 1: Category, Rejections, Primary Language, Fallback Language -->
+                                    <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
                                         <div>
                                             <label class="text-xs uppercase tracking-wider text-[#a1a1aa] mb-1 block font-semibold">Movies Category ID</label>
                                             <input type="number" name="movie_category_id" value="{{ provider.movie_category_id if provider and provider.movie_category_id else '2000' }}" class="w-full h-10 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3 text-white font-mono text-sm">
@@ -355,8 +355,34 @@
                                             <input type="text" name="movies_reject" value="{{ m_prof.reject_words_csv if m_prof and m_prof.reject_words_csv is not none else 'cam,ts,subbed' }}" class="w-full h-10 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3 text-white text-sm" placeholder="cam,ts,subbed">
                                         </div>
                                         <div>
-                                            <label class="text-xs uppercase tracking-wider text-[#a1a1aa] mb-1 block font-semibold">Preferred Languages (CSV)</label>
-                                            <input type="text" name="movies_langs" value="{{ m_prof.languages_csv if m_prof and m_prof.languages_csv is not none else '' }}" class="w-full h-10 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3 text-white text-sm" placeholder="e.g. english,german">
+                                            {% set m_primary = (m_prof.primary_language if m_prof and m_prof.primary_language else (m_prof.languages_csv if m_prof and m_prof.languages_csv else 'any')) %}
+                                            <label class="text-xs uppercase tracking-wider text-[#a1a1aa] mb-1 block font-semibold">Primary Language</label>
+                                            <select name="movies_primary_lang" class="w-full h-10 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3 text-white text-sm">
+                                                <option value="any" {% if m_primary == 'any' or not m_primary %}selected{% endif %}>Any Language</option>
+                                                <option value="de" {% if m_primary == 'de' %}selected{% endif %}>German (de)</option>
+                                                <option value="en" {% if m_primary == 'en' %}selected{% endif %}>English (en)</option>
+                                                <option value="fr" {% if m_primary == 'fr' %}selected{% endif %}>French (fr)</option>
+                                                <option value="ja" {% if m_primary == 'ja' %}selected{% endif %}>Japanese (ja)</option>
+                                                <option value="es" {% if m_primary == 'es' %}selected{% endif %}>Spanish (es)</option>
+                                                <option value="it" {% if m_primary == 'it' %}selected{% endif %}>Italian (it)</option>
+                                                <option value="pt" {% if m_primary == 'pt' %}selected{% endif %}>Portuguese (pt)</option>
+                                                <option value="ru" {% if m_primary == 'ru' %}selected{% endif %}>Russian (ru)</option>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            {% set m_fallback = (m_prof.fallback_language if m_prof and m_prof.fallback_language else 'none') %}
+                                            <label class="text-xs uppercase tracking-wider text-[#a1a1aa] mb-1 block font-semibold">Fallback Language</label>
+                                            <select name="movies_fallback_lang" class="w-full h-10 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3 text-white text-sm">
+                                                <option value="none" {% if m_fallback == 'none' or not m_fallback %}selected{% endif %}>None (Strict)</option>
+                                                <option value="de" {% if m_fallback == 'de' %}selected{% endif %}>German (de)</option>
+                                                <option value="en" {% if m_fallback == 'en' %}selected{% endif %}>English (en)</option>
+                                                <option value="fr" {% if m_fallback == 'fr' %}selected{% endif %}>French (fr)</option>
+                                                <option value="ja" {% if m_fallback == 'ja' %}selected{% endif %}>Japanese (ja)</option>
+                                                <option value="es" {% if m_fallback == 'es' %}selected{% endif %}>Spanish (es)</option>
+                                                <option value="it" {% if m_fallback == 'it' %}selected{% endif %}>Italian (it)</option>
+                                                <option value="pt" {% if m_fallback == 'pt' %}selected{% endif %}>Portuguese (pt)</option>
+                                                <option value="ru" {% if m_fallback == 'ru' %}selected{% endif %}>Russian (ru)</option>
+                                            </select>
                                         </div>
                                     </div>
 
@@ -447,8 +473,8 @@
                                     <span class="text-xs text-[#a1a1aa]" x-text="enable_series ? 'Click to collapse' : 'Click to expand'"></span>
                                 </div>
                                 <div x-show="enable_series" class="p-6 space-y-6 animate-fade-in">
-                                    <!-- Row 1: Category & Rejections & Languages -->
-                                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                    <!-- Row 1: Category, Rejections, Primary Language, Fallback Language -->
+                                    <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
                                         <div>
                                             <label class="text-xs uppercase tracking-wider text-[#a1a1aa] mb-1 block font-semibold">TV Shows Category ID</label>
                                             <input type="number" name="series_category_id" value="{{ provider.series_category_id if provider and provider.series_category_id else '5000' }}" class="w-full h-10 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3 text-white font-mono text-sm">
@@ -458,8 +484,34 @@
                                             <input type="text" name="series_reject" value="{{ s_prof.reject_words_csv if s_prof and s_prof.reject_words_csv is not none else 'cam,ts,subbed' }}" class="w-full h-10 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3 text-white text-sm" placeholder="cam,ts,subbed">
                                         </div>
                                         <div>
-                                            <label class="text-xs uppercase tracking-wider text-[#a1a1aa] mb-1 block font-semibold">Preferred Languages (CSV)</label>
-                                            <input type="text" name="series_langs" value="{{ s_prof.languages_csv if s_prof and s_prof.languages_csv is not none else '' }}" class="w-full h-10 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3 text-white text-sm" placeholder="e.g. english,german">
+                                            {% set s_primary = (s_prof.primary_language if s_prof and s_prof.primary_language else (s_prof.languages_csv if s_prof and s_prof.languages_csv else 'any')) %}
+                                            <label class="text-xs uppercase tracking-wider text-[#a1a1aa] mb-1 block font-semibold">Primary Language</label>
+                                            <select name="series_primary_lang" class="w-full h-10 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3 text-white text-sm">
+                                                <option value="any" {% if s_primary == 'any' or not s_primary %}selected{% endif %}>Any Language</option>
+                                                <option value="de" {% if s_primary == 'de' %}selected{% endif %}>German (de)</option>
+                                                <option value="en" {% if s_primary == 'en' %}selected{% endif %}>English (en)</option>
+                                                <option value="fr" {% if s_primary == 'fr' %}selected{% endif %}>French (fr)</option>
+                                                <option value="ja" {% if s_primary == 'ja' %}selected{% endif %}>Japanese (ja)</option>
+                                                <option value="es" {% if s_primary == 'es' %}selected{% endif %}>Spanish (es)</option>
+                                                <option value="it" {% if s_primary == 'it' %}selected{% endif %}>Italian (it)</option>
+                                                <option value="pt" {% if s_primary == 'pt' %}selected{% endif %}>Portuguese (pt)</option>
+                                                <option value="ru" {% if s_primary == 'ru' %}selected{% endif %}>Russian (ru)</option>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            {% set s_fallback = (s_prof.fallback_language if s_prof and s_prof.fallback_language else 'none') %}
+                                            <label class="text-xs uppercase tracking-wider text-[#a1a1aa] mb-1 block font-semibold">Fallback Language</label>
+                                            <select name="series_fallback_lang" class="w-full h-10 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3 text-white text-sm">
+                                                <option value="none" {% if s_fallback == 'none' or not s_fallback %}selected{% endif %}>None (Strict)</option>
+                                                <option value="de" {% if s_fallback == 'de' %}selected{% endif %}>German (de)</option>
+                                                <option value="en" {% if s_fallback == 'en' %}selected{% endif %}>English (en)</option>
+                                                <option value="fr" {% if s_fallback == 'fr' %}selected{% endif %}>French (fr)</option>
+                                                <option value="ja" {% if s_fallback == 'ja' %}selected{% endif %}>Japanese (ja)</option>
+                                                <option value="es" {% if s_fallback == 'es' %}selected{% endif %}>Spanish (es)</option>
+                                                <option value="it" {% if s_fallback == 'it' %}selected{% endif %}>Italian (it)</option>
+                                                <option value="pt" {% if s_fallback == 'pt' %}selected{% endif %}>Portuguese (pt)</option>
+                                                <option value="ru" {% if s_fallback == 'ru' %}selected{% endif %}>Russian (ru)</option>
+                                            </select>
                                         </div>
                                     </div>
 
@@ -565,8 +617,8 @@
                                     <span class="text-xs text-[#a1a1aa]" x-text="enable_anime ? 'Click to collapse' : 'Click to expand'"></span>
                                 </div>
                                 <div x-show="enable_anime" class="p-6 space-y-6 animate-fade-in">
-                                    <!-- Row 1: Category & Rejections & Languages -->
-                                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                    <!-- Row 1: Category, Rejections, Primary Language, Fallback Language -->
+                                    <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
                                         <div>
                                             <label class="text-xs uppercase tracking-wider text-[#a1a1aa] mb-1 block font-semibold">Anime Category ID</label>
                                             <input type="number" name="anime_category_id" value="{{ provider.anime_category_id if provider and provider.anime_category_id else '5070' }}" class="w-full h-10 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3 text-white font-mono text-sm">
@@ -576,8 +628,34 @@
                                             <input type="text" name="anime_reject" value="{{ a_prof.reject_words_csv if a_prof and a_prof.reject_words_csv is not none else 'cam,ts,subbed' }}" class="w-full h-10 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3 text-white text-sm" placeholder="cam,ts,subbed">
                                         </div>
                                         <div>
-                                            <label class="text-xs uppercase tracking-wider text-[#a1a1aa] mb-1 block font-semibold">Preferred Languages (CSV)</label>
-                                            <input type="text" name="anime_langs" value="{{ a_prof.languages_csv if a_prof and a_prof.languages_csv is not none else '' }}" class="w-full h-10 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3 text-white text-sm" placeholder="e.g. japanese,english,german">
+                                            {% set a_primary = (a_prof.primary_language if a_prof and a_prof.primary_language else (a_prof.languages_csv if a_prof and a_prof.languages_csv else 'any')) %}
+                                            <label class="text-xs uppercase tracking-wider text-[#a1a1aa] mb-1 block font-semibold">Primary Language</label>
+                                            <select name="anime_primary_lang" class="w-full h-10 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3 text-white text-sm">
+                                                <option value="any" {% if a_primary == 'any' or not a_primary %}selected{% endif %}>Any Language</option>
+                                                <option value="ja" {% if a_primary == 'ja' %}selected{% endif %}>Japanese (ja)</option>
+                                                <option value="de" {% if a_primary == 'de' %}selected{% endif %}>German (de)</option>
+                                                <option value="en" {% if a_primary == 'en' %}selected{% endif %}>English (en)</option>
+                                                <option value="fr" {% if a_primary == 'fr' %}selected{% endif %}>French (fr)</option>
+                                                <option value="es" {% if a_primary == 'es' %}selected{% endif %}>Spanish (es)</option>
+                                                <option value="it" {% if a_primary == 'it' %}selected{% endif %}>Italian (it)</option>
+                                                <option value="pt" {% if a_primary == 'pt' %}selected{% endif %}>Portuguese (pt)</option>
+                                                <option value="ru" {% if a_primary == 'ru' %}selected{% endif %}>Russian (ru)</option>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            {% set a_fallback = (a_prof.fallback_language if a_prof and a_prof.fallback_language else 'none') %}
+                                            <label class="text-xs uppercase tracking-wider text-[#a1a1aa] mb-1 block font-semibold">Fallback Language</label>
+                                            <select name="anime_fallback_lang" class="w-full h-10 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3 text-white text-sm">
+                                                <option value="none" {% if a_fallback == 'none' or not a_fallback %}selected{% endif %}>None (Strict)</option>
+                                                <option value="ja" {% if a_fallback == 'ja' %}selected{% endif %}>Japanese (ja)</option>
+                                                <option value="de" {% if a_fallback == 'de' %}selected{% endif %}>German (de)</option>
+                                                <option value="en" {% if a_fallback == 'en' %}selected{% endif %}>English (en)</option>
+                                                <option value="fr" {% if a_fallback == 'fr' %}selected{% endif %}>French (fr)</option>
+                                                <option value="es" {% if a_fallback == 'es' %}selected{% endif %}>Spanish (es)</option>
+                                                <option value="it" {% if a_fallback == 'it' %}selected{% endif %}>Italian (it)</option>
+                                                <option value="pt" {% if a_fallback == 'pt' %}selected{% endif %}>Portuguese (pt)</option>
+                                                <option value="ru" {% if a_fallback == 'ru' %}selected{% endif %}>Russian (ru)</option>
+                                            </select>
                                         </div>
                                     </div>
 

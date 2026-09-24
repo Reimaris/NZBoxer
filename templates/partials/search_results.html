@@ -1,23 +1,8 @@
-{% if error_message %}
-<div class="p-8 text-center border border-red-500/30 bg-red-500/10 rounded-xl text-red-400">
-    <div class="mb-3 flex justify-center">
-        <svg class="w-6 h-6 shrink-0 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
-    </div>
-    <h3 class="text-lg font-bold mb-1">Search Error</h3>
-    <p>{{ error_message }}</p>
-</div>
-{% elif results|length == 0 %}
-<div class="p-8 text-center border border-[#3f3f46] bg-[#2a2a32] rounded-xl text-[#a1a1aa]">
-    <div class="mb-3 text-3xl">🛸</div>
-    <h3 class="text-lg font-bold text-white mb-1">No items found</h3>
-    <p>Try loosening your search filters.</p>
-</div>
-{% else %}
-{% for result in results %}
+{% macro render_card(result, tier="primary") %}
 {% set p = result.parsed %}
 {% set score_color = "bg-green-500/20 text-green-400 border-green-500/30" if result.score >= 6000 else "bg-yellow-500/20 text-yellow-400 border-yellow-500/30" if result.score >= 3000 else "bg-gray-500/20 text-gray-400 border-gray-500/30" %}
 
-<div class="bg-[#2a2a32] border border-[#3f3f46] rounded-xl shadow-lg p-4 flex items-center gap-4 hover:border-[#52525b] transition-all">
+<div class="bg-[#2a2a32] border {% if tier == 'fallback' %}border-amber-500/30 hover:border-amber-500/60{% elif tier == 'mismatch' %}border-red-500/30 hover:border-red-500/60{% else %}border-[#3f3f46] hover:border-[#52525b]{% endif %} rounded-xl shadow-lg p-4 flex items-center gap-4 transition-all">
     <!-- Score Badge -->
     <div class="shrink-0 flex flex-col items-center justify-center w-20 h-20 rounded-lg border {{ score_color }}">
         <span class="text-xs font-bold uppercase tracking-wider opacity-80">Score</span>
@@ -26,7 +11,14 @@
 
     <!-- Details -->
     <div class="flex-1 min-w-0 flex flex-col justify-between">
-        <h3 class="text-white font-semibold truncate" title="{{ result.title }}">{{ result.title }}</h3>
+        <div class="flex items-center gap-2">
+            <h3 class="text-white font-semibold truncate" title="{{ result.title }}">{{ result.title }}</h3>
+            {% if tier == 'fallback' %}
+            <span class="px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 text-xs font-semibold border border-amber-500/30 whitespace-nowrap">Fallback</span>
+            {% elif tier == 'mismatch' %}
+            <span class="px-2 py-0.5 rounded bg-red-500/20 text-red-300 text-xs font-semibold border border-red-500/30 whitespace-nowrap">Language Mismatch</span>
+            {% endif %}
+        </div>
         
         <!-- Pill Tags -->
         <div class="flex flex-wrap gap-2 mt-2">
@@ -62,5 +54,79 @@
         </button>
     </div>
 </div>
-{% endfor %}
+{% endmacro %}
+
+{% if error_message %}
+<div class="p-8 text-center border border-red-500/30 bg-red-500/10 rounded-xl text-red-400">
+    <div class="mb-3 flex justify-center">
+        <svg class="w-6 h-6 shrink-0 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+    </div>
+    <h3 class="text-lg font-bold mb-1">Search Error</h3>
+    <p>{{ error_message }}</p>
+</div>
+{% elif (primary_results is defined and (primary_results|length > 0 or fallback_results|length > 0 or mismatched_results|length > 0)) %}
+
+<div class="flex flex-col gap-4">
+    <!-- Section 1: Primary Language Releases -->
+    {% if primary_results and primary_results|length > 0 %}
+    <div>
+        <div class="flex items-center gap-2 mb-3 mt-1 text-emerald-400 font-bold text-sm tracking-wide uppercase">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            <span>Primary Language Releases ({{ primary_results|length }})</span>
+        </div>
+        <div class="flex flex-col gap-3">
+            {% for result in primary_results %}
+                {{ render_card(result, 'primary') }}
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Section 2: Fallback Language Releases -->
+    {% if fallback_results and fallback_results|length > 0 %}
+    <div>
+        <div class="flex items-center gap-2 mb-3 mt-4 text-amber-400 font-bold text-sm tracking-wide uppercase">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+            <span>Fallback Language Releases ({{ fallback_results|length }})</span>
+        </div>
+        <div class="flex flex-col gap-3">
+            {% for result in fallback_results %}
+                {{ render_card(result, 'fallback') }}
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Section 3: Mismatched Language Releases -->
+    {% if mismatched_results and mismatched_results|length > 0 %}
+    <div x-data="{ open: false }" class="mt-4 border border-red-500/20 rounded-xl bg-red-950/10 p-4">
+        <button type="button" @click="open = !open" class="flex items-center justify-between w-full text-left text-red-400 font-bold text-sm tracking-wide uppercase hover:text-red-300 transition-colors">
+            <div class="flex items-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/></svg>
+                <span>Mismatched Language Releases ({{ mismatched_results|length }})</span>
+                <span class="text-xs normal-case text-red-400/70 font-normal ml-2">Rejected by language filter</span>
+            </div>
+            <span x-text="open ? 'Hide ▲' : 'Show ▼'" class="text-xs font-mono"></span>
+        </button>
+        <div x-show="open" class="flex flex-col gap-3 mt-4 opacity-80 hover:opacity-100 transition-opacity">
+            {% for result in mismatched_results %}
+                {{ render_card(result, 'mismatch') }}
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+{% elif results and results|length > 0 %}
+<div class="flex flex-col gap-3">
+    {% for result in results %}
+        {{ render_card(result, 'primary') }}
+    {% endfor %}
+</div>
+{% else %}
+<div class="p-8 text-center border border-[#3f3f46] bg-[#2a2a32] rounded-xl text-[#a1a1aa]">
+    <div class="mb-3 text-3xl">🛸</div>
+    <h3 class="text-lg font-bold text-white mb-1">No items found</h3>
+    <p>Try loosening your search filters.</p>
+</div>
 {% endif %}

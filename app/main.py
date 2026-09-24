@@ -430,6 +430,8 @@ async def manual_search(
     query: str = Form(""),
     category: str = Form("any"),
     language: str = Form("any"),
+    primary_language: str = Form("any"),
+    fallback_language: str = Form("none"),
     resolution: str = Form("any"),
     source: str = Form("any"),
     hdr: str = Form("any"),
@@ -463,6 +465,8 @@ async def manual_search(
                 new_defaults = {
                     "category": category,
                     "language": language,
+                    "primary_language": primary_language,
+                    "fallback_language": fallback_language,
                     "resolution": resolution,
                     "source": source,
                     "hdr": hdr,
@@ -530,7 +534,9 @@ async def manual_search(
             context={"results": [], "error_message": str(e)},
         )
 
-    valid_results = []
+    primary_results = []
+    fallback_results = []
+    mismatched_results = []
 
     def is_match(filter_val: str, parsed_val: str | None) -> bool:
         if filter_val == "any":
@@ -559,6 +565,15 @@ async def manual_search(
             return True
         return filter_val == "tier1" and "truehd atmos" in pc
 
+    prim_lang = (
+        primary_language
+        if primary_language != "any"
+        else (language if language != "any" else None)
+    )
+    fall_lang = (
+        fallback_language if fallback_language not in ("none", "any", "") else None
+    )
+
     for item in raw_results:
         title = item.get("title", "")
         if not title:
@@ -584,25 +599,52 @@ async def manual_search(
         if not check_audio_tier(audio_tier, parsed.audio_codec):
             continue
 
-        req_lang = language if language != "any" else None
-
         sr = score_release(
             parsed,
             size_bytes=item.get("size", 0),
             age_days=0,
-            required_language=req_lang,
+            primary_language=prim_lang,
+            fallback_language=fall_lang,
             api_language=item.get("api_language"),
         )
 
-        if not sr.is_rejected:
-            item["score"] = sr.score
-            item["parsed"] = parsed
-            valid_results.append(item)
+        if sr.is_rejected:
+            if sr.reject_reason and "Language mismatch" in sr.reject_reason:
+                sr_mismatch = score_release(
+                    parsed,
+                    size_bytes=item.get("size", 0),
+                    age_days=0,
+                    primary_language=None,
+                    fallback_language=None,
+                    api_language=item.get("api_language"),
+                )
+                item["score"] = sr_mismatch.score
+                item["parsed"] = parsed
+                item["is_mismatch"] = True
+                item["reject_reason"] = sr.reject_reason
+                mismatched_results.append(item)
+            continue
 
-    valid_results.sort(key=lambda x: x["score"], reverse=True)
-    valid_results = valid_results[:limit]
+        item["score"] = sr.score
+        item["parsed"] = parsed
+        item["is_primary"] = sr.is_primary
+        item["is_fallback"] = sr.is_fallback
+        if sr.is_fallback:
+            fallback_results.append(item)
+        else:
+            primary_results.append(item)
 
-    if not valid_results:
+    primary_results.sort(key=lambda x: x["score"], reverse=True)
+    fallback_results.sort(key=lambda x: x["score"], reverse=True)
+    mismatched_results.sort(key=lambda x: x["score"], reverse=True)
+
+    primary_results = primary_results[:limit]
+    fallback_results = fallback_results[:limit]
+    mismatched_results = mismatched_results[:limit]
+
+    all_results = primary_results + fallback_results + mismatched_results
+
+    if not all_results:
         return HTMLResponse(
             content='<div class="p-6 bg-[#2a2a32] border border-[#3f3f46] rounded-xl text-center text-[#a1a1aa] shadow-lg"><div class="text-4xl mb-4">🛸</div><h3 class="text-xl text-white font-semibold mb-2">No items found</h3><p>Try loosening your search filters.</p></div>'
         )
@@ -610,7 +652,12 @@ async def manual_search(
     return templates.TemplateResponse(
         request=request,
         name="partials/search_results.html",
-        context={"results": valid_results},
+        context={
+            "results": all_results,
+            "primary_results": primary_results,
+            "fallback_results": fallback_results,
+            "mismatched_results": mismatched_results,
+        },
     )
 
 
@@ -781,9 +828,13 @@ async def item_detail(request: Request, item_id: int):
             options=[
                 selectinload(MediaItem.seasons).selectinload(Season.episodes),
                 selectinload(MediaItem.seasons).selectinload(Season.failure_logs),
+                selectinload(MediaItem.seasons).selectinload(Season.download_history),
                 selectinload(MediaItem.seasons)
                 .selectinload(Season.episodes)
                 .selectinload(Episode.failure_logs),
+                selectinload(MediaItem.seasons)
+                .selectinload(Season.episodes)
+                .selectinload(Episode.download_history),
                 selectinload(MediaItem.download_history),
                 selectinload(MediaItem.failure_logs),
             ],
@@ -2690,6 +2741,8 @@ async def save_provider(
     movies_hdr: str = Form("any"),
     movies_audio_tier: str = Form("any"),
     movies_audio_channels: str = Form("any"),
+    movies_primary_lang: str = Form("any"),
+    movies_fallback_lang: str = Form("none"),
     movies_langs: str = Form(""),
     movies_min_mb: int = Form(500),
     movies_max_mb: int = Form(25000),
@@ -2702,6 +2755,8 @@ async def save_provider(
     series_hdr: str = Form("any"),
     series_audio_tier: str = Form("any"),
     series_audio_channels: str = Form("any"),
+    series_primary_lang: str = Form("any"),
+    series_fallback_lang: str = Form("none"),
     series_langs: str = Form(""),
     series_min_mb: int = Form(200),
     series_max_mb: int = Form(8000),
@@ -2717,6 +2772,8 @@ async def save_provider(
     anime_hdr: str = Form("any"),
     anime_audio_tier: str = Form("any"),
     anime_audio_channels: str = Form("any"),
+    anime_primary_lang: str = Form("any"),
+    anime_fallback_lang: str = Form("none"),
     anime_langs: str = Form(""),
     anime_min_mb: int = Form(200),
     anime_max_mb: int = Form(8000),
@@ -2790,6 +2847,16 @@ async def save_provider(
             provider.profiles.clear()
 
         if enable_movies or (enable_books and provider_type == "hardcover"):
+            m_prim = (
+                movies_primary_lang
+                if movies_primary_lang and movies_primary_lang not in ("any", "")
+                else None
+            )
+            m_fall = (
+                movies_fallback_lang
+                if movies_fallback_lang and movies_fallback_lang not in ("none", "")
+                else None
+            )
             pm = ProviderProfile(
                 provider_id=provider.id,
                 media_type="movies",
@@ -2800,7 +2867,9 @@ async def save_provider(
                 hdr=movies_hdr,
                 audio_tier=movies_audio_tier,
                 audio_channels=movies_audio_channels,
-                languages_csv=movies_langs,
+                primary_language=m_prim,
+                fallback_language=m_fall,
+                languages_csv=m_prim or movies_langs,
                 min_mb=movies_min_mb if movies_min_mb is not None else 500,
                 max_mb=movies_max_mb if movies_max_mb is not None else 25000,
                 reject_words_csv=movies_reject,
@@ -2811,6 +2880,16 @@ async def save_provider(
             session.add(pm)
 
         if enable_series or (enable_manga and provider_type == "anilist"):
+            s_prim = (
+                series_primary_lang
+                if series_primary_lang and series_primary_lang not in ("any", "")
+                else None
+            )
+            s_fall = (
+                series_fallback_lang
+                if series_fallback_lang and series_fallback_lang not in ("none", "")
+                else None
+            )
             ps = ProviderProfile(
                 provider_id=provider.id,
                 media_type="shows",
@@ -2821,7 +2900,9 @@ async def save_provider(
                 hdr=series_hdr,
                 audio_tier=series_audio_tier,
                 audio_channels=series_audio_channels,
-                languages_csv=series_langs,
+                primary_language=s_prim,
+                fallback_language=s_fall,
+                languages_csv=s_prim or series_langs,
                 min_mb=series_min_mb if series_min_mb is not None else 200,
                 max_mb=series_max_mb if series_max_mb is not None else 8000,
                 reject_words_csv=series_reject,
@@ -2834,6 +2915,16 @@ async def save_provider(
             session.add(ps)
 
         if enable_anime:
+            a_prim = (
+                anime_primary_lang
+                if anime_primary_lang and anime_primary_lang not in ("any", "")
+                else None
+            )
+            a_fall = (
+                anime_fallback_lang
+                if anime_fallback_lang and anime_fallback_lang not in ("none", "")
+                else None
+            )
             pa = ProviderProfile(
                 provider_id=provider.id,
                 media_type="anime",
@@ -2844,7 +2935,9 @@ async def save_provider(
                 hdr=anime_hdr,
                 audio_tier=anime_audio_tier,
                 audio_channels=anime_audio_channels,
-                languages_csv=anime_langs,
+                primary_language=a_prim,
+                fallback_language=a_fall,
+                languages_csv=a_prim or anime_langs,
                 min_mb=anime_min_mb if anime_min_mb is not None else 200,
                 max_mb=anime_max_mb if anime_max_mb is not None else 8000,
                 reject_words_csv=anime_reject,

@@ -66,6 +66,11 @@
                         <div class="mb-2"><span class="bg-[#1e1e24] text-gray-400 text-[10px] font-bold px-2 py-0.5 rounded border border-[#3f3f46] w-fit">Cutoff unmet ({{ item.aggregated_upgrade_attempts }}/{{ max_upgrade_attempts }} attempts)</span></div>
                         {% endif %}
                     {% endif %}
+                    {% if item.is_fallback %}
+                    <div class="mb-2">
+                        <span class="bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[10px] font-semibold px-2 py-0.5 rounded uppercase tracking-wider">Fallback Language</span>
+                    </div>
+                    {% endif %}
                 {% if item.media_type.value in ['show', 'anime'] and item.total_seasons > 0 %}
                     <div class="mb-4">
                         {% set pct = (item.downloaded_seasons / item.total_seasons) * 100 %}
@@ -240,6 +245,9 @@
                             {% elif season.status.value == 'completed' and season.best_score and season.best_score < 8000 %}
                             <span class="bg-[#1e1e24] text-gray-400 text-[10px] font-bold px-2 py-0.5 rounded border border-[#3f3f46] w-fit">Cutoff unmet ({{ season.upgrade_attempts_count }}/{{ max_upgrade_attempts }} attempts)</span>
                             {% endif %}
+                            {% if season.is_fallback %}
+                            <span class="bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[10px] font-semibold px-2 py-0.5 rounded uppercase tracking-wider w-fit">Fallback Language</span>
+                            {% endif %}
                             {% if season.failure_logs|length > 0 %}
                             <span class="bg-red-900 text-white text-[10px] font-bold px-1.5 py-0.5 rounded border border-red-700 cursor-help" title="{% for log in season.failure_logs[-5:] %}{{ log.created_at.strftime('%Y-%m-%d %H:%M') }}: {{ log.message }}&#10;{% endfor %}">❌ {{ season.failure_logs|length }} Fails</span>
                             {% endif %}
@@ -287,6 +295,9 @@
                                     <span class="bg-blue-900 text-blue-200 text-[9px] font-bold px-1.5 py-0.5 rounded border border-blue-700">Upgrade: {{ ep.upgrade_attempts_count }}/{{ max_upgrade_attempts }}</span>
                                     {% elif ep.status.value == 'completed' and ep.best_score and ep.best_score < 8000 %}
                                     <span class="bg-[#1e1e24] text-gray-400 text-[9px] font-bold px-1.5 py-0.5 rounded border border-[#3f3f46]">Cutoff unmet ({{ ep.upgrade_attempts_count }}/{{ max_upgrade_attempts }})</span>
+                                    {% endif %}
+                                    {% if ep.is_fallback %}
+                                    <span class="bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[9px] font-semibold px-1.5 py-0.5 rounded uppercase tracking-wider">Fallback Language</span>
                                     {% endif %}
                                     {% if ep.failure_logs|length > 0 %}
                                     <span class="text-red-400 font-bold" title="{% for log in ep.failure_logs[-5:] %}{{ log.created_at.strftime('%Y-%m-%d %H:%M') }}: {{ log.message }}&#10;{% endfor %}">❌</span>
