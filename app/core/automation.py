@@ -401,8 +401,13 @@ async def _sync_items(
                         parent_season.monitored = True
                         if parent_season.status != SeasonStatus.FUTURE:
                             parent_season.status = SeasonStatus.SEARCHING
-                else:
+                elif is_new or not item.seasons:
                     await enrich_anime_metadata(session, item)
+                else:
+                    logger.info(
+                        "    ⏩ Skipping AniList hierarchy enrichment for existing anime '%s' with established seasons.",
+                        item.title,
+                    )
 
         elif (tmdb_id or item.imdb_id) and (
             is_new
