@@ -25,6 +25,7 @@ config/logs/*.log
 logs/*.log
 
 # Agent Configuration, Memory, and Tickets
+docs/
 AGENT_INSTRUCTIONS.md
 docs/AGENT_INSTRUCTIONS.md
 .agents/
@@ -32,6 +33,10 @@ docs/agent_memory/
 docs/tickets/
 context.md
 usage.md
+
+# Desktop / OS metadata
+.directory
+.DS_Store
 
 # Testing and Coverage (Strict Local)
 tests/
