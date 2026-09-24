@@ -23,7 +23,7 @@ from app.core.default_scoring import DEFAULT_SCORING_CONFIG
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
-DEFAULT_USER_AGENT = "NZBoxer/2.10.1 (Linux; x64)"
+DEFAULT_USER_AGENT = "NZBoxer/2.11.0 (Linux; x64)"
 
 
 class Settings:
