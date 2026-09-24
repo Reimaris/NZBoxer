@@ -16,17 +16,21 @@ from typing import TYPE_CHECKING, Any
 import httpx
 
 from app.config import DEFAULT_USER_AGENT, settings
-from app.core.rate_limiter import RateLimiter, RollingWindowRateLimiter
+from app.core.rate_limiter import (
+    RateLimiter,
+    RateLimitExceeded,
+    RollingWindowRateLimiter,
+)
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
 _auto_send_limiter = RollingWindowRateLimiter(
-    50, 3600.0
+    50, 3600.0, max_wait_seconds=0.0
 )  # 50/hour for background automation
 _manual_send_limiter = RollingWindowRateLimiter(
-    60, 3600.0
+    60, 3600.0, max_wait_seconds=0.0
 )  # 60/hour hard ceiling for manual grabs
 _send_limiter = _manual_send_limiter  # Backwards compatibility alias
 _poll_limiter = RateLimiter(10.0)
@@ -38,10 +42,20 @@ _cached_usenet_downloads_at: float = 0.0
 _cache_lock = asyncio.Lock()
 
 
-def get_cooldown_remaining() -> float:
-    """Return remaining cooldown seconds, or 0.0 if not in cooldown."""
+def get_cooldown_remaining(is_manual: bool = False) -> float:
+    """Return remaining cooldown seconds, or 0.0 if not in cooldown.
+
+    Checks the global circuit breaker (e.g. from HTTP 429).
+    If is_manual is False, also checks whether the background automation rate
+    limiter budget (50/hr) has slots available.
+    """
     now = time.monotonic()
-    return max(0.0, _torbox_cooldown_until - now)
+    circuit_breaker = max(0.0, _torbox_cooldown_until - now)
+    if circuit_breaker > 0:
+        return circuit_breaker
+
+    limiter = _manual_send_limiter if is_manual else _auto_send_limiter
+    return limiter.get_wait_time()
 
 
 def set_cooldown(seconds: float) -> None:
@@ -127,10 +141,11 @@ async def send_nzb_link(
         logger.warning("TorBox API key missing.")
         return {}
 
-    remaining = get_cooldown_remaining()
+    remaining = get_cooldown_remaining(is_manual=is_manual)
     if remaining > 0:
+        scope = "manual" if is_manual else "automation"
         raise DownloaderNetworkError(
-            f"TorBox cooldown active ({int(remaining)}s remaining)"
+            f"TorBox {scope} cooldown active ({int(remaining)}s remaining)"
         )
 
     limiter = _manual_send_limiter if is_manual else _auto_send_limiter
@@ -146,7 +161,13 @@ async def send_nzb_link(
 
     max_retries = 3
     for attempt in range(max_retries):
-        await limiter.wait()
+        try:
+            await limiter.wait()
+        except RateLimitExceeded as rle:
+            scope = "manual" if is_manual else "automation"
+            raise DownloaderNetworkError(
+                f"TorBox {scope} rate limit exceeded (cooldown: {int(rle.wait_time)}s)"
+            ) from rle
         async with httpx.AsyncClient(timeout=60.0) as client:
             try:
                 response = await client.post(url, headers=headers, data=data)
@@ -269,10 +290,11 @@ async def send_nzb_file(
         logger.warning("TorBox API key missing.")
         return {}
 
-    remaining = get_cooldown_remaining()
+    remaining = get_cooldown_remaining(is_manual=is_manual)
     if remaining > 0:
+        scope = "manual" if is_manual else "automation"
         raise DownloaderNetworkError(
-            f"TorBox cooldown active ({int(remaining)}s remaining)"
+            f"TorBox {scope} cooldown active ({int(remaining)}s remaining)"
         )
 
     limiter = _manual_send_limiter if is_manual else _auto_send_limiter
@@ -286,7 +308,13 @@ async def send_nzb_file(
 
     max_retries = 3
     for attempt in range(max_retries):
-        await limiter.wait()
+        try:
+            await limiter.wait()
+        except RateLimitExceeded as rle:
+            scope = "manual" if is_manual else "automation"
+            raise DownloaderNetworkError(
+                f"TorBox {scope} rate limit exceeded (cooldown: {int(rle.wait_time)}s)"
+            ) from rle
         async with httpx.AsyncClient(timeout=60.0) as client:
             try:
                 response = await client.post(url, headers=headers, files=files)
@@ -407,10 +435,11 @@ async def send_magnet_link(
         logger.warning("TorBox API key missing.")
         return {}
 
-    remaining = get_cooldown_remaining()
+    remaining = get_cooldown_remaining(is_manual=is_manual)
     if remaining > 0:
+        scope = "manual" if is_manual else "automation"
         raise DownloaderNetworkError(
-            f"TorBox cooldown active ({int(remaining)}s remaining)"
+            f"TorBox {scope} cooldown active ({int(remaining)}s remaining)"
         )
 
     limiter = _manual_send_limiter if is_manual else _auto_send_limiter
@@ -426,7 +455,13 @@ async def send_magnet_link(
 
     max_retries = 3
     for attempt in range(max_retries):
-        await limiter.wait()
+        try:
+            await limiter.wait()
+        except RateLimitExceeded as rle:
+            scope = "manual" if is_manual else "automation"
+            raise DownloaderNetworkError(
+                f"TorBox {scope} rate limit exceeded (cooldown: {int(rle.wait_time)}s)"
+            ) from rle
         async with httpx.AsyncClient(timeout=60.0) as client:
             try:
                 response = await client.post(url, headers=headers, data=data)
@@ -721,6 +756,19 @@ async def get_usenet_downloads(
                 return data
             return []
         except httpx.HTTPError as e:
+            if isinstance(e, httpx.HTTPStatusError) and e.response.status_code == 429:
+                retry_after_hdr = e.response.headers.get("Retry-After")
+                cooldown_secs = 300.0
+                if retry_after_hdr:
+                    try:
+                        cooldown_secs = float(retry_after_hdr)
+                    except (ValueError, TypeError):
+                        cooldown_secs = 300.0
+                set_cooldown(cooldown_secs)
+                logger.warning(
+                    "⚠️ TorBox rate limit hit (429) during get_usenet_downloads. Activating cooldown for %ss.",
+                    int(cooldown_secs),
+                )
             logger.error(f"Failed to get TorBox usenet downloads: {e}")
             return []
 
@@ -751,5 +799,18 @@ async def get_torrent_downloads(
                 return result.get("data", []) or []
             return []
         except httpx.HTTPError as e:
+            if isinstance(e, httpx.HTTPStatusError) and e.response.status_code == 429:
+                retry_after_hdr = e.response.headers.get("Retry-After")
+                cooldown_secs = 300.0
+                if retry_after_hdr:
+                    try:
+                        cooldown_secs = float(retry_after_hdr)
+                    except (ValueError, TypeError):
+                        cooldown_secs = 300.0
+                set_cooldown(cooldown_secs)
+                logger.warning(
+                    "⚠️ TorBox rate limit hit (429) during get_torrent_downloads. Activating cooldown for %ss.",
+                    int(cooldown_secs),
+                )
             logger.error(f"Failed to get TorBox torrent downloads: {e}")
             return []

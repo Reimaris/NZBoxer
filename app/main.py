@@ -1045,7 +1045,7 @@ async def confirm_grab_item(item_id: int):
                 )
 
             torbox_result = await torbox.send_nzb_file(
-                nzb_bytes, filename=filename, session=session
+                nzb_bytes, filename=filename, session=session, is_manual=True
             )
         except treasure_maps.IndexerError as e:
             logger.error(
@@ -1237,7 +1237,7 @@ async def confirm_grab_season(item_id: int, season_number: int):
                 )
 
             torbox_result = await torbox.send_nzb_file(
-                nzb_bytes, filename=filename, session=session
+                nzb_bytes, filename=filename, session=session, is_manual=True
             )
         except treasure_maps.IndexerError as e:
             logger.error(
@@ -1476,7 +1476,7 @@ async def confirm_grab_episode(episode_id: int):
                 )
 
             torbox_result = await torbox.send_nzb_file(
-                nzb_bytes, filename=filename, session=session
+                nzb_bytes, filename=filename, session=session, is_manual=True
             )
         except treasure_maps.IndexerError as e:
             logger.error(
@@ -1615,11 +1615,13 @@ async def manual_push_to_torbox(magnet: str = Form(...)):
 
     try:
         if magnet.startswith("magnet:"):
-            result = await torbox.send_magnet_link(magnet)
+            result = await torbox.send_magnet_link(magnet, is_manual=True)
         else:
             try:
                 nzb_bytes, filename = await treasure_maps.fetch_nzb_bytes(magnet)
-                result = await torbox.send_nzb_file(nzb_bytes, filename=filename)
+                result = await torbox.send_nzb_file(
+                    nzb_bytes, filename=filename, is_manual=True
+                )
             except treasure_maps.IndexerError as e:
                 result = {"error": f"NZB Download Error: {e}"}
 

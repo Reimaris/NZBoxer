@@ -2075,6 +2075,8 @@ async def _process_season(
                             is_title_fallback=is_ep_fallback,
                             filters=filters,
                         )
+            except (torbox.DownloaderNetworkError, torbox.TorBoxError):
+                raise
             except Exception as ep_err:  # noqa: BLE001
                 logger.error(
                     "    ❌ Error searching S%02dE%02d: %s",
@@ -2111,9 +2113,9 @@ async def _process_season(
                     )
             await session.commit()
 
-    except DownloaderNetworkError as e:
-        logger.error("Network error during season grab, halting cascade: %s", e)
-        return
+    except (DownloaderNetworkError, torbox.TorBoxError) as e:
+        logger.warning("Downloader error during season grab, halting cascade: %s", e)
+        raise
 
 
 async def _handle_upgrade_failure(
