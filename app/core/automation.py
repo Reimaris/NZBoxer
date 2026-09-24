@@ -1286,11 +1286,21 @@ async def _process_movie(session: AsyncSession, movie: MediaItem) -> None:
         if profile and profile.reject_words_csv
         else []
     )
-    required_language = (
-        profile.languages_csv.strip()
-        if profile and profile.languages_csv and profile.languages_csv.strip()
+    primary_language = (
+        profile.primary_language.strip().lower()
+        if profile and profile.primary_language and profile.primary_language.strip()
+        else (
+            profile.languages_csv.strip().lower()
+            if profile and profile.languages_csv and profile.languages_csv.strip()
+            else None
+        )
+    )
+    fallback_language = (
+        profile.fallback_language.strip().lower()
+        if profile and profile.fallback_language and profile.fallback_language.strip()
         else None
     )
+    required_language = primary_language
 
     filters = {}
     if profile:
@@ -1312,6 +1322,8 @@ async def _process_movie(session: AsyncSession, movie: MediaItem) -> None:
             movie=movie,
             reject_words=reject_words,
             required_language=required_language,
+            primary_language=primary_language,
+            fallback_language=fallback_language,
             is_title_fallback=False,
             filters=filters,
         )
@@ -1441,6 +1453,8 @@ async def _process_movie(session: AsyncSession, movie: MediaItem) -> None:
             movie=movie,
             reject_words=reject_words,
             required_language=required_language,
+            primary_language=primary_language,
+            fallback_language=fallback_language,
             is_title_fallback=is_title_fallback,
             filters=filters,
             indexer_name=indexer.name,
@@ -1470,6 +1484,8 @@ async def _process_movie(session: AsyncSession, movie: MediaItem) -> None:
             movie=movie,
             reject_words=reject_words,
             required_language=required_language,
+            primary_language=primary_language,
+            fallback_language=fallback_language,
             is_title_fallback=is_title_fallback,
             filters=filters,
         )
@@ -1480,6 +1496,8 @@ async def _process_movie(session: AsyncSession, movie: MediaItem) -> None:
             movie=movie,
             reject_words=reject_words,
             required_language=required_language,
+            primary_language=primary_language,
+            fallback_language=fallback_language,
             is_title_fallback=is_title_fallback,
             filters=filters,
         )
@@ -1534,11 +1552,21 @@ async def _process_season(
         if profile and profile.reject_words_csv
         else []
     )
-    required_language = (
-        profile.languages_csv.strip()
-        if profile and profile.languages_csv and profile.languages_csv.strip()
+    primary_language = (
+        profile.primary_language.strip().lower()
+        if profile and profile.primary_language and profile.primary_language.strip()
+        else (
+            profile.languages_csv.strip().lower()
+            if profile and profile.languages_csv and profile.languages_csv.strip()
+            else None
+        )
+    )
+    fallback_language = (
+        profile.fallback_language.strip().lower()
+        if profile and profile.fallback_language and profile.fallback_language.strip()
         else None
     )
+    required_language = primary_language
     prefer_seasons = profile.prefer_complete_seasons if profile else False
 
     filters = {}
@@ -1854,6 +1882,8 @@ async def _process_season(
                         target_episodes=missing_episodes,
                         reject_words=reject_words,
                         required_language=required_language,
+                        primary_language=primary_language,
+                        fallback_language=fallback_language,
                         is_title_fallback=is_fallback,
                         filters=filters,
                         indexer_name=indexer.name,
@@ -1909,6 +1939,8 @@ async def _process_season(
                     target_episodes=missing_episodes,
                     reject_words=reject_words,
                     required_language=required_language,
+                    primary_language=primary_language,
+                    fallback_language=fallback_language,
                     is_title_fallback=is_season_fallback,
                     filters=filters,
                 )
@@ -2023,6 +2055,8 @@ async def _process_season(
                             episode=ep,
                             reject_words=reject_words,
                             required_language=required_language,
+                            primary_language=primary_language,
+                            fallback_language=fallback_language,
                             is_title_fallback=is_fallback,
                             filters=filters,
                             indexer_name=indexer.name,
@@ -2070,6 +2104,8 @@ async def _process_season(
                             episode=ep,
                             reject_words=reject_words,
                             required_language=required_language,
+                            primary_language=primary_language,
+                            fallback_language=fallback_language,
                             is_title_fallback=is_ep_fallback,
                             filters=filters,
                         )
@@ -2080,6 +2116,8 @@ async def _process_season(
                             episode=ep,
                             reject_words=reject_words,
                             required_language=required_language,
+                            primary_language=primary_language,
+                            fallback_language=fallback_language,
                             is_title_fallback=is_ep_fallback,
                             filters=filters,
                         )
@@ -2217,6 +2255,8 @@ async def _evaluate_and_download(
     target_episodes: Sequence[Any] | None = None,
     reject_words: list[str] | None = None,
     required_language: str | None = None,
+    primary_language: str | None = None,
+    fallback_language: str | None = None,
     is_title_fallback: bool = False,
     filters: dict[str, Any] | None = None,
     indexer_name: str | None = None,
@@ -2415,6 +2455,8 @@ async def _evaluate_and_download(
             expected_episode=expected_episode,
             expected_season_title=expected_season_title,
             required_language=required_language,
+            primary_language=primary_language,
+            fallback_language=fallback_language,
             api_language=item.get("api_language"),
         )
 
@@ -2435,7 +2477,14 @@ async def _evaluate_and_download(
             }
         )
 
-    candidates.sort(key=lambda x: x["score"], reverse=True)
+    # Sort candidates: Primary releases strictly outrank Fallback releases regardless of score
+    candidates.sort(
+        key=lambda x: (
+            1 if getattr(x["score_res"], "is_primary", True) else 0,
+            x["score"],
+        ),
+        reverse=True,
+    )
 
     if not candidates:
         if early_exit_on_cutoff:
@@ -2482,7 +2531,11 @@ async def _evaluate_and_download(
     best_candidate = candidates[0]
 
     # If checking for early exit on target cutoff score
-    if early_exit_on_cutoff and best_candidate["score"] < target_score:
+    # ADR-059: Multi-indexer early exit cascade safeguard — restricted strictly to Primary releases
+    is_best_primary = getattr(best_candidate["score_res"], "is_primary", True)
+    if early_exit_on_cutoff and (
+        not is_best_primary or best_candidate["score"] < target_score
+    ):
         return False
 
     log_title = ""
@@ -2497,9 +2550,13 @@ async def _evaluate_and_download(
     for i, c in enumerate(candidates[:5]):
         logger.info("       %d. [%.1f] %s", i + 1, c["score"], c["title"])
 
-    if early_exit_on_cutoff and best_candidate["score"] >= target_score:
+    if (
+        early_exit_on_cutoff
+        and is_best_primary
+        and best_candidate["score"] >= target_score
+    ):
         logger.info(
-            "    🎯 Target cutoff threshold reached (%.1f >= %d) on indexer '%s'. Triggering early exit.",
+            "    🎯 Target cutoff threshold reached (%.1f >= %d, Primary) on indexer '%s'. Triggering early exit.",
             best_candidate["score"],
             target_score,
             indexer_name or "active",
@@ -2547,11 +2604,42 @@ async def _evaluate_and_download(
             "    ⚡ Title search fallback matched with auto_grab_title_fallbacks enabled — proceeding to download."
         )
 
+    # Check if this qualifies as an unconditional language upgrade (Primary candidate superseding active Fallback download)
+    is_unconditional_language_upgrade = False
+    if is_best_primary:
+        stmt_hist = select(DownloadHistory)
+        if episode:
+            stmt_hist = stmt_hist.where(DownloadHistory.episode_id == episode.id)
+        elif season:
+            stmt_hist = stmt_hist.where(
+                DownloadHistory.season_id == season.id,
+                DownloadHistory.episode_id.is_(None),
+            )
+        elif movie:
+            stmt_hist = stmt_hist.where(
+                DownloadHistory.media_item_id == movie.id,
+                DownloadHistory.season_id.is_(None),
+            )
+        stmt_hist = stmt_hist.order_by(DownloadHistory.id.desc()).limit(1)
+        hist_res = await session.execute(stmt_hist)
+        existing_history = hist_res.scalars().first()
+
+        if existing_history and existing_history.is_fallback:
+            is_unconditional_language_upgrade = True
+            logger.info(
+                "    🌟 Unconditional Language Upgrade: Candidate is Primary (%s) superseding active Fallback download (%s, Score: %s).",
+                getattr(best_candidate["score_res"], "matched_language", "primary"),
+                existing_history.grabbed_language or "fallback",
+                existing_history.score,
+            )
+
     # Check if we should download
     should_download = False
 
-    if target.best_score is None or best_candidate["score"] >= (
-        current_best_score + upgrade_threshold
+    if (
+        target.best_score is None
+        or is_unconditional_language_upgrade
+        or best_candidate["score"] >= (current_best_score + upgrade_threshold)
     ):
         should_download = True
 
@@ -2693,6 +2781,12 @@ async def _evaluate_and_download(
                 if torbox_result.get("id")
                 else None,
                 torbox_sent_at=datetime.now(timezone.utc),
+                is_fallback=bool(
+                    getattr(best_candidate["score_res"], "is_fallback", False)
+                ),
+                grabbed_language=getattr(
+                    best_candidate["score_res"], "matched_language", None
+                ),
             )
             session.add(history)
 
@@ -2814,6 +2908,21 @@ async def manual_search_episode(session: AsyncSession, episode_id: int) -> bool:
         if profile and profile.reject_words_csv
         else []
     )
+    primary_language = (
+        profile.primary_language.strip().lower()
+        if profile and profile.primary_language and profile.primary_language.strip()
+        else (
+            profile.languages_csv.strip().lower()
+            if profile and profile.languages_csv and profile.languages_csv.strip()
+            else None
+        )
+    )
+    fallback_language = (
+        profile.fallback_language.strip().lower()
+        if profile and profile.fallback_language and profile.fallback_language.strip()
+        else None
+    )
+    required_language = primary_language
 
     ep_str = str(episode.episode_number)
     results = await treasure_maps.search_show(
@@ -2848,6 +2957,9 @@ async def manual_search_episode(session: AsyncSession, episode_id: int) -> bool:
         episode=episode,
         target_episodes=[episode],
         reject_words=reject_words,
+        required_language=required_language,
+        primary_language=primary_language,
+        fallback_language=fallback_language,
     )
 
     # Refresh to see if status changed
@@ -2957,6 +3069,21 @@ async def manual_search_movie(session: AsyncSession, item_id: int) -> bool:
         if profile and profile.reject_words_csv
         else []
     )
+    primary_language = (
+        profile.primary_language.strip().lower()
+        if profile and profile.primary_language and profile.primary_language.strip()
+        else (
+            profile.languages_csv.strip().lower()
+            if profile and profile.languages_csv and profile.languages_csv.strip()
+            else None
+        )
+    )
+    fallback_language = (
+        profile.fallback_language.strip().lower()
+        if profile and profile.fallback_language and profile.fallback_language.strip()
+        else None
+    )
+    required_language = primary_language
 
     results = await treasure_maps.search_movie(
         imdb_id=imdb_id, tmdb_id=tmdb_id, title=media_item.title, category=cat_id
@@ -2979,7 +3106,14 @@ async def manual_search_movie(session: AsyncSession, item_id: int) -> bool:
         return False
 
     await _evaluate_and_download(
-        session, results, movie=media_item, reject_words=reject_words, is_manual=True
+        session,
+        results,
+        movie=media_item,
+        reject_words=reject_words,
+        required_language=required_language,
+        primary_language=primary_language,
+        fallback_language=fallback_language,
+        is_manual=True,
     )
 
     await session.refresh(media_item)

@@ -31,6 +31,9 @@ class ScoreResult:
     is_rejected: bool
     reject_reason: str | None
     bitrate_mbps: float | None
+    is_primary: bool = True
+    is_fallback: bool = False
+    matched_language: str | None = None
 
 
 def calculate_bitrate_mbps(
@@ -58,6 +61,8 @@ def score_release(
     expected_episode: int | None = None,
     expected_season_title: str | None = None,
     required_language: str | None = None,
+    primary_language: str | None = None,
+    fallback_language: str | None = None,
     api_language: str | None = None,
 ) -> ScoreResult:
     """Calculate the score for a parsed release."""
@@ -83,7 +88,6 @@ def score_release(
 
     # Title matching
     if expected_title and parsed.title:
-        import re
 
         def normalize(t: str) -> str:
             # Remove punctuation and lowercase
@@ -174,66 +178,132 @@ def score_release(
                     None,
                 )
 
-    # Language check — normalize common variants then hard-reject if language not present
-    # We check both the parsed languages from the title and the api_language provided by the indexer.
-    # If neither is present, we assume it's standard (usually English) and we don't reject unless
-    # the user specifically wants a non-English release, OR we just let it pass if no language could be identified.
-    # Wait, the user requirement: "Nur Releases mit dieser Sprache werden akzeptiert. Releases ohne erkennbare Sprache werden nicht abgelehnt."
-    has_any_language_identified = bool(parsed.languages) or bool(api_language)
+    # Language check — normalize common variants and evaluate Primary / Fallback hierarchy
+    _LANG_MAP = {
+        # English
+        "english": "en",
+        "eng": "en",
+        "en": "en",
+        # German
+        "german": "de",
+        "deutsch": "de",
+        "ger": "de",
+        "de": "de",
+        # French — VOSTFR (French audio or subtitles) counts as French
+        "french": "fr",
+        "fra": "fr",
+        "fre": "fr",
+        "vostfr": "fr",
+        "vf": "fr",
+        "fr": "fr",
+        # Japanese
+        "japanese": "ja",
+        "jpn": "ja",
+        "ja": "ja",
+        # Spanish
+        "spanish": "es",
+        "spa": "es",
+        "es": "es",
+        # Italian
+        "italian": "it",
+        "ita": "it",
+        "it": "it",
+        # Portuguese
+        "portuguese": "pt",
+        "por": "pt",
+        "pt": "pt",
+        # Russian
+        "russian": "ru",
+        "rus": "ru",
+        "ru": "ru",
+    }
 
-    if required_language and has_any_language_identified:
-        _LANG_MAP = {
-            # English
-            "english": "en",
-            "eng": "en",
-            # German
-            "german": "de",
-            "deutsch": "de",
-            "ger": "de",
-            # French — VOSTFR (French audio or subtitles) counts as French
-            "french": "fr",
-            "fra": "fr",
-            "fre": "fr",
-            "vostfr": "fr",
-            "vf": "fr",
-            # Japanese
-            "japanese": "ja",
-            "jpn": "ja",
-            # Spanish
-            "spanish": "es",
-            "spa": "es",
-            # Italian
-            "italian": "it",
-            "ita": "it",
-            # Portuguese
-            "portuguese": "pt",
-            "por": "pt",
-            # Russian
-            "russian": "ru",
-            "rus": "ru",
-        }
-        req_lang = required_language.strip().lower()
-        req_lang = _LANG_MAP.get(req_lang, req_lang)  # normalize
+    if primary_language is None and required_language:
+        primary_language = required_language
 
-        release_langs = (
-            {_LANG_MAP.get(l.lower(), l.lower()) for l in parsed.languages}
-            if parsed.languages
-            else set()
+    primary_norm = (
+        _LANG_MAP.get(
+            primary_language.strip().lower(), primary_language.strip().lower()
         )
-        if api_language:
-            # Newznab languages are often strings like "English", "German", "English / German"
-            api_langs = [
-                l.strip().lower() for l in api_language.replace("/", ",").split(",")
-            ]
-            for al in api_langs:
-                release_langs.add(_LANG_MAP.get(al, al))
+        if primary_language
+        and primary_language.strip().lower() not in ("any", "none", "")
+        else None
+    )
+    fallback_norm = (
+        _LANG_MAP.get(
+            fallback_language.strip().lower(), fallback_language.strip().lower()
+        )
+        if fallback_language
+        and fallback_language.strip().lower() not in ("any", "none", "")
+        else None
+    )
 
-        if req_lang not in release_langs:
+    release_langs: set[str] = set()
+    if parsed.languages:
+        for l in parsed.languages:
+            release_langs.add(_LANG_MAP.get(l.lower(), l.lower()))
+
+    if api_language:
+        api_langs = [
+            l.strip().lower()
+            for l in api_language.replace("/", ",").split(",")
+            if l.strip()
+        ]
+        for al in api_langs:
+            release_langs.add(_LANG_MAP.get(al, al))
+
+    # Dual-Language / multi check (e.g. .DL., .Dual., .Multi.)
+    title_lower = (parsed.title or "").lower()
+    orig_lower = (parsed.original_title or "").lower()
+    full_text = f"{title_lower} {orig_lower}"
+    is_dual_language = bool(re.search(r"(\.dl\b|\bdual\b|\bmulti\b)", full_text))
+
+    # ADR-058: Usenet Scene Unflagged Language Inference Policy
+    # If neither title nor API identifies a language, infer default as English ('en')
+    if not release_langs:
+        release_langs = {"en"}
+
+    # If it is a dual-language release, ensure English is also recognized alongside foreign audio
+    if is_dual_language:
+        release_langs.add("en")
+
+    is_primary = True
+    is_fallback = False
+    matched_language = list(release_langs)[0] if release_langs else None
+
+    if primary_norm is not None:
+        if primary_norm in release_langs:
+            is_primary = True
+            is_fallback = False
+            matched_language = primary_norm
+        elif fallback_norm is not None and fallback_norm in release_langs:
+            is_primary = False
+            is_fallback = True
+            matched_language = fallback_norm
+        else:
             return ScoreResult(
                 0,
                 True,
-                f"Language mismatch: release has {release_langs} but required '{req_lang}'",
+                f"Language mismatch: release has {release_langs}, expected primary '{primary_norm}' or fallback '{fallback_norm}'",
                 None,
+                is_primary=False,
+                is_fallback=False,
+                matched_language=None,
+            )
+    elif fallback_norm is not None:
+        if fallback_norm in release_langs:
+            is_primary = True
+            is_fallback = False
+            matched_language = fallback_norm
+        else:
+            return ScoreResult(
+                0,
+                True,
+                f"Language mismatch: release has {release_langs}, expected fallback '{fallback_norm}'",
+                None,
+                is_primary=False,
+                is_fallback=False,
+                matched_language=None,
             )
 
     groups_cfg = scoring_config.get("release_groups", {})
@@ -322,4 +392,12 @@ def score_release(
         # Fallback for older configs that only had additive bonus
         score += groups_cfg.get("whitelist_bonus", 0)
 
-    return ScoreResult(score, False, None, bitrate_mbps)
+    return ScoreResult(
+        score,
+        False,
+        None,
+        bitrate_mbps,
+        is_primary=is_primary,
+        is_fallback=is_fallback,
+        matched_language=matched_language,
+    )
