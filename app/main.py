@@ -2411,6 +2411,9 @@ async def export_settings():
                 "sh_max_time_hours": db_settings.sh_max_time_hours,
                 "sh_auto_retry": db_settings.sh_auto_retry,
                 "sh_retry_wait_hours": db_settings.sh_retry_wait_hours,
+                "download_timeout_hours": getattr(
+                    db_settings, "download_timeout_hours", 24
+                ),
                 "scoring_settings": db_settings.scoring_settings,
             }
 
@@ -2436,6 +2439,8 @@ async def export_settings():
                         "search_cycle_skip": getattr(prof, "search_cycle_skip", 1),
                         "resolution": prof.resolution,
                         "languages_csv": prof.languages_csv,
+                        "primary_language": getattr(prof, "primary_language", None),
+                        "fallback_language": getattr(prof, "fallback_language", None),
                         "min_mb": prof.min_mb,
                         "max_mb": prof.max_mb,
                         "reject_words_csv": prof.reject_words_csv,
@@ -2488,6 +2493,7 @@ async def export_settings():
 
 @app.post("/settings")
 @app.post("/settings/global")
+@app.post("/settings/system")
 async def save_global_settings(
     request: Request,
     scan_interval_multiplier: int = Form(1),
@@ -2495,6 +2501,7 @@ async def save_global_settings(
     video_search_interval: int = Form(60),
     print_search_interval: int = Form(60),
     upgrade_search_interval_hours: int = Form(24),
+    download_timeout_hours: int = Form(24),
     sh_max_retries: int = Form(3),
     sh_max_time_hours: float = Form(12.0),
     sh_auto_retry: bool = Form(True),
@@ -2528,6 +2535,9 @@ async def save_global_settings(
     if print_search_interval not in VALID_INTERVAL_PRESETS:
         print_search_interval = 60
 
+    if download_timeout_hours < 1 or download_timeout_hours > 168:
+        download_timeout_hours = 24
+
     async with async_session_factory() as session:
         stmt = select(SystemSettings).where(SystemSettings.id == 1)
         db_settings = (await session.execute(stmt)).scalars().first()
@@ -2538,6 +2548,7 @@ async def save_global_settings(
             db_settings.video_search_interval = video_search_interval
             db_settings.print_search_interval = print_search_interval
             db_settings.upgrade_search_interval_hours = upgrade_search_interval_hours
+            db_settings.download_timeout_hours = download_timeout_hours
             db_settings.sh_max_retries = sh_max_retries
             db_settings.sh_max_time_hours = sh_max_time_hours
             db_settings.sh_auto_retry = sh_auto_retry

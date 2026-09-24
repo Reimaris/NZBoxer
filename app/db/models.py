@@ -159,6 +159,9 @@ class SystemSettings(Base):
     max_upgrade_attempts: Mapped[int] = mapped_column(
         Integer, nullable=False, default=7, server_default="7"
     )
+    download_timeout_hours: Mapped[int] = mapped_column(
+        Integer, default=24, server_default="24", nullable=False
+    )
     dry_run: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="0"
     )
@@ -318,6 +321,12 @@ class ProviderProfile(Base):
     audio_tier: Mapped[str | None] = mapped_column(String(100), default="any")
     audio_channels: Mapped[str | None] = mapped_column(String(100), default="any")
     languages_csv: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    primary_language: Mapped[str | None] = mapped_column(
+        String(50), nullable=True, default=None
+    )
+    fallback_language: Mapped[str | None] = mapped_column(
+        String(50), nullable=True, default=None
+    )
     min_mb: Mapped[int | None] = mapped_column(Integer, nullable=True)
     max_mb: Mapped[int | None] = mapped_column(Integer, nullable=True)
     reject_words_csv: Mapped[str | None] = mapped_column(String(1000), nullable=True)
@@ -936,6 +945,14 @@ class DownloadHistory(Base):
     )
     torbox_sent_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
+    )
+
+    # --- Language tracking ---
+    is_fallback: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="0"
+    )
+    grabbed_language: Mapped[str | None] = mapped_column(
+        String(50), nullable=True, default=None
     )
 
     # --- Audit timestamps ---

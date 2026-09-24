@@ -58,6 +58,7 @@ class Settings:
         os.getenv("UPGRADE_SEARCH_INTERVAL_HOURS", "24")
     )
     max_upgrade_attempts: int = int(os.getenv("MAX_UPGRADE_ATTEMPTS", "7"))
+    download_timeout_hours: int = int(os.getenv("DOWNLOAD_TIMEOUT_HOURS", "24"))
     backoff_tier2_skip: int = int(os.getenv("BACKOFF_TIER2_SKIP", "6"))
     backoff_tier3_skip: int = int(os.getenv("BACKOFF_TIER3_SKIP", "24"))
     dry_run: bool = os.getenv("DRY_RUN", "False").lower() == "true"
@@ -134,6 +135,7 @@ async def reload_settings_from_db(session: AsyncSession) -> None:
             sh_retry_wait_hours=settings.sh_retry_wait_hours,
             upgrade_search_interval_hours=settings.upgrade_search_interval_hours,
             max_upgrade_attempts=settings.max_upgrade_attempts,
+            download_timeout_hours=settings.download_timeout_hours,
             backoff_tier2_skip=settings.backoff_tier2_skip,
             backoff_tier3_skip=settings.backoff_tier3_skip,
             dry_run=settings.dry_run,
@@ -169,6 +171,9 @@ async def reload_settings_from_db(session: AsyncSession) -> None:
         settings.upgrade_search_interval_hours,
     )
     settings.max_upgrade_attempts = db_settings.max_upgrade_attempts
+    settings.download_timeout_hours = getattr(
+        db_settings, "download_timeout_hours", settings.download_timeout_hours
+    )
     settings.backoff_tier2_skip = getattr(
         db_settings, "backoff_tier2_skip", settings.backoff_tier2_skip
     )

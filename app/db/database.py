@@ -500,6 +500,64 @@ async def init_db(database_url: str) -> None:
             except Exception:
                 pass
 
+            # Stalled download timeout migration (ADR-054)
+            try:
+                await session.execute(
+                    __import__("sqlalchemy").text(
+                        "ALTER TABLE system_settings ADD COLUMN download_timeout_hours INTEGER NOT NULL DEFAULT 24;"
+                    )
+                )
+            except Exception:
+                pass
+
+            # Provider profile language fields (ADR-057)
+            try:
+                await session.execute(
+                    __import__("sqlalchemy").text(
+                        "ALTER TABLE provider_profiles ADD COLUMN primary_language VARCHAR(50);"
+                    )
+                )
+            except Exception:
+                pass
+
+            try:
+                await session.execute(
+                    __import__("sqlalchemy").text(
+                        "ALTER TABLE provider_profiles ADD COLUMN fallback_language VARCHAR(50);"
+                    )
+                )
+            except Exception:
+                pass
+
+            # Backfill legacy languages_csv to primary_language
+            try:
+                await session.execute(
+                    __import__("sqlalchemy").text(
+                        "UPDATE provider_profiles SET primary_language = languages_csv WHERE languages_csv IS NOT NULL AND primary_language IS NULL;"
+                    )
+                )
+            except Exception:
+                pass
+
+            # Download history language tracking (ADR-060)
+            try:
+                await session.execute(
+                    __import__("sqlalchemy").text(
+                        "ALTER TABLE download_history ADD COLUMN is_fallback BOOLEAN NOT NULL DEFAULT 0;"
+                    )
+                )
+            except Exception:
+                pass
+
+            try:
+                await session.execute(
+                    __import__("sqlalchemy").text(
+                        "ALTER TABLE download_history ADD COLUMN grabbed_language VARCHAR(50);"
+                    )
+                )
+            except Exception:
+                pass
+
             # Backfill existing providers category
             try:
                 await session.execute(
