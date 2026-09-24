@@ -146,6 +146,72 @@ def is_eligible_for_metadata_refresh(item: MediaItem) -> bool:
                         if ad <= now:
                             return True
 
+    # If Anime is already ended/completed and has established metadata, skip routine refresh
+    if item.media_type == MediaType.ANIME and getattr(item, "seasons", None):
+        has_seasons = len(item.seasons) > 0
+        all_seasons_have_episodes = has_seasons and all(
+            getattr(s, "episodes", None) and len(s.episodes) > 0 for s in item.seasons
+        )
+        if all_seasons_have_episodes:
+            has_future = any(
+                s.status == SeasonStatus.FUTURE
+                or (
+                    s.air_date
+                    and (
+                        s.air_date.replace(tzinfo=timezone.utc)
+                        if s.air_date.tzinfo is None
+                        else s.air_date
+                    )
+                    > now
+                )
+                for s in item.seasons
+            ) or any(
+                ep.status == EpisodeStatus.FUTURE
+                or (
+                    ep.air_date
+                    and (
+                        ep.air_date.replace(tzinfo=timezone.utc)
+                        if ep.air_date.tzinfo is None
+                        else ep.air_date
+                    )
+                    > now
+                )
+                for s in item.seasons
+                for ep in s.episodes
+            )
+            if not has_future:
+                # Calculate latest air date taking into account known episode air dates
+                # and season run duration (weekly release cadence)
+                calculated_end_dates = []
+                for s in item.seasons:
+                    for ep in s.episodes:
+                        if ep.air_date:
+                            calculated_end_dates.append(
+                                ep.air_date.replace(tzinfo=timezone.utc)
+                                if ep.air_date.tzinfo is None
+                                else ep.air_date
+                            )
+                    if s.air_date:
+                        s_air = (
+                            s.air_date.replace(tzinfo=timezone.utc)
+                            if s.air_date.tzinfo is None
+                            else s.air_date
+                        )
+                        num_eps = max(len(s.episodes), s.episode_count or 0)
+                        if num_eps > 0:
+                            calculated_end_dates.append(
+                                s_air + timedelta(days=7 * (num_eps - 1))
+                            )
+                        else:
+                            calculated_end_dates.append(s_air)
+
+                if calculated_end_dates:
+                    latest_end_date = max(calculated_end_dates)
+                    if (now - latest_end_date) >= timedelta(days=14):
+                        return False
+                elif item.year and item.year < now.year:
+                    return False
+
     if item.last_metadata_refreshed_at is None:
         return True
 
@@ -887,8 +953,14 @@ async def run_video_metadata_refresh_cycle(session: AsyncSession) -> None:
             )
             return
         if is_eligible_for_metadata_refresh(item):
-            await _refresh_series_metadata(session, item)
-            await session.commit()
+            try:
+                await _refresh_series_metadata(session, item)
+                await session.commit()
+            except Exception as e:
+                logger.error("Failed to refresh metadata for '%s': %s", item.title, e)
+                await session.rollback()
+            if item.media_type == MediaType.ANIME:
+                await asyncio.sleep(1.0)
 
     await consolidate_standalone_anime_sequels(session)
 
