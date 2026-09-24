@@ -432,7 +432,23 @@ async def run_download_check_cycle(
             except Exception as e:
                 logger.debug("Failed to fetch torrent downloads in check cycle: %s", e)
 
+            import re
+
             from app.config import scoring_config
+            from app.core.reading_scorer import (
+                detect_print_format,
+                match_volume_or_issue,
+                score_print_release,
+            )
+
+            def clean_title(title: str) -> str:
+                return re.sub(r"[^a-z0-9]", "", title.lower())
+
+            settings_stmt = select(SystemSettings).where(SystemSettings.id == 1)
+            sys_settings = (await session.execute(settings_stmt)).scalars().first()
+            download_timeout_hours = (
+                sys_settings.download_timeout_hours if sys_settings else 24
+            )
 
             cutoffs = scoring_config.get("cutoffs", {})
             target_score = cutoffs.get("target_score", 8000)
@@ -463,6 +479,16 @@ async def run_download_check_cycle(
                 )
             )
             episodes = (await session.execute(stmt_e)).scalars().all()
+
+            stmt_b = select(BookItem).where(BookItem.status == MediaStatus.DOWNLOADING)
+            books = (await session.execute(stmt_b)).scalars().all()
+
+            stmt_mv = (
+                select(MangaVolume)
+                .where(MangaVolume.status == EpisodeStatus.DOWNLOADING)
+                .options(selectinload(MangaVolume.manga))
+            )
+            manga_volumes = (await session.execute(stmt_mv)).scalars().all()
 
             def _get_tb_status(history: DownloadHistory) -> tuple[str, dict]:
                 tb = None
@@ -688,6 +714,390 @@ async def run_download_check_cycle(
                     EpisodeStatus.DOWNLOADED,
                 ):
                     await session.delete(latest)
+                    changed += 1
+
+            for book in books:
+                expected_book = clean_title(book.title)
+                matched_tb = None
+                best_tb_score = -1.0
+                for tb_item in tb_items.values():
+                    tb_name = str(tb_item.get("name") or tb_item.get("title") or "")
+                    if not tb_name:
+                        continue
+                    c_name = clean_title(tb_name)
+                    if expected_book in c_name:
+                        fmt = detect_print_format(tb_name, media_type="book")
+                        sc = score_print_release(fmt, media_type="book")["score"]
+                        st = str(
+                            tb_item.get("download_state") or tb_item.get("status") or ""
+                        ).lower()
+                        priority_boost = (
+                            10000 if st in ("completed", "cached", "paused") else 0
+                        )
+                        total_p = priority_boost + sc
+                        if total_p > best_tb_score:
+                            best_tb_score = total_p
+                            matched_tb = tb_item
+
+                now_utc = datetime.now(timezone.utc)
+                sent_at = book.last_searched_at
+                if sent_at and sent_at.tzinfo is None:
+                    sent_at = sent_at.replace(tzinfo=timezone.utc)
+
+                if matched_tb is not None:
+                    tb_status = str(
+                        matched_tb.get("download_state")
+                        or matched_tb.get("status")
+                        or "unknown"
+                    )
+                else:
+                    if sent_at and (now_utc - sent_at).total_seconds() < 900:
+                        tb_status = "downloading"
+                    else:
+                        tb_status = "not_found"
+
+                status_lower = tb_status.lower()
+                if matched_tb is not None and status_lower in (
+                    "completed",
+                    "cached",
+                    "paused",
+                ):
+                    tb_name = str(
+                        matched_tb.get("name") or matched_tb.get("title") or ""
+                    )
+                    fmt = detect_print_format(tb_name, media_type="book")
+                    score = score_print_release(fmt, media_type="book")["score"]
+                    if book.best_score is None or score > book.best_score:
+                        book.best_score = score
+                    is_completed = (
+                        book.best_score is not None and book.best_score >= 1000
+                    )
+                    book.status = (
+                        MediaStatus.COMPLETED
+                        if is_completed
+                        else MediaStatus.DOWNLOADED
+                    )
+                    book.empty_search_count = 0
+                    book.last_error = None
+                    logger.info(
+                        "    ✅ Book '%s' → %s (TorBox: %s)",
+                        book.title,
+                        book.status.value,
+                        tb_status,
+                    )
+                    changed += 1
+                elif matched_tb is not None and status_lower in (
+                    "downloading",
+                    "processing",
+                    "queued",
+                    "unknown",
+                ):
+                    if (
+                        sent_at
+                        and (now_utc - sent_at).total_seconds()
+                        > download_timeout_hours * 3600
+                    ):
+                        logger.warning(
+                            "    ⚠️ Stalled download detected for Book '%s' (%sh elapsed > %sh limit). Purging.",
+                            book.title,
+                            int((now_utc - sent_at).total_seconds() / 3600),
+                            download_timeout_hours,
+                        )
+                        tb_id = matched_tb.get("id")
+                        if tb_id:
+                            tb_type = matched_tb.get("_type", "usenet")
+                            try:
+                                if tb_type == "torrent":
+                                    await torbox.delete_torrent_download(
+                                        int(tb_id), session=session
+                                    )
+                                else:
+                                    await torbox.delete_usenet_download(
+                                        int(tb_id), session=session
+                                    )
+                            except Exception as e:
+                                logger.error(
+                                    "Failed to delete stalled book from TorBox: %s", e
+                                )
+                            await session.execute(
+                                delete(SeenTorboxDownload).where(
+                                    SeenTorboxDownload.torbox_id == str(tb_id)
+                                )
+                            )
+                        book.status = MediaStatus.SEARCHING
+                        from app.core.failure_logger import log_failure
+
+                        log_failure(
+                            session,
+                            book,
+                            "stalled_timeout",
+                            f"TorBox download stalled past {download_timeout_hours}h limit",
+                        )
+                        changed += 1
+                    else:
+                        logger.info(
+                            "    ⏳ Book '%s' → still downloading (TorBox: %s)",
+                            book.title,
+                            tb_status,
+                        )
+                elif (
+                    status_lower.startswith("failed")
+                    or status_lower.startswith("error")
+                    or "aborted" in status_lower
+                    or "repair failed" in status_lower
+                    or "not-complete" in status_lower
+                    or status_lower
+                    in (
+                        "cannot be re-completed",
+                        "not enough repair blocks",
+                        "not_found",
+                    )
+                ):
+                    is_not_found = status_lower == "not_found"
+                    reason = (
+                        "TorBox download missing (not_found)"
+                        if is_not_found
+                        else f"TorBox download failed: {tb_status}"
+                    )
+                    if is_not_found:
+                        logger.warning(
+                            "    ⚠️ Download missing from TorBox: Book '%s', returning to search queue.",
+                            book.title,
+                        )
+                    else:
+                        logger.warning(
+                            "    ⚠️ Book '%s' → failed (%s), returning to search queue.",
+                            book.title,
+                            tb_status,
+                        )
+                    if matched_tb:
+                        tb_id = matched_tb.get("id")
+                        if tb_id:
+                            tb_type = matched_tb.get("_type", "usenet")
+                            try:
+                                if tb_type == "torrent":
+                                    await torbox.delete_torrent_download(
+                                        int(tb_id), session=session
+                                    )
+                                else:
+                                    await torbox.delete_usenet_download(
+                                        int(tb_id), session=session
+                                    )
+                            except Exception as e:
+                                logger.error(
+                                    "Failed to delete failed book from TorBox: %s", e
+                                )
+                            await session.execute(
+                                delete(SeenTorboxDownload).where(
+                                    SeenTorboxDownload.torbox_id == str(tb_id)
+                                )
+                            )
+                    book.status = MediaStatus.SEARCHING
+                    from app.core.failure_logger import log_failure
+
+                    log_failure(
+                        session,
+                        book,
+                        "torbox_error",
+                        reason,
+                    )
+                    changed += 1
+
+            for vol in manga_volumes:
+                manga = vol.manga
+                if not manga:
+                    continue
+                expected_manga = clean_title(manga.title)
+                vol_num = vol.volume_number
+
+                matched_tb = None
+                best_tb_score = -1.0
+                for tb_item in tb_items.values():
+                    tb_name = str(tb_item.get("name") or tb_item.get("title") or "")
+                    if not tb_name:
+                        continue
+                    c_name = clean_title(tb_name)
+                    if expected_manga in c_name:
+                        is_match, _ = match_volume_or_issue(tb_name, vol_num)
+                        if not is_match:
+                            continue
+                        fmt = detect_print_format(tb_name, media_type="manga")
+                        sc = score_print_release(fmt, media_type="manga")["score"]
+                        st = str(
+                            tb_item.get("download_state") or tb_item.get("status") or ""
+                        ).lower()
+                        priority_boost = (
+                            10000 if st in ("completed", "cached", "paused") else 0
+                        )
+                        total_p = priority_boost + sc
+                        if total_p > best_tb_score:
+                            best_tb_score = total_p
+                            matched_tb = tb_item
+
+                now_utc = datetime.now(timezone.utc)
+                sent_at = vol.last_searched_at or manga.last_searched_at
+                if sent_at and sent_at.tzinfo is None:
+                    sent_at = sent_at.replace(tzinfo=timezone.utc)
+
+                if matched_tb is not None:
+                    tb_status = str(
+                        matched_tb.get("download_state")
+                        or matched_tb.get("status")
+                        or "unknown"
+                    )
+                else:
+                    if sent_at and (now_utc - sent_at).total_seconds() < 900:
+                        tb_status = "downloading"
+                    else:
+                        tb_status = "not_found"
+
+                status_lower = tb_status.lower()
+                if matched_tb is not None and status_lower in (
+                    "completed",
+                    "cached",
+                    "paused",
+                ):
+                    tb_name = str(
+                        matched_tb.get("name") or matched_tb.get("title") or ""
+                    )
+                    fmt = detect_print_format(tb_name, media_type="manga")
+                    score = score_print_release(fmt, media_type="manga")["score"]
+                    if vol.best_score is None or score > vol.best_score:
+                        vol.best_score = score
+                    is_completed = vol.best_score is not None and vol.best_score >= 1000
+                    vol.status = (
+                        EpisodeStatus.COMPLETED
+                        if is_completed
+                        else EpisodeStatus.DOWNLOADED
+                    )
+                    vol.empty_search_count = 0
+                    logger.info(
+                        "    ✅ Manga '%s' Vol %d → %s (TorBox: %s)",
+                        manga.title,
+                        vol_num,
+                        vol.status.value,
+                        tb_status,
+                    )
+                    changed += 1
+                elif matched_tb is not None and status_lower in (
+                    "downloading",
+                    "processing",
+                    "queued",
+                    "unknown",
+                ):
+                    if (
+                        sent_at
+                        and (now_utc - sent_at).total_seconds()
+                        > download_timeout_hours * 3600
+                    ):
+                        logger.warning(
+                            "    ⚠️ Stalled download detected for Manga '%s' Vol %d (%sh elapsed > %sh limit). Purging.",
+                            manga.title,
+                            vol_num,
+                            int((now_utc - sent_at).total_seconds() / 3600),
+                            download_timeout_hours,
+                        )
+                        tb_id = matched_tb.get("id")
+                        if tb_id:
+                            tb_type = matched_tb.get("_type", "usenet")
+                            try:
+                                if tb_type == "torrent":
+                                    await torbox.delete_torrent_download(
+                                        int(tb_id), session=session
+                                    )
+                                else:
+                                    await torbox.delete_usenet_download(
+                                        int(tb_id), session=session
+                                    )
+                            except Exception as e:
+                                logger.error(
+                                    "Failed to delete stalled manga from TorBox: %s", e
+                                )
+                            await session.execute(
+                                delete(SeenTorboxDownload).where(
+                                    SeenTorboxDownload.torbox_id == str(tb_id)
+                                )
+                            )
+                        vol.status = EpisodeStatus.SEARCHING
+                        from app.core.failure_logger import log_failure
+
+                        log_failure(
+                            session,
+                            vol,
+                            "stalled_timeout",
+                            f"TorBox download stalled past {download_timeout_hours}h limit",
+                        )
+                        changed += 1
+                    else:
+                        logger.info(
+                            "    ⏳ Manga '%s' Vol %d → still downloading (TorBox: %s)",
+                            manga.title,
+                            vol_num,
+                            tb_status,
+                        )
+                elif (
+                    status_lower.startswith("failed")
+                    or status_lower.startswith("error")
+                    or "aborted" in status_lower
+                    or "repair failed" in status_lower
+                    or "not-complete" in status_lower
+                    or status_lower
+                    in (
+                        "cannot be re-completed",
+                        "not enough repair blocks",
+                        "not_found",
+                    )
+                ):
+                    is_not_found = status_lower == "not_found"
+                    reason = (
+                        "TorBox download missing (not_found)"
+                        if is_not_found
+                        else f"TorBox download failed: {tb_status}"
+                    )
+                    if is_not_found:
+                        logger.warning(
+                            "    ⚠️ Download missing from TorBox: Manga '%s' Vol %d, returning to search queue.",
+                            manga.title,
+                            vol_num,
+                        )
+                    else:
+                        logger.warning(
+                            "    ⚠️ Manga '%s' Vol %d → failed (%s), returning to search queue.",
+                            manga.title,
+                            vol_num,
+                            tb_status,
+                        )
+                    if matched_tb:
+                        tb_id = matched_tb.get("id")
+                        if tb_id:
+                            tb_type = matched_tb.get("_type", "usenet")
+                            try:
+                                if tb_type == "torrent":
+                                    await torbox.delete_torrent_download(
+                                        int(tb_id), session=session
+                                    )
+                                else:
+                                    await torbox.delete_usenet_download(
+                                        int(tb_id), session=session
+                                    )
+                            except Exception as e:
+                                logger.error(
+                                    "Failed to delete failed manga from TorBox: %s", e
+                                )
+                            await session.execute(
+                                delete(SeenTorboxDownload).where(
+                                    SeenTorboxDownload.torbox_id == str(tb_id)
+                                )
+                            )
+                    vol.status = EpisodeStatus.SEARCHING
+                    from app.core.failure_logger import log_failure
+
+                    log_failure(
+                        session,
+                        vol,
+                        "torbox_error",
+                        reason,
+                    )
                     changed += 1
 
             await session.commit()
@@ -1081,7 +1491,9 @@ async def adopt_torbox_downloads_for_print(session) -> None:
     changed = False
 
     # 1. Books
-    stmt_b = select(BookItem).where(BookItem.status == MediaStatus.SEARCHING)
+    stmt_b = select(BookItem).where(
+        BookItem.status.in_([MediaStatus.SEARCHING, MediaStatus.DOWNLOADING])
+    )
     books = (await session.execute(stmt_b)).scalars().all()
 
     for book in books:
@@ -1104,20 +1516,30 @@ async def adopt_torbox_downloads_for_print(session) -> None:
                 best_item = d
 
         if best_item:
-            new_status = MediaStatus.COMPLETED
             if best_item.download_state in ("downloading", "queued", "processing"):
                 new_status = MediaStatus.DOWNLOADING
+            else:
+                new_status = (
+                    MediaStatus.COMPLETED
+                    if best_score >= 1000
+                    else MediaStatus.DOWNLOADED
+                )
 
-            book.status = new_status
-            book.empty_search_count = 0
-            book.best_score = best_score
-            changed = True
-            logger.info("  🚀 Auto-adopted Book '%s' from TorBox", book.title)
+            if book.status != new_status or book.best_score != best_score:
+                book.status = new_status
+                book.empty_search_count = 0
+                book.best_score = best_score
+                changed = True
+                logger.info(
+                    "  🚀 Auto-adopted Book '%s' from TorBox (%s)",
+                    book.title,
+                    new_status.value,
+                )
 
     # 2. Manga Volumes
     stmt_m = (
         select(MangaItem)
-        .where(MangaItem.status == MediaStatus.SEARCHING)
+        .where(MangaItem.status.in_([MediaStatus.SEARCHING, MediaStatus.DOWNLOADING]))
         .options(selectinload(MangaItem.volumes))
     )
     mangas = (await session.execute(stmt_m)).scalars().all()
@@ -1126,7 +1548,11 @@ async def adopt_torbox_downloads_for_print(session) -> None:
         expected = clean_title(manga.title)
 
         for vol in manga.volumes:
-            if vol.status not in (EpisodeStatus.PENDING, EpisodeStatus.SEARCHING):
+            if vol.status not in (
+                EpisodeStatus.PENDING,
+                EpisodeStatus.SEARCHING,
+                EpisodeStatus.DOWNLOADING,
+            ):
                 continue
 
             best_item = None
@@ -1150,19 +1576,26 @@ async def adopt_torbox_downloads_for_print(session) -> None:
                     best_item = d
 
             if best_item:
-                new_epi_status = EpisodeStatus.COMPLETED
                 if best_item.download_state in ("downloading", "queued", "processing"):
                     new_epi_status = EpisodeStatus.DOWNLOADING
+                else:
+                    new_epi_status = (
+                        EpisodeStatus.COMPLETED
+                        if best_score >= 1000
+                        else EpisodeStatus.DOWNLOADED
+                    )
 
-                vol.status = new_epi_status
-                vol.empty_search_count = 0
-                vol.best_score = best_score
-                changed = True
-                logger.info(
-                    "  🚀 Auto-adopted Manga '%s' Vol %d from TorBox",
-                    manga.title,
-                    vol.volume_number,
-                )
+                if vol.status != new_epi_status or vol.best_score != best_score:
+                    vol.status = new_epi_status
+                    vol.empty_search_count = 0
+                    vol.best_score = best_score
+                    changed = True
+                    logger.info(
+                        "  🚀 Auto-adopted Manga '%s' Vol %d from TorBox (%s)",
+                        manga.title,
+                        vol.volume_number,
+                        new_epi_status.value,
+                    )
 
     if changed:
         await session.commit()
