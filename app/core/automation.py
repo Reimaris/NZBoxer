@@ -34,6 +34,7 @@ from app.db.models import (
     MediaItem,
     MediaStatus,
     MediaType,
+    Provider,
     Season,
     SeasonStatus,
 )
@@ -52,21 +53,27 @@ def reset_tick_cooling_indexers() -> None:
     _tick_cooling_indexers = set()
 
 
-def mark_indexer_cooling(indexer: Any) -> None:
+def mark_indexer_cooling(indexer: Provider | str | Any) -> None:
     """Mark an indexer as cooling for the remainder of the current automation cycle."""
-    if hasattr(indexer, "id") and indexer.id:
+    if hasattr(indexer, "id") and getattr(indexer, "id", None):
         _tick_cooling_indexers.add(str(indexer.id))
-    if hasattr(indexer, "api_url") and indexer.api_url:
+    if hasattr(indexer, "api_url") and getattr(indexer, "api_url", None):
         _tick_cooling_indexers.add(str(indexer.api_url))
     if isinstance(indexer, str):
         _tick_cooling_indexers.add(indexer)
 
 
-def is_indexer_cooling(indexer: Any) -> bool:
+def is_indexer_cooling(indexer: Provider | str | Any) -> bool:
     """Check if an indexer is marked as cooling in the current tick."""
-    if hasattr(indexer, "id") and str(indexer.id) in _tick_cooling_indexers:
+    if (
+        hasattr(indexer, "id")
+        and str(getattr(indexer, "id", "")) in _tick_cooling_indexers
+    ):
         return True
-    if hasattr(indexer, "api_url") and str(indexer.api_url) in _tick_cooling_indexers:
+    if (
+        hasattr(indexer, "api_url")
+        and str(getattr(indexer, "api_url", "")) in _tick_cooling_indexers
+    ):
         return True
     if isinstance(indexer, str) and indexer in _tick_cooling_indexers:
         return True

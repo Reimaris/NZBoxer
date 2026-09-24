@@ -79,7 +79,7 @@
                     data-sortable="true"
                     data-title="{{ item.title|lower }}"
                     data-type="{{ item.media_type.value if item.media_type else 'movie' }}"
-                    data-archived-at="{{ item.updated_at.isoformat() if item.updated_at else '' }}"
+                    data-archived-at="{{ item.updated_at.isoformat() if item.updated_at is defined and item.updated_at else '' }}"
                     x-show="tab === 'movies' && ('{{ item.title|replace('\'', '\\\'') }}'.toLowerCase().includes(search.toLowerCase()))">
                     <td class="px-6 py-4">
                         <div class="flex items-center gap-2">
@@ -92,7 +92,7 @@
                     <td class="px-6 py-4">
                         <span class="bg-slate-700 text-slate-300 text-[11px] font-bold px-2 py-1 rounded uppercase tracking-wider">{{ item.status.value }}</span>
                     </td>
-                    <td class="px-6 py-4 text-gray-400 text-xs font-mono">{{ item.updated_at.strftime('%Y-%m-%d %H:%M:%S') if item.updated_at else '—' }}</td>
+                    <td class="px-6 py-4 text-gray-400 text-xs font-mono">{{ item.updated_at.strftime('%Y-%m-%d %H:%M:%S') if item.updated_at is defined and item.updated_at else '—' }}</td>
                     <td class="px-6 py-4 text-right whitespace-nowrap w-1">
                         <button hx-post="/items/{{ item.id }}/retry" title="Reactivate (Reset status)" class="bg-transparent border border-yellow-600 text-yellow-500 hover:bg-yellow-600 hover:text-white transition-colors p-1.5 rounded-md">
                             <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
@@ -107,7 +107,7 @@
                     data-sortable="true"
                     data-title="{{ item.title|lower }}"
                     data-type="{{ item.media_type.value if item.media_type else 'series' }}"
-                    data-archived-at="{{ item.updated_at.isoformat() if item.updated_at else '' }}"
+                    data-archived-at="{{ item.updated_at.isoformat() if item.updated_at is defined and item.updated_at else '' }}"
                     x-show="tab === 'series' && ('{{ item.title|replace('\'', '\\\'') }}'.toLowerCase().includes(search.toLowerCase()))">
                     <td class="px-6 py-4">
                         <div class="flex items-center gap-2">
@@ -120,7 +120,7 @@
                     <td class="px-6 py-4">
                         <span class="bg-slate-700 text-slate-300 text-[11px] font-bold px-2 py-1 rounded uppercase tracking-wider">{{ item.downloaded_seasons }}/{{ item.total_seasons }} Seasons</span>
                     </td>
-                    <td class="px-6 py-4 text-gray-400 text-xs font-mono">{{ item.updated_at.strftime('%Y-%m-%d %H:%M:%S') if item.updated_at else '—' }}</td>
+                    <td class="px-6 py-4 text-gray-400 text-xs font-mono">{{ item.updated_at.strftime('%Y-%m-%d %H:%M:%S') if item.updated_at is defined and item.updated_at else '—' }}</td>
                     <td class="px-6 py-4 text-right whitespace-nowrap w-1">
                         <button hx-post="/items/{{ item.id }}/retry" title="Reactivate (Reset status)" class="bg-transparent border border-yellow-600 text-yellow-500 hover:bg-yellow-600 hover:text-white transition-colors p-1.5 rounded-md">
                             <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
@@ -135,7 +135,7 @@
                     data-sortable="true"
                     data-title="{{ item.title|lower }}"
                     data-type="{{ item.media_type.value if item.media_type else 'anime' }}"
-                    data-archived-at="{{ item.updated_at.isoformat() if item.updated_at else '' }}"
+                    data-archived-at="{{ item.updated_at.isoformat() if item.updated_at is defined and item.updated_at else '' }}"
                     x-show="tab === 'anime' && ('{{ item.title|replace('\'', '\\\'') }}'.toLowerCase().includes(search.toLowerCase()))">
                     <td class="px-6 py-4">
                         <div class="flex items-center gap-2">
@@ -148,7 +148,7 @@
                     <td class="px-6 py-4">
                         <span class="bg-slate-700 text-slate-300 text-[11px] font-bold px-2 py-1 rounded uppercase tracking-wider">{{ item.downloaded_seasons }}/{{ item.total_seasons }} Seasons</span>
                     </td>
-                    <td class="px-6 py-4 text-gray-400 text-xs font-mono">{{ item.updated_at.strftime('%Y-%m-%d %H:%M:%S') if item.updated_at else '—' }}</td>
+                    <td class="px-6 py-4 text-gray-400 text-xs font-mono">{{ item.updated_at.strftime('%Y-%m-%d %H:%M:%S') if item.updated_at is defined and item.updated_at else '—' }}</td>
                     <td class="px-6 py-4 text-right whitespace-nowrap w-1">
                         <button hx-post="/items/{{ item.id }}/retry" title="Reactivate (Reset status)" class="bg-transparent border border-yellow-600 text-yellow-500 hover:bg-yellow-600 hover:text-white transition-colors p-1.5 rounded-md">
                             <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
@@ -188,11 +188,11 @@
                     data-sortable="true"
                     data-title="{{ item.title|lower }}"
                     data-type="manga"
-                    data-archived-at="{{ item.updated_at.isoformat() if item.updated_at else '' }}"
+                    data-archived-at="{{ item.updated_at.isoformat() if item.updated_at is defined and item.updated_at else '' }}"
                     x-show="tab === 'manga' && ('{{ item.title|replace('\'', '\\\'') }}'.toLowerCase().includes(search.toLowerCase()))">
                     <td class="px-6 py-4"><div class="font-bold text-white">{{ item.title }}</div></td>
                     <td class="px-6 py-4"><span class="bg-slate-700 text-slate-300 text-[11px] font-bold px-2 py-1 rounded uppercase tracking-wider">{{ item.status.value }}</span></td>
-                    <td class="px-6 py-4 text-gray-400 text-xs font-mono">{{ item.updated_at.strftime('%Y-%m-%d %H:%M:%S') if item.updated_at else '—' }}</td>
+                    <td class="px-6 py-4 text-gray-400 text-xs font-mono">{{ item.updated_at.strftime('%Y-%m-%d %H:%M:%S') if item.updated_at is defined and item.updated_at else '—' }}</td>
                     <td class="px-6 py-4 text-right">
                         <button hx-post="/print/{{ item.id if false else ('manga/' ~ item.id if tab == 'manga' else ('books/' ~ item.id if tab == 'books' else 'magazines/' ~ item.id)) }}/retry" class="bg-transparent border border-yellow-600 text-yellow-500 hover:bg-yellow-600 hover:text-white p-1.5 rounded-md">
                             <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
@@ -207,11 +207,11 @@
                     data-sortable="true"
                     data-title="{{ item.title|lower }}"
                     data-type="book"
-                    data-archived-at="{{ item.updated_at.isoformat() if item.updated_at else '' }}"
+                    data-archived-at="{{ item.updated_at.isoformat() if item.updated_at is defined and item.updated_at else '' }}"
                     x-show="tab === 'books' && ('{{ item.title|replace('\'', '\\\'') }}'.toLowerCase().includes(search.toLowerCase()))">
                     <td class="px-6 py-4"><div class="font-bold text-white">{{ item.title }}</div></td>
                     <td class="px-6 py-4"><span class="bg-slate-700 text-slate-300 text-[11px] font-bold px-2 py-1 rounded uppercase tracking-wider">{{ item.status.value }}</span></td>
-                    <td class="px-6 py-4 text-gray-400 text-xs font-mono">{{ item.updated_at.strftime('%Y-%m-%d %H:%M:%S') if item.updated_at else '—' }}</td>
+                    <td class="px-6 py-4 text-gray-400 text-xs font-mono">{{ item.updated_at.strftime('%Y-%m-%d %H:%M:%S') if item.updated_at is defined and item.updated_at else '—' }}</td>
                     <td class="px-6 py-4 text-right">
                         <button hx-post="/print/books/{{ item.id }}/retry" class="bg-transparent border border-yellow-600 text-yellow-500 hover:bg-yellow-600 hover:text-white p-1.5 rounded-md">
                             <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
@@ -226,11 +226,11 @@
                     data-sortable="true"
                     data-title="{{ item.title|lower }}"
                     data-type="magazine"
-                    data-archived-at="{{ item.updated_at.isoformat() if item.updated_at else '' }}"
+                    data-archived-at="{{ item.updated_at.isoformat() if item.updated_at is defined and item.updated_at else '' }}"
                     x-show="tab === 'magazines' && ('{{ item.title|replace('\'', '\\\'') }}'.toLowerCase().includes(search.toLowerCase()))">
                     <td class="px-6 py-4"><div class="font-bold text-white">{{ item.title }}</div></td>
                     <td class="px-6 py-4"><span class="bg-slate-700 text-slate-300 text-[11px] font-bold px-2 py-1 rounded uppercase tracking-wider">{{ item.status.value }}</span></td>
-                    <td class="px-6 py-4 text-gray-400 text-xs font-mono">{{ item.updated_at.strftime('%Y-%m-%d %H:%M:%S') if item.updated_at else '—' }}</td>
+                    <td class="px-6 py-4 text-gray-400 text-xs font-mono">{{ item.updated_at.strftime('%Y-%m-%d %H:%M:%S') if item.updated_at is defined and item.updated_at else '—' }}</td>
                     <td class="px-6 py-4 text-right">
                         <button hx-post="/print/magazines/{{ item.id }}/retry" class="bg-transparent border border-yellow-600 text-yellow-500 hover:bg-yellow-600 hover:text-white p-1.5 rounded-md">
                             <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
