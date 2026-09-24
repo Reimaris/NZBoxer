@@ -15,7 +15,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -34,6 +34,8 @@ from app.db.models import (
     ProviderProfile,
     Season,
     SeasonStatus,
+    SeenTorboxDownload,
+    SystemSettings,
 )
 from app.services import telegram, torbox
 
@@ -108,7 +110,16 @@ async def run_self_healing_cycle(
             else:
                 raw_downloads = pre_fetched_downloads
 
-            logger.info("🔧 Starting Self-Healing cycle...")
+            settings_stmt = select(SystemSettings).where(SystemSettings.id == 1)
+            sys_settings = (await session.execute(settings_stmt)).scalars().first()
+            download_timeout_hours = (
+                sys_settings.download_timeout_hours if sys_settings else 24
+            )
+
+            logger.info(
+                "🔧 Starting Self-Healing cycle (timeout: %dh)...",
+                download_timeout_hours,
+            )
 
             tb_map: dict[str, dict[str, Any]] = {}
             for d in raw_downloads:
@@ -203,7 +214,26 @@ async def run_self_healing_cycle(
 
                 logger.debug("TorBox status for %s: %s", history.nzb_title, status)
 
-                if status in (
+                status_lower = status.lower()
+                is_stalled = False
+                sent_at = history.torbox_sent_at
+                if sent_at and sent_at.tzinfo is None:
+                    sent_at = sent_at.replace(tzinfo=timezone.utc)
+
+                if tb_item is not None and status_lower in (
+                    "downloading",
+                    "processing",
+                    "queued",
+                    "unknown",
+                ):
+                    if (
+                        sent_at
+                        and (now_utc - sent_at).total_seconds()
+                        > download_timeout_hours * 3600
+                    ):
+                        is_stalled = True
+
+                if is_stalled or status_lower in (
                     "failed",
                     "error",
                     "not_found",
@@ -213,15 +243,38 @@ async def run_self_healing_cycle(
                 ):
                     from app.core.failure_logger import log_failure
 
+                    if is_stalled:
+                        elapsed_h = (
+                            int((now_utc - sent_at).total_seconds() // 3600)
+                            if sent_at
+                            else 0
+                        )
+                        reason = f"Stalled download exceeded timeout ({download_timeout_hours}h)"
+                        log_msg = f"TorBox download stalled past {download_timeout_hours}h limit ({elapsed_h}h elapsed)"
+                        logger.warning(
+                            "⚠️ Self-Healing: Stalled download detected for '%s' (%dh elapsed > %dh limit). Purging and blacklisting.",
+                            history.nzb_title,
+                            elapsed_h,
+                            download_timeout_hours,
+                        )
+                    else:
+                        reason = (
+                            "TorBox download missing (not_found)"
+                            if status_lower == "not_found"
+                            else f"TorBox reported status: {status}"
+                        )
+                        log_msg = f"TorBox download failed: {status}"
+                        logger.warning(
+                            "⚠️ Self-Healing: Download failed for %s (%s)",
+                            history.nzb_title,
+                            status,
+                        )
+
                     log_failure(
                         session,
                         target,
                         "torbox_error",
-                        f"TorBox download failed: {status}",
-                    )
-                    logger.warning(
-                        "⚠️ Self-Healing: Download failed for %s",
-                        history.nzb_title,
+                        log_msg,
                     )
 
                     media_item_id = (
@@ -237,22 +290,52 @@ async def run_self_healing_cycle(
                         media_item_id=media_item_id,
                         nzb_guid=history.nzb_guid,
                         nzb_title=history.nzb_title,
-                        reason=f"TorBox reported status: {status}",
+                        reason=reason,
                     )
                     session.add(blacklist_entry)
+
+                    # Delete from TorBox
+                    if history.torbox_id:
+                        tb_type = (
+                            tb_item.get("_type", "usenet") if tb_item else "usenet"
+                        )
+                        try:
+                            if tb_type == "torrent":
+                                await torbox.delete_torrent_download(
+                                    int(history.torbox_id), session=session
+                                )
+                            else:
+                                await torbox.delete_usenet_download(
+                                    int(history.torbox_id), session=session
+                                )
+                        except Exception as e:
+                            logger.error(f"Failed to delete {tb_type} from TorBox: {e}")
+
+                        # Purge from SeenTorboxDownload cache
+                        await session.execute(
+                            delete(SeenTorboxDownload).where(
+                                SeenTorboxDownload.torbox_id == str(history.torbox_id)
+                            )
+                        )
 
                     await session.delete(history)
 
                     if isinstance(target, MediaItem):
                         target.status = MediaStatus.SEARCHING
+                        if hasattr(target, "pending_candidate_json"):
+                            target.pending_candidate_json = None
                         title_for_log = target.title
                         media_item = target
                     elif isinstance(target, Season):
                         target.status = SeasonStatus.SEARCHING
+                        if hasattr(target, "pending_candidate_json"):
+                            target.pending_candidate_json = None
                         title_for_log = target.media_item.title
                         media_item = target.media_item
                     else:
                         target.status = EpisodeStatus.SEARCHING
+                        if hasattr(target, "pending_candidate_json"):
+                            target.pending_candidate_json = None
                         title_for_log = f"{target.season.media_item.title} S{target.season.season_number:02d}E{target.episode_number:02d}"
                         media_item = target.season.media_item
 
@@ -279,7 +362,10 @@ async def run_self_healing_cycle(
                             and channel.bot_token
                             and channel.chat_id
                         ):
-                            msg = f"⚠️ <b>Self-Healing Triggered</b>\n\n<b>{title_for_log}</b>\nTorBox download failed.\n<code>{history.nzb_title}</code> has been blacklisted. The next best release will be grabbed on the next cycle."
+                            if is_stalled:
+                                msg = f"⚠️ <b>Self-Healing Triggered (Timeout)</b>\n\n<b>{title_for_log}</b>\nTorBox download stalled past {download_timeout_hours}h limit.\n<code>{history.nzb_title}</code> has been purged and blacklisted. The next best release will be grabbed on the next cycle."
+                            else:
+                                msg = f"⚠️ <b>Self-Healing Triggered</b>\n\n<b>{title_for_log}</b>\nTorBox download failed.\n<code>{history.nzb_title}</code> has been blacklisted. The next best release will be grabbed on the next cycle."
                             await telegram.send_notification(
                                 msg, token=channel.bot_token, chat_id=channel.chat_id
                             )
@@ -456,13 +542,29 @@ async def run_download_check_cycle(
                     or "repair failed" in status_lower
                     or "not-complete" in status_lower
                     or status_lower
-                    in ("cannot be re-completed", "not enough repair blocks")
-                ):
-                    logger.warning(
-                        "    ⚠️ %s → failed (%s), returning to search queue.",
-                        title,
-                        status,
+                    in (
+                        "cannot be re-completed",
+                        "not enough repair blocks",
+                        "not_found",
                     )
+                ):
+                    is_not_found = status_lower == "not_found"
+                    reason = (
+                        "TorBox download missing (not_found)"
+                        if is_not_found
+                        else f"TorBox: {status}"
+                    )
+                    if is_not_found:
+                        logger.warning(
+                            "    ⚠️ Download missing from TorBox: %s, returning to search queue.",
+                            title,
+                        )
+                    else:
+                        logger.warning(
+                            "    ⚠️ %s → failed (%s), returning to search queue.",
+                            title,
+                            status,
+                        )
                     from app.core.failure_logger import log_failure
                     from app.services import torbox
 
@@ -476,7 +578,7 @@ async def run_download_check_cycle(
                         media_item_id=media_item_id,
                         nzb_guid=history.nzb_guid,
                         nzb_title=history.nzb_title,
-                        reason=f"TorBox: {status}",
+                        reason=reason,
                     )
                     session.add(bl)
 
@@ -496,24 +598,18 @@ async def run_download_check_cycle(
                         except Exception as e:
                             logger.error(f"Failed to delete {tb_type} from TorBox: {e}")
 
+                        # Purge from SeenTorboxDownload
+                        await session.execute(
+                            delete(SeenTorboxDownload).where(
+                                SeenTorboxDownload.torbox_id == str(history.torbox_id)
+                            )
+                        )
+
                     # Revert target status and clear candidate
                     target.status = searching_status
                     if hasattr(target, "pending_candidate_json"):
                         target.pending_candidate_json = None
                     return True  # mark as failed
-                elif status_lower == "not_found":
-                    is_completed = (
-                        history.score is not None and history.score >= target_score
-                    )
-                    final_status = (
-                        completed_status if is_completed else downloaded_status
-                    )
-                    status_str = "COMPLETED" if is_completed else "DOWNLOADED"
-                    logger.info(
-                        "    ✅ %s → %s (nicht mehr in TorBox-Liste)", title, status_str
-                    )
-                    target.status = final_status
-                    changed += 1
                 else:
                     logger.info(
                         "    ⏳ %s → still downloading (TorBox: %s)", title, status
