@@ -883,6 +883,7 @@ async def run_video_metadata_refresh_cycle(session: AsyncSession) -> None:
             return
         if is_eligible_for_metadata_refresh(item):
             await _refresh_series_metadata(session, item)
+            await session.commit()
 
     await consolidate_standalone_anime_sequels(session)
 
@@ -1186,25 +1187,27 @@ async def run_automation_cycle(
         if automation_state_manager.is_aborting():
             return
 
+        # Stage 4: Metadata Refresh
         async with async_session_factory() as session:
-            # Stage 4: Metadata Refresh
             await run_video_metadata_refresh_cycle(session)
+        if automation_state_manager.is_aborting():
+            return
+
+        # Stage 5: Initial Acquisition Search
+        if not upgrades_only:
+            logger.info("🔄 Starting Stage 5: Initial Acquisition Search...")
+            async with async_session_factory() as session:
+                await _run_video_acquisition_search_cycle(session)
             if automation_state_manager.is_aborting():
                 return
+        else:
+            logger.info(
+                "⏩ Skipping Stage 5: Initial Acquisition Search (Upgrades Only mode)."
+            )
 
-            # Stage 5: Initial Acquisition Search
-            if not upgrades_only:
-                logger.info("🔄 Starting Stage 5: Initial Acquisition Search...")
-                await _run_video_acquisition_search_cycle(session)
-                if automation_state_manager.is_aborting():
-                    return
-            else:
-                logger.info(
-                    "⏩ Skipping Stage 5: Initial Acquisition Search (Upgrades Only mode)."
-                )
-
-            # Stage 6: Dedicated Upgrade Search
-            logger.info("🔄 Starting Stage 6: Dedicated Upgrade Search...")
+        # Stage 6: Dedicated Upgrade Search
+        logger.info("🔄 Starting Stage 6: Dedicated Upgrade Search...")
+        async with async_session_factory() as session:
             await _run_video_upgrade_cycle(session)
 
         # Stage 7: Download State (Post-Grab)

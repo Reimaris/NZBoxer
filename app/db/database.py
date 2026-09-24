@@ -80,18 +80,38 @@ async def init_db(database_url: str) -> None:
 
     logger.info("Initializing database: %s", database_url)
 
+    from typing import Any
+
+    from sqlalchemy import event
     from sqlalchemy.pool import StaticPool
+
+    connect_args: dict[str, Any] = {"check_same_thread": False}
+    if database_url.startswith("sqlite"):
+        connect_args["timeout"] = 60.0
 
     kwargs = {
         "echo": False,
         "future": True,
-        "connect_args": {"check_same_thread": False},
+        "connect_args": connect_args,
     }
 
     if ":memory:" in database_url or "mode=memory" in database_url:
         kwargs["poolclass"] = StaticPool
 
     _engine = create_async_engine(database_url, **kwargs)
+
+    if database_url.startswith("sqlite"):
+
+        @event.listens_for(_engine.sync_engine, "connect")
+        def _set_sqlite_pragmas(dbapi_connection, connection_record):
+            cursor = dbapi_connection.cursor()
+            try:
+                cursor.execute("PRAGMA journal_mode=WAL")
+                cursor.execute("PRAGMA synchronous=NORMAL")
+                cursor.execute("PRAGMA busy_timeout=60000")
+                cursor.execute("PRAGMA foreign_keys=ON")
+            finally:
+                cursor.close()
 
     _session_factory = async_sessionmaker(
         bind=_engine,

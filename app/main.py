@@ -1824,13 +1824,35 @@ async def set_automation_state(state: str = Form(...)):
             content='<div class="text-red-500">Invalid state</div>', status_code=400
         )
 
-    async with async_session_factory() as session:
-        stmt = select(SystemSettings).where(SystemSettings.id == 1)
-        db_settings = (await session.execute(stmt)).scalars().first()
-        if db_settings:
-            db_settings.automation_state = valid_states[state]
-            await session.commit()
-            await reload_settings_from_db(session)
+    target_enum = valid_states[state]
+    if target_enum in (AutomationState.PAUSED, AutomationState.DISABLED):
+        from app.core.automation_state import automation_state_manager
+
+        automation_state_manager.request_abort()
+
+    import asyncio
+
+    from sqlalchemy.exc import OperationalError
+
+    for attempt in range(5):
+        try:
+            async with async_session_factory() as session:
+                stmt = select(SystemSettings).where(SystemSettings.id == 1)
+                db_settings = (await session.execute(stmt)).scalars().first()
+                if db_settings:
+                    db_settings.automation_state = target_enum
+                    await session.commit()
+                    await reload_settings_from_db(session)
+            break
+        except OperationalError as e:
+            if "database is locked" in str(e).lower() and attempt < 4:
+                logger.warning(
+                    "Database locked while updating automation state, retrying (attempt %d/5)...",
+                    attempt + 1,
+                )
+                await asyncio.sleep(0.5 * (attempt + 1))
+            else:
+                raise
 
     return HTMLResponse(content="<script>window.location.reload();</script>")
 
