@@ -111,7 +111,7 @@ def relative_date(dt: datetime | None) -> str:
         return f"{abs(days)} days ago"
 
 
-APP_VERSION = "2.10.0"
+APP_VERSION = "2.10.1"
 
 
 templates.env.filters["relative_date"] = relative_date
