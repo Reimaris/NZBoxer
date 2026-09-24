@@ -13,6 +13,7 @@ from collections.abc import Sequence
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -42,6 +43,34 @@ from app.services.torbox import DownloaderNetworkError
 logger = logging.getLogger(__name__)
 
 _grabs_dispatched_in_cycle: int = 0
+_tick_cooling_indexers: set[str] = set()
+
+
+def reset_tick_cooling_indexers() -> None:
+    """Reset the set of cooling indexer IDs/URLs at the start of each automation cycle."""
+    global _tick_cooling_indexers
+    _tick_cooling_indexers = set()
+
+
+def mark_indexer_cooling(indexer: Any) -> None:
+    """Mark an indexer as cooling for the remainder of the current automation cycle."""
+    if hasattr(indexer, "id") and indexer.id:
+        _tick_cooling_indexers.add(str(indexer.id))
+    if hasattr(indexer, "api_url") and indexer.api_url:
+        _tick_cooling_indexers.add(str(indexer.api_url))
+    if isinstance(indexer, str):
+        _tick_cooling_indexers.add(indexer)
+
+
+def is_indexer_cooling(indexer: Any) -> bool:
+    """Check if an indexer is marked as cooling in the current tick."""
+    if hasattr(indexer, "id") and str(indexer.id) in _tick_cooling_indexers:
+        return True
+    if hasattr(indexer, "api_url") and str(indexer.api_url) in _tick_cooling_indexers:
+        return True
+    if isinstance(indexer, str) and indexer in _tick_cooling_indexers:
+        return True
+    return False
 
 
 def get_grabs_dispatched_in_cycle() -> int:
@@ -1114,6 +1143,7 @@ async def run_automation_cycle(
     automation_state_manager.set_running(AutomationStatus.RUNNING_VIDEO)
     log_process_start(logger, "Automation Cycle")
     reset_grabs_dispatched_in_cycle()
+    reset_tick_cooling_indexers()
     try:
         if force:
             logger.info(
@@ -1274,12 +1304,21 @@ async def _process_movie(session: AsyncSession, movie: MediaItem) -> None:
 
     all_results: list[dict[str, Any]] = []
     is_title_fallback = False
+    clean_searches_completed = 0
 
     anime_aliases = []
     if movie.media_type == MediaType.MOVIE and getattr(movie, "is_anime_movie", False):
         anime_aliases = await _get_anime_aliases(movie)
 
     for indexer in active_indexers:
+        if is_indexer_cooling(indexer):
+            logger.info(
+                "    ⏭️ Skipping cooling indexer '%s' for movie '%s'.",
+                indexer.name,
+                movie.title,
+            )
+            continue
+
         logger.info(
             "    🔍 Searching indexer '%s' (priority %d) for movie '%s'...",
             indexer.name,
@@ -1288,84 +1327,95 @@ async def _process_movie(session: AsyncSession, movie: MediaItem) -> None:
         )
         results = []
 
-        if not anime_aliases:
-            if movie.imdb_id:
-                results = await treasure_maps.search_movie(
-                    imdb_id=movie.imdb_id,
-                    category=cat_id,
-                    api_url=indexer.api_url,
-                    api_key=indexer.api_key,
-                    session=session,
-                )
-            if not results and movie.tmdb_id:
-                results = await treasure_maps.search_movie(
-                    tmdb_id=movie.tmdb_id,
-                    category=cat_id,
-                    api_url=indexer.api_url,
-                    api_key=indexer.api_key,
-                    session=session,
-                )
-            if not results:
-                logger.warning(
-                    "    ⚠️ No ID match for movie '%s' on '%s', falling back to title search.",
-                    movie.title,
-                    indexer.name,
-                )
-                results = await treasure_maps.search_movie(
-                    title=movie.title,
-                    category=cat_id,
-                    api_url=indexer.api_url,
-                    api_key=indexer.api_key,
-                    session=session,
-                )
+        try:
+            if not anime_aliases:
+                if movie.imdb_id:
+                    results = await treasure_maps.search_movie(
+                        imdb_id=movie.imdb_id,
+                        category=cat_id,
+                        api_url=indexer.api_url,
+                        api_key=indexer.api_key,
+                        session=session,
+                    )
+                if not results and movie.tmdb_id:
+                    results = await treasure_maps.search_movie(
+                        tmdb_id=movie.tmdb_id,
+                        category=cat_id,
+                        api_url=indexer.api_url,
+                        api_key=indexer.api_key,
+                        session=session,
+                    )
+                if not results:
+                    logger.warning(
+                        "    ⚠️ No ID match for movie '%s' on '%s', falling back to title search.",
+                        movie.title,
+                        indexer.name,
+                    )
+                    results = await treasure_maps.search_movie(
+                        title=movie.title,
+                        category=cat_id,
+                        api_url=indexer.api_url,
+                        api_key=indexer.api_key,
+                        session=session,
+                    )
+                    if results:
+                        is_title_fallback = True
+            else:
+                # Anime Aggregation Flow
+                seen_guids = set()
+                agg_results = []
+                if movie.imdb_id:
+                    r = await treasure_maps.search_movie(
+                        imdb_id=movie.imdb_id,
+                        category=cat_id,
+                        api_url=indexer.api_url,
+                        api_key=indexer.api_key,
+                        session=session,
+                    )
+                    for x in r:
+                        g = x.get("guid") or x.get("link", "")
+                        if g and g not in seen_guids:
+                            seen_guids.add(g)
+                            agg_results.append(x)
+                if movie.tmdb_id:
+                    r = await treasure_maps.search_movie(
+                        tmdb_id=movie.tmdb_id,
+                        category=cat_id,
+                        api_url=indexer.api_url,
+                        api_key=indexer.api_key,
+                        session=session,
+                    )
+                    for x in r:
+                        g = x.get("guid") or x.get("link", "")
+                        if g and g not in seen_guids:
+                            seen_guids.add(g)
+                            agg_results.append(x)
+                for alias in anime_aliases:
+                    r = await treasure_maps.search_movie(
+                        title=alias,
+                        category=cat_id,
+                        api_url=indexer.api_url,
+                        api_key=indexer.api_key,
+                        session=session,
+                    )
+                    for x in r:
+                        g = x.get("guid") or x.get("link", "")
+                        if g and g not in seen_guids:
+                            seen_guids.add(g)
+                            agg_results.append(x)
+                results = agg_results
                 if results:
                     is_title_fallback = True
-        else:
-            # Anime Aggregation Flow
-            seen_guids = set()
-            agg_results = []
-            if movie.imdb_id:
-                r = await treasure_maps.search_movie(
-                    imdb_id=movie.imdb_id,
-                    category=cat_id,
-                    api_url=indexer.api_url,
-                    api_key=indexer.api_key,
-                    session=session,
-                )
-                for x in r:
-                    g = x.get("guid") or x.get("link", "")
-                    if g and g not in seen_guids:
-                        seen_guids.add(g)
-                        agg_results.append(x)
-            if movie.tmdb_id:
-                r = await treasure_maps.search_movie(
-                    tmdb_id=movie.tmdb_id,
-                    category=cat_id,
-                    api_url=indexer.api_url,
-                    api_key=indexer.api_key,
-                    session=session,
-                )
-                for x in r:
-                    g = x.get("guid") or x.get("link", "")
-                    if g and g not in seen_guids:
-                        seen_guids.add(g)
-                        agg_results.append(x)
-            for alias in anime_aliases:
-                r = await treasure_maps.search_movie(
-                    title=alias,
-                    category=cat_id,
-                    api_url=indexer.api_url,
-                    api_key=indexer.api_key,
-                    session=session,
-                )
-                for x in r:
-                    g = x.get("guid") or x.get("link", "")
-                    if g and g not in seen_guids:
-                        seen_guids.add(g)
-                        agg_results.append(x)
-            results = agg_results
-            if results:
-                is_title_fallback = True
+
+            clean_searches_completed += 1
+        except (treasure_maps.IndexerError, httpx.HTTPError) as e:
+            logger.warning(
+                "    ⚠️ Indexer '%s' error (%s). Cooldown active for this tick. Failing over.",
+                indexer.name,
+                e,
+            )
+            mark_indexer_cooling(indexer)
+            continue
 
         if not results:
             continue
@@ -1393,6 +1443,12 @@ async def _process_movie(session: AsyncSession, movie: MediaItem) -> None:
         all_results.extend(results)
 
     if not all_results:
+        if active_indexers and clean_searches_completed == 0:
+            logger.warning(
+                "    ⚠️ All indexers failed with network/API errors for movie '%s'. Freezing empty_search_count.",
+                movie.title,
+            )
+            return
         await _evaluate_and_download(
             session,
             [],
@@ -1740,12 +1796,31 @@ async def _process_season(
                 season.media_item.media_type == MediaType.ANIME
                 and season.season_number > 1
             )
+            season_pack_clean_searches = 0
             for indexer in active_indexers:
-                results, is_fallback = await _search_show_id_first(
-                    season.season_number,
-                    api_url=indexer.api_url,
-                    api_key=indexer.api_key,
-                )
+                if is_indexer_cooling(indexer):
+                    logger.info(
+                        "    ⏭️ Skipping cooling indexer '%s' for season pack search.",
+                        indexer.name,
+                    )
+                    continue
+
+                try:
+                    results, is_fallback = await _search_show_id_first(
+                        season.season_number,
+                        api_url=indexer.api_url,
+                        api_key=indexer.api_key,
+                    )
+                    season_pack_clean_searches += 1
+                except (treasure_maps.IndexerError, httpx.HTTPError) as e:
+                    logger.warning(
+                        "    ⚠️ Indexer '%s' error (%s). Cooldown active for this tick. Failing over.",
+                        indexer.name,
+                        e,
+                    )
+                    mark_indexer_cooling(indexer)
+                    continue
+
                 if not results:
                     continue
                 if is_fallback:
@@ -1885,18 +1960,36 @@ async def _process_season(
                 all_ep_results: list[dict[str, Any]] = []
                 is_ep_fallback = False
                 early_grabbed = False
+                ep_clean_searches = 0
 
                 is_anime_unified = (
                     season.media_item.media_type == MediaType.ANIME
                     and season.season_number > 1
                 )
                 for indexer in active_indexers:
-                    ep_results, is_fallback = await _search_show_id_first(
-                        season.season_number,
-                        str(ep.episode_number),
-                        api_url=indexer.api_url,
-                        api_key=indexer.api_key,
-                    )
+                    if is_indexer_cooling(indexer):
+                        logger.info(
+                            "    ⏭️ Skipping cooling indexer '%s' for episode search.",
+                            indexer.name,
+                        )
+                        continue
+
+                    try:
+                        ep_results, is_fallback = await _search_show_id_first(
+                            season.season_number,
+                            str(ep.episode_number),
+                            api_url=indexer.api_url,
+                            api_key=indexer.api_key,
+                        )
+                        ep_clean_searches += 1
+                    except (treasure_maps.IndexerError, httpx.HTTPError) as e:
+                        logger.warning(
+                            "    ⚠️ Indexer '%s' error (%s). Cooldown active for this tick. Failing over.",
+                            indexer.name,
+                            e,
+                        )
+                        mark_indexer_cooling(indexer)
+                        continue
 
                     if not ep_results:
                         continue
@@ -1945,7 +2038,17 @@ async def _process_season(
                     all_ep_results = unique_candidates
 
                 if not early_grabbed:
-                    if all_ep_results:
+                    if (
+                        not all_ep_results
+                        and active_indexers
+                        and ep_clean_searches == 0
+                    ):
+                        logger.warning(
+                            "    ⚠️ All indexers failed with network/API errors for S%02dE%02d. Freezing empty_search_count.",
+                            season.season_number,
+                            ep.episode_number,
+                        )
+                    elif all_ep_results:
                         await _evaluate_and_download(
                             session,
                             all_ep_results,
@@ -2935,6 +3038,7 @@ async def process_print_book(session: AsyncSession, book: BookItem) -> bool:
 
     # Categories 7000 (General Books), 7020 (E-Books)
     cat_ids = [7000, 7020]
+    cat_param = ",".join(str(cid) for cid in cat_ids) if cat_ids else None
     queries = []
     if book.author:
         queries.append(f"{book.title} {book.author}".strip())
@@ -2949,42 +3053,70 @@ async def process_print_book(session: AsyncSession, book: BookItem) -> bool:
 
     results: list[dict] = []
     seen_keys: set[str] = set()
+    book_clean_searches = 0
 
     for indexer in active_indexers:
+        if is_indexer_cooling(indexer):
+            logger.info(
+                "  ⏭️ Skipping cooling indexer '%s' for book '%s'.",
+                indexer.name,
+                book.title,
+            )
+            continue
+
+        indexer_errored = False
         for q in queries:
-            for cid in cat_ids:
-                try:
-                    raw_res = await treasure_maps.search_raw(
-                        query=q,
-                        category=cid,
-                        api_url=indexer.api_url,
-                        api_key=indexer.api_key,
-                        session=session,
-                    )
-                    for r in raw_res:
-                        dedup_key = (
-                            r.get("guid")
-                            or (
-                                f"{r.get('title', '').strip().lower()}_{r.get('size', 0)}"
-                                if r.get("title")
-                                else None
-                            )
-                            or r.get("link", "")
+            try:
+                raw_res = await treasure_maps.search_raw(
+                    query=q,
+                    category=cat_param,
+                    api_url=indexer.api_url,
+                    api_key=indexer.api_key,
+                    session=session,
+                )
+                for r in raw_res:
+                    dedup_key = (
+                        r.get("guid")
+                        or (
+                            f"{r.get('title', '').strip().lower()}_{r.get('size', 0)}"
+                            if r.get("title")
+                            else None
                         )
-                        if dedup_key and dedup_key not in seen_keys:
-                            seen_keys.add(dedup_key)
-                            r["_indexer_url"] = indexer.api_url
-                            r["_indexer_key"] = indexer.api_key
-                            results.append(r)
-                except Exception as e:
-                    logger.warning(
-                        "  ⚠️ Indexer '%s' search failed for query '%s': %s",
-                        indexer.name,
-                        q,
-                        e,
+                        or r.get("link", "")
                     )
+                    if dedup_key and dedup_key not in seen_keys:
+                        seen_keys.add(dedup_key)
+                        r["_indexer_url"] = indexer.api_url
+                        r["_indexer_key"] = indexer.api_key
+                        results.append(r)
+            except (treasure_maps.IndexerError, httpx.HTTPError) as e:
+                logger.warning(
+                    "  ⚠️ Indexer '%s' search failed for query '%s': %s. Cooldown active for this tick. Failing over.",
+                    indexer.name,
+                    q,
+                    e,
+                )
+                mark_indexer_cooling(indexer)
+                indexer_errored = True
+                break
+            except Exception as e:
+                logger.warning(
+                    "  ⚠️ Indexer '%s' search failed for query '%s': %s",
+                    indexer.name,
+                    q,
+                    e,
+                )
+
+        if not indexer_errored:
+            book_clean_searches += 1
 
     if not results:
+        if active_indexers and book_clean_searches == 0:
+            logger.warning(
+                "  ⚠️ All indexers failed with network/API errors for Book '%s'. Freezing empty_search_count.",
+                book.title,
+            )
+            return False
         book.last_searched_at = datetime.now(timezone.utc)
         await _handle_print_upgrade_failure(
             session, book, "No results found on indexer."
@@ -3186,6 +3318,7 @@ async def process_print_manga(session: AsyncSession, manga: MangaItem) -> bool:
         if f.strip()
     ]
     cat_ids = [7030, 7000]  # Comics / Manga
+    cat_param = ",".join(str(cid) for cid in cat_ids) if cat_ids else None
 
     logger.info(
         "  📚 Processing Manga: %s (%d wanted volumes: %s)",
@@ -3213,38 +3346,55 @@ async def process_print_manga(session: AsyncSession, manga: MangaItem) -> bool:
     seen_pack_keys: set[str] = set()
 
     for indexer in active_indexers:
+        if is_indexer_cooling(indexer):
+            logger.info(
+                "  ⏭️ Skipping cooling indexer '%s' for manga pack search.",
+                indexer.name,
+            )
+            continue
+
+        indexer_errored = False
         for pq in pack_queries:
-            for cid in cat_ids:
-                try:
-                    raw_res = await treasure_maps.search_raw(
-                        query=pq,
-                        category=cid,
-                        api_url=indexer.api_url,
-                        api_key=indexer.api_key,
-                        session=session,
-                    )
-                    for r in raw_res:
-                        dedup_key = (
-                            r.get("guid")
-                            or (
-                                f"{r.get('title', '').strip().lower()}_{r.get('size', 0)}"
-                                if r.get("title")
-                                else None
-                            )
-                            or r.get("link", "")
+            try:
+                raw_res = await treasure_maps.search_raw(
+                    query=pq,
+                    category=cat_param,
+                    api_url=indexer.api_url,
+                    api_key=indexer.api_key,
+                    session=session,
+                )
+                for r in raw_res:
+                    dedup_key = (
+                        r.get("guid")
+                        or (
+                            f"{r.get('title', '').strip().lower()}_{r.get('size', 0)}"
+                            if r.get("title")
+                            else None
                         )
-                        if dedup_key and dedup_key not in seen_pack_keys:
-                            seen_pack_keys.add(dedup_key)
-                            r["_indexer_url"] = indexer.api_url
-                            r["_indexer_key"] = indexer.api_key
-                            pack_results.append(r)
-                except Exception as e:
-                    logger.warning(
-                        "  ⚠️ Indexer '%s' pack search failed for query '%s': %s",
-                        indexer.name,
-                        pq,
-                        e,
+                        or r.get("link", "")
                     )
+                    if dedup_key and dedup_key not in seen_pack_keys:
+                        seen_pack_keys.add(dedup_key)
+                        r["_indexer_url"] = indexer.api_url
+                        r["_indexer_key"] = indexer.api_key
+                        pack_results.append(r)
+            except (treasure_maps.IndexerError, httpx.HTTPError) as e:
+                logger.warning(
+                    "  ⚠️ Indexer '%s' pack search failed for query '%s': %s. Cooldown active for this tick. Failing over.",
+                    indexer.name,
+                    pq,
+                    e,
+                )
+                mark_indexer_cooling(indexer)
+                indexer_errored = True
+                break
+            except Exception as e:
+                logger.warning(
+                    "  ⚠️ Indexer '%s' pack search failed for query '%s': %s",
+                    indexer.name,
+                    pq,
+                    e,
+                )
 
     best_pack: dict | None = None
     best_pack_covered_vols: set[int] = set()
@@ -3398,37 +3548,56 @@ async def process_print_manga(session: AsyncSession, manga: MangaItem) -> bool:
 
         vol_results: list[dict] = []
         vol_seen_keys: set[str] = set()
+        vol_clean_searches = 0
 
         for indexer in active_indexers:
+            if is_indexer_cooling(indexer):
+                logger.info(
+                    "    ⏭️ Skipping cooling indexer '%s' for volume search.",
+                    indexer.name,
+                )
+                continue
+
+            indexer_errored = False
             for vq in vol_queries:
-                for cid in cat_ids:
-                    try:
-                        raw_res = await treasure_maps.search_raw(
-                            query=vq,
-                            category=cid,
-                            api_url=indexer.api_url,
-                            api_key=indexer.api_key,
-                            session=session,
-                        )
-                        for r in raw_res:
-                            dedup_key = (
-                                r.get("guid")
-                                or (
-                                    f"{r.get('title', '').strip().lower()}_{r.get('size', 0)}"
-                                    if r.get("title")
-                                    else None
-                                )
-                                or r.get("link", "")
+                try:
+                    raw_res = await treasure_maps.search_raw(
+                        query=vq,
+                        category=cat_param,
+                        api_url=indexer.api_url,
+                        api_key=indexer.api_key,
+                        session=session,
+                    )
+                    for r in raw_res:
+                        dedup_key = (
+                            r.get("guid")
+                            or (
+                                f"{r.get('title', '').strip().lower()}_{r.get('size', 0)}"
+                                if r.get("title")
+                                else None
                             )
-                            if dedup_key and dedup_key not in vol_seen_keys:
-                                vol_seen_keys.add(dedup_key)
-                                r["_indexer_url"] = indexer.api_url
-                                r["_indexer_key"] = indexer.api_key
-                                vol_results.append(r)
-                    except Exception as e:
-                        logger.warning(
-                            "  ⚠️ Volume search failed for query '%s': %s", vq, e
+                            or r.get("link", "")
                         )
+                        if dedup_key and dedup_key not in vol_seen_keys:
+                            vol_seen_keys.add(dedup_key)
+                            r["_indexer_url"] = indexer.api_url
+                            r["_indexer_key"] = indexer.api_key
+                            vol_results.append(r)
+                except (treasure_maps.IndexerError, httpx.HTTPError) as e:
+                    logger.warning(
+                        "  ⚠️ Indexer '%s' volume search failed for query '%s': %s. Cooldown active for this tick. Failing over.",
+                        indexer.name,
+                        vq,
+                        e,
+                    )
+                    mark_indexer_cooling(indexer)
+                    indexer_errored = True
+                    break
+                except Exception as e:
+                    logger.warning("  ⚠️ Volume search failed for query '%s': %s", vq, e)
+
+            if not indexer_errored:
+                vol_clean_searches += 1
 
         candidates: list[dict] = []
         for item in vol_results:
@@ -3461,9 +3630,15 @@ async def process_print_manga(session: AsyncSession, manga: MangaItem) -> bool:
                 }
             )
 
-        vol.last_searched_at = datetime.now(timezone.utc)
-
         if not candidates:
+            if active_indexers and vol_clean_searches == 0:
+                logger.warning(
+                    "    ⚠️ All indexers failed with network/API errors for Manga '%s' Vol %d. Freezing empty_search_count.",
+                    manga.title,
+                    n,
+                )
+                continue
+            vol.last_searched_at = datetime.now(timezone.utc)
             await _handle_print_upgrade_failure(
                 session,
                 vol,
@@ -3564,6 +3739,7 @@ async def run_print_automation_cycle(
         "=== Start Print Media Automation Cycle (Upgrades Only: %s) ===",
         upgrades_only,
     )
+    reset_tick_cooling_indexers()
 
     # Cooldown pre-flight: skip all searching if TorBox is still cooling down.
     cooldown_remaining = torbox.get_cooldown_remaining()

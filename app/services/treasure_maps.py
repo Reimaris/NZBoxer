@@ -181,7 +181,7 @@ async def search_show(
 
 async def search_raw(
     query: str | None = None,
-    category: int | None = None,
+    category: int | str | None = None,
     season: int | None = None,
     ep: int | str | None = None,
     imdb_id: str | None = None,
@@ -335,9 +335,22 @@ async def _execute_search(url: str, params: dict[str, Any]) -> list[dict[str, An
                 normalized.append(flat)
 
             return normalized
+        except httpx.HTTPStatusError as e:
+            status_code = e.response.status_code
+            if status_code in (429, 503):
+                logger.warning(
+                    "Indexer returned HTTP %d (rate limit / unavailable): %s",
+                    status_code,
+                    e,
+                )
+                raise IndexerError(f"HTTP {status_code}: {e}") from e
+            logger.error("Indexer search failed with HTTP %d: %s", status_code, e)
+            return []
         except httpx.HTTPError as e:
             logger.error("Indexer search failed: %s", e)
             return []
+        except IndexerError:
+            raise
         except Exception as e:  # noqa: BLE001
             logger.error("Failed to parse indexer results: %s", e)
             return []
