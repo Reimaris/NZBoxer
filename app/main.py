@@ -884,34 +884,78 @@ async def toggle_season(item_id: int, season_number: int):
 async def manual_search_season_route(item_id: int, season_number: int):
     """Manually search and download a whole season synchronously, bypassing episode batch limits."""
     from app.core.automation import manual_search_season
+    from app.core.search_lock import create_conflict_response, item_lock_manager
     from app.db.database import async_session_factory
 
-    async with async_session_factory() as session:
-        await manual_search_season(session, item_id, season_number)
-        return HTMLResponse(content="<script>window.location.reload();</script>")
+    if not item_lock_manager.try_acquire(item_id):
+        return create_conflict_response(
+            "A search is already in progress for this show. Please wait for it to complete."
+        )
+
+    try:
+        async with async_session_factory() as session:
+            await manual_search_season(session, item_id, season_number)
+            return HTMLResponse(content="<script>window.location.reload();</script>")
+    finally:
+        item_lock_manager.release(item_id)
 
 
 @app.post("/episodes/{episode_id}/search")
 async def manual_search_episode_route(episode_id: int):
     """Manually search and download a single episode synchronously."""
+    from sqlalchemy import select
+
     from app.core.automation import manual_search_episode
+    from app.core.search_lock import create_conflict_response, item_lock_manager
     from app.db.database import async_session_factory
+    from app.db.models import Episode, Season
 
     async with async_session_factory() as session:
-        await manual_search_episode(session, episode_id)
-        # We reload the page in both cases so the user sees the updated status (completed/downloaded or failed + fail_count)
-        return HTMLResponse(content="<script>window.location.reload();</script>")
+        stmt = (
+            select(Season.media_item_id)
+            .join(Episode, Episode.season_id == Season.id)
+            .where(Episode.id == episode_id)
+        )
+        media_item_id = (await session.execute(stmt)).scalar_one_or_none()
+
+    if media_item_id is not None:
+        if not item_lock_manager.try_acquire(media_item_id):
+            return create_conflict_response(
+                "A search is already in progress for this show. Please wait for it to complete."
+            )
+        try:
+            async with async_session_factory() as session:
+                await manual_search_episode(session, episode_id)
+                return HTMLResponse(
+                    content="<script>window.location.reload();</script>"
+                )
+        finally:
+            item_lock_manager.release(media_item_id)
+    else:
+        async with async_session_factory() as session:
+            await manual_search_episode(session, episode_id)
+            # We reload the page in both cases so the user sees the updated status (completed/downloaded or failed + fail_count)
+            return HTMLResponse(content="<script>window.location.reload();</script>")
 
 
 @app.post("/items/{item_id}/search")
 async def manual_search_movie_route(item_id: int):
     """Manually search and download a single movie synchronously."""
     from app.core.automation import manual_search_movie
+    from app.core.search_lock import create_conflict_response, item_lock_manager
     from app.db.database import async_session_factory
 
-    async with async_session_factory() as session:
-        await manual_search_movie(session, item_id)
-        return HTMLResponse(content="<script>window.location.reload();</script>")
+    if not item_lock_manager.try_acquire(item_id):
+        return create_conflict_response(
+            "A search is already in progress for this movie. Please wait for it to complete."
+        )
+
+    try:
+        async with async_session_factory() as session:
+            await manual_search_movie(session, item_id)
+            return HTMLResponse(content="<script>window.location.reload();</script>")
+    finally:
+        item_lock_manager.release(item_id)
 
 
 @app.post("/items/{item_id}/refresh_metadata")
