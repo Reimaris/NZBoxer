@@ -8,7 +8,26 @@
     </a>
 </div>
 
-<div class="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden shadow-xl">
+<div x-data="{
+    isSearching: false,
+    searchingTarget: null,
+    handleError(event) {
+        this.isSearching = false;
+        this.searchingTarget = null;
+        if (event.detail && event.detail.xhr) {
+            const xhr = event.detail.xhr;
+            if (xhr.status === 409) {
+                const container = document.getElementById('search-error-toast');
+                if (container) {
+                    container.innerHTML = xhr.responseText;
+                }
+            }
+        }
+    }
+}"
+@htmx:response-error.window="handleError($event)"
+@htmx:send-error.window="isSearching = false; searchingTarget = null"
+class="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden shadow-xl">
     <div class="flex flex-col md:flex-row">
         <!-- Poster Column -->
         <div class="md:w-1/4 shrink-0 bg-slate-900 border-r border-slate-700/50 p-6 md:p-8 flex flex-col items-center">
@@ -126,6 +145,8 @@
         
         <!-- Details Column -->
         <div class="p-6 md:p-8 flex-1">
+            <div id="search-error-toast" class="mb-4 empty:hidden"></div>
+
             <div class="flex items-center gap-3 mb-2">
                 <h1 class="text-3xl font-bold text-slate-100 flex items-center gap-3">
                     {{ item.title }}
@@ -133,16 +154,28 @@
                 </h1>
                 {% if item.media_type.value == 'movie' or item.media_type.value == 'anime' and not item.seasons %}
                 <button hx-post="/items/{{ item.id }}/search"
+                        @click="isSearching = true; searchingTarget = 'movie-{{ item.id }}'"
+                        :disabled="isSearching"
+                        :class="{ 'opacity-50 cursor-not-allowed pointer-events-none': isSearching }"
                         class="p-1.5 text-slate-400 hover:text-indigo-400 hover:bg-slate-800 rounded-lg transition-colors focus:outline-none"
-                        title="Trigger Automated Search"
-                        onclick="this.classList.add('animate-pulse', 'text-indigo-500')">
-                    <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
-                    </svg>
+                        title="Trigger Automated Search">
+                    <template x-if="searchingTarget === 'movie-{{ item.id }}'">
+                        <svg class="w-5 h-5 shrink-0 animate-spin text-indigo-400" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                    </template>
+                    <template x-if="searchingTarget !== 'movie-{{ item.id }}'">
+                        <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                        </svg>
+                    </template>
                 </button>
                 {% endif %}
                 {% if item.media_type.value in ('show', 'anime') %}
                 <button hx-post="/items/{{ item.id }}/refresh_metadata"
+                        :disabled="isSearching"
+                        :class="{ 'opacity-50 cursor-not-allowed pointer-events-none': isSearching }"
                         class="p-1.5 text-slate-400 hover:text-emerald-400 hover:bg-slate-800 rounded-lg transition-colors focus:outline-none"
                         title="Force Metadata Refresh (TMDB/AniList)"
                         onclick="this.classList.add('animate-spin', 'text-emerald-500')">
@@ -155,6 +188,8 @@
                 <div x-data="{ resetModalOpen: false }" class="inline-flex items-center">
                     <button type="button"
                             @click="resetModalOpen = true"
+                            :disabled="isSearching"
+                            :class="{ 'opacity-50 cursor-not-allowed pointer-events-none': isSearching }"
                             class="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-slate-800 rounded-lg transition-colors focus:outline-none"
                             title="Reset Anime Metadata from AniList">
                         <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -257,14 +292,26 @@
                             <span class="text-xs text-slate-400 font-mono">{{ season.episodes|length if season.episodes else (season.episode_count or 0) }} Episoden</span>
                             <button hx-post="/items/{{ item.id }}/seasons/{{ season.season_number }}/search"
                                     hx-disabled-elt="this"
-                                    @click.stop
+                                    @click.stop="isSearching = true; searchingTarget = 'season-{{ season.season_number }}'"
+                                    :disabled="isSearching"
+                                    :class="{ 'opacity-50 cursor-not-allowed pointer-events-none': isSearching && searchingTarget !== 'season-{{ season.season_number }}' }"
                                     class="bg-[#3f3f46] hover:bg-[#52525b] text-white p-1.5 rounded-md transition-colors shadow-sm flex items-center justify-center cursor-pointer group disabled:opacity-50 disabled:cursor-not-allowed"
                                     title="Search & Download Whole Season (Bypass Batch Limit)">
-                                <svg class="w-4 h-4 shrink-0 text-indigo-400 group-hover:text-indigo-300 transition-transform group-hover:scale-110" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
-                                </svg>
+                                <template x-if="searchingTarget === 'season-{{ season.season_number }}'">
+                                    <svg class="w-4 h-4 shrink-0 animate-spin text-indigo-400" fill="none" viewBox="0 0 24 24">
+                                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                    </svg>
+                                </template>
+                                <template x-if="searchingTarget !== 'season-{{ season.season_number }}'">
+                                    <svg class="w-4 h-4 shrink-0 text-indigo-400 group-hover:text-indigo-300 transition-transform group-hover:scale-110" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                                    </svg>
+                                </template>
                             </button>
                             <button hx-post="/items/{{ item.id }}/seasons/{{ season.season_number }}/toggle" hx-swap="outerHTML" @click.stop
+                                    :disabled="isSearching"
+                                    :class="{ 'opacity-50 cursor-not-allowed pointer-events-none': isSearching }"
                                     class="{% if season.monitored %}bg-emerald-600 hover:bg-emerald-700{% else %}bg-slate-700 hover:bg-slate-600{% endif %} text-white px-3 py-1.5 rounded-md text-xs font-semibold uppercase tracking-wider transition-colors shadow-sm">
                                 {% if season.monitored %}Monitored{% else %}Ignored{% endif %}
                             </button>
@@ -317,12 +364,22 @@
                                     </div>
                                     {% endif %}
                                     <button hx-post="/episodes/{{ ep.id }}/search"
-                                            class="p-1 text-slate-400 hover:text-indigo-400 hover:bg-slate-800 rounded transition-colors focus:outline-none"
-                                            title="Search episode manually"
-                                            onclick="this.classList.add('animate-pulse', 'text-indigo-500')">
-                                        <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
-                                        </svg>
+                                            @click="isSearching = true; searchingTarget = 'episode-{{ ep.id }}'"
+                                            :disabled="isSearching"
+                                            :class="{ 'opacity-50 cursor-not-allowed pointer-events-none': isSearching && searchingTarget !== 'episode-{{ ep.id }}' }"
+                                            class="p-1 text-slate-400 hover:text-indigo-400 hover:bg-slate-800 rounded transition-colors focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
+                                            title="Search episode manually">
+                                        <template x-if="searchingTarget === 'episode-{{ ep.id }}'">
+                                            <svg class="w-4 h-4 shrink-0 animate-spin text-indigo-400" fill="none" viewBox="0 0 24 24">
+                                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                            </svg>
+                                        </template>
+                                        <template x-if="searchingTarget !== 'episode-{{ ep.id }}'">
+                                            <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                                            </svg>
+                                        </template>
                                     </button>
                                 </div>
                             </div>
