@@ -175,21 +175,41 @@ def is_nzb_content_fake(
     return False, None
 
 
+def _extract_file_names(files: list[Any]) -> list[str]:
+    """Recursively extract file names from flat or nested TorBox file entries."""
+    names: list[str] = []
+    for f in files:
+        if isinstance(f, str):
+            names.append(f)
+        elif isinstance(f, dict):
+            name = f.get("name") or f.get("short_name") or f.get("path")
+            if name and isinstance(name, str):
+                names.append(name)
+            nested = f.get("files")
+            if isinstance(nested, list):
+                names.extend(_extract_file_names(nested))
+    return names
+
+
 def is_torbox_filelist_fake(
-    tb_files: list[dict[str, Any]], media_type: str = "movie"
+    tb_files: list[Any] | None, media_type: str = "movie"
 ) -> tuple[bool, str | None]:
     """Layer 3: Evaluates completed TorBox files list."""
     if not tb_files:
         return True, "TorBox returned empty file list"
 
+    file_names = _extract_file_names(tb_files)
+    if not file_names:
+        return True, "TorBox returned empty file list"
+
     has_valid_payload = False
 
-    for f in tb_files:
-        fname = f.get("name", "").lower()
+    for raw_name in file_names:
+        fname = raw_name.lower().strip()
 
         for bad_ext in BAD_EXTENSIONS:
             if fname.endswith(bad_ext):
-                return True, f"Downloaded executable file: {fname}"
+                return True, f"Downloaded executable file: {raw_name}"
 
         if media_type in ["manga", "book", "magazine"]:
             for doc_ext in DOCUMENT_EXTENSIONS:

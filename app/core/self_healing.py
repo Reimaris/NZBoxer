@@ -19,6 +19,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.fake_detector import is_torbox_filelist_fake
 from app.core.logging_config import log_process_end, log_process_start
 from app.db.database import async_session_factory
 from app.db.models import (
@@ -41,13 +42,16 @@ from app.services import telegram, torbox
 
 logger = logging.getLogger(__name__)
 
+UNPACK_GRACE_PERIOD_SECONDS = 900
+
 
 async def count_downloading_entities(session: AsyncSession) -> int:
     """Counts active downloading entities across all supported media models."""
     movies_c = (
         await session.execute(
             select(func.count(MediaItem.id)).where(
-                MediaItem.status == MediaStatus.DOWNLOADING
+                MediaItem.status == MediaStatus.DOWNLOADING,
+                MediaItem.media_type == MediaType.MOVIE,
             )
         )
     ).scalar() or 0
@@ -128,7 +132,10 @@ async def run_self_healing_cycle(
 
             stmt = (
                 select(MediaItem)
-                .where(MediaItem.status == MediaStatus.DOWNLOADING)
+                .where(
+                    MediaItem.status == MediaStatus.DOWNLOADING,
+                    MediaItem.media_type == MediaType.MOVIE,
+                )
                 .options(selectinload(MediaItem.download_history))
             )
             movies = (await session.execute(stmt)).scalars().all()
@@ -216,9 +223,43 @@ async def run_self_healing_cycle(
 
                 status_lower = status.lower()
                 is_stalled = False
+                is_unextracted = False
+                fake_reason: str | None = None
                 sent_at = history.torbox_sent_at
                 if sent_at and sent_at.tzinfo is None:
                     sent_at = sent_at.replace(tzinfo=timezone.utc)
+
+                if tb_item is not None and status_lower in (
+                    "completed",
+                    "cached",
+                    "paused",
+                ):
+                    raw_files = tb_item.get("files")
+                    tb_files: list[Any] = (
+                        raw_files
+                        if isinstance(raw_files, list)
+                        else [
+                            {"name": tb_item.get("name") or tb_item.get("title") or ""}
+                        ]
+                    )
+                    media_type = "movie" if isinstance(target, MediaItem) else "episode"
+                    is_fake, fake_reason = is_torbox_filelist_fake(
+                        tb_files, media_type=media_type
+                    )
+                    if is_fake:
+                        elapsed = (
+                            (now_utc - sent_at).total_seconds() if sent_at else 999999
+                        )
+                        if elapsed < UNPACK_GRACE_PERIOD_SECONDS:
+                            logger.debug(
+                                "Download %s for '%s' is completed but contains only archives; within 15m unpack grace window (%ss elapsed). Waiting.",
+                                history.torbox_id,
+                                history.nzb_title,
+                                int(elapsed),
+                            )
+                            continue
+                        else:
+                            is_unextracted = True
 
                 if tb_item is not None and status_lower in (
                     "downloading",
@@ -233,13 +274,18 @@ async def run_self_healing_cycle(
                     ):
                         is_stalled = True
 
-                if is_stalled or status_lower in (
-                    "failed",
-                    "error",
-                    "not_found",
-                    "aborted",
-                    "cannot be re-completed",
-                    "not enough repair blocks",
+                if (
+                    is_stalled
+                    or is_unextracted
+                    or status_lower
+                    in (
+                        "failed",
+                        "error",
+                        "not_found",
+                        "aborted",
+                        "cannot be re-completed",
+                        "not enough repair blocks",
+                    )
                 ):
                     from app.core.failure_logger import log_failure
 
@@ -257,6 +303,13 @@ async def run_self_healing_cycle(
                             elapsed_h,
                             download_timeout_hours,
                         )
+                    elif is_unextracted:
+                        reason = "TorBox failed to extract archive (only RARs/PAR2)"
+                        log_msg = f"TorBox failed to extract archive (only RARs/PAR2): {fake_reason}"
+                        logger.warning(
+                            "⚠️ Self-Healing: Unextracted archive dead-end detected for '%s'. Purging and blacklisting.",
+                            history.nzb_title,
+                        )
                     else:
                         reason = (
                             "TorBox download missing (not_found)"
@@ -273,7 +326,7 @@ async def run_self_healing_cycle(
                     log_failure(
                         session,
                         target,
-                        "torbox_error",
+                        "unextracted_archive" if is_unextracted else "torbox_error",
                         log_msg,
                     )
 
@@ -364,6 +417,8 @@ async def run_self_healing_cycle(
                         ):
                             if is_stalled:
                                 msg = f"⚠️ <b>Self-Healing Triggered (Timeout)</b>\n\n<b>{title_for_log}</b>\nTorBox download stalled past {download_timeout_hours}h limit.\n<code>{history.nzb_title}</code> has been purged and blacklisted. The next best release will be grabbed on the next cycle."
+                            elif is_unextracted:
+                                msg = f"⚠️ <b>Self-Healing Triggered (Unpack Failure)</b>\n\n<b>{title_for_log}</b>\nTorBox failed to extract archive (only RARs/PAR2).\n<code>{history.nzb_title}</code> has been blacklisted. The next best release will be grabbed on the next cycle."
                             else:
                                 msg = f"⚠️ <b>Self-Healing Triggered</b>\n\n<b>{title_for_log}</b>\nTorBox download failed.\n<code>{history.nzb_title}</code> has been blacklisted. The next best release will be grabbed on the next cycle."
                             await telegram.send_notification(
@@ -455,7 +510,10 @@ async def run_download_check_cycle(
 
             stmt = (
                 select(MediaItem)
-                .where(MediaItem.status == MediaStatus.DOWNLOADING)
+                .where(
+                    MediaItem.status == MediaStatus.DOWNLOADING,
+                    MediaItem.media_type == MediaType.MOVIE,
+                )
                 .options(selectinload(MediaItem.download_history))
             )
             movies = (await session.execute(stmt)).scalars().all()
@@ -544,11 +602,153 @@ async def run_download_check_cycle(
                 searching_status,
                 completed_status,
                 downloaded_status,
+                media_type: str = "movie",
             ):
                 nonlocal changed
                 status_lower = status.lower()
 
                 if status_lower in ("completed", "cached", "paused"):
+                    # Layer 3 Playable Video Verification
+                    raw_files = tb_info.get("files") if tb_info else None
+                    tb_files: list[Any] = (
+                        raw_files
+                        if isinstance(raw_files, list)
+                        else [
+                            {
+                                "name": (
+                                    tb_info.get("name") or tb_info.get("title") or ""
+                                )
+                                if tb_info
+                                else ""
+                            }
+                        ]
+                    )
+                    is_fake, fake_reason = is_torbox_filelist_fake(
+                        tb_files, media_type=media_type
+                    )
+                    if is_fake:
+                        now_utc = datetime.now(timezone.utc)
+                        sent_at = history.torbox_sent_at
+                        if sent_at and sent_at.tzinfo is None:
+                            sent_at = sent_at.replace(tzinfo=timezone.utc)
+                        elapsed = (
+                            (now_utc - sent_at).total_seconds() if sent_at else 999999
+                        )
+                        if elapsed < UNPACK_GRACE_PERIOD_SECONDS:
+                            logger.info(
+                                "    ⏳ %s is completed but payload lacks valid video containers; within 15m unpack grace window (%ss elapsed). Leaving as DOWNLOADING.",
+                                title,
+                                int(elapsed),
+                            )
+                            return False  # keep DOWNLOADING, not failed yet
+
+                        logger.warning(
+                            "    ⚠️ %s is completed but lacks playable video past 15m grace (%ss elapsed): %s. Triggering auto-heal.",
+                            title,
+                            int(elapsed),
+                            fake_reason,
+                        )
+                        from app.core.failure_logger import log_failure
+                        from app.services import torbox
+
+                        reason = "TorBox failed to extract archive (only RARs/PAR2)"
+                        log_failure(
+                            session,
+                            target,
+                            "unextracted_archive",
+                            f"{reason}: {fake_reason}",
+                        )
+                        bl = BlacklistedRelease(
+                            media_item_id=media_item_id,
+                            nzb_guid=history.nzb_guid,
+                            nzb_title=history.nzb_title,
+                            reason=reason,
+                        )
+                        session.add(bl)
+
+                        if history.torbox_id:
+                            tb_type = (
+                                tb_info.get("_type", "usenet") if tb_info else "usenet"
+                            )
+                            try:
+                                if tb_type == "torrent":
+                                    await torbox.delete_torrent_download(
+                                        int(history.torbox_id), session=session
+                                    )
+                                else:
+                                    await torbox.delete_usenet_download(
+                                        int(history.torbox_id), session=session
+                                    )
+                            except Exception as e:
+                                logger.error(
+                                    f"Failed to delete {tb_type} from TorBox: {e}"
+                                )
+
+                            # Purge from SeenTorboxDownload
+                            await session.execute(
+                                delete(SeenTorboxDownload).where(
+                                    SeenTorboxDownload.torbox_id
+                                    == str(history.torbox_id)
+                                )
+                            )
+
+                        # Revert target status and clear candidate
+                        target.status = searching_status
+                        if hasattr(target, "pending_candidate_json"):
+                            target.pending_candidate_json = None
+                        if hasattr(target, "upgrade_attempts_count"):
+                            target.upgrade_attempts_count = 0
+
+                        # Telegram notification if configured
+                        try:
+                            media_item = (
+                                target
+                                if isinstance(target, MediaItem)
+                                else (
+                                    target.media_item
+                                    if isinstance(target, Season)
+                                    else target.season.media_item
+                                )
+                            )
+                            profile_stmt = (
+                                select(ProviderProfile)
+                                .where(
+                                    ProviderProfile.provider_id
+                                    == media_item.provider_id,
+                                    ProviderProfile.media_type
+                                    == (
+                                        "movies"
+                                        if media_item.media_type == MediaType.MOVIE
+                                        else "shows"
+                                    ),
+                                )
+                                .options(
+                                    selectinload(ProviderProfile.notification_channel)
+                                )
+                            )
+                            profile_res = await session.execute(profile_stmt)
+                            profile = profile_res.scalars().first()
+                            if profile and profile.notification_channel:
+                                channel = profile.notification_channel
+                                if (
+                                    channel.type == "telegram"
+                                    and channel.bot_token
+                                    and channel.chat_id
+                                ):
+                                    msg = f"⚠️ <b>Self-Healing Triggered (Unpack Failure)</b>\n\n<b>{title}</b>\nTorBox failed to extract archive (only RARs/PAR2).\n<code>{history.nzb_title}</code> has been blacklisted. The next best release will be grabbed on the next cycle."
+                                    await telegram.send_notification(
+                                        msg,
+                                        token=channel.bot_token,
+                                        chat_id=channel.chat_id,
+                                    )
+                        except Exception as e:
+                            logger.debug(
+                                "Could not send Telegram notification for unextracted failure: %s",
+                                e,
+                            )
+
+                        return True  # mark as failed
+
                     is_completed = (
                         history.score is not None and history.score >= target_score
                     )
@@ -687,6 +887,7 @@ async def run_download_check_cycle(
                     SeasonStatus.SEARCHING,
                     SeasonStatus.COMPLETED,
                     SeasonStatus.DOWNLOADED,
+                    media_type="episode",
                 ):
                     await session.delete(latest)
                     changed += 1
@@ -712,6 +913,7 @@ async def run_download_check_cycle(
                     EpisodeStatus.SEARCHING,
                     EpisodeStatus.COMPLETED,
                     EpisodeStatus.DOWNLOADED,
+                    media_type="episode",
                 ):
                     await session.delete(latest)
                     changed += 1
@@ -762,6 +964,70 @@ async def run_download_check_cycle(
                     "cached",
                     "paused",
                 ):
+                    raw_files = matched_tb.get("files")
+                    book_files: list[Any] = (
+                        raw_files
+                        if isinstance(raw_files, list)
+                        else [
+                            {
+                                "name": matched_tb.get("name")
+                                or matched_tb.get("title")
+                                or ""
+                            }
+                        ]
+                    )
+                    is_fake, fake_reason = is_torbox_filelist_fake(
+                        book_files, media_type="book"
+                    )
+                    if is_fake:
+                        elapsed = (
+                            (now_utc - sent_at).total_seconds() if sent_at else 999999
+                        )
+                        if elapsed < UNPACK_GRACE_PERIOD_SECONDS:
+                            logger.info(
+                                "    ⏳ Book '%s' is completed but payload lacks valid document; within 15m grace window (%ss elapsed). Waiting.",
+                                book.title,
+                                int(elapsed),
+                            )
+                            continue
+                        logger.warning(
+                            "    ⚠️ Book '%s' completed but lacks valid document past 15m grace: %s. Auto-healing.",
+                            book.title,
+                            fake_reason,
+                        )
+                        tb_id = matched_tb.get("id")
+                        if tb_id:
+                            tb_type = matched_tb.get("_type", "usenet")
+                            try:
+                                if tb_type == "torrent":
+                                    await torbox.delete_torrent_download(
+                                        int(tb_id), session=session
+                                    )
+                                else:
+                                    await torbox.delete_usenet_download(
+                                        int(tb_id), session=session
+                                    )
+                            except Exception as e:
+                                logger.error(
+                                    f"Failed to delete fake book from TorBox: {e}"
+                                )
+                            await session.execute(
+                                delete(SeenTorboxDownload).where(
+                                    SeenTorboxDownload.torbox_id == str(tb_id)
+                                )
+                            )
+                        book.status = MediaStatus.SEARCHING
+                        from app.core.failure_logger import log_failure
+
+                        log_failure(
+                            session,
+                            book,
+                            "unextracted_archive",
+                            f"TorBox download failed to extract document: {fake_reason}",
+                        )
+                        changed += 1
+                        continue
+
                     tb_name = str(
                         matched_tb.get("name") or matched_tb.get("title") or ""
                     )
@@ -957,6 +1223,72 @@ async def run_download_check_cycle(
                     "cached",
                     "paused",
                 ):
+                    raw_files = matched_tb.get("files")
+                    manga_files: list[Any] = (
+                        raw_files
+                        if isinstance(raw_files, list)
+                        else [
+                            {
+                                "name": matched_tb.get("name")
+                                or matched_tb.get("title")
+                                or ""
+                            }
+                        ]
+                    )
+                    is_fake, fake_reason = is_torbox_filelist_fake(
+                        manga_files, media_type="manga"
+                    )
+                    if is_fake:
+                        elapsed = (
+                            (now_utc - sent_at).total_seconds() if sent_at else 999999
+                        )
+                        if elapsed < UNPACK_GRACE_PERIOD_SECONDS:
+                            logger.info(
+                                "    ⏳ Manga '%s' Vol %s is completed but payload lacks valid document; within 15m grace window (%ss elapsed). Waiting.",
+                                manga.title,
+                                vol_num,
+                                int(elapsed),
+                            )
+                            continue
+                        logger.warning(
+                            "    ⚠️ Manga '%s' Vol %s completed but lacks valid document past 15m grace: %s. Auto-healing.",
+                            manga.title,
+                            vol_num,
+                            fake_reason,
+                        )
+                        tb_id = matched_tb.get("id")
+                        if tb_id:
+                            tb_type = matched_tb.get("_type", "usenet")
+                            try:
+                                if tb_type == "torrent":
+                                    await torbox.delete_torrent_download(
+                                        int(tb_id), session=session
+                                    )
+                                else:
+                                    await torbox.delete_usenet_download(
+                                        int(tb_id), session=session
+                                    )
+                            except Exception as e:
+                                logger.error(
+                                    f"Failed to delete fake manga from TorBox: {e}"
+                                )
+                            await session.execute(
+                                delete(SeenTorboxDownload).where(
+                                    SeenTorboxDownload.torbox_id == str(tb_id)
+                                )
+                            )
+                        vol.status = EpisodeStatus.SEARCHING
+                        from app.core.failure_logger import log_failure
+
+                        log_failure(
+                            session,
+                            vol,
+                            "unextracted_archive",
+                            f"TorBox download failed to extract document: {fake_reason}",
+                        )
+                        changed += 1
+                        continue
+
                     tb_name = str(
                         matched_tb.get("name") or matched_tb.get("title") or ""
                     )
