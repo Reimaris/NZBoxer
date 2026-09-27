@@ -16,6 +16,7 @@ class MediaItemLockManager:
         self._locked_items: set[int] = set()
         self._lock_owners: dict[int, str] = {}
         self._events: dict[int, asyncio.Event] = {}
+        self._waiters: dict[int, int] = {}
 
     def is_locked(self, item_id: int) -> bool:
         """Check if an item is currently undergoing an active search."""
@@ -48,6 +49,8 @@ class MediaItemLockManager:
             event = self._events.get(item_id)
             if event is not None:
                 event.set()
+                if self._waiters.get(item_id, 0) <= 0:
+                    self._events.pop(item_id, None)
 
     @asynccontextmanager
     async def lock(
@@ -62,10 +65,20 @@ class MediaItemLockManager:
                     self.release(item_id)
                 return
             event = self._events.setdefault(item_id, asyncio.Event())
-            if timeout is not None:
-                await asyncio.wait_for(event.wait(), timeout=timeout)
-            else:
-                await event.wait()
+            self._waiters[item_id] = self._waiters.get(item_id, 0) + 1
+            try:
+                if timeout is not None:
+                    await asyncio.wait_for(event.wait(), timeout=timeout)
+                else:
+                    await event.wait()
+            finally:
+                remaining = self._waiters.get(item_id, 1) - 1
+                if remaining <= 0:
+                    self._waiters.pop(item_id, None)
+                    if item_id not in self._locked_items:
+                        self._events.pop(item_id, None)
+                else:
+                    self._waiters[item_id] = remaining
 
 
 # Global in-memory singleton
