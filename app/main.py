@@ -888,9 +888,13 @@ async def manual_search_season_route(item_id: int, season_number: int):
     from app.db.database import async_session_factory
 
     if not item_lock_manager.try_acquire(item_id):
-        return create_conflict_response(
-            "A search is already in progress for this show. Please wait for it to complete."
+        owner = item_lock_manager.get_lock_owner(item_id)
+        msg = (
+            "Background automation is currently searching this show. Please wait."
+            if owner == "background"
+            else "A search is already in progress for this show. Please wait for it to complete."
         )
+        return create_conflict_response(msg)
 
     try:
         async with async_session_factory() as session:
@@ -920,9 +924,13 @@ async def manual_search_episode_route(episode_id: int):
 
     if media_item_id is not None:
         if not item_lock_manager.try_acquire(media_item_id):
-            return create_conflict_response(
-                "A search is already in progress for this show. Please wait for it to complete."
+            owner = item_lock_manager.get_lock_owner(media_item_id)
+            msg = (
+                "Background automation is currently searching this show. Please wait."
+                if owner == "background"
+                else "A search is already in progress for this show. Please wait for it to complete."
             )
+            return create_conflict_response(msg)
         try:
             async with async_session_factory() as session:
                 await manual_search_episode(session, episode_id)
@@ -946,9 +954,13 @@ async def manual_search_movie_route(item_id: int):
     from app.db.database import async_session_factory
 
     if not item_lock_manager.try_acquire(item_id):
-        return create_conflict_response(
-            "A search is already in progress for this movie. Please wait for it to complete."
+        owner = item_lock_manager.get_lock_owner(item_id)
+        msg = (
+            "Background automation is currently searching this movie. Please wait."
+            if owner == "background"
+            else "A search is already in progress for this movie. Please wait for it to complete."
         )
+        return create_conflict_response(msg)
 
     try:
         async with async_session_factory() as session:

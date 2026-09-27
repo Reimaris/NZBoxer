@@ -23,6 +23,7 @@ from app.core.automation_state import AutomationStatus, automation_state_manager
 from app.core.logging_config import log_process_end, log_process_start
 from app.core.parser import parse_release_name
 from app.core.scorer import score_release
+from app.core.search_lock import item_lock_manager
 from app.core.self_healing import run_download_check_cycle, run_self_healing_cycle
 from app.db.database import async_session_factory
 from app.db.grab_tracker import can_grab_today, increment_today_grab_count
@@ -1071,6 +1072,13 @@ async def _run_video_acquisition_search_cycle(session: AsyncSession) -> None:
                     "🛑 Automation cycle abort requested. Stopping movie processing."
                 )
                 return
+            if not item_lock_manager.try_acquire(movie.id, owner="background"):
+                logger.info(
+                    "⏩ Skipping movie '%s' (ID: %d): active search in progress.",
+                    movie.title,
+                    movie.id,
+                )
+                continue
             try:
                 await _process_movie(session, movie)
             except (torbox.DownloaderNetworkError, torbox.TorBoxError) as e:
@@ -1079,6 +1087,8 @@ async def _run_video_acquisition_search_cycle(session: AsyncSession) -> None:
                     e,
                 )
                 break
+            finally:
+                item_lock_manager.release(movie.id)
     else:
         logger.info("⏩ Skipping movie search in this cycle.")
 
@@ -1103,6 +1113,21 @@ async def _run_video_acquisition_search_cycle(session: AsyncSession) -> None:
                     "🛑 Automation cycle abort requested. Stopping season processing."
                 )
                 return
+            if not item_lock_manager.try_acquire(
+                season.media_item_id, owner="background"
+            ):
+                show_title = (
+                    season.media_item.title
+                    if getattr(season, "media_item", None)
+                    else "Unknown"
+                )
+                logger.info(
+                    "⏩ Skipping season S%02d of '%s' (Show ID: %d): active search in progress.",
+                    season.season_number,
+                    show_title,
+                    season.media_item_id,
+                )
+                continue
             try:
                 await _process_season(session, season)
             except (torbox.DownloaderNetworkError, torbox.TorBoxError) as e:
@@ -1111,6 +1136,8 @@ async def _run_video_acquisition_search_cycle(session: AsyncSession) -> None:
                     e,
                 )
                 break
+            finally:
+                item_lock_manager.release(season.media_item_id)
     else:
         logger.info("⏩ Skipping series search in this cycle.")
 
@@ -1162,6 +1189,13 @@ async def _run_video_upgrade_cycle(session: AsyncSession) -> None:
                 continue
             if automation_state_manager.is_aborting():
                 return
+            if not item_lock_manager.try_acquire(movie.id, owner="background"):
+                logger.info(
+                    "⏩ Skipping upgrade evaluation for movie '%s' (ID: %d): active search in progress.",
+                    movie.title,
+                    movie.id,
+                )
+                continue
             logger.info("  ⬆️ Upgrade Evaluation for Movie: %s", movie.title)
             try:
                 await _process_movie(session, movie)
@@ -1171,6 +1205,8 @@ async def _run_video_upgrade_cycle(session: AsyncSession) -> None:
                     e,
                 )
                 break
+            finally:
+                item_lock_manager.release(movie.id)
 
     if active_shows_provider_ids and not automation_state_manager.is_aborting():
         season_stmt_upg = (
@@ -1198,6 +1234,21 @@ async def _run_video_upgrade_cycle(session: AsyncSession) -> None:
                 continue
             if automation_state_manager.is_aborting():
                 return
+            if not item_lock_manager.try_acquire(
+                season.media_item_id, owner="background"
+            ):
+                show_title = (
+                    season.media_item.title
+                    if getattr(season, "media_item", None)
+                    else "Unknown"
+                )
+                logger.info(
+                    "⏩ Skipping upgrade evaluation for season S%02d of '%s' (Show ID: %d): active search in progress.",
+                    season.season_number,
+                    show_title,
+                    season.media_item_id,
+                )
+                continue
             logger.info(
                 "  ⬆️ Upgrade Evaluation for Season Pack: S%02d of %s",
                 season.season_number,
@@ -1211,6 +1262,8 @@ async def _run_video_upgrade_cycle(session: AsyncSession) -> None:
                     e,
                 )
                 break
+            finally:
+                item_lock_manager.release(season.media_item_id)
 
 
 async def run_automation_cycle(

@@ -14,13 +14,18 @@ class MediaItemLockManager:
 
     def __init__(self) -> None:
         self._locked_items: set[int] = set()
+        self._lock_owners: dict[int, str] = {}
         self._events: dict[int, asyncio.Event] = {}
 
     def is_locked(self, item_id: int) -> bool:
         """Check if an item is currently undergoing an active search."""
         return item_id in self._locked_items
 
-    def try_acquire(self, item_id: int) -> bool:
+    def get_lock_owner(self, item_id: int) -> Optional[str]:
+        """Return the owner identifier for an actively held lock, or None if unlocked."""
+        return self._lock_owners.get(item_id)
+
+    def try_acquire(self, item_id: int, owner: str = "manual") -> bool:
         """Non-blocking lock acquisition for a specific media item.
 
         Returns True if acquired; returns False immediately if already locked.
@@ -28,6 +33,7 @@ class MediaItemLockManager:
         if item_id in self._locked_items:
             return False
         self._locked_items.add(item_id)
+        self._lock_owners[item_id] = owner
         if item_id in self._events:
             self._events[item_id].clear()
         else:
@@ -38,6 +44,7 @@ class MediaItemLockManager:
         """Release the lock for the given media item and notify waiting tasks."""
         if item_id in self._locked_items:
             self._locked_items.remove(item_id)
+            self._lock_owners.pop(item_id, None)
             event = self._events.get(item_id)
             if event is not None:
                 event.set()
