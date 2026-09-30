@@ -246,78 +246,7 @@ async def init_db(database_url: str) -> None:
             try:
                 await session.execute(
                     __import__("sqlalchemy").text(
-                        "ALTER TABLE system_settings ADD COLUMN auto_grab_title_fallbacks BOOLEAN NOT NULL DEFAULT 0;"
-                    )
-                )
-            except Exception:
-                pass
-
-            try:
-                await session.execute(
-                    __import__("sqlalchemy").text(
-                        "ALTER TABLE system_settings ADD COLUMN automation_state VARCHAR(50) NOT NULL DEFAULT 'ACTIVE';"
-                    )
-                )
-            except Exception:
-                pass
-
-            try:
-                await session.execute(
-                    __import__("sqlalchemy").text(
-                        "ALTER TABLE provider_profiles ADD COLUMN search_cycle_skip INTEGER NOT NULL DEFAULT 1;"
-                    )
-                )
-                await session.execute(
-                    __import__("sqlalchemy").text(
-                        "ALTER TABLE provider_profiles ADD COLUMN current_cycle_count INTEGER NOT NULL DEFAULT 0;"
-                    )
-                )
-            except Exception:
-                pass
-
-            try:
-                await session.execute(
-                    __import__("sqlalchemy").text(
-                        "ALTER TABLE provider_profiles ADD COLUMN source VARCHAR(100) DEFAULT 'any';"
-                    )
-                )
-                await session.execute(
-                    __import__("sqlalchemy").text(
-                        "ALTER TABLE provider_profiles ADD COLUMN video_codec VARCHAR(100) DEFAULT 'any';"
-                    )
-                )
-                await session.execute(
-                    __import__("sqlalchemy").text(
-                        "ALTER TABLE provider_profiles ADD COLUMN hdr VARCHAR(100) DEFAULT 'any';"
-                    )
-                )
-                await session.execute(
-                    __import__("sqlalchemy").text(
-                        "ALTER TABLE provider_profiles ADD COLUMN audio_tier VARCHAR(100) DEFAULT 'any';"
-                    )
-                )
-                await session.execute(
-                    __import__("sqlalchemy").text(
-                        "ALTER TABLE provider_profiles ADD COLUMN audio_channels VARCHAR(100) DEFAULT 'any';"
-                    )
-                )
-            except Exception:
-                pass
-
-            try:
-                await session.execute(
-                    __import__("sqlalchemy").text(
                         "ALTER TABLE media_items ADD COLUMN auto_monitor_next_season BOOLEAN NOT NULL DEFAULT 0;"
-                    )
-                )
-            except Exception:
-                pass
-
-            # Ensure provider_profiles.auto_monitor_next_season exists (model compat col, value unused)
-            try:
-                await session.execute(
-                    __import__("sqlalchemy").text(
-                        "ALTER TABLE provider_profiles ADD COLUMN auto_monitor_next_season BOOLEAN NOT NULL DEFAULT 0;"
                     )
                 )
             except Exception:
@@ -345,17 +274,6 @@ async def init_db(database_url: str) -> None:
                 __import__("sqlalchemy").text("PRAGMA foreign_keys=ON;")
             )
 
-            # pending_candidate_json for manual grab fallback
-            for tbl in ["media_items", "seasons", "episodes"]:
-                try:
-                    await session.execute(
-                        __import__("sqlalchemy").text(
-                            f"ALTER TABLE {tbl} ADD COLUMN pending_candidate_json JSON;"
-                        )
-                    )
-                except Exception:
-                    pass
-
             # Providers multi-category columns migration
             for col, col_type in [
                 ("category", "VARCHAR(50) NOT NULL DEFAULT 'watchlist'"),
@@ -373,49 +291,10 @@ async def init_db(database_url: str) -> None:
                 except Exception:
                     pass
 
-            # Upgrade attempts migrations
-            try:
-                await session.execute(
-                    __import__("sqlalchemy").text(
-                        "ALTER TABLE system_settings ADD COLUMN max_upgrade_attempts INTEGER NOT NULL DEFAULT 7;"
-                    )
-                )
-            except Exception:
-                pass
-
             try:
                 await session.execute(
                     __import__("sqlalchemy").text(
                         "ALTER TABLE system_settings ADD COLUMN self_healing_interval INTEGER NOT NULL DEFAULT 15;"
-                    )
-                )
-                await session.execute(
-                    __import__("sqlalchemy").text(
-                        "ALTER TABLE system_settings ADD COLUMN video_search_interval INTEGER NOT NULL DEFAULT 60;"
-                    )
-                )
-            except Exception:
-                pass
-
-            for tbl in [
-                "media_items",
-                "seasons",
-                "episodes",
-            ]:
-                try:
-                    await session.execute(
-                        __import__("sqlalchemy").text(
-                            f"ALTER TABLE {tbl} ADD COLUMN upgrade_attempts_count INTEGER NOT NULL DEFAULT 0;"
-                        )
-                    )
-                except Exception:
-                    pass
-
-            # Upgrade throttling & search interval migration (Ticket 01)
-            try:
-                await session.execute(
-                    __import__("sqlalchemy").text(
-                        "ALTER TABLE system_settings ADD COLUMN upgrade_search_interval_hours INTEGER NOT NULL DEFAULT 24;"
                     )
                 )
             except Exception:
@@ -449,21 +328,6 @@ async def init_db(database_url: str) -> None:
             except Exception:
                 pass
 
-            # Timestamps for last upgrade search
-            for tbl in [
-                "media_items",
-                "seasons",
-                "episodes",
-            ]:
-                try:
-                    await session.execute(
-                        __import__("sqlalchemy").text(
-                            f"ALTER TABLE {tbl} ADD COLUMN last_upgrade_search_at DATETIME;"
-                        )
-                    )
-                except Exception:
-                    pass
-
             # Metadata TTL tracking
             try:
                 await session.execute(
@@ -479,35 +343,6 @@ async def init_db(database_url: str) -> None:
                 await session.execute(
                     __import__("sqlalchemy").text(
                         "ALTER TABLE system_settings ADD COLUMN download_timeout_hours INTEGER NOT NULL DEFAULT 24;"
-                    )
-                )
-            except Exception:
-                pass
-
-            # Provider profile language fields (ADR-057)
-            try:
-                await session.execute(
-                    __import__("sqlalchemy").text(
-                        "ALTER TABLE provider_profiles ADD COLUMN primary_language VARCHAR(50);"
-                    )
-                )
-            except Exception:
-                pass
-
-            try:
-                await session.execute(
-                    __import__("sqlalchemy").text(
-                        "ALTER TABLE provider_profiles ADD COLUMN fallback_language VARCHAR(50);"
-                    )
-                )
-            except Exception:
-                pass
-
-            # Backfill legacy languages_csv to primary_language
-            try:
-                await session.execute(
-                    __import__("sqlalchemy").text(
-                        "UPDATE provider_profiles SET primary_language = languages_csv WHERE languages_csv IS NOT NULL AND primary_language IS NULL;"
                     )
                 )
             except Exception:

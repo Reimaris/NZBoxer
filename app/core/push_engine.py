@@ -492,7 +492,7 @@ async def _dispatch_candidate_list_to_torbox(
     status_reason: str | None = None,
 ) -> DownloadHistory | None:
     """Iterate through scored candidates, verify Layer 2 NZB fake check, and dispatch to TorBox."""
-    from app.core.automation import increment_today_grab_count
+    from app.db.grab_tracker import increment_today_grab_count
     from app.services import discord
 
     is_movie = episode is None and (
@@ -1577,9 +1577,31 @@ async def get_push_modal_context(
     effective_cfg = await resolve_effective_search_config(session, item)
     entries = sorted(item.seasons, key=lambda s: (s.watch_order, s.season_number))
 
+    is_movie_type = item.media_type == MediaType.MOVIE
+    default_min_gb = 1.5 if is_movie_type else 0.2
+    default_max_gb = 45.0 if is_movie_type else 15.0
+
+    presets_data = [
+        {
+            "id": p.id,
+            "name": p.name,
+            "is_default": p.is_default,
+            "primary_language": p.primary_language,
+            "fallback_language": p.fallback_language or "none",
+            "video_quality_mode": p.video_quality_mode,
+            "audio_quality_mode": p.audio_quality_mode,
+            "custom_config": p.custom_config,
+        }
+        for p in presets
+    ]
+
     return {
         "item": item,
         "entries": entries,
         "presets": presets,
+        "presets_json": json.dumps(presets_data),
         "effective_config": effective_cfg,
+        "effective_config_json": json.dumps(effective_cfg),
+        "default_min_size_gb": default_min_gb,
+        "default_max_size_gb": default_max_gb,
     }

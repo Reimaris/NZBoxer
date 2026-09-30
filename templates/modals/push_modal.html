@@ -1,0 +1,668 @@
+<!-- Unified Push Modal (v3.0.0) -->
+<div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in"
+     id="push-modal-backdrop"
+     x-data="{
+        presets: {{ presets_json }},
+        effective: {{ effective_config_json }},
+        selectedPresetId: '{{ effective_config.preset_id or '' }}',
+        primaryLanguage: '{{ effective_config.primary_language or 'en' }}',
+        fallbackLanguage: '{{ effective_config.fallback_language or 'none' }}',
+        videoQualityMode: '{{ effective_config.video_quality_mode or 'best' }}',
+        audioQualityMode: '{{ effective_config.audio_quality_mode or 'best' }}',
+        preferSeasonPacks: {{ 'true' if effective_config.prefer_season_packs else 'false' }},
+        autoAdvanceSeasons: {{ 'true' if effective_config.auto_advance_seasons else 'false' }},
+        resolutions: {{ (effective_config.custom_config.get('resolutions') or []) | tojson }},
+        sources: {{ (effective_config.custom_config.get('sources') or []) | tojson }},
+        videoCodecs: {{ (effective_config.custom_config.get('video_codecs') or []) | tojson }},
+        audioFormats: {{ (effective_config.custom_config.get('audio_formats') or []) | tojson }},
+        minSizeGb: '{{ effective_config.custom_config.get('min_size_gb') if effective_config.custom_config.get('min_size_gb') is not none else default_min_size_gb }}',
+        maxSizeGb: '{{ effective_config.custom_config.get('max_size_gb') if effective_config.custom_config.get('max_size_gb') is not none else default_max_size_gb }}',
+        requiredKeywords: '{{ (effective_config.custom_config.get('required_keywords') or []) | join(', ') }}',
+        excludedKeywords: '{{ (effective_config.custom_config.get('excluded_keywords') or []) | join(', ') }}',
+        selectedSeasons: [{% for s in entries %}{% if s.monitored and s.status.value != 'downloaded' %}{{ s.id }},{% endif %}{% endfor %}],
+        selectedEpisodes: [],
+        expandedSeasons: {},
+        showSavePresetForm: false,
+        newPresetName: '',
+        newPresetDefault: false,
+        savePresetNotice: '',
+        isLoadingAuto: false,
+        isLoadingManual: false,
+        statusMessage: '',
+        statusError: '',
+        manualResultsLoaded: false,
+        packReleases: { primary: [], fallback: [], mismatched: [], releases: [] },
+        episodeAccordions: [],
+        openAccordions: {},
+        showMismatchedPacks: false,
+        applyPreset(pid) {
+            if (!pid || pid === 'custom') return;
+            const found = this.presets.find(p => String(p.id) === String(pid));
+            if (!found) return;
+            this.primaryLanguage = found.primary_language || 'en';
+            this.fallbackLanguage = found.fallback_language || 'none';
+            this.videoQualityMode = found.video_quality_mode || 'best';
+            this.audioQualityMode = found.audio_quality_mode || 'best';
+            const cfg = found.custom_config || {};
+            this.resolutions = cfg.resolutions || [];
+            this.sources = cfg.sources || [];
+            this.videoCodecs = cfg.video_codecs || [];
+            this.audioFormats = cfg.audio_formats || [];
+            this.minSizeGb = cfg.min_size_gb !== undefined && cfg.min_size_gb !== null ? String(cfg.min_size_gb) : '{{ default_min_size_gb }}';
+            this.maxSizeGb = cfg.max_size_gb !== undefined && cfg.max_size_gb !== null ? String(cfg.max_size_gb) : '{{ default_max_size_gb }}';
+            this.requiredKeywords = (cfg.required_keywords || []).join(', ');
+            this.excludedKeywords = (cfg.excluded_keywords || []).join(', ');
+        },
+        switchVideoMode(mode) {
+            this.videoQualityMode = mode;
+            if (mode === 'custom') {
+                if (!this.minSizeGb) this.minSizeGb = '{{ default_min_size_gb }}';
+                if (!this.maxSizeGb) this.maxSizeGb = '{{ default_max_size_gb }}';
+            }
+        },
+        toggleArrayItem(arr, val) {
+            const idx = arr.indexOf(val);
+            if (idx >= 0) arr.splice(idx, 1);
+            else arr.push(val);
+            this.selectedPresetId = 'custom';
+        },
+        buildPayload() {
+            return {
+                preset_id: this.selectedPresetId === 'custom' ? null : this.selectedPresetId,
+                primary_language: this.primaryLanguage,
+                fallback_language: this.fallbackLanguage,
+                video_quality_mode: this.videoQualityMode,
+                audio_quality_mode: this.audioQualityMode,
+                prefer_season_packs: this.preferSeasonPacks,
+                auto_advance_seasons: this.autoAdvanceSeasons,
+                season_ids: this.selectedSeasons,
+                episode_ids: this.selectedEpisodes,
+                custom_config: {
+                    resolutions: this.resolutions,
+                    sources: this.sources,
+                    video_codecs: this.videoCodecs,
+                    audio_formats: this.audioFormats,
+                    min_size_gb: this.minSizeGb !== '' ? parseFloat(this.minSizeGb) : null,
+                    max_size_gb: this.maxSizeGb !== '' ? parseFloat(this.maxSizeGb) : null,
+                    required_keywords: this.requiredKeywords.split(',').map(s => s.trim()).filter(Boolean),
+                    excluded_keywords: this.excludedKeywords.split(',').map(s => s.trim()).filter(Boolean)
+                }
+            };
+        },
+        async saveInlinePreset() {
+            if (!this.newPresetName.trim()) return;
+            const body = Object.assign({}, this.buildPayload(), {
+                name: this.newPresetName.trim(),
+                is_default: this.newPresetDefault,
+                media_item_id: {{ item.id }}
+            });
+            const resp = await fetch('/api/presets/save-inline', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                body: JSON.stringify(body)
+            });
+            if (resp.ok) {
+                const saved = await resp.json();
+                this.presets.push({
+                    id: saved.id,
+                    name: saved.name,
+                    is_default: saved.is_default,
+                    primary_language: saved.primary_language,
+                    fallback_language: saved.fallback_language || 'none',
+                    video_quality_mode: saved.video_quality_mode,
+                    audio_quality_mode: saved.audio_quality_mode,
+                    custom_config: saved.custom_config || {}
+                });
+                this.selectedPresetId = String(saved.id);
+                this.showSavePresetForm = false;
+                this.newPresetName = '';
+                this.savePresetNotice = 'Saved preset: ' + saved.name;
+            }
+        },
+        async runAutoPush() {
+            this.isLoadingAuto = true;
+            this.statusMessage = '';
+            this.statusError = '';
+            try {
+                const resp = await fetch('/api/items/{{ item.id }}/push/auto', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                    body: JSON.stringify(this.buildPayload())
+                });
+                const data = await resp.json();
+                if (resp.ok && data.pushed) {
+                    this.statusMessage = `Pushed ${data.pushed_count} release(s) to TorBox!` + (data.auto_advanced_count ? ` (+${data.auto_advanced_count} auto-advanced)` : '');
+                } else {
+                    this.statusError = data.error || 'No matching releases found on active indexers.';
+                }
+            } catch (e) {
+                this.statusError = 'Failed to execute Auto-Push.';
+            } finally {
+                this.isLoadingAuto = false;
+            }
+        },
+        async runManualSearch() {
+            this.isLoadingManual = true;
+            this.statusMessage = '';
+            this.statusError = '';
+            try {
+                const resp = await fetch('/api/items/{{ item.id }}/push/manual-search', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                    body: JSON.stringify(this.buildPayload())
+                });
+                const data = await resp.json();
+                if (resp.ok) {
+                    this.packReleases = data.pack_or_movie_releases || { primary: [], fallback: [], mismatched: [], releases: [] };
+                    this.episodeAccordions = data.episode_accordions || [];
+                    this.manualResultsLoaded = true;
+                } else {
+                    this.statusError = data.error || 'Manual search failed.';
+                }
+            } catch (e) {
+                this.statusError = 'Failed to query indexers.';
+            } finally {
+                this.isLoadingManual = false;
+            }
+        },
+        async grabCandidate(rel, seasonId = null, episodeId = null) {
+            this.statusMessage = '';
+            this.statusError = '';
+            const payload = {
+                guid: rel.guid,
+                title: rel.title,
+                size_bytes: rel.size_bytes || 0,
+                score: rel.score || 0,
+                indexer_url: rel.indexer_url,
+                indexer_key: rel.indexer_key,
+                is_fallback: rel.is_fallback || false,
+                matched_language: rel.matched_language || null,
+                season_id: seasonId,
+                episode_id: episodeId,
+                auto_advance_seasons: this.autoAdvanceSeasons
+            };
+            const resp = await fetch('/api/items/{{ item.id }}/push/manual-grab', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            const data = await resp.json();
+            if (resp.ok && data.pushed) {
+                this.statusMessage = `Grabbed & pushed '${rel.title}' to TorBox!`;
+            } else {
+                this.statusError = data.error || 'Failed to grab release.';
+            }
+        }
+     }"
+     @click.self="document.getElementById('modal-container').innerHTML = ''">
+
+    <div class="bg-slate-900 border border-slate-700/80 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[92vh] overflow-y-auto text-slate-100">
+        <!-- 1. Item Header & Metadata Controls -->
+        <div class="p-6 border-b border-slate-800 flex flex-col md:flex-row gap-5 items-start relative bg-slate-950/50">
+            <button type="button"
+                    class="absolute top-4 right-4 text-slate-400 hover:text-white p-1.5 rounded-lg hover:bg-slate-800 transition"
+                    @click="document.getElementById('modal-container').innerHTML = ''"
+                    title="Close Modal">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                </svg>
+            </button>
+
+            <!-- Poster -->
+            <div class="w-24 h-36 rounded-xl overflow-hidden bg-slate-800 shrink-0 border border-slate-700/60 shadow-md">
+                {% if item.poster_url %}
+                <img src="{{ item.poster_url }}" alt="{{ item.title }}" class="w-full h-full object-cover">
+                {% else %}
+                <div class="w-full h-full flex items-center justify-center text-slate-500 text-xs font-semibold">No Poster</div>
+                {% endif %}
+            </div>
+
+            <!-- Title, Year, Synopsis & Metadata Switcher -->
+            <div class="flex-1 min-w-0 pr-8">
+                <div class="flex flex-wrap items-center gap-2.5 mb-1.5">
+                    <h2 class="text-xl font-bold text-white truncate">{{ item.title }}</h2>
+                    {% if item.year %}
+                    <span class="px-2 py-0.5 text-xs font-semibold rounded-md bg-slate-800 text-slate-300 border border-slate-700">{{ item.year }}</span>
+                    {% endif %}
+                    <span class="px-2 py-0.5 text-xs font-bold uppercase rounded-md bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                        {{ item.status.value }}
+                    </span>
+                </div>
+
+                {% if item.overview %}
+                <p class="text-xs text-slate-400 line-clamp-2 mb-3">{{ item.overview }}</p>
+                {% endif %}
+
+                <!-- 4-Way Media Type Switcher & AniList Metadata Reset -->
+                <div class="flex flex-wrap items-center gap-2 pt-1">
+                    <form hx-post="/api/items/{{ item.id }}/change-type" hx-swap="none" class="inline-flex items-center gap-1.5">
+                        <label class="text-[11px] uppercase tracking-wider text-slate-400 font-semibold">Type:</label>
+                        <select name="target_type"
+                                onchange="this.form.requestSubmit()"
+                                class="bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-1 text-xs text-slate-200 focus:outline-none focus:border-indigo-500">
+                            <option value="movie" {% if item.media_type.value == 'movie' and not item.is_anime_movie %}selected{% endif %}>Movie</option>
+                            <option value="series" {% if item.media_type.value in ('show', 'series') %}selected{% endif %}>Series</option>
+                            <option value="anime" {% if item.media_type.value == 'anime' %}selected{% endif %}>Anime Series</option>
+                            <option value="anime-movie" {% if item.media_type.value == 'movie' and item.is_anime_movie %}selected{% endif %}>Anime Movie</option>
+                        </select>
+                    </form>
+
+                    <form hx-post="/items/{{ item.id }}/reset-metadata" hx-swap="none" class="inline-flex">
+                        <button type="submit"
+                                class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs text-slate-300 flex items-center gap-1 transition">
+                            <span>Reset Metadata / AniList</span>
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <div class="p-6 space-y-6">
+            <!-- 2. Chronological Season / Movie & Episode Selection Checkboxes -->
+            {% if item.media_type.value in ('show', 'series', 'anime') or entries %}
+            <div class="bg-slate-950/60 border border-slate-800 rounded-xl p-4 space-y-3">
+                <div class="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                        <h3 class="text-sm font-semibold text-white">Target Seasons / Franchise Movies & Episodes</h3>
+                        <p class="text-xs text-slate-400">Select whole seasons, canon movies, or expand to pick individual episodes.</p>
+                    </div>
+
+                    <!-- Sticky Pack & Auto-Advance Toggles -->
+                    <div class="flex flex-wrap items-center gap-4">
+                        <label class="inline-flex items-center gap-2 cursor-pointer text-xs text-slate-300">
+                            <input type="checkbox" x-model="preferSeasonPacks" class="rounded bg-slate-800 border-slate-600 text-indigo-500 focus:ring-indigo-500">
+                            <span class="font-medium">Prefer Season Pack</span>
+                        </label>
+                        <label class="inline-flex items-center gap-2 cursor-pointer text-xs text-slate-300">
+                            <input type="checkbox" x-model="autoAdvanceSeasons" class="rounded bg-slate-800 border-slate-600 text-indigo-500 focus:ring-indigo-500">
+                            <span class="font-medium">Auto-Advance Seasons</span>
+                        </label>
+                    </div>
+                </div>
+
+                {% if entries %}
+                <div class="max-h-52 overflow-y-auto space-y-2 pr-1">
+                    {% for entry in entries %}
+                    <div class="border border-slate-800/90 rounded-lg bg-slate-900/70 p-2.5">
+                        <div class="flex items-center justify-between gap-2">
+                            <label class="flex items-center gap-2.5 cursor-pointer flex-1 min-w-0">
+                                <input type="checkbox"
+                                       :value="{{ entry.id }}"
+                                       x-model.number="selectedSeasons"
+                                       class="rounded bg-slate-800 border-slate-600 text-indigo-500">
+                                {% if entry.entry_type == 'movie' %}
+                                <span class="px-1.5 py-0.5 text-[10px] font-bold uppercase rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">MOVIE</span>
+                                {% else %}
+                                <span class="px-1.5 py-0.5 text-[10px] font-bold uppercase rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">SEASON</span>
+                                {% endif %}
+                                <span class="text-xs font-semibold text-slate-200 truncate">
+                                    #{{ entry.watch_order }} — {{ entry.title or ('Season ' ~ entry.season_number) }}
+                                </span>
+                            </label>
+
+                            <div class="flex items-center gap-2 shrink-0">
+                                <span class="px-2 py-0.5 text-[10px] font-semibold uppercase rounded bg-slate-800 text-slate-300 border border-slate-700">
+                                    {{ entry.status.value }}
+                                </span>
+                                {% if entry.episodes %}
+                                <button type="button"
+                                        @click="expandedSeasons[{{ entry.id }}] = !expandedSeasons[{{ entry.id }}]"
+                                        class="text-xs text-indigo-400 hover:text-indigo-300 px-2 py-0.5 rounded bg-slate-800/80">
+                                    Episodes ({{ entry.episodes|length }})
+                                </button>
+                                {% endif %}
+                            </div>
+                        </div>
+
+                        {% if entry.episodes %}
+                        <div x-show="expandedSeasons[{{ entry.id }}]" x-cloak class="mt-2.5 pt-2.5 border-t border-slate-800 grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-1.5">
+                            {% for ep in entry.episodes %}
+                            <label class="flex items-center gap-1.5 px-2 py-1 rounded bg-slate-950/70 border border-slate-800 text-[11px] cursor-pointer hover:border-slate-700">
+                                <input type="checkbox"
+                                       :value="{{ ep.id }}"
+                                       x-model.number="selectedEpisodes"
+                                       class="rounded bg-slate-800 border-slate-600 text-indigo-500">
+                                <span class="font-mono text-slate-300">E{{ "%02d"|format(ep.episode_number) }}</span>
+                                <span class="text-[9px] uppercase text-slate-500 ml-auto">{{ ep.status.value[:4] }}</span>
+                            </label>
+                            {% endfor %}
+                        </div>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                </div>
+                {% endif %}
+            </div>
+            {% endif %}
+
+            <!-- 3. Search Preset Selector & Inline Preset Save -->
+            <div class="bg-slate-950/60 border border-slate-800 rounded-xl p-4 space-y-4">
+                <div class="flex flex-wrap items-center justify-between gap-3">
+                    <div class="flex items-center gap-3 flex-1 min-w-[240px]">
+                        <label class="text-xs font-semibold uppercase tracking-wider text-slate-400 shrink-0">Search Preset:</label>
+                        <select x-model="selectedPresetId"
+                                @change="applyPreset(selectedPresetId)"
+                                class="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:border-indigo-500">
+                            {% for preset in presets %}
+                            <option value="{{ preset.id }}">{{ preset.name }}{% if preset.is_default %} ★{% endif %}</option>
+                            {% endfor %}
+                            <option value="custom">Custom Overrides (Unsaved)</option>
+                        </select>
+                    </div>
+
+                    <button type="button"
+                            @click="showSavePresetForm = !showSavePresetForm"
+                            class="text-xs font-medium text-indigo-400 hover:text-indigo-300 px-3 py-1.5 rounded-lg bg-indigo-500/10 border border-indigo-500/20 transition">
+                        Save current config as Preset...
+                    </button>
+                </div>
+
+                <!-- Inline Save Preset Drawer -->
+                <div x-show="showSavePresetForm" x-cloak class="p-3 rounded-lg bg-slate-900 border border-slate-700 flex flex-wrap items-center gap-3">
+                    <input type="text"
+                           x-model="newPresetName"
+                           placeholder="New Preset Name (e.g. 4K Remux DE/EN)"
+                           class="flex-1 min-w-[200px] bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white">
+                    <label class="inline-flex items-center gap-1.5 text-xs text-slate-300 cursor-pointer">
+                        <input type="checkbox" x-model="newPresetDefault" class="rounded bg-slate-800 border-slate-600 text-indigo-500">
+                        <span>Set as Default</span>
+                    </label>
+                    <button type="button"
+                            @click="saveInlinePreset()"
+                            class="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-xs font-semibold text-white">
+                        Save Preset
+                    </button>
+                </div>
+                <div x-show="savePresetNotice" x-cloak class="text-xs text-emerald-400 font-medium" x-text="savePresetNotice"></div>
+
+                <!-- 4. Progressive-Disclosure Quality Controls ("Best" vs "Custom") -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-slate-800/80">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-300 mb-1">Primary Language</label>
+                        <select x-model="primaryLanguage" @change="selectedPresetId = 'custom'"
+                                class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white">
+                            <option value="en">English (en)</option>
+                            <option value="de">German (de)</option>
+                            <option value="ja">Japanese (ja)</option>
+                            <option value="fr">French (fr)</option>
+                            <option value="es">Spanish (es)</option>
+                            <option value="it">Italian (it)</option>
+                            <option value="multi">Multi-Language (multi)</option>
+                            <option value="any">Any Language (any)</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-300 mb-1">Fallback Language</label>
+                        <select x-model="fallbackLanguage" @change="selectedPresetId = 'custom'"
+                                class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white">
+                            <option value="none">None (Strict Primary Only)</option>
+                            <option value="en">English (en)</option>
+                            <option value="de">German (de)</option>
+                            <option value="ja">Japanese (ja)</option>
+                            <option value="fr">French (fr)</option>
+                            <option value="es">Spanish (es)</option>
+                            <option value="it">Italian (it)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Video Quality Mode Toggle -->
+                <div class="space-y-3 pt-2 border-t border-slate-800/80">
+                    <div class="flex items-center justify-between">
+                        <span class="text-xs font-semibold text-slate-200">Video Quality</span>
+                        <div class="inline-flex rounded-lg bg-slate-900 p-0.5 border border-slate-700">
+                            <button type="button"
+                                    @click="switchVideoMode('best')"
+                                    :class="videoQualityMode === 'best' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'"
+                                    class="px-3 py-1 rounded-md text-xs font-semibold transition">
+                                Best (Recommended)
+                            </button>
+                            <button type="button"
+                                    @click="switchVideoMode('custom')"
+                                    :class="videoQualityMode === 'custom' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'"
+                                    class="px-3 py-1 rounded-md text-xs font-semibold transition">
+                                Custom
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Expanded Custom Video Selectors -->
+                    <div x-show="videoQualityMode === 'custom'" x-cloak class="p-3.5 rounded-xl bg-slate-900/90 border border-slate-800 space-y-3">
+                        <div>
+                            <label class="block text-[11px] font-semibold uppercase text-slate-400 mb-1.5">Resolution</label>
+                            <div class="flex flex-wrap gap-1.5">
+                                {% for res_val, res_label in [('2160p', '2160p/4K'), ('1080p', '1080p'), ('720p', '720p')] %}
+                                <button type="button"
+                                        @click="toggleArrayItem(resolutions, '{{ res_val }}')"
+                                        :class="resolutions.includes('{{ res_val }}') ? 'bg-indigo-600/30 border-indigo-500 text-indigo-200' : 'bg-slate-950 border-slate-700 text-slate-400'"
+                                        class="px-2.5 py-1 rounded-lg border text-xs font-medium transition">
+                                    {{ res_label }}
+                                </button>
+                                {% endfor %}
+                            </div>
+                        </div>
+
+                        <div>
+                            <label class="block text-[11px] font-semibold uppercase text-slate-400 mb-1.5">Source Tier</label>
+                            <div class="flex flex-wrap gap-1.5">
+                                {% for src_val, src_label in [('remux', 'Remux'), ('bluray', 'BluRay'), ('web-dl', 'WEB-DL'), ('webrip', 'WEBRip'), ('hdtv', 'HDTV')] %}
+                                <button type="button"
+                                        @click="toggleArrayItem(sources, '{{ src_val }}')"
+                                        :class="sources.includes('{{ src_val }}') ? 'bg-indigo-600/30 border-indigo-500 text-indigo-200' : 'bg-slate-950 border-slate-700 text-slate-400'"
+                                        class="px-2.5 py-1 rounded-lg border text-xs font-medium transition">
+                                    {{ src_label }}
+                                </button>
+                                {% endfor %}
+                            </div>
+                        </div>
+
+                        <div>
+                            <label class="block text-[11px] font-semibold uppercase text-slate-400 mb-1.5">Video Codec / HDR</label>
+                            <div class="flex flex-wrap gap-1.5">
+                                {% for vc_val, vc_label in [('hevc', 'HEVC / H.265'), ('av1', 'AV1'), ('h264', 'AVC / H.264'), ('dv', 'Dolby Vision'), ('hdr10+', 'HDR10+'), ('hdr', 'HDR')] %}
+                                <button type="button"
+                                        @click="toggleArrayItem(videoCodecs, '{{ vc_val }}')"
+                                        :class="videoCodecs.includes('{{ vc_val }}') ? 'bg-indigo-600/30 border-indigo-500 text-indigo-200' : 'bg-slate-950 border-slate-700 text-slate-400'"
+                                        class="px-2.5 py-1 rounded-lg border text-xs font-medium transition">
+                                    {{ vc_label }}
+                                </button>
+                                {% endfor %}
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div>
+                                <label class="block text-[11px] font-semibold text-slate-400 mb-1">Min Size (GB)</label>
+                                <input type="number" step="0.1" min="0" x-model="minSizeGb" @input="selectedPresetId = 'custom'"
+                                       class="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1 text-xs text-white">
+                            </div>
+                            <div>
+                                <label class="block text-[11px] font-semibold text-slate-400 mb-1">Max Size (GB)</label>
+                                <input type="number" step="0.5" min="0" x-model="maxSizeGb" @input="selectedPresetId = 'custom'"
+                                       class="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1 text-xs text-white">
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div>
+                                <label class="block text-[11px] font-semibold text-slate-400 mb-1">Must Contain Keywords</label>
+                                <input type="text" x-model="requiredKeywords" @input="selectedPresetId = 'custom'"
+                                       placeholder="e.g. uncensored, imax"
+                                       class="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1 text-xs text-white">
+                            </div>
+                            <div>
+                                <label class="block text-[11px] font-semibold text-slate-400 mb-1">Ignore / Reject Keywords</label>
+                                <input type="text" x-model="excludedKeywords" @input="selectedPresetId = 'custom'"
+                                       placeholder="e.g. cam, telesync, 3d"
+                                       class="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1 text-xs text-white">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Audio Quality Mode Toggle -->
+                <div class="space-y-3 pt-2 border-t border-slate-800/80">
+                    <div class="flex items-center justify-between">
+                        <span class="text-xs font-semibold text-slate-200">Audio Quality</span>
+                        <div class="inline-flex rounded-lg bg-slate-900 p-0.5 border border-slate-700">
+                            <button type="button"
+                                    @click="audioQualityMode = 'best'"
+                                    :class="audioQualityMode === 'best' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'"
+                                    class="px-3 py-1 rounded-md text-xs font-semibold transition">
+                                Best (Recommended)
+                            </button>
+                            <button type="button"
+                                    @click="audioQualityMode = 'custom'"
+                                    :class="audioQualityMode === 'custom' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'"
+                                    class="px-3 py-1 rounded-md text-xs font-semibold transition">
+                                Custom
+                            </button>
+                        </div>
+                    </div>
+
+                    <div x-show="audioQualityMode === 'custom'" x-cloak class="p-3.5 rounded-xl bg-slate-900/90 border border-slate-800">
+                        <label class="block text-[11px] font-semibold uppercase text-slate-400 mb-1.5">Audio Format</label>
+                        <div class="flex flex-wrap gap-1.5">
+                            {% for af_val, af_label in [('truehd', 'TrueHD Atmos'), ('dts-hd', 'DTS-HD MA / DTS:X'), ('eac3', 'DD+ Atmos / EAC3'), ('flac', 'FLAC / PCM'), ('ac3', 'AC3 / DD 5.1'), ('aac', 'AAC / Stereo')] %}
+                            <button type="button"
+                                    @click="toggleArrayItem(audioFormats, '{{ af_val }}')"
+                                    :class="audioFormats.includes('{{ af_val }}') ? 'bg-indigo-600/30 border-indigo-500 text-indigo-200' : 'bg-slate-950 border-slate-700 text-slate-400'"
+                                    class="px-2.5 py-1 rounded-lg border text-xs font-medium transition">
+                                {{ af_label }}
+                            </button>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 5. Dual Execution Modes & Two-Mode Manual Picker -->
+            <div class="flex flex-wrap items-center justify-end gap-3">
+                <button type="button"
+                        @click="runManualSearch()"
+                        :disabled="isLoadingManual || isLoadingAuto"
+                        class="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-sm font-semibold text-slate-200 flex items-center gap-2 transition">
+                    <span x-show="!isLoadingManual">Search & Pick Manually</span>
+                    <span x-show="isLoadingManual" x-cloak>Searching Indexers...</span>
+                </button>
+
+                <button type="button"
+                        @click="runAutoPush()"
+                        :disabled="isLoadingAuto || isLoadingManual"
+                        class="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-sm font-bold text-white shadow-lg shadow-indigo-600/30 flex items-center gap-2 transition">
+                    <span x-show="!isLoadingAuto">Auto-Push Best</span>
+                    <span x-show="isLoadingAuto" x-cloak>Pushing to TorBox...</span>
+                </button>
+            </div>
+
+            <!-- Status / Feedback Banner -->
+            <div x-show="statusMessage" x-cloak class="p-3 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-xs text-emerald-300 font-medium" x-text="statusMessage"></div>
+            <div x-show="statusError" x-cloak class="p-3 rounded-xl bg-rose-500/15 border border-rose-500/30 text-xs text-rose-300 font-medium" x-text="statusError"></div>
+
+            <!-- Two-Mode Manual Picker Results -->
+            <div x-show="manualResultsLoaded" x-cloak class="space-y-5 pt-3 border-t border-slate-800">
+                <!-- Mode A: Season Packs / Movie Releases (Top Section) -->
+                <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-4 space-y-3">
+                    <div class="flex items-center justify-between">
+                        <h4 class="text-sm font-bold text-white">Season Packs / Movie Releases</h4>
+                        <span class="text-xs text-slate-400" x-text="(packReleases.releases ? packReleases.releases.length : 0) + ' release(s)'"></span>
+                    </div>
+
+                    <!-- Primary Language Releases -->
+                    <div class="space-y-1.5" x-show="packReleases.primary && packReleases.primary.length > 0">
+                        <div class="text-[11px] font-semibold uppercase text-emerald-400">Primary Language Matches</div>
+                        <template x-for="rel in packReleases.primary" :key="rel.guid">
+                            <div class="flex items-center justify-between gap-3 p-2.5 rounded-lg bg-slate-900 border border-slate-800 hover:border-slate-700">
+                                <div class="min-w-0 flex-1">
+                                    <div class="text-xs font-medium text-slate-200 truncate" x-text="rel.title"></div>
+                                    <div class="text-[11px] text-slate-400 flex items-center gap-2 mt-0.5">
+                                        <span class="text-indigo-400 font-semibold" x-text="'Score: ' + rel.score"></span>
+                                        <span x-text="rel.resolution || ''"></span>
+                                        <span x-text="rel.source || ''"></span>
+                                    </div>
+                                </div>
+                                <button type="button"
+                                        @click="grabCandidate(rel, selectedSeasons.length === 1 ? selectedSeasons[0] : null, null)"
+                                        class="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-xs font-semibold text-white shrink-0">
+                                    Grab Release
+                                </button>
+                            </div>
+                        </template>
+                    </div>
+
+                    <!-- Fallback Language Releases -->
+                    <div class="space-y-1.5" x-show="packReleases.fallback && packReleases.fallback.length > 0">
+                        <div class="text-[11px] font-semibold uppercase text-amber-400">Fallback Language Matches</div>
+                        <template x-for="rel in packReleases.fallback" :key="rel.guid">
+                            <div class="flex items-center justify-between gap-3 p-2.5 rounded-lg bg-slate-900 border border-amber-500/30">
+                                <div class="min-w-0 flex-1">
+                                    <div class="text-xs font-medium text-slate-200 truncate" x-text="rel.title"></div>
+                                    <div class="text-[11px] text-amber-300/80 flex items-center gap-2 mt-0.5">
+                                        <span x-text="'Fallback (' + (rel.matched_language || 'fallback') + ') • Score: ' + rel.score"></span>
+                                    </div>
+                                </div>
+                                <button type="button"
+                                        @click="grabCandidate(rel, selectedSeasons.length === 1 ? selectedSeasons[0] : null, null)"
+                                        class="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-xs font-semibold text-white shrink-0">
+                                    Grab Release
+                                </button>
+                            </div>
+                        </template>
+                    </div>
+
+                    <!-- Collapsed Mismatched / Other Languages Section -->
+                    <div x-show="packReleases.mismatched && packReleases.mismatched.length > 0" class="pt-1">
+                        <button type="button"
+                                @click="showMismatchedPacks = !showMismatchedPacks"
+                                class="text-xs text-slate-400 hover:text-slate-300 underline">
+                            Other / Mismatched Languages (<span x-text="packReleases.mismatched.length"></span>)
+                        </button>
+                        <div x-show="showMismatchedPacks" x-cloak class="mt-2 space-y-1.5">
+                            <template x-for="rel in packReleases.mismatched" :key="rel.guid">
+                                <div class="flex items-center justify-between gap-3 p-2 rounded-lg bg-slate-900/50 border border-rose-500/20">
+                                    <span class="text-xs text-slate-400 truncate" x-text="rel.title"></span>
+                                    <button type="button"
+                                            @click="grabCandidate(rel, selectedSeasons.length === 1 ? selectedSeasons[0] : null, null)"
+                                            class="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-xs text-slate-300 shrink-0">
+                                        Grab Anyway
+                                    </button>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Mode B: Episode Accordion (Bottom Section) -->
+                <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-4 space-y-2.5" x-show="episodeAccordions && episodeAccordions.length > 0">
+                    <h4 class="text-sm font-bold text-white">Episode Accordion</h4>
+                    <template x-for="acc in episodeAccordions" :key="acc.episode_id">
+                        <div class="border border-slate-800 rounded-lg bg-slate-900/60 overflow-hidden">
+                            <button type="button"
+                                    @click="openAccordions[acc.episode_id] = !openAccordions[acc.episode_id]"
+                                    class="w-full px-3.5 py-2 flex items-center justify-between text-left hover:bg-slate-800/60">
+                                <span class="text-xs font-semibold text-slate-200"
+                                      x-text="'S' + String(acc.season_number).padStart(2, '0') + 'E' + String(acc.episode_number).padStart(2, '0')"></span>
+                                <span class="text-[11px] text-slate-400" x-text="(acc.releases ? acc.releases.length : 0) + ' candidate(s)'"></span>
+                            </button>
+                            <div x-show="openAccordions[acc.episode_id]" x-cloak class="p-3 border-t border-slate-800 space-y-1.5">
+                                <template x-for="rel in acc.releases" :key="rel.guid">
+                                    <div class="flex items-center justify-between gap-3 p-2 rounded bg-slate-950 border border-slate-800">
+                                        <div class="min-w-0 flex-1">
+                                            <div class="text-xs text-slate-200 truncate" x-text="rel.title"></div>
+                                            <div class="text-[10px] text-slate-400" x-text="'Score: ' + rel.score"></div>
+                                        </div>
+                                        <button type="button"
+                                                @click="grabCandidate(rel, acc.season_id, acc.episode_id)"
+                                                class="px-2.5 py-1 rounded bg-indigo-600 hover:bg-indigo-500 text-xs font-semibold text-white shrink-0">
+                                            Grab Episode
+                                        </button>
+                                    </div>
+                                </template>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

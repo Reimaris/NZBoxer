@@ -30,7 +30,7 @@ from app.db.models import (
     MediaItem,
     MediaStatus,
     MediaType,
-    ProviderProfile,
+    NotificationChannel,
     Season,
     SeasonStatus,
     SeenTorboxDownload,
@@ -357,52 +357,31 @@ async def run_self_healing_cycle(
 
                     if isinstance(target, MediaItem):
                         target.status = MediaStatus.SEARCHING
-                        if hasattr(target, "pending_candidate_json"):
-                            target.pending_candidate_json = None
                         title_for_log = target.title
-                        media_item = target
                     elif isinstance(target, Season):
                         target.status = SeasonStatus.SEARCHING
-                        if hasattr(target, "pending_candidate_json"):
-                            target.pending_candidate_json = None
                         title_for_log = target.media_item.title
-                        media_item = target.media_item
                     else:
                         target.status = EpisodeStatus.SEARCHING
-                        if hasattr(target, "pending_candidate_json"):
-                            target.pending_candidate_json = None
                         title_for_log = f"{target.season.media_item.title} S{target.season.season_number:02d}E{target.episode_number:02d}"
-                        media_item = target.season.media_item
 
-                    profile_stmt = (
-                        select(ProviderProfile)
-                        .where(
-                            ProviderProfile.provider_id == media_item.provider_id,
-                            ProviderProfile.media_type
-                            == (
-                                "movies"
-                                if media_item.media_type == MediaType.MOVIE
-                                else "shows"
-                            ),
-                        )
-                        .options(selectinload(ProviderProfile.notification_channel))
+                    channels = (
+                        (await session.execute(select(NotificationChannel)))
+                        .scalars()
+                        .all()
                     )
-                    profile_res = await session.execute(profile_stmt)
-                    profile = profile_res.scalars().first()
-
-                    if profile and profile.notification_channel:
-                        channel = profile.notification_channel
+                    for channel in channels:
                         if (
                             channel.type == "telegram"
                             and channel.bot_token
                             and channel.chat_id
                         ):
                             if is_stalled:
-                                msg = f"⚠️ <b>Self-Healing Triggered (Timeout)</b>\n\n<b>{title_for_log}</b>\nTorBox download stalled past {download_timeout_hours}h limit.\n<code>{history.nzb_title}</code> has been purged and blacklisted. The next best release will be grabbed on the next cycle."
+                                msg = f"⚠️ <b>Self-Healing Triggered (Timeout)</b>\n\n<b>{title_for_log}</b>\nTorBox download stalled past {download_timeout_hours}h limit.\n<code>{history.nzb_title}</code> has been purged and blacklisted."
                             elif is_unextracted:
-                                msg = f"⚠️ <b>Self-Healing Triggered (Unpack Failure)</b>\n\n<b>{title_for_log}</b>\nTorBox failed to extract archive (only RARs/PAR2).\n<code>{history.nzb_title}</code> has been blacklisted. The next best release will be grabbed on the next cycle."
+                                msg = f"⚠️ <b>Self-Healing Triggered (Unpack Failure)</b>\n\n<b>{title_for_log}</b>\nTorBox failed to extract archive (only RARs/PAR2).\n<code>{history.nzb_title}</code> has been blacklisted."
                             else:
-                                msg = f"⚠️ <b>Self-Healing Triggered</b>\n\n<b>{title_for_log}</b>\nTorBox download failed.\n<code>{history.nzb_title}</code> has been blacklisted. The next best release will be grabbed on the next cycle."
+                                msg = f"⚠️ <b>Self-Healing Triggered</b>\n\n<b>{title_for_log}</b>\nTorBox download failed.\n<code>{history.nzb_title}</code> has been blacklisted."
                             await telegram.send_notification(
                                 msg, token=channel.bot_token, chat_id=channel.chat_id
                             )
@@ -521,12 +500,10 @@ async def run_download_check_cycle(
                 if not tb and history.nzb_title:
                     for tb_item in tb_items.values():
                         tb_name = str(tb_item.get("name") or tb_item.get("title") or "")
-                        # Often TorBox normalizes the name slightly, check substring
                         if tb_name and history.nzb_title.lower() in tb_name.lower():
                             history.torbox_id = str(tb_item.get("id"))
                             tb = tb_item
                             break
-                        # Inverse substring just in case
                         if tb_name and tb_name.lower() in history.nzb_title.lower():
                             history.torbox_id = str(tb_item.get("id"))
                             tb = tb_item
@@ -563,7 +540,6 @@ async def run_download_check_cycle(
                 status_lower = status.lower()
 
                 if status_lower in ("completed", "cached", "paused"):
-                    # Layer 3 Playable Video Verification
                     raw_files = tb_info.get("files") if tb_info else None
                     tb_files: list[Any] = (
                         raw_files
@@ -595,7 +571,7 @@ async def run_download_check_cycle(
                                 title,
                                 int(elapsed),
                             )
-                            return False  # keep DOWNLOADING, not failed yet
+                            return False
 
                         logger.warning(
                             "    ⚠️ %s is completed but lacks playable video past 15m grace (%ss elapsed): %s. Triggering auto-heal.",
@@ -639,7 +615,6 @@ async def run_download_check_cycle(
                                     f"Failed to delete {tb_type} from TorBox: {e}"
                                 )
 
-                            # Purge from SeenTorboxDownload
                             await session.execute(
                                 delete(SeenTorboxDownload).where(
                                     SeenTorboxDownload.torbox_id
@@ -647,50 +622,21 @@ async def run_download_check_cycle(
                                 )
                             )
 
-                        # Revert target status and clear candidate
                         target.status = searching_status
-                        if hasattr(target, "pending_candidate_json"):
-                            target.pending_candidate_json = None
-                        if hasattr(target, "upgrade_attempts_count"):
-                            target.upgrade_attempts_count = 0
 
-                        # Telegram notification if configured
                         try:
-                            media_item = (
-                                target
-                                if isinstance(target, MediaItem)
-                                else (
-                                    target.media_item
-                                    if isinstance(target, Season)
-                                    else target.season.media_item
-                                )
+                            channels = (
+                                (await session.execute(select(NotificationChannel)))
+                                .scalars()
+                                .all()
                             )
-                            profile_stmt = (
-                                select(ProviderProfile)
-                                .where(
-                                    ProviderProfile.provider_id
-                                    == media_item.provider_id,
-                                    ProviderProfile.media_type
-                                    == (
-                                        "movies"
-                                        if media_item.media_type == MediaType.MOVIE
-                                        else "shows"
-                                    ),
-                                )
-                                .options(
-                                    selectinload(ProviderProfile.notification_channel)
-                                )
-                            )
-                            profile_res = await session.execute(profile_stmt)
-                            profile = profile_res.scalars().first()
-                            if profile and profile.notification_channel:
-                                channel = profile.notification_channel
+                            for channel in channels:
                                 if (
                                     channel.type == "telegram"
                                     and channel.bot_token
                                     and channel.chat_id
                                 ):
-                                    msg = f"⚠️ <b>Self-Healing Triggered (Unpack Failure)</b>\n\n<b>{title}</b>\nTorBox failed to extract archive (only RARs/PAR2).\n<code>{history.nzb_title}</code> has been blacklisted. The next best release will be grabbed on the next cycle."
+                                    msg = f"⚠️ <b>Self-Healing Triggered (Unpack Failure)</b>\n\n<b>{title}</b>\nTorBox failed to extract archive (only RARs/PAR2).\n<code>{history.nzb_title}</code> has been blacklisted."
                                     await telegram.send_notification(
                                         msg,
                                         token=channel.bot_token,
@@ -702,7 +648,7 @@ async def run_download_check_cycle(
                                 e,
                             )
 
-                        return True  # mark as failed
+                        return True
 
                     is_completed = (
                         history.score is not None and history.score >= target_score
@@ -779,18 +725,14 @@ async def run_download_check_cycle(
                         except Exception as e:
                             logger.error(f"Failed to delete {tb_type} from TorBox: {e}")
 
-                        # Purge from SeenTorboxDownload
                         await session.execute(
                             delete(SeenTorboxDownload).where(
                                 SeenTorboxDownload.torbox_id == str(history.torbox_id)
                             )
                         )
 
-                    # Revert target status and clear candidate
                     target.status = searching_status
-                    if hasattr(target, "pending_candidate_json"):
-                        target.pending_candidate_json = None
-                    return True  # mark as failed
+                    return True
                 else:
                     logger.info(
                         "    ⏳ %s → still downloading (TorBox: %s)", title, status
@@ -1054,7 +996,6 @@ async def adopt_torbox_downloads_for_video(session) -> None:
                 new_status = MediaStatus.DOWNLOADING
 
             movie.status = new_status
-            movie.empty_search_count = 0
             dh = DownloadHistory(
                 media_item_id=movie.id,
                 nzb_title=best_item.raw_title,
@@ -1116,7 +1057,6 @@ async def adopt_torbox_downloads_for_video(session) -> None:
                 new_season_status = SeasonStatus.DOWNLOADING
 
             season.status = new_season_status
-            season.empty_search_count = 0
 
             # Cascade to episodes
             ep_status = (
@@ -1192,7 +1132,6 @@ async def adopt_torbox_downloads_for_video(session) -> None:
                 new_episode_status = EpisodeStatus.DOWNLOADING
 
             episode.status = new_episode_status
-            episode.empty_search_count = 0
             dh = DownloadHistory(
                 media_item_id=episode.season.media_item_id,
                 season_id=episode.season.id,
@@ -1290,7 +1229,6 @@ async def match_and_adopt_target_from_cache(session, target) -> bool:
                 new_status = MediaStatus.DOWNLOADING
 
             target.status = new_status
-            target.empty_search_count = 0
             dh = DownloadHistory(
                 media_item_id=target.id,
                 nzb_title=best_item.raw_title,
@@ -1368,7 +1306,6 @@ async def match_and_adopt_target_from_cache(session, target) -> bool:
                     new_season_status = SeasonStatus.DOWNLOADING
 
                 season.status = new_season_status
-                season.empty_search_count = 0
 
                 ep_status = (
                     EpisodeStatus.DOWNLOADED
@@ -1451,7 +1388,6 @@ async def match_and_adopt_target_from_cache(session, target) -> bool:
                             new_episode_status = EpisodeStatus.DOWNLOADING
 
                         ep.status = new_episode_status
-                        ep.empty_search_count = 0
                         dh = DownloadHistory(
                             media_item_id=target.id,
                             season_id=season.id,

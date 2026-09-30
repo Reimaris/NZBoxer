@@ -111,7 +111,7 @@ def relative_date(dt: datetime | None) -> str:
         return f"{abs(days)} days ago"
 
 
-APP_VERSION = "2.11.2"
+APP_VERSION = "3.0.0"
 
 
 templates.env.filters["relative_date"] = relative_date
@@ -120,53 +120,25 @@ templates.env.globals["app_version"] = APP_VERSION
 
 
 async def run_orchestrator_tick(now: datetime | None = None) -> None:
-    """Execute scheduled domain tasks aligned to wall-clock intervals.
-
-    State rules:
-    - DISABLED: Halts immediately (no self-healing, download checks, or searches).
-    - PAUSED: Runs Self-Healing & Download Checks on schedule, but skips Video searches.
-    - UPGRADES_ONLY: Runs Self-Healing & Download Checks, and runs Video automation in upgrades-only mode.
-    - ACTIVE: Runs all due domain tasks (Self-Healing/Download Checks, Video Search).
-    """
+    """Execute scheduled domain tasks aligned to wall-clock intervals."""
     from datetime import datetime
 
-    from app.core.automation import (
-        run_automation_cycle,
-        run_periodic_simkl_sync_if_due,
-    )
-    from app.core.automation_state import automation_state_manager
+    from app.core.automation import run_periodic_simkl_sync_if_due
     from app.core.scheduler_utils import is_interval_due
     from app.core.self_healing import run_download_check_cycle, run_self_healing_cycle
-
-    current_state = (
-        settings.automation_state.value
-        if hasattr(settings.automation_state, "value")
-        else str(settings.automation_state)
-    ).lower()
-
-    if current_state == "disabled":
-        logger.info("Automation is DISABLED. Skipping orchestrator cycle.")
-        return
-
-    if automation_state_manager.is_running():
-        logger.info(
-            "⏳ Automation is currently running. Skipping orchestrator tick to prevent concurrent execution."
-        )
-        return
 
     if now is None:
         now = datetime.now()
 
     logger.info(
-        "⏰ Orchestrator clock tick at %s (State: %s)",
+        "⏰ Orchestrator clock tick at %s",
         now.strftime("%Y-%m-%d %H:%M:%S"),
-        current_state,
     )
 
     # 0. Optional Periodic Simkl Watchlist Sync (per provider simkl_config)
     await run_periodic_simkl_sync_if_due(now)
 
-    # 1. Self-Healing & Download Check (Runs in ACTIVE, UPGRADES_ONLY, and PAUSED states)
+    # 1. Self-Healing & Download Check
     if is_interval_due(settings.self_healing_interval, now):
         logger.info(
             "⏰ Running scheduled Self-Healing & Download Check (Interval: %dm)",
@@ -174,25 +146,6 @@ async def run_orchestrator_tick(now: datetime | None = None) -> None:
         )
         await run_self_healing_cycle()
         await run_download_check_cycle()
-
-    if automation_state_manager.is_aborting():
-        logger.info("🛑 Automation abort detected after self-healing. Halting tick.")
-        return
-
-    if current_state == "paused":
-        logger.info("Automation is PAUSED. Skipping Video search automation.")
-        return
-
-    is_upgrades_only = current_state == "upgrades_only"
-
-    # 2. Video Media Automation (Runs in ACTIVE and UPGRADES_ONLY states)
-    if is_interval_due(settings.video_search_interval, now):
-        logger.info(
-            "⏰ Running scheduled Video Automation (Interval: %dm, Upgrades Only: %s)",
-            settings.video_search_interval,
-            is_upgrades_only,
-        )
-        await run_automation_cycle(upgrades_only=is_upgrades_only)
 
 
 @asynccontextmanager
@@ -443,7 +396,6 @@ async def dashboard(request: Request, background_tasks: BackgroundTasks):
             "downloading_count": downloading_count,
             "poller_awake": transfer_poller.is_awake,
             "defaults": defaults,
-            "max_upgrade_attempts": settings.max_upgrade_attempts,
         },
     )
 
@@ -731,43 +683,6 @@ async def manual_search(
     )
 
 
-@app.get("/items/{item_id}", response_class=HTMLResponse)
-async def item_detail(request: Request, item_id: int):
-    """Detailed view for a single item (shows seasons if it's a series)."""
-    from sqlalchemy.orm import selectinload
-
-    from app.db.database import async_session_factory
-    from app.db.models import Episode, MediaItem, Season
-
-    async with async_session_factory() as session:
-        item = await session.get(
-            MediaItem,
-            item_id,
-            options=[
-                selectinload(MediaItem.seasons).selectinload(Season.episodes),
-                selectinload(MediaItem.seasons).selectinload(Season.failure_logs),
-                selectinload(MediaItem.seasons).selectinload(Season.download_history),
-                selectinload(MediaItem.seasons)
-                .selectinload(Season.episodes)
-                .selectinload(Episode.failure_logs),
-                selectinload(MediaItem.seasons)
-                .selectinload(Season.episodes)
-                .selectinload(Episode.download_history),
-                selectinload(MediaItem.download_history),
-                selectinload(MediaItem.failure_logs),
-            ],
-        )
-
-    if not item:
-        return HTMLResponse(content="Item not found", status_code=404)
-
-    return templates.TemplateResponse(
-        request=request,
-        name="item_detail.html",
-        context={"item": item, "max_upgrade_attempts": settings.max_upgrade_attempts},
-    )
-
-
 @app.post("/items/{item_id}/seasons/{season_number}/toggle")
 async def toggle_season(item_id: int, season_number: int):
     """HTMX endpoint to toggle season monitoring status."""
@@ -796,96 +711,6 @@ async def toggle_season(item_id: int, season_number: int):
             )
 
     return HTMLResponse(content="Error", status_code=400)
-
-
-@app.post("/items/{item_id}/seasons/{season_number}/search")
-async def manual_search_season_route(item_id: int, season_number: int):
-    """Manually search and download a whole season synchronously, bypassing episode batch limits."""
-    from app.core.automation import manual_search_season
-    from app.core.search_lock import create_conflict_response, item_lock_manager
-    from app.db.database import async_session_factory
-
-    if not item_lock_manager.try_acquire(item_id):
-        owner = item_lock_manager.get_lock_owner(item_id)
-        msg = (
-            "Background automation is currently searching this show. Please wait."
-            if owner == "background"
-            else "A search is already in progress for this show. Please wait for it to complete."
-        )
-        return create_conflict_response(msg)
-
-    try:
-        async with async_session_factory() as session:
-            await manual_search_season(session, item_id, season_number)
-            return HTMLResponse(content="<script>window.location.reload();</script>")
-    finally:
-        item_lock_manager.release(item_id)
-
-
-@app.post("/episodes/{episode_id}/search")
-async def manual_search_episode_route(episode_id: int):
-    """Manually search and download a single episode synchronously."""
-    from sqlalchemy import select
-
-    from app.core.automation import manual_search_episode
-    from app.core.search_lock import create_conflict_response, item_lock_manager
-    from app.db.database import async_session_factory
-    from app.db.models import Episode, Season
-
-    async with async_session_factory() as session:
-        stmt = (
-            select(Season.media_item_id)
-            .join(Episode, Episode.season_id == Season.id)
-            .where(Episode.id == episode_id)
-        )
-        media_item_id = (await session.execute(stmt)).scalar_one_or_none()
-
-    if media_item_id is not None:
-        if not item_lock_manager.try_acquire(media_item_id):
-            owner = item_lock_manager.get_lock_owner(media_item_id)
-            msg = (
-                "Background automation is currently searching this show. Please wait."
-                if owner == "background"
-                else "A search is already in progress for this show. Please wait for it to complete."
-            )
-            return create_conflict_response(msg)
-        try:
-            async with async_session_factory() as session:
-                await manual_search_episode(session, episode_id)
-                return HTMLResponse(
-                    content="<script>window.location.reload();</script>"
-                )
-        finally:
-            item_lock_manager.release(media_item_id)
-    else:
-        async with async_session_factory() as session:
-            await manual_search_episode(session, episode_id)
-            # We reload the page in both cases so the user sees the updated status (completed/downloaded or failed + fail_count)
-            return HTMLResponse(content="<script>window.location.reload();</script>")
-
-
-@app.post("/items/{item_id}/search")
-async def manual_search_movie_route(item_id: int):
-    """Manually search and download a single movie synchronously."""
-    from app.core.automation import manual_search_movie
-    from app.core.search_lock import create_conflict_response, item_lock_manager
-    from app.db.database import async_session_factory
-
-    if not item_lock_manager.try_acquire(item_id):
-        owner = item_lock_manager.get_lock_owner(item_id)
-        msg = (
-            "Background automation is currently searching this movie. Please wait."
-            if owner == "background"
-            else "A search is already in progress for this movie. Please wait for it to complete."
-        )
-        return create_conflict_response(msg)
-
-    try:
-        async with async_session_factory() as session:
-            await manual_search_movie(session, item_id)
-            return HTMLResponse(content="<script>window.location.reload();</script>")
-    finally:
-        item_lock_manager.release(item_id)
 
 
 @app.post("/items/{item_id}/refresh_metadata")
@@ -999,634 +824,6 @@ async def retry_item(item_id: int):
             await session.commit()
             return HTMLResponse(content="<script>window.location.reload();</script>")
     return HTMLResponse(content="Error", status_code=400)
-
-
-@app.post("/items/{item_id}/confirm_grab")
-async def confirm_grab_item(item_id: int):
-    """Manually confirm and send the pending_candidate_json to TorBox for a MANUAL_GRAB item."""
-    from app.core.automation import increment_today_grab_count
-    from app.core.fake_detector import is_nzb_content_fake
-    from app.db.database import async_session_factory
-    from app.db.models import (
-        BlacklistedRelease,
-        DownloadHistory,
-        MediaItem,
-        MediaStatus,
-    )
-    from app.services import torbox, treasure_maps
-
-    async with async_session_factory() as session:
-        item = await session.get(MediaItem, item_id)
-        if not item or not item.pending_candidate_json:
-            logger.warning(
-                "confirm_grab_item called on item %s with no pending candidate", item_id
-            )
-            return HTMLResponse(
-                content='<div class="text-red-500">No pending candidate found.</div>',
-                status_code=400,
-            )
-
-        candidate = item.pending_candidate_json
-        guid = candidate.get("guid", "")
-        title = candidate.get("title", "")
-        indexer_url = candidate.get("indexer_url")
-        indexer_key = candidate.get("indexer_key")
-
-        logger.info(
-            "📥 [Manual Grab] Confirming movie grab for '%s' (%s) [guid=%s]",
-            item.title,
-            title,
-            guid,
-        )
-
-        try:
-            nzb_bytes, filename = await treasure_maps.fetch_nzb_bytes(
-                guid,
-                api_url=indexer_url,
-                api_key=indexer_key,
-                session=session,
-            )
-            is_fake, fake_reason = is_nzb_content_fake(nzb_bytes, media_type="movie")
-            if is_fake:
-                err_msg = f"NZB flagged as fake/executable: {fake_reason}"
-                logger.warning(
-                    "🚫 [Manual Grab] Rejected movie '%s': %s", title, err_msg
-                )
-                bl = BlacklistedRelease(
-                    media_item_id=item.id,
-                    nzb_guid=guid,
-                    nzb_title=title,
-                    reason=err_msg,
-                )
-                session.add(bl)
-                item.status = MediaStatus.SEARCHING
-                item.pending_candidate_json = None
-                item.last_error = err_msg
-                await session.commit()
-                return HTMLResponse(
-                    content=f'<div class="text-red-500">{err_msg}</div>',
-                    status_code=400,
-                    headers={"HX-Refresh": "true"},
-                )
-
-            torbox_result = await torbox.send_nzb_file(
-                nzb_bytes, filename=filename, session=session, is_manual=True
-            )
-        except treasure_maps.IndexerError as e:
-            logger.error(
-                "❌ [Manual Grab] Indexer error fetching NZB for '%s': %s", title, e
-            )
-            return HTMLResponse(
-                content=f'<div class="text-red-500">NZB Download Error: {e}</div>',
-                status_code=500,
-            )
-        except Exception as e:
-            logger.error(
-                "❌ [Manual Grab] Unexpected error grabbing movie '%s': %s",
-                title,
-                e,
-                exc_info=True,
-            )
-            return HTMLResponse(
-                content=f'<div class="text-red-500">Error: {e}</div>',
-                status_code=500,
-            )
-
-        if not torbox_result or (
-            not torbox_result.get("hash") and not torbox_result.get("id")
-        ):
-            err_msg = str(
-                torbox_result.get("error")
-                if isinstance(torbox_result, dict) and torbox_result.get("error")
-                else "Error sending to TorBox."
-            )
-            logger.error(
-                "❌ [Manual Grab] TorBox dispatch failed for '%s': %s", title, err_msg
-            )
-
-            return HTMLResponse(
-                content=f'<div class="text-red-500">{err_msg}</div>',
-                status_code=500,
-            )
-
-        logger.info(
-            "✅ [Manual Grab] Dispatched '%s' to TorBox successfully (id=%s, hash=%s)",
-            title,
-            torbox_result.get("id"),
-            torbox_result.get("hash"),
-        )
-        await increment_today_grab_count(session)
-        history = DownloadHistory(
-            media_item_id=item.id,
-            nzb_title=title,
-            nzb_guid=guid,
-            score=candidate.get("score"),
-            size_bytes=candidate.get("size_bytes"),
-            resolution=candidate.get("resolution"),
-            source=candidate.get("source"),
-            release_group=candidate.get("release_group"),
-            torbox_hash=str(torbox_result.get("hash"))
-            if torbox_result.get("hash")
-            else None,
-            torbox_id=str(torbox_result.get("id")) if torbox_result.get("id") else None,
-        )
-        session.add(history)
-        item.status = MediaStatus.DOWNLOADING
-        item.pending_candidate_json = None
-        item.fail_count = 0
-        item.last_error = None
-        await session.commit()
-        return HTMLResponse(
-            content="<script>window.location.reload();</script>",
-            headers={"HX-Refresh": "true"},
-        )
-
-
-@app.post("/items/{item_id}/decline_grab")
-async def decline_grab_item(item_id: int):
-    """Manually decline and blacklist the pending_candidate_json for a MANUAL_GRAB movie item."""
-    from app.db.database import async_session_factory
-    from app.db.models import BlacklistedRelease, MediaItem, MediaStatus
-
-    async with async_session_factory() as session:
-        item = await session.get(MediaItem, item_id)
-        if not item or not item.pending_candidate_json:
-            return HTMLResponse(
-                content='<div class="text-red-500">No pending candidate found.</div>',
-                status_code=400,
-            )
-
-        candidate = item.pending_candidate_json
-        title = candidate.get("title", "")
-        guid = candidate.get("guid")
-        logger.info(
-            "🚫 [Manual Grab] User declined candidate '%s' for item %s", title, item_id
-        )
-        bl = BlacklistedRelease(
-            media_item_id=item.id,
-            nzb_title=title,
-            nzb_guid=guid,
-            reason="Manually declined by user",
-        )
-        session.add(bl)
-        item.status = MediaStatus.SEARCHING
-        item.pending_candidate_json = None
-        item.fail_count = 0
-        item.last_error = None
-        await session.commit()
-        return HTMLResponse(
-            content="<script>window.location.reload();</script>",
-            headers={"HX-Refresh": "true"},
-        )
-
-
-@app.post("/items/{item_id}/seasons/{season_number}/confirm_grab")
-async def confirm_grab_season(item_id: int, season_number: int):
-    """Manually confirm and send season pack pending candidate to TorBox."""
-    from sqlalchemy import select
-
-    from app.core.automation import increment_today_grab_count
-    from app.core.fake_detector import is_nzb_content_fake
-    from app.db.database import async_session_factory
-    from app.db.models import (
-        BlacklistedRelease,
-        DownloadHistory,
-        Episode,
-        EpisodeStatus,
-        Season,
-        SeasonStatus,
-    )
-    from app.services import torbox, treasure_maps
-
-    async with async_session_factory() as session:
-        stmt = select(Season).where(
-            Season.media_item_id == item_id,
-            Season.season_number == season_number,
-        )
-        season = (await session.execute(stmt)).scalars().first()
-        if not season or not season.pending_candidate_json:
-            logger.warning(
-                "confirm_grab_season called on item %s S%s with no pending candidate",
-                item_id,
-                season_number,
-            )
-            return HTMLResponse(
-                content='<div class="text-red-500">No pending candidate found.</div>',
-                status_code=400,
-            )
-
-        candidate = season.pending_candidate_json
-        guid = candidate.get("guid", "")
-        title = candidate.get("title", "")
-        indexer_url = candidate.get("indexer_url")
-        indexer_key = candidate.get("indexer_key")
-
-        logger.info(
-            "📥 [Manual Grab] Confirming season pack grab for item %s S%s: '%s' [guid=%s]",
-            item_id,
-            season_number,
-            title,
-            guid,
-        )
-
-        try:
-            nzb_bytes, filename = await treasure_maps.fetch_nzb_bytes(
-                guid,
-                api_url=indexer_url,
-                api_key=indexer_key,
-                session=session,
-            )
-            is_fake, fake_reason = is_nzb_content_fake(nzb_bytes, media_type="episode")
-            if is_fake:
-                err_msg = f"NZB flagged as fake/executable: {fake_reason}"
-                logger.warning(
-                    "🚫 [Manual Grab] Rejected season pack '%s': %s", title, err_msg
-                )
-                bl = BlacklistedRelease(
-                    media_item_id=item_id,
-                    nzb_guid=guid,
-                    nzb_title=title,
-                    reason=err_msg,
-                )
-                session.add(bl)
-                season.status = (
-                    SeasonStatus.SEARCHING if season.monitored else SeasonStatus.PENDING
-                )
-                season.pending_candidate_json = None
-                season.last_error = err_msg
-                await session.commit()
-                return HTMLResponse(
-                    content=f'<div class="text-red-500">{err_msg}</div>',
-                    status_code=400,
-                    headers={"HX-Refresh": "true"},
-                )
-
-            torbox_result = await torbox.send_nzb_file(
-                nzb_bytes, filename=filename, session=session, is_manual=True
-            )
-        except treasure_maps.IndexerError as e:
-            logger.error(
-                "❌ [Manual Grab] Indexer error fetching NZB for season '%s': %s",
-                title,
-                e,
-            )
-            return HTMLResponse(
-                content=f'<div class="text-red-500">NZB Download Error: {e}</div>',
-                status_code=500,
-            )
-        except Exception as e:
-            logger.error(
-                "❌ [Manual Grab] Unexpected error grabbing season '%s': %s",
-                title,
-                e,
-                exc_info=True,
-            )
-            return HTMLResponse(
-                content=f'<div class="text-red-500">Error: {e}</div>',
-                status_code=500,
-            )
-
-        if not torbox_result or (
-            not torbox_result.get("hash") and not torbox_result.get("id")
-        ):
-            err_msg = str(
-                torbox_result.get("error")
-                if isinstance(torbox_result, dict) and torbox_result.get("error")
-                else "Error sending to TorBox."
-            )
-            logger.error(
-                "❌ [Manual Grab] TorBox dispatch failed for season '%s': %s",
-                title,
-                err_msg,
-            )
-
-            return HTMLResponse(
-                content=f'<div class="text-red-500">{err_msg}</div>',
-                status_code=500,
-            )
-
-        logger.info(
-            "✅ [Manual Grab] Dispatched season '%s' to TorBox successfully (id=%s, hash=%s)",
-            title,
-            torbox_result.get("id"),
-            torbox_result.get("hash"),
-        )
-        await increment_today_grab_count(session)
-        history = DownloadHistory(
-            media_item_id=item_id,
-            season_id=season.id,
-            nzb_title=title,
-            nzb_guid=guid,
-            score=candidate.get("score"),
-            size_bytes=candidate.get("size_bytes"),
-            resolution=candidate.get("resolution"),
-            source=candidate.get("source"),
-            release_group=candidate.get("release_group"),
-            torbox_hash=str(torbox_result.get("hash"))
-            if torbox_result.get("hash")
-            else None,
-            torbox_id=str(torbox_result.get("id")) if torbox_result.get("id") else None,
-        )
-        session.add(history)
-        season.status = SeasonStatus.DOWNLOADING
-        season.pending_candidate_json = None
-        season.fail_count = 0
-        season.last_error = None
-
-        # Update child episodes
-        ep_stmt = select(Episode).where(Episode.season_id == season.id)
-        episodes = (await session.execute(ep_stmt)).scalars().all()
-        for ep in episodes:
-            if ep.monitored or ep.status == EpisodeStatus.MANUAL_GRAB:
-                ep.status = EpisodeStatus.DOWNLOADING
-                ep.pending_candidate_json = None
-                ep.fail_count = 0
-                ep.last_error = None
-
-        await session.commit()
-        return HTMLResponse(
-            content="<script>window.location.reload();</script>",
-            headers={"HX-Refresh": "true"},
-        )
-
-
-@app.post("/items/{item_id}/seasons/{season_number}/decline_grab")
-async def decline_grab_season(item_id: int, season_number: int):
-    """Manually decline and blacklist season pack candidate."""
-    from sqlalchemy import select
-
-    from app.db.database import async_session_factory
-    from app.db.models import (
-        BlacklistedRelease,
-        Episode,
-        EpisodeStatus,
-        Season,
-        SeasonStatus,
-    )
-
-    async with async_session_factory() as session:
-        stmt = select(Season).where(
-            Season.media_item_id == item_id,
-            Season.season_number == season_number,
-        )
-        season = (await session.execute(stmt)).scalars().first()
-        if not season or not season.pending_candidate_json:
-            return HTMLResponse(
-                content='<div class="text-red-500">No pending candidate found.</div>',
-                status_code=400,
-            )
-
-        candidate = season.pending_candidate_json
-        title = candidate.get("title", "")
-        guid = candidate.get("guid")
-        logger.info(
-            "🚫 [Manual Grab] User declined season candidate '%s' for item %s S%s",
-            title,
-            item_id,
-            season_number,
-        )
-        bl = BlacklistedRelease(
-            media_item_id=item_id,
-            nzb_title=title,
-            nzb_guid=guid,
-            reason="Manually declined by user",
-        )
-        session.add(bl)
-        season.status = (
-            SeasonStatus.SEARCHING if season.monitored else SeasonStatus.PENDING
-        )
-        season.pending_candidate_json = None
-        season.fail_count = 0
-        season.last_error = None
-
-        # Clear child episodes if they had this candidate
-        ep_stmt = select(Episode).where(Episode.season_id == season.id)
-        episodes = (await session.execute(ep_stmt)).scalars().all()
-        for ep in episodes:
-            if ep.status == EpisodeStatus.MANUAL_GRAB:
-                ep.status = (
-                    EpisodeStatus.SEARCHING if ep.monitored else EpisodeStatus.PENDING
-                )
-                ep.pending_candidate_json = None
-                ep.fail_count = 0
-                ep.last_error = None
-
-        await session.commit()
-        return HTMLResponse(
-            content="<script>window.location.reload();</script>",
-            headers={"HX-Refresh": "true"},
-        )
-
-
-@app.post("/episodes/{episode_id}/confirm_grab")
-async def confirm_grab_episode(episode_id: int):
-    """Manually confirm and send episode pending candidate to TorBox."""
-    from sqlalchemy import select
-    from sqlalchemy.orm import selectinload
-
-    from app.core.automation import increment_today_grab_count
-    from app.core.fake_detector import is_nzb_content_fake
-    from app.db.database import async_session_factory
-    from app.db.models import (
-        BlacklistedRelease,
-        DownloadHistory,
-        Episode,
-        EpisodeStatus,
-    )
-    from app.services import torbox, treasure_maps
-
-    async with async_session_factory() as session:
-        stmt = (
-            select(Episode)
-            .where(Episode.id == episode_id)
-            .options(selectinload(Episode.season))
-        )
-        episode = (await session.execute(stmt)).scalars().first()
-        if not episode or not episode.pending_candidate_json:
-            logger.warning(
-                "confirm_grab_episode called on episode %s with no pending candidate",
-                episode_id,
-            )
-            return HTMLResponse(
-                content='<div class="text-red-500">No pending candidate found.</div>',
-                status_code=400,
-            )
-
-        candidate = episode.pending_candidate_json
-        guid = candidate.get("guid", "")
-        title = candidate.get("title", "")
-        indexer_url = candidate.get("indexer_url")
-        indexer_key = candidate.get("indexer_key")
-
-        logger.info(
-            "📥 [Manual Grab] Confirming episode grab for ep %s: '%s' [guid=%s]",
-            episode_id,
-            title,
-            guid,
-        )
-
-        try:
-            nzb_bytes, filename = await treasure_maps.fetch_nzb_bytes(
-                guid,
-                api_url=indexer_url,
-                api_key=indexer_key,
-                session=session,
-            )
-            is_fake, fake_reason = is_nzb_content_fake(nzb_bytes, media_type="episode")
-            if is_fake:
-                media_item_id = episode.season.media_item_id if episode.season else None
-                err_msg = f"NZB flagged as fake/executable: {fake_reason}"
-                logger.warning(
-                    "🚫 [Manual Grab] Rejected episode '%s': %s", title, err_msg
-                )
-                bl = BlacklistedRelease(
-                    media_item_id=media_item_id,
-                    nzb_guid=guid,
-                    nzb_title=title,
-                    reason=err_msg,
-                )
-                session.add(bl)
-                episode.status = (
-                    EpisodeStatus.SEARCHING
-                    if episode.monitored
-                    else EpisodeStatus.PENDING
-                )
-                episode.pending_candidate_json = None
-                episode.last_error = err_msg
-                await session.commit()
-                return HTMLResponse(
-                    content=f'<div class="text-red-500">{err_msg}</div>',
-                    status_code=400,
-                    headers={"HX-Refresh": "true"},
-                )
-
-            torbox_result = await torbox.send_nzb_file(
-                nzb_bytes, filename=filename, session=session, is_manual=True
-            )
-        except treasure_maps.IndexerError as e:
-            logger.error(
-                "❌ [Manual Grab] Indexer error fetching NZB for ep '%s': %s", title, e
-            )
-            return HTMLResponse(
-                content=f'<div class="text-red-500">NZB Download Error: {e}</div>',
-                status_code=500,
-            )
-        except Exception as e:
-            logger.error(
-                "❌ [Manual Grab] Unexpected error grabbing ep '%s': %s",
-                title,
-                e,
-                exc_info=True,
-            )
-            return HTMLResponse(
-                content=f'<div class="text-red-500">Error: {e}</div>',
-                status_code=500,
-            )
-
-        if not torbox_result or (
-            not torbox_result.get("hash") and not torbox_result.get("id")
-        ):
-            err_msg = str(
-                torbox_result.get("error")
-                if isinstance(torbox_result, dict) and torbox_result.get("error")
-                else "Error sending to TorBox."
-            )
-            logger.error(
-                "❌ [Manual Grab] TorBox dispatch failed for ep '%s': %s",
-                title,
-                err_msg,
-            )
-
-            return HTMLResponse(
-                content=f'<div class="text-red-500">{err_msg}</div>',
-                status_code=500,
-            )
-
-        logger.info(
-            "✅ [Manual Grab] Dispatched ep '%s' to TorBox successfully (id=%s, hash=%s)",
-            title,
-            torbox_result.get("id"),
-            torbox_result.get("hash"),
-        )
-        await increment_today_grab_count(session)
-        media_item_id = episode.season.media_item_id if episode.season else None
-        history = DownloadHistory(
-            media_item_id=media_item_id,
-            season_id=episode.season_id,
-            episode_id=episode.id,
-            nzb_title=title,
-            nzb_guid=guid,
-            score=candidate.get("score"),
-            size_bytes=candidate.get("size_bytes"),
-            resolution=candidate.get("resolution"),
-            source=candidate.get("source"),
-            release_group=candidate.get("release_group"),
-            torbox_hash=str(torbox_result.get("hash"))
-            if torbox_result.get("hash")
-            else None,
-            torbox_id=str(torbox_result.get("id")) if torbox_result.get("id") else None,
-        )
-        session.add(history)
-        episode.status = EpisodeStatus.DOWNLOADING
-        episode.pending_candidate_json = None
-        episode.fail_count = 0
-        episode.last_error = None
-        await session.commit()
-        return HTMLResponse(
-            content="<script>window.location.reload();</script>",
-            headers={"HX-Refresh": "true"},
-        )
-
-
-@app.post("/episodes/{episode_id}/decline_grab")
-async def decline_grab_episode(episode_id: int):
-    """Manually decline and blacklist episode candidate."""
-    from sqlalchemy import select
-    from sqlalchemy.orm import selectinload
-
-    from app.db.database import async_session_factory
-    from app.db.models import BlacklistedRelease, Episode, EpisodeStatus
-
-    async with async_session_factory() as session:
-        stmt = (
-            select(Episode)
-            .where(Episode.id == episode_id)
-            .options(selectinload(Episode.season))
-        )
-        episode = (await session.execute(stmt)).scalars().first()
-        if not episode or not episode.pending_candidate_json:
-            return HTMLResponse(
-                content='<div class="text-red-500">No pending candidate found.</div>',
-                status_code=400,
-            )
-
-        candidate = episode.pending_candidate_json
-        title = candidate.get("title", "")
-        guid = candidate.get("guid")
-        logger.info(
-            "🚫 [Manual Grab] User declined candidate '%s' for episode %s",
-            title,
-            episode_id,
-        )
-        media_item_id = episode.season.media_item_id if episode.season else None
-        bl = BlacklistedRelease(
-            media_item_id=media_item_id,
-            nzb_title=title,
-            nzb_guid=guid,
-            reason="Manually declined by user",
-        )
-        session.add(bl)
-        episode.status = (
-            EpisodeStatus.SEARCHING if episode.monitored else EpisodeStatus.PENDING
-        )
-        episode.pending_candidate_json = None
-        episode.fail_count = 0
-        episode.last_error = None
-        await session.commit()
-        return HTMLResponse(
-            content="<script>window.location.reload();</script>",
-            headers={"HX-Refresh": "true"},
-        )
 
 
 @app.post("/api/torbox/add", response_class=HTMLResponse)
@@ -1770,11 +967,9 @@ async def change_type_endpoint(
                 item.is_anime_movie = False
 
             # 3. Search Resets
-            item.empty_search_count = 0
             item.last_searched_at = None
             if target_is_series:
                 for s in item.seasons:
-                    s.empty_search_count = 0
                     s.last_searched_at = None
 
             await session.commit()
@@ -1829,59 +1024,6 @@ async def delete_item(item_id: int):
     return HTMLResponse(content="Error", status_code=400)
 
 
-@app.post("/api/automation/state")
-async def set_automation_state(state: str = Form(...)):
-    """Set the global automation state."""
-    from sqlalchemy import select
-
-    from app.config import reload_settings_from_db
-    from app.db.database import async_session_factory
-    from app.db.models import AutomationState, SystemSettings
-
-    valid_states = {
-        "active": AutomationState.ACTIVE,
-        "upgrades_only": AutomationState.UPGRADES_ONLY,
-        "paused": AutomationState.PAUSED,
-        "disabled": AutomationState.DISABLED,
-    }
-    if state not in valid_states:
-        return HTMLResponse(
-            content='<div class="text-red-500">Invalid state</div>', status_code=400
-        )
-
-    target_enum = valid_states[state]
-    if target_enum in (AutomationState.PAUSED, AutomationState.DISABLED):
-        from app.core.automation_state import automation_state_manager
-
-        automation_state_manager.request_abort()
-
-    import asyncio
-
-    from sqlalchemy.exc import OperationalError
-
-    for attempt in range(5):
-        try:
-            async with async_session_factory() as session:
-                stmt = select(SystemSettings).where(SystemSettings.id == 1)
-                db_settings = (await session.execute(stmt)).scalars().first()
-                if db_settings:
-                    db_settings.automation_state = target_enum
-                    await session.commit()
-                    await reload_settings_from_db(session)
-            break
-        except OperationalError as e:
-            if "database is locked" in str(e).lower() and attempt < 4:
-                logger.warning(
-                    "Database locked while updating automation state, retrying (attempt %d/5)...",
-                    attempt + 1,
-                )
-                await asyncio.sleep(0.5 * (attempt + 1))
-            else:
-                raise
-
-    return HTMLResponse(content="<script>window.location.reload();</script>")
-
-
 @app.get("/api/status")
 async def get_status():
     """Health check and scheduler status."""
@@ -1901,7 +1043,6 @@ async def get_status():
 async def get_settings_page(request: Request):
     """Render the settings form."""
     from sqlalchemy import select
-    from sqlalchemy.orm import selectinload
 
     from app.db.models import (
         BlacklistedRelease,
@@ -1914,15 +1055,7 @@ async def get_settings_page(request: Request):
         stmt = select(SystemSettings).where(SystemSettings.id == 1)
         db_settings = (await session.execute(stmt)).scalars().first()
 
-        providers = (
-            (
-                await session.execute(
-                    select(Provider).options(selectinload(Provider.profiles))
-                )
-            )
-            .scalars()
-            .all()
-        )
+        providers = (await session.execute(select(Provider))).scalars().all()
         notifications = (
             (await session.execute(select(NotificationChannel))).scalars().all()
         )
@@ -1969,9 +1102,9 @@ async def export_settings():
     """Export all settings as a JSON file."""
     from fastapi.responses import JSONResponse
     from sqlalchemy import select
-    from sqlalchemy.orm import selectinload
 
     from app.db.models import NotificationChannel, Provider, SystemSettings
+    from app.services.preset_service import list_presets
 
     async with async_session_factory() as session:
         # Get SystemSettings
@@ -1986,9 +1119,6 @@ async def export_settings():
                 "scan_interval_multiplier": db_settings.scan_interval_multiplier,
                 "self_healing_interval": getattr(
                     db_settings, "self_healing_interval", 15
-                ),
-                "video_search_interval": getattr(
-                    db_settings, "video_search_interval", 60
                 ),
                 "sh_max_retries": db_settings.sh_max_retries,
                 "sh_max_time_hours": db_settings.sh_max_time_hours,
@@ -2016,36 +1146,8 @@ async def export_settings():
 
         # Get Providers
         providers_list = []
-        providers = (
-            (
-                await session.execute(
-                    select(Provider).options(selectinload(Provider.profiles))
-                )
-            )
-            .scalars()
-            .all()
-        )
+        providers = (await session.execute(select(Provider))).scalars().all()
         for p in providers:
-            profiles = []
-            for prof in p.profiles:
-                profiles.append(
-                    {
-                        "media_type": prof.media_type,
-                        "path": prof.path,
-                        "mode": prof.mode,
-                        "search_cycle_skip": getattr(prof, "search_cycle_skip", 1),
-                        "resolution": prof.resolution,
-                        "languages_csv": prof.languages_csv,
-                        "primary_language": getattr(prof, "primary_language", None),
-                        "fallback_language": getattr(prof, "fallback_language", None),
-                        "min_mb": prof.min_mb,
-                        "max_mb": prof.max_mb,
-                        "reject_words_csv": prof.reject_words_csv,
-                        "prefer_complete_seasons": prof.prefer_complete_seasons,
-                        "episode_block_size": prof.episode_block_size,
-                        "notification_channel_id": prof.notification_channel_id,
-                    }
-                )
             providers_list.append(
                 {
                     "name": p.name,
@@ -2057,9 +1159,11 @@ async def export_settings():
                     "series_category_id": p.series_category_id,
                     "bandwidth_mbit": p.bandwidth_mbit,
                     "config_json": getattr(p, "config_json", "{}"),
-                    "profiles": profiles,
                 }
             )
+
+        presets = await list_presets(session)
+        presets_list = [pr.to_dict() for pr in presets]
 
         # Get Notifications
         notif_list = []
@@ -2077,9 +1181,10 @@ async def export_settings():
             )
 
         export_data = {
-            "version": 1,
+            "version": 3,
             "system_settings": settings_dict,
             "providers": providers_list,
+            "presets": presets_list,
             "notifications": notif_list,
         }
 
@@ -2096,19 +1201,13 @@ async def save_global_settings(
     request: Request,
     scan_interval_multiplier: int = Form(1),
     self_healing_interval: int = Form(15),
-    video_search_interval: int = Form(60),
-    upgrade_search_interval_hours: int = Form(24),
     download_timeout_hours: int = Form(24),
     sh_max_retries: int = Form(3),
     sh_max_time_hours: float = Form(12.0),
     sh_auto_retry: bool = Form(True),
     sh_retry_wait_hours: float = Form(24.0),
-    max_upgrade_attempts: int = Form(7),
     dry_run: bool = Form(False),
-    auto_grab_title_fallbacks: bool = Form(False),
     upgrade_threshold: int = Form(500),
-    backoff_tier2_skip: int = Form(6),
-    backoff_tier3_skip: int = Form(24),
 ):
     import copy
 
@@ -2123,8 +1222,6 @@ async def save_global_settings(
     # Validate interval presets
     if self_healing_interval not in VALID_INTERVAL_PRESETS:
         self_healing_interval = 15
-    if video_search_interval not in VALID_INTERVAL_PRESETS:
-        video_search_interval = 60
 
     if download_timeout_hours < 1 or download_timeout_hours > 168:
         download_timeout_hours = 24
@@ -2136,19 +1233,13 @@ async def save_global_settings(
         if db_settings:
             db_settings.scan_interval_multiplier = scan_interval_multiplier
             db_settings.self_healing_interval = self_healing_interval
-            db_settings.video_search_interval = video_search_interval
-            db_settings.upgrade_search_interval_hours = upgrade_search_interval_hours
             db_settings.download_timeout_hours = download_timeout_hours
             db_settings.sh_max_retries = sh_max_retries
             db_settings.sh_max_time_hours = sh_max_time_hours
             db_settings.sh_auto_retry = sh_auto_retry
             db_settings.sh_retry_wait_hours = sh_retry_wait_hours
-            db_settings.max_upgrade_attempts = max_upgrade_attempts
             db_settings.dry_run = dry_run
-            db_settings.auto_grab_title_fallbacks = auto_grab_title_fallbacks
             db_settings.upgrade_threshold = upgrade_threshold
-            db_settings.backoff_tier2_skip = backoff_tier2_skip
-            db_settings.backoff_tier3_skip = backoff_tier3_skip
 
             if "discord_webhook_url" in form_data:
                 raw_url = str(form_data.get("discord_webhook_url") or "").strip()
@@ -2249,16 +1340,13 @@ async def save_global_settings(
 @app.get("/settings/provider/{provider_id}/edit", response_class=HTMLResponse)
 async def provider_modal(request: Request, provider_id: int | None = None):
     from sqlalchemy import select
-    from sqlalchemy.orm import selectinload
 
     from app.db.models import NotificationChannel, Provider
 
     async with async_session_factory() as session:
         provider = None
         if provider_id:
-            provider = await session.get(
-                Provider, provider_id, options=[selectinload(Provider.profiles)]
-            )
+            provider = await session.get(Provider, provider_id)
 
         notifications = (
             (await session.execute(select(NotificationChannel))).scalars().all()
@@ -2289,63 +1377,16 @@ async def save_provider(
     series_category_id: int = Form(5000),
     anime_category_id: int = Form(5070),
     bandwidth_mbit: int = Form(None),
-    # Profile settings
     enable_movies: bool = Form(False),
-    movies_mode: str = Form(""),
-    movies_resolution: str = Form("any"),
-    movies_source: str = Form("any"),
-    movies_video_codec: str = Form("any"),
-    movies_hdr: str = Form("any"),
-    movies_audio_tier: str = Form("any"),
-    movies_audio_channels: str = Form("any"),
-    movies_primary_lang: str = Form("any"),
-    movies_fallback_lang: str = Form("none"),
-    movies_langs: str = Form(""),
-    movies_min_mb: int = Form(500),
-    movies_max_mb: int = Form(25000),
-    movies_reject: str = Form(""),
     enable_series: bool = Form(False),
-    series_mode: str = Form(""),
-    series_resolution: str = Form("any"),
-    series_source: str = Form("any"),
-    series_video_codec: str = Form("any"),
-    series_hdr: str = Form("any"),
-    series_audio_tier: str = Form("any"),
-    series_audio_channels: str = Form("any"),
-    series_primary_lang: str = Form("any"),
-    series_fallback_lang: str = Form("none"),
-    series_langs: str = Form(""),
-    series_min_mb: int = Form(200),
-    series_max_mb: int = Form(8000),
-    series_reject: str = Form(""),
-    series_prefer_seasons: bool = Form(False),
-    series_block_size: int = Form(5),
-    global_notification: int = Form(None),
     enable_anime: bool = Form(False),
-    anime_mode: str = Form(""),
-    anime_resolution: str = Form("any"),
-    anime_source: str = Form("any"),
-    anime_video_codec: str = Form("any"),
-    anime_hdr: str = Form("any"),
-    anime_audio_tier: str = Form("any"),
-    anime_audio_channels: str = Form("any"),
-    anime_primary_lang: str = Form("any"),
-    anime_fallback_lang: str = Form("none"),
-    anime_langs: str = Form(""),
-    anime_min_mb: int = Form(200),
-    anime_max_mb: int = Form(8000),
-    anime_reject: str = Form(""),
-    anime_prefer_seasons: bool = Form(False),
-    anime_block_size: int = Form(5),
     provider_type: str = Form("simkl"),
     sync_interval_minutes: int = Form(0),
     sync_movies: bool | None = Form(None),
     sync_series: bool | None = Form(None),
     sync_anime: bool | None = Form(None),
 ):
-    from sqlalchemy.orm import selectinload
-
-    from app.db.models import Provider, ProviderCategory, ProviderProfile
+    from app.db.models import Provider, ProviderCategory
     from app.services import provider_service
 
     # Determine standard category from provider type if not explicitly supplied
@@ -2364,9 +1405,7 @@ async def save_provider(
 
     async with async_session_factory() as session:
         if provider_id:
-            provider = await session.get(
-                Provider, provider_id, options=[selectinload(Provider.profiles)]
-            )
+            provider = await session.get(Provider, provider_id)
             if not provider:
                 provider = Provider(type=provider_type, category=resolved_category)
                 session.add(provider)
@@ -2420,115 +1459,6 @@ async def save_provider(
             and provider.is_active
         ):
             await provider_service.set_active_downloader(session, provider.id)
-
-        # clear old profiles and recreate
-        if provider_id:
-            for p in list(provider.profiles):
-                await session.delete(p)
-            provider.profiles.clear()
-
-        if enable_movies:
-            m_prim = (
-                movies_primary_lang
-                if movies_primary_lang and movies_primary_lang not in ("any", "")
-                else None
-            )
-            m_fall = (
-                movies_fallback_lang
-                if movies_fallback_lang and movies_fallback_lang not in ("none", "")
-                else None
-            )
-            pm = ProviderProfile(
-                provider_id=provider.id,
-                media_type="movies",
-                mode=movies_mode,
-                resolution=movies_resolution,
-                source=movies_source,
-                video_codec=movies_video_codec,
-                hdr=movies_hdr,
-                audio_tier=movies_audio_tier,
-                audio_channels=movies_audio_channels,
-                primary_language=m_prim,
-                fallback_language=m_fall,
-                languages_csv=m_prim or movies_langs,
-                min_mb=movies_min_mb if movies_min_mb is not None else 500,
-                max_mb=movies_max_mb if movies_max_mb is not None else 25000,
-                reject_words_csv=movies_reject,
-                notification_channel_id=global_notification
-                if global_notification
-                else None,
-            )
-            session.add(pm)
-
-        if enable_series:
-            s_prim = (
-                series_primary_lang
-                if series_primary_lang and series_primary_lang not in ("any", "")
-                else None
-            )
-            s_fall = (
-                series_fallback_lang
-                if series_fallback_lang and series_fallback_lang not in ("none", "")
-                else None
-            )
-            ps = ProviderProfile(
-                provider_id=provider.id,
-                media_type="shows",
-                mode=series_mode,
-                resolution=series_resolution,
-                source=series_source,
-                video_codec=series_video_codec,
-                hdr=series_hdr,
-                audio_tier=series_audio_tier,
-                audio_channels=series_audio_channels,
-                primary_language=s_prim,
-                fallback_language=s_fall,
-                languages_csv=s_prim or series_langs,
-                min_mb=series_min_mb if series_min_mb is not None else 200,
-                max_mb=series_max_mb if series_max_mb is not None else 8000,
-                reject_words_csv=series_reject,
-                prefer_complete_seasons=series_prefer_seasons,
-                episode_block_size=series_block_size,
-                notification_channel_id=global_notification
-                if global_notification
-                else None,
-            )
-            session.add(ps)
-
-        if enable_anime:
-            a_prim = (
-                anime_primary_lang
-                if anime_primary_lang and anime_primary_lang not in ("any", "")
-                else None
-            )
-            a_fall = (
-                anime_fallback_lang
-                if anime_fallback_lang and anime_fallback_lang not in ("none", "")
-                else None
-            )
-            pa = ProviderProfile(
-                provider_id=provider.id,
-                media_type="anime",
-                mode=anime_mode,
-                resolution=anime_resolution,
-                source=anime_source,
-                video_codec=anime_video_codec,
-                hdr=anime_hdr,
-                audio_tier=anime_audio_tier,
-                audio_channels=anime_audio_channels,
-                primary_language=a_prim,
-                fallback_language=a_fall,
-                languages_csv=a_prim or anime_langs,
-                min_mb=anime_min_mb if anime_min_mb is not None else 200,
-                max_mb=anime_max_mb if anime_max_mb is not None else 8000,
-                reject_words_csv=anime_reject,
-                prefer_complete_seasons=anime_prefer_seasons,
-                episode_block_size=anime_block_size,
-                notification_channel_id=global_notification
-                if global_notification
-                else None,
-            )
-            session.add(pa)
 
         await session.commit()
 
@@ -3161,132 +2091,6 @@ async def rescan_torbox_cache():
                 content=f'<span class="text-red-500 font-medium text-sm">Error: {str(e)}</span>',
                 status_code=500,
             )
-
-
-@app.post("/api/automation/run/video", response_class=HTMLResponse)
-async def run_video_automation_endpoint(background_tasks: BackgroundTasks):
-    """Trigger manual video automation cycle."""
-    from app.core.automation import run_automation_cycle
-    from app.core.automation_state import AutomationStatus, automation_state_manager
-
-    if (
-        automation_state_manager.is_running()
-        or not automation_state_manager.set_running(AutomationStatus.RUNNING_VIDEO)
-    ):
-        return HTMLResponse(
-            content="""
-            <div class="bg-amber-600 text-white px-4 py-3 rounded-md shadow-lg border border-amber-700 flex items-center justify-between animate-fade-in-down mb-4">
-                <div class="flex items-center gap-3">
-                    <svg class="w-5 h-5 shrink-0 text-amber-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
-                    <span class="text-sm font-medium">An automation run is already active or aborting!</span>
-                </div>
-                <button onclick="this.parentElement.remove()" class="p-1 text-gray-200 hover:text-white hover:bg-black/20 rounded transition-colors focus:outline-none">
-                    <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
-                </button>
-            </div>
-            """
-        )
-
-    from app.config import settings
-
-    current_state = (
-        settings.automation_state.value
-        if hasattr(settings.automation_state, "value")
-        else str(settings.automation_state)
-    ).lower()
-    is_upgrades_only = current_state == "upgrades_only"
-    background_tasks.add_task(
-        run_automation_cycle, force=True, upgrades_only=is_upgrades_only
-    )
-
-    toast_msg = (
-        "Video upgrades evaluation started in background!"
-        if is_upgrades_only
-        else "Video media search started in background!"
-    )
-
-    return HTMLResponse(
-        content=f"""
-        <div class="bg-[#d40060] text-white px-4 py-3 rounded-md shadow-lg border border-[#a3004a] flex items-center justify-between animate-fade-in-down mb-4">
-            <div class="flex items-center gap-3">
-                <svg class="w-5 h-5 shrink-0 text-pink-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
-                <span class="text-sm font-medium">{toast_msg}</span>
-            </div>
-            <button onclick="this.parentElement.remove()" class="p-1 text-gray-300 hover:text-white hover:bg-black/20 rounded transition-colors focus:outline-none">
-                <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
-            </button>
-        </div>
-        """
-    )
-
-
-@app.post("/api/automation/abort", response_class=HTMLResponse)
-async def abort_automation_endpoint():
-    """Trigger graceful abort of active automation cycle."""
-    from app.core.automation_state import automation_state_manager
-
-    aborted = automation_state_manager.request_abort()
-    if aborted:
-        return HTMLResponse(
-            content="""
-            <div class="bg-amber-600 text-white px-4 py-3 rounded-md shadow-lg border border-amber-700 flex items-center justify-between animate-fade-in-down mb-4">
-                <div class="flex items-center gap-3">
-                    <svg class="w-5 h-5 shrink-0 animate-spin text-amber-200" fill="none" viewBox="0 0 24 24">
-                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                    <span class="text-sm font-medium">Search will gracefully abort after current item...</span>
-                </div>
-                <button onclick="this.parentElement.remove()" class="p-1 text-gray-200 hover:text-white hover:bg-black/20 rounded transition-colors focus:outline-none">
-                    <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
-                </button>
-            </div>
-            """
-        )
-    return HTMLResponse(
-        content="""
-        <div class="bg-slate-700 text-white px-4 py-3 rounded-md shadow-lg border border-slate-600 flex items-center justify-between animate-fade-in-down mb-4">
-            <div class="flex items-center gap-3">
-                <svg class="w-5 h-5 shrink-0 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-                <span class="text-sm font-medium">No active search run found.</span>
-            </div>
-            <button onclick="this.parentElement.remove()" class="p-1 text-gray-300 hover:text-white hover:bg-black/20 rounded transition-colors focus:outline-none">
-                <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
-            </button>
-        </div>
-        """
-    )
-
-
-@app.get("/api/automation/status", response_class=HTMLResponse)
-async def automation_status_endpoint(request: Request):
-    """Return top-nav status badge partial for the current automation state."""
-    from datetime import datetime
-
-    from app.core.automation_state import automation_state_manager
-    from app.core.scheduler_utils import get_next_scheduled_time
-
-    state = automation_state_manager.get_state()
-    global_state = (
-        settings.automation_state.value
-        if hasattr(settings.automation_state, "value")
-        else str(settings.automation_state)
-    ).lower()
-
-    now = datetime.now()
-    next_heal = get_next_scheduled_time(settings.self_healing_interval, now)
-    next_video = get_next_scheduled_time(settings.video_search_interval, now)
-
-    return templates.TemplateResponse(
-        request=request,
-        name="partials/automation_status.html",
-        context={
-            "state": state,
-            "global_state": global_state,
-            "next_heal": next_heal,
-            "next_video": next_video,
-        },
-    )
 
 
 @app.get("/history", response_class=HTMLResponse)

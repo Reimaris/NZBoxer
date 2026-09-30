@@ -3,10 +3,26 @@
 {% block content %}
 <div class="max-w-7xl mx-auto space-y-8 text-sm"
      x-data="{
-         validTabs: ['general', 'scoring', 'providers', 'notifications'],
-         activeTab: 'general',
+         validTabs: ['providers', 'presets', 'scoring', 'general'],
+         activeTab: 'providers',
+         presetEditorOpen: false,
+         editingPresetId: null,
+         presetName: '',
+         presetDefault: false,
+         presetPrimaryLang: 'en',
+         presetFallbackLang: 'none',
+         presetVideoMode: 'best',
+         presetAudioMode: 'best',
+         presetResolutions: [],
+         presetSources: [],
+         presetCodecs: [],
+         presetAudioFormats: [],
+         presetMinSizeGb: '1.5',
+         presetMaxSizeGb: '45.0',
+         presetRequiredKw: '',
+         presetExcludedKw: '',
          setTab(tab) {
-             if (!this.validTabs.includes(tab)) tab = 'general';
+             if (!this.validTabs.includes(tab)) tab = 'providers';
              this.activeTab = tab;
              localStorage.setItem('nzboxer_settings_tab', tab);
              if (window.history && window.history.replaceState) {
@@ -19,8 +35,8 @@
              const fromHash = window.location.hash ? window.location.hash.substring(1) : '';
              const fromQuery = new URLSearchParams(window.location.search).get('tab') || '';
              const fromStorage = localStorage.getItem('nzboxer_settings_tab') || '';
-             const candidate = fromHash || fromQuery || fromStorage || 'general';
-             this.setTab(this.validTabs.includes(candidate) ? candidate : 'general');
+             const candidate = fromHash || fromQuery || fromStorage || 'providers';
+             this.setTab(this.validTabs.includes(candidate) ? candidate : 'providers');
              window.addEventListener('hashchange', () => {
                  const newHash = window.location.hash ? window.location.hash.substring(1) : '';
                  if (this.validTabs.includes(newHash)) {
@@ -28,8 +44,96 @@
                      localStorage.setItem('nzboxer_settings_tab', newHash);
                  }
              });
+         },
+         openNewPreset() {
+             this.editingPresetId = null;
+             this.presetName = '';
+             this.presetDefault = false;
+             this.presetPrimaryLang = 'en';
+             this.presetFallbackLang = 'none';
+             this.presetVideoMode = 'best';
+             this.presetAudioMode = 'best';
+             this.presetResolutions = [];
+             this.presetSources = [];
+             this.presetCodecs = [];
+             this.presetAudioFormats = [];
+             this.presetMinSizeGb = '1.5';
+             this.presetMaxSizeGb = '45.0';
+             this.presetRequiredKw = '';
+             this.presetExcludedKw = '';
+             this.presetEditorOpen = true;
+         },
+         openEditPreset(p) {
+             this.editingPresetId = p.id;
+             this.presetName = p.name;
+             this.presetDefault = !!p.is_default;
+             this.presetPrimaryLang = p.primary_language || 'en';
+             this.presetFallbackLang = p.fallback_language || 'none';
+             this.presetVideoMode = p.video_quality_mode || 'best';
+             this.presetAudioMode = p.audio_quality_mode || 'best';
+             const cfg = p.custom_config || {};
+             this.presetResolutions = cfg.resolutions || [];
+             this.presetSources = cfg.sources || [];
+             this.presetCodecs = cfg.video_codecs || [];
+             this.presetAudioFormats = cfg.audio_formats || [];
+             this.presetMinSizeGb = cfg.min_size_gb !== undefined && cfg.min_size_gb !== null ? String(cfg.min_size_gb) : '1.5';
+             this.presetMaxSizeGb = cfg.max_size_gb !== undefined && cfg.max_size_gb !== null ? String(cfg.max_size_gb) : '45.0';
+             this.presetRequiredKw = (cfg.required_keywords || []).join(', ');
+             this.presetExcludedKw = (cfg.excluded_keywords || []).join(', ');
+             this.presetEditorOpen = true;
+         },
+         togglePresetList(arr, val) {
+             const idx = arr.indexOf(val);
+             if (idx >= 0) arr.splice(idx, 1);
+             else arr.push(val);
+         },
+         async submitPreset() {
+             const payload = {
+                 name: this.presetName,
+                 is_default: this.presetDefault,
+                 primary_language: this.presetPrimaryLang,
+                 fallback_language: this.presetFallbackLang,
+                 video_quality_mode: this.presetVideoMode,
+                 audio_quality_mode: this.presetAudioMode,
+                 custom_config: {
+                     resolutions: this.presetResolutions,
+                     sources: this.presetSources,
+                     video_codecs: this.presetCodecs,
+                     audio_formats: this.presetAudioFormats,
+                     min_size_gb: this.presetMinSizeGb !== '' ? parseFloat(this.presetMinSizeGb) : null,
+                     max_size_gb: this.presetMaxSizeGb !== '' ? parseFloat(this.presetMaxSizeGb) : null,
+                     required_keywords: this.presetRequiredKw.split(',').map(s => s.trim()).filter(Boolean),
+                     excluded_keywords: this.presetExcludedKw.split(',').map(s => s.trim()).filter(Boolean)
+                 }
+             };
+             const url = this.editingPresetId ? `/api/presets/${this.editingPresetId}` : '/api/presets';
+             const method = this.editingPresetId ? 'PUT' : 'POST';
+             const resp = await fetch(url, {
+                 method: method,
+                 headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                 body: JSON.stringify(payload)
+             });
+             if (resp.ok) {
+                 window.location.hash = 'presets';
+                 window.location.reload();
+             }
+         },
+         async makeDefaultPreset(id) {
+             const resp = await fetch(`/api/presets/${id}/default`, { method: 'POST', headers: { 'Accept': 'application/json' } });
+             if (resp.ok) {
+                 window.location.hash = 'presets';
+                 window.location.reload();
+             }
+         },
+         async removePreset(id) {
+             const resp = await fetch(`/api/presets/${id}`, { method: 'DELETE', headers: { 'Accept': 'application/json' } });
+             if (resp.ok) {
+                 window.location.hash = 'presets';
+                 window.location.reload();
+             }
          }
      }">
+
     <div class="flex items-center justify-between mb-8">
         <h1 class="text-3xl font-bold text-white flex items-center gap-3">
             <svg class="w-6 h-6 shrink-0 text-[#d40060]" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clip-rule="evenodd"></path></svg>
@@ -37,342 +141,573 @@
         </h1>
         <div class="flex items-center gap-3">
             <a href="/settings/export" class="bg-[#3f3f46] hover:bg-[#52525b] text-white px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2">
-                <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
                 Backup Export
             </a>
             <button hx-get="/system/check/modal" hx-target="#modal-container" class="bg-[#1e1e24] hover:bg-[#3f3f46] border border-[#3f3f46] text-white px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2">
-                <svg class="w-4 h-4 shrink-0 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
                 System Check
             </button>
         </div>
     </div>
 
-    <!-- Navigation Tabs -->
+    <!-- 4-Tab Navigation Header -->
     <div class="border-b border-[#3f3f46]">
         <nav class="-mb-px flex space-x-8">
-            <button @click="setTab('general')" :class="activeTab === 'general' ? 'border-[#d40060] text-[#d40060]' : 'border-transparent text-[#a1a1aa] hover:text-white hover:border-[#3f3f46]'" class="whitespace-nowrap pb-4 px-1 border-b-2 font-medium transition-colors flex items-center gap-2">
-                <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
-                General & Automation
+            <button type="button" @click="setTab('providers')" :class="activeTab === 'providers' ? 'border-[#d40060] text-[#d40060]' : 'border-transparent text-[#a1a1aa] hover:text-white hover:border-[#3f3f46]'" class="whitespace-nowrap pb-4 px-1 border-b-2 font-medium transition-colors flex items-center gap-2">
+                Providers
             </button>
-            <button @click="setTab('scoring')" :class="activeTab === 'scoring' ? 'border-[#d40060] text-[#d40060]' : 'border-transparent text-[#a1a1aa] hover:text-white hover:border-[#3f3f46]'" class="whitespace-nowrap pb-4 px-1 border-b-2 font-medium transition-colors flex items-center gap-2">
-                <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg>
-                Video Scoring & Rules
+            <button type="button" @click="setTab('presets')" :class="activeTab === 'presets' ? 'border-[#d40060] text-[#d40060]' : 'border-transparent text-[#a1a1aa] hover:text-white hover:border-[#3f3f46]'" class="whitespace-nowrap pb-4 px-1 border-b-2 font-medium transition-colors flex items-center gap-2">
+                Presets
             </button>
-            <button @click="setTab('providers')" :class="activeTab === 'providers' ? 'border-[#d40060] text-[#d40060]' : 'border-transparent text-[#a1a1aa] hover:text-white hover:border-[#3f3f46]'" class="whitespace-nowrap pb-4 px-1 border-b-2 font-medium transition-colors flex items-center gap-2">
-                <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 002-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
-                Providers & Profiles
+            <button type="button" @click="setTab('scoring')" :class="activeTab === 'scoring' ? 'border-[#d40060] text-[#d40060]' : 'border-transparent text-[#a1a1aa] hover:text-white hover:border-[#3f3f46]'" class="whitespace-nowrap pb-4 px-1 border-b-2 font-medium transition-colors flex items-center gap-2">
+                Video Scoring
             </button>
-            <button @click="setTab('notifications')" :class="activeTab === 'notifications' ? 'border-[#d40060] text-[#d40060]' : 'border-transparent text-[#a1a1aa] hover:text-white hover:border-[#3f3f46]'" class="whitespace-nowrap pb-4 px-1 border-b-2 font-medium transition-colors flex items-center gap-2">
-                <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path></svg>
-                Notifications
+            <button type="button" @click="setTab('general')" :class="activeTab === 'general' ? 'border-[#d40060] text-[#d40060]' : 'border-transparent text-[#a1a1aa] hover:text-white hover:border-[#3f3f46]'" class="whitespace-nowrap pb-4 px-1 border-b-2 font-medium transition-colors flex items-center gap-2">
+                General & Blacklist
             </button>
         </nav>
     </div>
 
     <div id="settings-result" class="empty:hidden mb-4"></div>
 
+    <!-- =================================================================== -->
+    <!-- TAB 1: PROVIDERS                                                    -->
+    <!-- =================================================================== -->
+    <div x-show="activeTab === 'providers'" class="space-y-8 animate-fade-in">
+        <div class="flex items-center justify-between mb-2">
+            <div>
+                <h2 class="text-2xl font-bold text-white">Connected Providers</h2>
+                <p class="text-xs text-[#a1a1aa] mt-1">Manage your Watchlists (Simkl), Metadata (TMDB, AniList), Downloader (TorBox), and Newznab Indexers.</p>
+            </div>
+            <button hx-get="/settings/provider/new" hx-target="#modal-container" class="bg-[#d40060] hover:bg-[#a3004a] text-white px-5 py-2.5 rounded-lg text-sm font-bold transition-all shadow-lg shadow-[#d40060]/20 flex items-center gap-2">
+                Add New Provider
+            </button>
+        </div>
+
+        <!-- 1. WATCHLIST PROVIDERS -->
+        <div class="space-y-4">
+            <h3 class="text-sm font-bold text-[#d40060] uppercase tracking-wider border-b border-[#3f3f46] pb-2">Watchlist Providers</h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                {% set count = namespace(w=0) %}
+                {% for provider in providers %}
+                {% if provider.category == 'watchlist' or (provider.category.value is defined and provider.category.value == 'watchlist') %}
+                {% set count.w = count.w + 1 %}
+                {% set pcfg = provider.config %}
+                <div class="bg-[#1e1e24] border border-[#3f3f46] hover:border-[#d40060] rounded-xl p-5 transition-all group shadow-lg flex flex-col justify-between">
+                    <div class="flex items-start justify-between gap-3 mb-4">
+                        <div class="flex items-center gap-3 min-w-0 flex-1">
+                            <div class="w-10 h-10 rounded-xl bg-sky-500/15 border border-sky-500/30 text-sky-400 flex items-center justify-center font-bold text-base shrink-0">S</div>
+                            <div class="min-w-0 flex-1">
+                                <h4 class="text-base font-bold text-white truncate">{{ provider.name }}</h4>
+                                <p class="text-xs text-[#a1a1aa] font-mono mt-0.5 truncate">{{ provider.type }} • {{ provider.username or 'Connected' }} ({{ pcfg.get('sync_interval_minutes', 60) }}m)</p>
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-1.5 shrink-0">
+                            <button hx-get="/settings/provider/{{ provider.id }}/edit" hx-target="#modal-container" class="p-1.5 bg-[#2a2a32] hover:bg-[#3f3f46] rounded text-[#a1a1aa] hover:text-white" title="Edit">Edit</button>
+                            <button hx-delete="/settings/provider/{{ provider.id }}" hx-confirm="Delete this provider?" class="p-1.5 bg-[#2a2a32] hover:bg-red-900/60 rounded text-[#a1a1aa] hover:text-red-400" title="Delete">Del</button>
+                        </div>
+                    </div>
+                    <div class="flex items-center justify-between gap-2 pt-3 border-t border-[#2a2a32] mt-2">
+                        <div class="flex items-center gap-1.5 flex-wrap">
+                            <span class="px-1.5 py-0.5 rounded text-[11px] font-semibold {% if pcfg.get('sync_movies', True) %}bg-emerald-500/20 text-emerald-400 border border-emerald-500/30{% else %}bg-[#2a2a32] text-[#71717a]{% endif %}">Movies</span>
+                            <span class="px-1.5 py-0.5 rounded text-[11px] font-semibold {% if pcfg.get('sync_series', True) %}bg-emerald-500/20 text-emerald-400 border border-emerald-500/30{% else %}bg-[#2a2a32] text-[#71717a]{% endif %}">Series</span>
+                            <span class="px-1.5 py-0.5 rounded text-[11px] font-semibold {% if pcfg.get('sync_anime', True) %}bg-emerald-500/20 text-emerald-400 border border-emerald-500/30{% else %}bg-[#2a2a32] text-[#71717a]{% endif %}">Anime</span>
+                        </div>
+                        <button hx-post="/settings/provider/{{ provider.id }}/toggle-active" class="px-2.5 py-1 rounded-md text-xs font-bold {% if provider.is_active %}bg-emerald-500/20 text-emerald-400 border border-emerald-500/30{% else %}bg-[#3f3f46]/50 text-[#71717a]{% endif %}">
+                            {{ 'Active' if provider.is_active else 'Inactive' }}
+                        </button>
+                    </div>
+                </div>
+                {% endif %}
+                {% endfor %}
+                {% if count.w == 0 %}
+                <div class="col-span-full bg-[#111115] border border-dashed border-[#3f3f46] rounded-xl p-6 text-center text-[#71717a]">No watchlist providers configured.</div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- 2. METADATA PROVIDERS -->
+        <div class="space-y-4">
+            <h3 class="text-sm font-bold text-amber-400 uppercase tracking-wider border-b border-[#3f3f46] pb-2">Metadata Providers</h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                {% set count = namespace(m=0) %}
+                {% for provider in providers %}
+                {% if provider.category == 'metadata' or (provider.category.value is defined and provider.category.value == 'metadata') %}
+                {% set count.m = count.m + 1 %}
+                <div class="bg-[#1e1e24] border border-[#3f3f46] hover:border-amber-400 rounded-xl p-5 transition-all group shadow-lg flex flex-col justify-between">
+                    <div class="flex items-start justify-between gap-3 mb-4">
+                        <div class="flex items-center gap-3 min-w-0 flex-1">
+                            <div class="w-10 h-10 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-400 flex items-center justify-center font-bold text-base shrink-0">{{ 'T' if provider.type == 'tmdb' else 'A' }}</div>
+                            <div class="min-w-0 flex-1">
+                                <h4 class="text-base font-bold text-white truncate">{{ provider.name }}</h4>
+                                <p class="text-xs text-[#a1a1aa] font-mono mt-0.5 truncate">{{ provider.type }}</p>
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-1.5 shrink-0">
+                            <button hx-get="/settings/provider/{{ provider.id }}/edit" hx-target="#modal-container" class="p-1.5 bg-[#2a2a32] hover:bg-[#3f3f46] rounded text-[#a1a1aa] hover:text-white">Edit</button>
+                            <button hx-delete="/settings/provider/{{ provider.id }}" hx-confirm="Delete this provider?" class="p-1.5 bg-[#2a2a32] hover:bg-red-900/60 rounded text-[#a1a1aa] hover:text-red-400">Del</button>
+                        </div>
+                    </div>
+                    <div class="flex items-center justify-between gap-2 pt-3 border-t border-[#2a2a32] mt-2">
+                        <span class="text-xs text-[#a1a1aa] font-mono truncate">{{ 'Key: ••••••••' if provider.api_key else (provider.username or 'Connected') }}</span>
+                        <button hx-post="/settings/provider/{{ provider.id }}/toggle-active" class="px-2.5 py-1 rounded-md text-xs font-bold {% if provider.is_active %}bg-emerald-500/20 text-emerald-400 border border-emerald-500/30{% else %}bg-[#3f3f46]/50 text-[#71717a]{% endif %}">
+                            {{ 'Active' if provider.is_active else 'Inactive' }}
+                        </button>
+                    </div>
+                </div>
+                {% endif %}
+                {% endfor %}
+                {% if count.m == 0 %}
+                <div class="col-span-full bg-[#111115] border border-dashed border-[#3f3f46] rounded-xl p-6 text-center text-[#71717a]">No metadata providers configured.</div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- 3. DOWNLOADER PROVIDERS -->
+        <div class="space-y-4">
+            <h3 class="text-sm font-bold text-purple-400 uppercase tracking-wider border-b border-[#3f3f46] pb-2">Downloader Providers (TorBox)</h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                {% set count = namespace(d=0) %}
+                {% for provider in providers %}
+                {% if provider.category == 'downloader' or (provider.category.value is defined and provider.category.value == 'downloader') %}
+                {% set count.d = count.d + 1 %}
+                <div class="bg-[#1e1e24] border border-[#3f3f46] hover:border-purple-400 rounded-xl p-5 transition-all group shadow-lg flex flex-col justify-between">
+                    <div class="flex items-start justify-between gap-3 mb-4">
+                        <div class="flex items-center gap-3 min-w-0 flex-1">
+                            <div class="w-10 h-10 rounded-xl bg-purple-500/15 border border-purple-500/30 text-purple-400 flex items-center justify-center font-bold text-base shrink-0">TB</div>
+                            <div class="min-w-0 flex-1">
+                                <h4 class="text-base font-bold text-white truncate">{{ provider.name }}</h4>
+                                <p class="text-xs text-[#a1a1aa] font-mono mt-0.5 truncate">{{ provider.type }}</p>
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-1.5 shrink-0">
+                            <button hx-get="/settings/provider/{{ provider.id }}/edit" hx-target="#modal-container" class="p-1.5 bg-[#2a2a32] hover:bg-[#3f3f46] rounded text-[#a1a1aa] hover:text-white">Edit</button>
+                            <button hx-delete="/settings/provider/{{ provider.id }}" hx-confirm="Delete this provider?" class="p-1.5 bg-[#2a2a32] hover:bg-red-900/60 rounded text-[#a1a1aa] hover:text-red-400">Del</button>
+                        </div>
+                    </div>
+                    <div class="flex items-center justify-between gap-2 pt-3 border-t border-[#2a2a32] mt-2">
+                        <span class="text-xs text-[#a1a1aa] font-mono truncate">{{ provider.api_url or 'https://api.torbox.app/v1/api' }}</span>
+                        <button hx-post="/settings/provider/{{ provider.id }}/toggle-active" class="px-3 py-1 rounded-md text-xs font-bold {% if provider.is_active %}bg-purple-600 text-white{% else %}bg-[#3f3f46]/50 text-[#71717a]{% endif %}">
+                            {{ 'Active' if provider.is_active else 'Inactive' }}
+                        </button>
+                    </div>
+                </div>
+                {% endif %}
+                {% endfor %}
+                {% if count.d == 0 %}
+                <div class="col-span-full bg-[#111115] border border-dashed border-[#3f3f46] rounded-xl p-6 text-center text-[#71717a]">No downloader providers configured.</div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- 4. USENET INDEXERS -->
+        <div class="space-y-4">
+            <h3 class="text-sm font-bold text-blue-400 uppercase tracking-wider border-b border-[#3f3f46] pb-2">Newznab Usenet Indexers</h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                {% set count = namespace(i=0) %}
+                {% for provider in providers %}
+                {% if provider.category == 'indexer' or (provider.category.value is defined and provider.category.value == 'indexer') %}
+                {% set count.i = count.i + 1 %}
+                <div class="bg-[#1e1e24] border border-[#3f3f46] hover:border-blue-400 rounded-xl p-5 transition-all group shadow-lg flex flex-col justify-between">
+                    <div>
+                        <div class="flex items-start justify-between gap-3 mb-3">
+                            <div class="flex items-center gap-3 min-w-0 flex-1">
+                                <div class="w-10 h-10 rounded-xl bg-blue-500/15 border border-blue-500/30 text-blue-400 flex items-center justify-center font-bold text-base shrink-0">TM</div>
+                                <div class="min-w-0 flex-1">
+                                    <h4 class="text-base font-bold text-white truncate">{{ provider.name }}</h4>
+                                    <p class="text-xs text-[#a1a1aa] font-mono mt-0.5 truncate">{{ provider.api_url or 'https://treasuremaps.net/api' }}</p>
+                                </div>
+                            </div>
+                            <div class="flex items-center gap-1.5 shrink-0">
+                                <button hx-get="/settings/provider/{{ provider.id }}/edit" hx-target="#modal-container" class="p-1.5 bg-[#2a2a32] hover:bg-[#3f3f46] rounded text-[#a1a1aa] hover:text-white">Edit</button>
+                                <button hx-delete="/settings/provider/{{ provider.id }}" hx-confirm="Delete this indexer?" class="p-1.5 bg-[#2a2a32] hover:bg-red-900/60 rounded text-[#a1a1aa] hover:text-red-400">Del</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="flex items-center justify-between gap-2 pt-3 border-t border-[#2a2a32] mt-2">
+                        <span class="px-2.5 py-1 rounded-md text-xs font-bold font-mono bg-blue-500/15 text-blue-300 border border-blue-500/30">
+                            Priority {{ provider.priority if provider.priority is not none else '1' }}
+                        </span>
+                        <button hx-post="/settings/provider/{{ provider.id }}/toggle-active" class="px-2.5 py-1 rounded-md text-xs font-bold {% if provider.is_active %}bg-emerald-500/20 text-emerald-400 border border-emerald-500/30{% else %}bg-[#3f3f46]/50 text-[#71717a]{% endif %}">
+                            {{ 'Active' if provider.is_active else 'Inactive' }}
+                        </button>
+                    </div>
+                </div>
+                {% endif %}
+                {% endfor %}
+                {% if count.i == 0 %}
+                <div class="col-span-full bg-[#111115] border border-dashed border-[#3f3f46] rounded-xl p-6 text-center text-[#71717a]">No indexer providers configured.</div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- =================================================================== -->
+    <!-- TAB 2: PRESETS                                                      -->
+    <!-- =================================================================== -->
+    <div x-show="activeTab === 'presets'" x-cloak class="space-y-6 animate-fade-in">
+        <div class="flex items-center justify-between">
+            <div>
+                <h2 class="text-2xl font-bold text-white">Search Presets</h2>
+                <p class="text-xs text-[#a1a1aa] mt-1">Manage reusable search & quality presets ("Best" vs "Custom") for the Unified Push Modal.</p>
+            </div>
+            <button type="button" @click="openNewPreset()" class="bg-[#d40060] hover:bg-[#a3004a] text-white px-5 py-2.5 rounded-lg text-sm font-bold shadow-lg shadow-[#d40060]/20">
+                + New Search Preset
+            </button>
+        </div>
+
+        <!-- Preset Cards List -->
+        <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+            {% for preset in presets %}
+            <div class="bg-[#1e1e24] border {% if preset.is_default %}border-[#d40060]{% else %}border-[#3f3f46]{% endif %} rounded-xl p-5 flex flex-col justify-between shadow-lg">
+                <div>
+                    <div class="flex items-center justify-between gap-2 mb-3">
+                        <div class="flex items-center gap-2">
+                            <h3 class="text-base font-bold text-white">{{ preset.name }}</h3>
+                            {% if preset.is_default %}
+                            <span class="px-2 py-0.5 text-[10px] font-bold uppercase rounded bg-[#d40060]/20 text-[#d40060] border border-[#d40060]/40">Default</span>
+                            {% endif %}
+                        </div>
+                        <div class="flex items-center gap-1.5">
+                            <button type="button"
+                                    @click='openEditPreset({{ {
+                                        "id": preset.id,
+                                        "name": preset.name,
+                                        "is_default": preset.is_default,
+                                        "primary_language": preset.primary_language,
+                                        "fallback_language": preset.fallback_language or "none",
+                                        "video_quality_mode": preset.video_quality_mode,
+                                        "audio_quality_mode": preset.audio_quality_mode,
+                                        "custom_config": preset.custom_config
+                                    } | tojson }})'
+                                    class="px-2 py-1 text-xs rounded bg-[#2a2a32] hover:bg-[#3f3f46] text-gray-300">Edit</button>
+                            <button type="button" @click="removePreset({{ preset.id }})" class="px-2 py-1 text-xs rounded bg-[#2a2a32] hover:bg-red-900/50 text-red-400">Delete</button>
+                        </div>
+                    </div>
+                    <div class="text-xs text-[#a1a1aa] space-y-1">
+                        <div>Primary Language: <span class="text-white font-semibold uppercase">{{ preset.primary_language }}</span> • Fallback: <span class="text-white font-semibold uppercase">{{ preset.fallback_language or 'None' }}</span></div>
+                        <div>Video Mode: <span class="text-emerald-400 font-semibold uppercase">{{ preset.video_quality_mode }}</span> • Audio Mode: <span class="text-indigo-400 font-semibold uppercase">{{ preset.audio_quality_mode }}</span></div>
+                    </div>
+                </div>
+                {% if not preset.is_default %}
+                <div class="pt-3 mt-3 border-t border-[#2a2a32] flex justify-end">
+                    <button type="button" @click="makeDefaultPreset({{ preset.id }})" class="text-xs text-[#d40060] hover:underline font-semibold">Set as Default</button>
+                </div>
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+
+        <!-- Inline Preset Editor ("Best" vs "Custom" Progressive Disclosure) -->
+        <div x-show="presetEditorOpen" x-cloak class="bg-[#1e1e24] border border-[#3f3f46] rounded-xl p-6 space-y-5">
+            <div class="flex items-center justify-between border-b border-[#2a2a32] pb-3">
+                <h3 class="text-lg font-bold text-white" x-text="editingPresetId ? 'Edit Search Preset' : 'Create Search Preset'"></h3>
+                <button type="button" @click="presetEditorOpen = false" class="text-xs text-[#a1a1aa] hover:text-white">Close</button>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                    <label class="block text-xs font-semibold text-[#a1a1aa] mb-1">Preset Name</label>
+                    <input type="text" x-model="presetName" placeholder="e.g. 4K Remux DE/EN" class="w-full bg-[#111115] border border-[#3f3f46] rounded-lg px-3 py-2 text-white">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-[#a1a1aa] mb-1">Primary Language</label>
+                    <select x-model="presetPrimaryLang" class="w-full bg-[#111115] border border-[#3f3f46] rounded-lg px-3 py-2 text-white">
+                        <option value="en">English (en)</option>
+                        <option value="de">German (de)</option>
+                        <option value="ja">Japanese (ja)</option>
+                        <option value="fr">French (fr)</option>
+                        <option value="es">Spanish (es)</option>
+                        <option value="it">Italian (it)</option>
+                        <option value="multi">Multi (multi)</option>
+                        <option value="any">Any (any)</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-[#a1a1aa] mb-1">Fallback Language</label>
+                    <select x-model="presetFallbackLang" class="w-full bg-[#111115] border border-[#3f3f46] rounded-lg px-3 py-2 text-white">
+                        <option value="none">None (Strict)</option>
+                        <option value="en">English (en)</option>
+                        <option value="de">German (de)</option>
+                        <option value="ja">Japanese (ja)</option>
+                        <option value="fr">French (fr)</option>
+                        <option value="es">Spanish (es)</option>
+                        <option value="it">Italian (it)</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Video Quality Best vs Custom -->
+            <div class="space-y-3 pt-2 border-t border-[#2a2a32]">
+                <div class="flex items-center justify-between">
+                    <span class="text-xs font-bold uppercase text-white">Video Quality Mode</span>
+                    <div class="inline-flex rounded-lg bg-[#111115] p-0.5 border border-[#3f3f46]">
+                        <button type="button" @click="presetVideoMode = 'best'" :class="presetVideoMode === 'best' ? 'bg-[#d40060] text-white' : 'text-[#a1a1aa]'" class="px-3 py-1 rounded-md text-xs font-semibold">Best (Recommended)</button>
+                        <button type="button" @click="presetVideoMode = 'custom'" :class="presetVideoMode === 'custom' ? 'bg-[#d40060] text-white' : 'text-[#a1a1aa]'" class="px-3 py-1 rounded-md text-xs font-semibold">Custom</button>
+                    </div>
+                </div>
+
+                <div x-show="presetVideoMode === 'custom'" x-cloak class="p-4 rounded-xl bg-[#111115] border border-[#3f3f46] space-y-3">
+                    <div class="flex flex-wrap gap-2">
+                        {% for rval, rlabel in [('2160p', '2160p/4K'), ('1080p', '1080p'), ('720p', '720p')] %}
+                        <button type="button" @click="togglePresetList(presetResolutions, '{{ rval }}')" :class="presetResolutions.includes('{{ rval }}') ? 'bg-[#d40060]/30 border-[#d40060] text-white' : 'bg-[#1e1e24] border-[#3f3f46] text-[#a1a1aa]'" class="px-2.5 py-1 rounded border text-xs">{{ rlabel }}</button>
+                        {% endfor %}
+                    </div>
+                    <div class="flex flex-wrap gap-2">
+                        {% for sval, slabel in [('remux', 'Remux'), ('bluray', 'BluRay'), ('web-dl', 'WEB-DL'), ('webrip', 'WEBRip'), ('hdtv', 'HDTV')] %}
+                        <button type="button" @click="togglePresetList(presetSources, '{{ sval }}')" :class="presetSources.includes('{{ sval }}') ? 'bg-[#d40060]/30 border-[#d40060] text-white' : 'bg-[#1e1e24] border-[#3f3f46] text-[#a1a1aa]'" class="px-2.5 py-1 rounded border text-xs">{{ slabel }}</button>
+                        {% endfor %}
+                    </div>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-xs text-[#a1a1aa] mb-1">Min Size (GB)</label>
+                            <input type="number" step="0.1" x-model="presetMinSizeGb" class="w-full bg-[#1e1e24] border border-[#3f3f46] rounded px-2.5 py-1.5 text-white">
+                        </div>
+                        <div>
+                            <label class="block text-xs text-[#a1a1aa] mb-1">Max Size (GB)</label>
+                            <input type="number" step="0.5" x-model="presetMaxSizeGb" class="w-full bg-[#1e1e24] border border-[#3f3f46] rounded px-2.5 py-1.5 text-white">
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-xs text-[#a1a1aa] mb-1">Must Contain Keywords</label>
+                            <input type="text" x-model="presetRequiredKw" class="w-full bg-[#1e1e24] border border-[#3f3f46] rounded px-2.5 py-1.5 text-white">
+                        </div>
+                        <div>
+                            <label class="block text-xs text-[#a1a1aa] mb-1">Ignore / Reject Keywords</label>
+                            <input type="text" x-model="presetExcludedKw" class="w-full bg-[#1e1e24] border border-[#3f3f46] rounded px-2.5 py-1.5 text-white">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Audio Quality Best vs Custom -->
+            <div class="space-y-3 pt-2 border-t border-[#2a2a32]">
+                <div class="flex items-center justify-between">
+                    <span class="text-xs font-bold uppercase text-white">Audio Quality Mode</span>
+                    <div class="inline-flex rounded-lg bg-[#111115] p-0.5 border border-[#3f3f46]">
+                        <button type="button" @click="presetAudioMode = 'best'" :class="presetAudioMode === 'best' ? 'bg-[#d40060] text-white' : 'text-[#a1a1aa]'" class="px-3 py-1 rounded-md text-xs font-semibold">Best (Recommended)</button>
+                        <button type="button" @click="presetAudioMode = 'custom'" :class="presetAudioMode === 'custom' ? 'bg-[#d40060] text-white' : 'text-[#a1a1aa]'" class="px-3 py-1 rounded-md text-xs font-semibold">Custom</button>
+                    </div>
+                </div>
+                <div x-show="presetAudioMode === 'custom'" x-cloak class="p-4 rounded-xl bg-[#111115] border border-[#3f3f46] flex flex-wrap gap-2">
+                    {% for aval, alabel in [('truehd', 'TrueHD Atmos'), ('dts-hd', 'DTS-HD MA / DTS:X'), ('eac3', 'DD+ Atmos / EAC3'), ('flac', 'FLAC / PCM'), ('ac3', 'AC3 / DD 5.1'), ('aac', 'AAC / Stereo')] %}
+                    <button type="button" @click="togglePresetList(presetAudioFormats, '{{ aval }}')" :class="presetAudioFormats.includes('{{ aval }}') ? 'bg-[#d40060]/30 border-[#d40060] text-white' : 'bg-[#1e1e24] border-[#3f3f46] text-[#a1a1aa]'" class="px-2.5 py-1 rounded border text-xs">{{ alabel }}</button>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <div class="flex items-center justify-between pt-3 border-t border-[#2a2a32]">
+                <label class="inline-flex items-center gap-2 text-xs text-white cursor-pointer">
+                    <input type="checkbox" x-model="presetDefault" class="accent-[#d40060]">
+                    <span>Set as Default Preset</span>
+                </label>
+                <button type="button" @click="submitPreset()" class="bg-[#d40060] hover:bg-[#a3004a] text-white px-5 py-2 rounded-lg text-xs font-bold">
+                    Save Preset
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- =================================================================== -->
+    <!-- GLOBAL FORM FOR TAB 3 (VIDEO SCORING) & TAB 4 (GENERAL & BLACKLIST) -->
+    <!-- =================================================================== -->
     <form id="global-settings-form" hx-post="/settings/global" hx-target="#settings-result">
 
-        <!-- Tab 1: General & Automation -->
-        <div x-show="activeTab === 'general'" class="space-y-8 animate-fade-in">
-
-            <!-- Card 1: Search Automation Schedules & Intervals -->
+        <!-- TAB 3: VIDEO SCORING (Preserved Intact) -->
+        <div x-show="activeTab === 'scoring'" x-cloak class="space-y-8 animate-fade-in">
             <div class="bg-[#1e1e24] border border-[#3f3f46] rounded-xl shadow-lg">
                 <div class="bg-[#2a2a32] rounded-t-xl border-b border-[#3f3f46] px-6 py-4 flex items-center justify-between">
-                    <h2 class="text-lg font-semibold text-white flex items-center gap-2">
-                        <svg class="w-5 h-5 shrink-0 text-[#d40060]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                        Search Automation Schedules
-                    </h2>
+                    <h2 class="text-lg font-semibold text-white">Video Scoring Engine (Strict Engine Specification)</h2>
+                    <span class="text-xs font-semibold px-2.5 py-1 rounded bg-[#2a2a32] border border-[#3f3f46] text-[#a1a1aa] uppercase">Automatic Rule Engine</span>
                 </div>
                 <div class="p-6 space-y-6">
-                    <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
-                        <div>
-                            <label class="flex items-center gap-1.5 text-[#d1d5db] font-medium mb-1 text-xs uppercase tracking-wider">
-                                <span>Video Search Interval</span>
-                                <div class="relative inline-flex items-center group">
-                                    <svg class="w-3.5 h-3.5 shrink-0 text-[#71717a] group-hover:text-[#d1d5db] transition-colors cursor-help" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                                    </svg>
-                                    <div class="opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 absolute bottom-full left-0 mb-2 w-64 max-w-[calc(100vw-2rem)] bg-[#2a2a32] border border-[#3f3f46] text-gray-200 text-[11px] normal-case tracking-normal font-normal rounded-lg p-2.5 shadow-2xl z-30 pointer-events-none leading-relaxed">
-                                        Wall-clock aligned interval for automated Video releases (Movies & Series) querying active Usenet Indexers.
-                                    </div>
-                                </div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div class="bg-[#111115] border border-[#3f3f46] rounded-lg p-4">
+                            <label class="block text-xs font-semibold text-[#a1a1aa] uppercase tracking-wider mb-1 flex items-center justify-between">
+                                <span>Target Score Cutoff</span>
+                                <span class="text-xs text-emerald-400 font-medium lowercase">Default: 8000 pts</span>
                             </label>
-                            <select name="video_search_interval" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors">
-                                <option value="15" {% if db_settings and db_settings.video_search_interval == 15 %}selected{% endif %}>Every 15 minutes</option>
-                                <option value="30" {% if db_settings and db_settings.video_search_interval == 30 %}selected{% endif %}>Every 30 minutes</option>
-                                <option value="60" {% if not db_settings or db_settings.video_search_interval == 60 %}selected{% endif %}>Every hour</option>
-                                <option value="120" {% if db_settings and db_settings.video_search_interval == 120 %}selected{% endif %}>Every 2 hours</option>
-                                <option value="240" {% if db_settings and db_settings.video_search_interval == 240 %}selected{% endif %}>Every 4 hours</option>
-                                <option value="360" {% if db_settings and db_settings.video_search_interval == 360 %}selected{% endif %}>Every 6 hours</option>
-                                <option value="720" {% if db_settings and db_settings.video_search_interval == 720 %}selected{% endif %}>Every 12 hours</option>
-                                <option value="1440" {% if db_settings and db_settings.video_search_interval == 1440 %}selected{% endif %}>Every 24 hours</option>
-                            </select>
+                            <div class="flex items-center gap-3 mt-1">
+                                <input type="number" name="cutoffs_target" value="{{ scoring.get('cutoffs', {}).get('target_score', 8000) if scoring else 8000 }}" min="1000" max="20000" step="100" class="w-32 bg-[#1e1e24] border border-[#3f3f46] rounded-lg p-2 text-white font-mono text-lg font-bold text-center">
+                                <span class="text-xs text-[#a1a1aa]">Cutoff score for high-tier release ranking.</span>
+                            </div>
                         </div>
-                        <div>
-                            <label class="flex items-center gap-1.5 text-[#d1d5db] font-medium mb-1 text-xs uppercase tracking-wider">
-                                <span>Upgrade Search Interval</span>
-                                <div class="relative inline-flex items-center group">
-                                    <svg class="w-3.5 h-3.5 shrink-0 text-[#71717a] group-hover:text-[#d1d5db] transition-colors cursor-help" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                                    </svg>
-                                    <div class="opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 absolute bottom-full right-0 mb-2 w-64 max-w-[calc(100vw-2rem)] bg-[#2a2a32] border border-[#3f3f46] text-gray-200 text-[11px] normal-case tracking-normal font-normal rounded-lg p-2.5 shadow-2xl z-30 pointer-events-none leading-relaxed">
-                                        Minimum cooldown in hours between upgrade searches for downloaded items seeking higher quality releases.
-                                    </div>
-                                </div>
+
+                        <div class="bg-[#111115] border border-[#3f3f46] rounded-lg p-4">
+                            <label class="block text-xs font-semibold text-[#a1a1aa] uppercase tracking-wider mb-1 flex items-center justify-between">
+                                <span>Upgrade Threshold</span>
+                                <span class="text-xs text-emerald-400 font-medium lowercase">Optimal: 500 – 800 pts</span>
                             </label>
-                            <input type="number" name="upgrade_search_interval_hours" min="1" max="168" value="{{ db_settings.upgrade_search_interval_hours if (db_settings and db_settings.upgrade_search_interval_hours is not none) else '24' }}" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors font-mono text-center">
+                            <div class="flex items-center gap-3 mt-1">
+                                <input type="number" name="cutoffs_upgrade" value="{{ scoring.get('cutoffs', {}).get('upgrade_threshold', db_settings.upgrade_threshold if db_settings else 500) if scoring else (db_settings.upgrade_threshold if db_settings else 500) }}" min="100" max="3000" step="50" class="w-32 bg-[#1e1e24] border border-[#3f3f46] rounded-lg p-2 text-white font-mono text-lg font-bold text-center">
+                                <span class="text-xs text-[#a1a1aa]">Minimum score delta required to upgrade an existing release.</span>
+                            </div>
                         </div>
-                        <div>
-                            <label class="flex items-center gap-1.5 text-[#d1d5db] font-medium mb-1 text-xs uppercase tracking-wider">
-                                <span>Max Upgrade Attempts</span>
-                                <div class="relative inline-flex items-center group">
-                                    <svg class="w-3.5 h-3.5 shrink-0 text-[#71717a] group-hover:text-[#d1d5db] transition-colors cursor-help" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                                    </svg>
-                                    <div class="opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 absolute bottom-full right-0 mb-2 w-64 max-w-[calc(100vw-2rem)] bg-[#2a2a32] border border-[#3f3f46] text-gray-200 text-[11px] normal-case tracking-normal font-normal rounded-lg p-2.5 shadow-2xl z-30 pointer-events-none leading-relaxed">
-                                        Maximum number of scheduled search cycles to seek higher-tier format or score upgrades for grabbed items before marking them completed.
-                                    </div>
-                                </div>
-                            </label>
-                            <input type="number" name="max_upgrade_attempts" min="1" max="100" value="{{ db_settings.max_upgrade_attempts if (db_settings and db_settings.max_upgrade_attempts is not none) else '7' }}" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors font-mono text-center">
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <div class="bg-[#111115] border border-[#3f3f46] rounded-lg p-4 space-y-2">
+                            <h3 class="text-xs font-bold text-white uppercase tracking-wider border-b border-[#2a2a32] pb-2">Resolution</h3>
+                            <div class="flex justify-between text-xs py-1"><span class="text-gray-300">2160p (4K UHD)</span><span class="font-mono text-emerald-400 font-bold">+2500 pts</span></div>
+                            <div class="flex justify-between text-xs py-1"><span class="text-gray-300">1440p (QHD)</span><span class="font-mono text-teal-400 font-bold">+1800 pts</span></div>
+                            <div class="flex justify-between text-xs py-1"><span class="text-gray-300">1080p (FHD)</span><span class="font-mono text-blue-400 font-bold">+1200 pts</span></div>
+                            <div class="flex justify-between text-xs py-1"><span class="text-gray-300">720p (HD)</span><span class="font-mono text-yellow-500 font-bold">+500 pts</span></div>
+                            <div class="flex justify-between text-xs py-1"><span class="text-gray-300">480p / SD</span><span class="font-mono text-slate-500">+100 pts</span></div>
                         </div>
-                        <div>
-                            <label class="flex items-center gap-1.5 text-[#d1d5db] font-medium mb-1 text-xs uppercase tracking-wider">
-                                <span>Download Stalled Timeout</span>
-                                <div class="relative inline-flex items-center group">
-                                    <svg class="w-3.5 h-3.5 shrink-0 text-[#71717a] group-hover:text-[#d1d5db] transition-colors cursor-help" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                                    </svg>
-                                    <div class="opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 absolute bottom-full right-0 mb-2 w-64 max-w-[calc(100vw-2rem)] bg-[#2a2a32] border border-[#3f3f46] text-gray-200 text-[11px] normal-case tracking-normal font-normal rounded-lg p-2.5 shadow-2xl z-30 pointer-events-none leading-relaxed">
-                                        Maximum hours a download may remain in progress or processing on TorBox before being automatically purged, blacklisted, and returned to search.
-                                    </div>
-                                </div>
+                        <div class="bg-[#111115] border border-[#3f3f46] rounded-lg p-4 space-y-2">
+                            <h3 class="text-xs font-bold text-white uppercase tracking-wider border-b border-[#2a2a32] pb-2">Source Quality</h3>
+                            <div class="flex justify-between text-xs py-1"><span class="text-gray-300">Remux (Lossless)</span><span class="font-mono text-emerald-400 font-bold">+1500 pts</span></div>
+                            <div class="flex justify-between text-xs py-1"><span class="text-gray-300">BluRay / UHD BD</span><span class="font-mono text-teal-400 font-bold">+1000 pts</span></div>
+                            <div class="flex justify-between text-xs py-1"><span class="text-gray-300">WEB-DL</span><span class="font-mono text-blue-400 font-bold">+800 pts</span></div>
+                            <div class="flex justify-between text-xs py-1"><span class="text-gray-300">WEBRip</span><span class="font-mono text-yellow-500 font-bold">+500 pts</span></div>
+                            <div class="flex justify-between text-xs py-1"><span class="text-gray-300">HDTV / Broadcast</span><span class="font-mono text-slate-500">+200 pts</span></div>
+                        </div>
+                        <div class="bg-[#111115] border border-[#3f3f46] rounded-lg p-4 space-y-2">
+                            <h3 class="text-xs font-bold text-white uppercase tracking-wider border-b border-[#2a2a32] pb-2">Audio Formats</h3>
+                            <div class="flex justify-between text-xs py-1"><span class="text-gray-300">TrueHD Atmos / DTS:X</span><span class="font-mono text-emerald-400 font-bold">+3800 pts</span></div>
+                            <div class="flex justify-between text-xs py-1"><span class="text-gray-300">DTS-HD MA / TrueHD / FLAC</span><span class="font-mono text-teal-400 font-bold">+3000 pts</span></div>
+                            <div class="flex justify-between text-xs py-1"><span class="text-gray-300">EAC3 Atmos / DD+ Atmos</span><span class="font-mono text-blue-400 font-bold">+2000 pts</span></div>
+                            <div class="flex justify-between text-xs py-1"><span class="text-gray-300">EAC3 / DTS / AC3 (5.1)</span><span class="font-mono text-yellow-500 font-bold">+1000 pts</span></div>
+                            <div class="flex justify-between text-xs py-1"><span class="text-gray-300">AAC / Opus / MP3</span><span class="font-mono text-slate-500">+200 pts</span></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex justify-end pt-4">
+                <button type="submit" class="bg-[#d40060] hover:bg-[#a3004a] text-white px-8 py-3 rounded-lg font-bold">
+                    Save Video Scoring Settings
+                </button>
+            </div>
+        </div>
+
+        <!-- TAB 4: GENERAL & BLACKLIST -->
+        <div x-show="activeTab === 'general'" x-cloak class="space-y-8 animate-fade-in">
+            <!-- Card 1: Notifications (Telegram & Discord Webhook + Event Triggers) -->
+            <div class="bg-[#1e1e24] border border-[#3f3f46] rounded-xl shadow-lg">
+                <div class="bg-[#2a2a32] rounded-t-xl border-b border-[#3f3f46] px-6 py-4 flex items-center justify-between">
+                    <h2 class="text-lg font-semibold text-white">Notifications (Telegram & Discord Webhook)</h2>
+                    <button type="button" hx-get="/settings/notification/new" hx-target="#modal-container" class="bg-[#3f3f46] hover:bg-[#52525b] text-white px-3.5 py-1.5 rounded-lg text-xs font-semibold">
+                        + Add Telegram Channel
+                    </button>
+                </div>
+                <div class="p-6 space-y-6">
+                    <!-- Telegram Channels -->
+                    <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                        {% for notif in notifications %}
+                        <div class="bg-[#111115] border border-[#3f3f46] rounded-xl p-4 flex items-center justify-between">
+                            <div>
+                                <div class="font-bold text-white">{{ notif.name }}</div>
+                                <div class="text-xs text-[#a1a1aa] font-mono">Telegram • Chat: {{ notif.chat_id or 'N/A' }}</div>
+                            </div>
+                            <div class="flex items-center gap-1.5">
+                                <button type="button" hx-get="/settings/notification/{{ notif.id }}/edit" hx-target="#modal-container" class="px-2 py-1 text-xs rounded bg-[#2a2a32] text-gray-300">Edit</button>
+                                <button type="button" hx-delete="/settings/notification/{{ notif.id }}" class="px-2 py-1 text-xs rounded bg-[#2a2a32] text-red-400">Del</button>
+                            </div>
+                        </div>
+                        {% else %}
+                        <div class="col-span-full text-xs text-[#71717a] italic">No Telegram notification channels configured.</div>
+                        {% endfor %}
+                    </div>
+
+                    <!-- Discord Webhook Settings -->
+                    <div class="pt-4 border-t border-[#3f3f46] space-y-4">
+                        <div class="flex items-center justify-between">
+                            <h3 class="text-sm font-bold text-indigo-400 uppercase tracking-wider">Discord Webhook</h3>
+                            <label class="inline-flex items-center gap-2 cursor-pointer text-xs text-white">
+                                <input type="checkbox" name="discord_enabled" value="true" {% if db_settings and db_settings.discord_enabled %}checked{% endif %} class="w-4 h-4 accent-[#d40060]">
+                                <span>Enable Discord Notifications</span>
                             </label>
-                            <select name="download_timeout_hours" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors">
+                        </div>
+                        <div class="flex flex-col sm:flex-row gap-3">
+                            <input type="url" name="discord_webhook_url" value="{{ db_settings.discord_webhook_url if db_settings and db_settings.discord_webhook_url else '' }}" placeholder="https://discord.com/api/webhooks/..." class="flex-1 bg-[#111115] border border-[#3f3f46] rounded-lg px-3.5 py-2 text-white font-mono text-xs">
+                            <button type="button"
+                                    hx-post="/api/settings/discord/test"
+                                    hx-include="[name='discord_webhook_url']"
+                                    hx-target="#settings-result"
+                                    class="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shrink-0">
+                                Test Discord Webhook
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Per-Event Trigger Checkboxes -->
+                    <div class="pt-4 border-t border-[#3f3f46] space-y-3">
+                        <h3 class="text-xs font-bold text-[#a1a1aa] uppercase tracking-wider">Notification Event Triggers</h3>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <label class="flex items-center gap-2.5 p-2.5 rounded-lg bg-[#111115] border border-[#3f3f46] cursor-pointer">
+                                <input type="checkbox" name="notify_on_push_initiated" value="true" {% if db_settings and db_settings.notify_on_push_initiated %}checked{% endif %} class="w-4 h-4 accent-[#d40060]">
+                                <span class="text-xs text-white font-medium">Push Initiated</span>
+                            </label>
+                            <label class="flex items-center gap-2.5 p-2.5 rounded-lg bg-[#111115] border border-[#3f3f46] cursor-pointer">
+                                <input type="checkbox" name="notify_on_completed" value="true" {% if not db_settings or db_settings.notify_on_completed %}checked{% endif %} class="w-4 h-4 accent-[#d40060]">
+                                <span class="text-xs text-white font-medium">Download Completed (Ready on TorBox)</span>
+                            </label>
+                            <label class="flex items-center gap-2.5 p-2.5 rounded-lg bg-[#111115] border border-[#3f3f46] cursor-pointer">
+                                <input type="checkbox" name="notify_on_failure" value="true" {% if not db_settings or db_settings.notify_on_failure %}checked{% endif %} class="w-4 h-4 accent-[#d40060]">
+                                <span class="text-xs text-white font-medium">Push Failed / Auto-Replaced</span>
+                            </label>
+                            <label class="flex items-center gap-2.5 p-2.5 rounded-lg bg-[#111115] border border-[#3f3f46] cursor-pointer">
+                                <input type="checkbox" name="notify_on_auto_advance" value="true" {% if not db_settings or db_settings.notify_on_auto_advance %}checked{% endif %} class="w-4 h-4 accent-[#d40060]">
+                                <span class="text-xs text-white font-medium">Auto-Advance Season Triggered</span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Card 2: Stalled Download Timeout, Self-Healing & TorBox Rescan -->
+            <div class="bg-[#1e1e24] border border-[#3f3f46] rounded-xl shadow-lg">
+                <div class="bg-[#2a2a32] rounded-t-xl border-b border-[#3f3f46] px-6 py-4 flex items-center justify-between">
+                    <h2 class="text-lg font-semibold text-white">Active Push Monitoring & Self-Healing</h2>
+                </div>
+                <div class="p-6 space-y-6">
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <div>
+                            <label class="block text-xs font-semibold uppercase text-[#d1d5db] mb-1">Stalled Download Timeout (Hours)</label>
+                            <select name="download_timeout_hours" class="w-full bg-[#111115] border border-[#3f3f46] rounded-lg p-2.5 text-white">
                                 <option value="6" {% if db_settings and db_settings.download_timeout_hours == 6 %}selected{% endif %}>6 hours</option>
                                 <option value="12" {% if db_settings and db_settings.download_timeout_hours == 12 %}selected{% endif %}>12 hours</option>
                                 <option value="24" {% if not db_settings or db_settings.download_timeout_hours == 24 %}selected{% endif %}>24 hours (Default)</option>
                                 <option value="48" {% if db_settings and db_settings.download_timeout_hours == 48 %}selected{% endif %}>48 hours</option>
                             </select>
                         </div>
-                    </div>
-
-                    <div class="pt-2 flex flex-col sm:flex-row gap-6">
-                        <div class="flex items-center gap-3">
-                            <label class="relative inline-flex items-center cursor-pointer">
-                                <input type="checkbox" name="dry_run" value="true" class="sr-only peer" {% if db_settings and db_settings.dry_run %}checked{% endif %}>
-                                <div class="w-11 h-6 bg-[#3f3f46] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#d40060]"></div>
-                                <span class="ml-3 text-sm font-medium text-white flex items-center gap-2">
-                                    🧪 Dry Run Mode (Searches and scores without pushing to TorBox)
-                                </span>
-                            </label>
-                            <div class="relative inline-flex items-center group">
-                                <svg class="w-3.5 h-3.5 shrink-0 text-[#71717a] group-hover:text-[#d1d5db] transition-colors cursor-help" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                                </svg>
-                                <div class="opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 absolute bottom-full left-0 mb-2 w-64 max-w-[calc(100vw-2rem)] bg-[#2a2a32] border border-[#3f3f46] text-gray-200 text-[11px] normal-case tracking-normal font-normal rounded-lg p-2.5 shadow-2xl z-30 pointer-events-none leading-relaxed">
-                                    When enabled, NZBoxer performs full search queries and release scoring but skips dispatching NZB payloads to TorBox.
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="flex items-center gap-3">
-                            <label class="relative inline-flex items-center cursor-pointer">
-                                <input type="checkbox" name="auto_grab_title_fallbacks" value="true" class="sr-only peer" {% if db_settings and db_settings.auto_grab_title_fallbacks %}checked{% endif %}>
-                                <div class="w-11 h-6 bg-[#3f3f46] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#d40060]"></div>
-                                <span class="ml-3 text-sm font-medium text-white flex items-center gap-2">
-                                    ⚡ Auto-Grab Title Fallbacks
-                                </span>
-                            </label>
-                            <div class="relative inline-flex items-center group">
-                                <svg class="w-3.5 h-3.5 shrink-0 text-[#71717a] group-hover:text-[#d1d5db] transition-colors cursor-help" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                                </svg>
-                                <div class="opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 absolute bottom-full left-0 mb-2 w-64 max-w-[calc(100vw-2rem)] bg-[#2a2a32] border border-[#3f3f46] text-gray-200 text-[11px] normal-case tracking-normal font-normal rounded-lg p-2.5 shadow-2xl z-30 pointer-events-none leading-relaxed">
-                                    Automatically dispatch title-search fallback releases directly to TorBox without requiring manual approval in the UI.
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Card 2: Self-Healing & Downloads -->
-            <div class="bg-[#1e1e24] border border-[#3f3f46] rounded-xl shadow-lg">
-                <div class="bg-[#2a2a32] rounded-t-xl border-b border-[#3f3f46] px-6 py-4 flex items-center justify-between">
-                    <h2 class="text-lg font-semibold text-white flex items-center gap-2">
-                        <svg class="w-5 h-5 shrink-0 text-yellow-500" fill="currentColor" viewBox="0 0 20 20"><path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z"></path></svg>
-                        Self-Healing & Downloads
-                    </h2>
-                </div>
-                <div class="p-6 space-y-6">
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
                         <div>
-                            <label class="flex items-center gap-1.5 text-[#d1d5db] font-medium mb-1 text-xs uppercase tracking-wider">
-                                <span>Self-Healing Interval</span>
-                                <div class="relative inline-flex items-center group">
-                                    <svg class="w-3.5 h-3.5 text-[#71717a] group-hover:text-[#d1d5db] transition-colors cursor-help" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                                    </svg>
-                                    <div class="opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 absolute bottom-full left-0 mb-2 w-64 max-w-[calc(100vw-2rem)] bg-[#2a2a32] border border-[#3f3f46] text-gray-200 text-[11px] normal-case tracking-normal font-normal rounded-lg p-2.5 shadow-2xl z-30 pointer-events-none leading-relaxed">
-                                        Frequency of background maintenance checks for monitoring TorBox download progress, repairing stalled downloads, and verifying grabbed files.
-                                    </div>
-                                </div>
-                            </label>
-                            <select name="self_healing_interval" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors">
-                                <option value="15" {% if db_settings and db_settings.self_healing_interval == 15 %}selected{% endif %}>Every 15 minutes</option>
+                            <label class="block text-xs font-semibold uppercase text-[#d1d5db] mb-1">Self-Healing Poll Interval</label>
+                            <select name="self_healing_interval" class="w-full bg-[#111115] border border-[#3f3f46] rounded-lg p-2.5 text-white">
+                                <option value="15" {% if not db_settings or db_settings.self_healing_interval == 15 %}selected{% endif %}>Every 15 minutes</option>
                                 <option value="30" {% if db_settings and db_settings.self_healing_interval == 30 %}selected{% endif %}>Every 30 minutes</option>
                                 <option value="60" {% if db_settings and db_settings.self_healing_interval == 60 %}selected{% endif %}>Every hour</option>
-                                <option value="120" {% if db_settings and db_settings.self_healing_interval == 120 %}selected{% endif %}>Every 2 hours</option>
-                                <option value="240" {% if db_settings and db_settings.self_healing_interval == 240 %}selected{% endif %}>Every 4 hours</option>
-                                <option value="360" {% if db_settings and db_settings.self_healing_interval == 360 %}selected{% endif %}>Every 6 hours</option>
-                                <option value="720" {% if db_settings and db_settings.self_healing_interval == 720 %}selected{% endif %}>Every 12 hours</option>
-                                <option value="1440" {% if db_settings and db_settings.self_healing_interval == 1440 %}selected{% endif %}>Every 24 hours</option>
                             </select>
                         </div>
                         <div>
-                            <label class="flex items-center gap-1.5 text-[#d1d5db] font-medium mb-1 text-xs uppercase tracking-wider">
-                                <span>Auto Retry</span>
-                                <div class="relative inline-flex items-center group">
-                                    <svg class="w-3.5 h-3.5 text-[#71717a] group-hover:text-[#d1d5db] transition-colors cursor-help" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                                    </svg>
-                                    <div class="opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 absolute bottom-full left-0 mb-2 w-64 max-w-[calc(100vw-2rem)] bg-[#2a2a32] border border-[#3f3f46] text-gray-200 text-[11px] normal-case tracking-normal font-normal rounded-lg p-2.5 shadow-2xl z-30 pointer-events-none leading-relaxed">
-                                        Automatically re-queues and retries failed or stalled downloads when TorBox encounters errors or inactivity.
-                                    </div>
-                                </div>
-                            </label>
-                            <select name="sh_auto_retry" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors">
-                                <option value="True" {% if db_settings and db_settings.sh_auto_retry %}selected{% endif %}>Enabled</option>
-                                <option value="False" {% if db_settings and not db_settings.sh_auto_retry %}selected{% endif %}>Disabled</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label class="flex items-center gap-1.5 text-[#d1d5db] font-medium mb-1 text-xs uppercase tracking-wider">
-                                <span>Max Retries</span>
-                                <div class="relative inline-flex items-center group">
-                                    <svg class="w-3.5 h-3.5 text-[#71717a] group-hover:text-[#d1d5db] transition-colors cursor-help" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                                    </svg>
-                                    <div class="opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 absolute bottom-full right-0 mb-2 w-64 max-w-[calc(100vw-2rem)] bg-[#2a2a32] border border-[#3f3f46] text-gray-200 text-[11px] normal-case tracking-normal font-normal rounded-lg p-2.5 shadow-2xl z-30 pointer-events-none leading-relaxed">
-                                        Maximum number of consecutive self-healing retry attempts allowed for an item before marking it failed or manual grab.
-                                    </div>
-                                </div>
-                            </label>
-                            <input type="number" name="sh_max_retries" value="{{ db_settings.sh_max_retries if db_settings else '5' }}" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors font-mono text-center">
-                        </div>
-                        <div>
-                            <label class="flex items-center gap-1.5 text-[#d1d5db] font-medium mb-1 text-xs uppercase tracking-wider">
-                                <span>Max Wait (Hours)</span>
-                                <div class="relative inline-flex items-center group">
-                                    <svg class="w-3.5 h-3.5 text-[#71717a] group-hover:text-[#d1d5db] transition-colors cursor-help" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                                    </svg>
-                                    <div class="opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 absolute bottom-full left-0 mb-2 w-64 max-w-[calc(100vw-2rem)] bg-[#2a2a32] border border-[#3f3f46] text-gray-200 text-[11px] normal-case tracking-normal font-normal rounded-lg p-2.5 shadow-2xl z-30 pointer-events-none leading-relaxed">
-                                        Maximum time in hours a download may remain in progress without progress updates before being flagged as stalled.
-                                    </div>
-                                </div>
-                            </label>
-                            <input type="number" step="0.1" name="sh_max_time_hours" value="{{ db_settings.sh_max_time_hours if db_settings else '24.0' }}" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors font-mono text-center">
-                        </div>
-                        <div>
-                            <label class="flex items-center gap-1.5 text-[#d1d5db] font-medium mb-1 text-xs uppercase tracking-wider">
-                                <span>Retry Delay (Hours)</span>
-                                <div class="relative inline-flex items-center group">
-                                    <svg class="w-3.5 h-3.5 text-[#71717a] group-hover:text-[#d1d5db] transition-colors cursor-help" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                                    </svg>
-                                    <div class="opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 absolute bottom-full left-0 mb-2 w-64 max-w-[calc(100vw-2rem)] bg-[#2a2a32] border border-[#3f3f46] text-gray-200 text-[11px] normal-case tracking-normal font-normal rounded-lg p-2.5 shadow-2xl z-30 pointer-events-none leading-relaxed">
-                                        Cooldown delay in hours before self-healing attempts a new indexer search for a release that previously failed.
-                                    </div>
-                                </div>
-                            </label>
-                            <input type="number" step="0.1" name="sh_retry_wait_hours" value="{{ db_settings.sh_retry_wait_hours if db_settings else '12.0' }}" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors font-mono text-center">
+                            <label class="block text-xs font-semibold uppercase text-[#d1d5db] mb-1">Max Auto-Replace Retries</label>
+                            <input type="number" name="sh_max_retries" value="{{ db_settings.sh_max_retries if db_settings else '3' }}" class="w-full bg-[#111115] border border-[#3f3f46] rounded-lg p-2.5 text-white font-mono text-center">
                         </div>
                     </div>
-                    <div class="mt-6 pt-6 border-t border-[#3f3f46]">
-                        <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                            <div>
-                                <h3 class="text-[#d1d5db] font-semibold text-sm mb-1 flex items-center gap-1.5">
-                                    TorBox Usenet Library Rescan
-                                    <div class="relative inline-flex items-center group">
-                                        <svg class="w-3.5 h-3.5 text-[#71717a] group-hover:text-[#d1d5db] transition-colors cursor-help" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                                        </svg>
-                                        <div class="opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 absolute bottom-full left-0 mb-2 w-64 max-w-[calc(100vw-2rem)] bg-[#2a2a32] border border-[#3f3f46] text-gray-200 text-[11px] normal-case tracking-normal font-normal rounded-lg p-2.5 shadow-2xl z-30 pointer-events-none leading-relaxed">
-                                            Manually invalidates the local TorBox download cache, fetches fresh library state from TorBox, and re-evaluates all media to detect newly added items or external additions.
-                                        </div>
-                                    </div>
-                                </h3>
-                                <p class="text-[#71717a] text-xs max-w-lg leading-relaxed">
-                                    Useful if you added TorBox downloads from outside NZBoxer and want to instantly map them to your watchlists.
-                                </p>
-                            </div>
-                            <div id="rescan-torbox-container" class="flex items-center gap-3 shrink-0">
-                                <img id="rescan-spinner" class="htmx-indicator w-5 h-5 animate-spin" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24'%3E%3Ccircle class='opacity-25' cx='12' cy='12' r='10' stroke='%23d40060' stroke-width='4'%3E%3C/circle%3E%3Cpath class='opacity-75' fill='%23d40060' d='M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z'%3E%3C/path%3E%3C/svg%3E" alt="Loading...">
-                                <button type="button" 
-                                        hx-post="/api/automation/rescan-torbox" 
-                                        hx-target="#rescan-torbox-container" 
-                                        hx-swap="innerHTML"
-                                        hx-indicator="#rescan-spinner"
-                                        class="bg-[#2a2a32] hover:bg-[#3f3f46] text-white border border-[#3f3f46] text-xs font-medium px-4 py-2 rounded-lg transition-colors flex items-center gap-2 group">
-                                    <svg class="w-4 h-4 text-gray-400 group-hover:text-white transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
-                                    </svg>
-                                    Force Rescan
-                                </button>
-                            </div>
+
+                    <div class="pt-4 border-t border-[#3f3f46] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                        <div>
+                            <h3 class="text-white font-semibold text-sm">Rescan TorBox Downloads</h3>
+                            <p class="text-[#71717a] text-xs">Invalidate local TorBox cache and reconcile active/completed Usenet downloads immediately.</p>
+                        </div>
+                        <div id="rescan-torbox-container" class="flex items-center gap-3 shrink-0">
+                            <button type="button"
+                                    hx-post="/api/automation/rescan-torbox"
+                                    hx-target="#rescan-torbox-container"
+                                    hx-swap="innerHTML"
+                                    class="bg-[#2a2a32] hover:bg-[#3f3f46] text-white border border-[#3f3f46] text-xs font-semibold px-4 py-2 rounded-lg">
+                                Rescan TorBox Downloads
+                            </button>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <!-- Card 3: Progressive Search Backoff -->
+            <!-- Card 3: Blacklist Management -->
             <div class="bg-[#1e1e24] border border-[#3f3f46] rounded-xl shadow-lg">
-                <div class="bg-[#2a2a32] rounded-t-xl border-b border-[#3f3f46] px-6 py-4 flex items-center gap-2">
-                    <h2 class="text-lg font-semibold text-white">Progressive Search Backoff</h2>
-                </div>
-                <div class="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div>
-                        <label class="flex items-center gap-1.5 text-[#d1d5db] font-medium mb-1 text-xs uppercase tracking-wider">
-                            <span>Backoff Tier 2 Skip (Cycles)</span>
-                            <div class="relative inline-flex items-center group">
-                                <svg class="w-3.5 h-3.5 text-[#71717a] group-hover:text-[#d1d5db] transition-colors cursor-help" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                                </svg>
-                                <div class="opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 absolute bottom-full left-0 mb-2 w-64 max-w-[calc(100vw-2rem)] bg-[#2a2a32] border border-[#3f3f46] text-gray-200 text-[11px] normal-case tracking-normal font-normal rounded-lg p-2.5 shadow-2xl z-30 pointer-events-none leading-relaxed">
-                                    Number of search cycles to skip for items that returned zero indexer results in moderate-dormancy tier.
-                                </div>
-                            </div>
-                        </label>
-                        <input type="number" name="backoff_tier2_skip" value="{{ db_settings.backoff_tier2_skip if db_settings else '6' }}" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors font-mono text-center">
-                    </div>
-                    <div>
-                        <label class="flex items-center gap-1.5 text-[#d1d5db] font-medium mb-1 text-xs uppercase tracking-wider">
-                            <span>Backoff Tier 3 Skip (Cycles)</span>
-                            <div class="relative inline-flex items-center group">
-                                <svg class="w-3.5 h-3.5 text-[#71717a] group-hover:text-[#d1d5db] transition-colors cursor-help" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                                </svg>
-                                <div class="opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 absolute bottom-full right-0 mb-2 w-64 max-w-[calc(100vw-2rem)] bg-[#2a2a32] border border-[#3f3f46] text-gray-200 text-[11px] normal-case tracking-normal font-normal rounded-lg p-2.5 shadow-2xl z-30 pointer-events-none leading-relaxed">
-                                    Number of search cycles to skip for long-dormant items returning zero indexer results to preserve API quotas.
-                                </div>
-                            </div>
-                        </label>
-                        <input type="number" name="backoff_tier3_skip" value="{{ db_settings.backoff_tier3_skip if db_settings else '24' }}" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors font-mono text-center">
-                    </div>
-                </div>
-            </div>
-
-            
-            <!-- Card 4: Blacklist Management -->
-            <div class="bg-[#1e1e24] border border-[#3f3f46] rounded-xl shadow-lg mt-8">
-                <div class="bg-[#2a2a32] rounded-t-xl border-b border-[#3f3f46] px-6 py-4 flex items-center justify-between">
-                    <h2 class="text-lg font-semibold text-white flex items-center gap-2">
-                        <svg class="w-5 h-5 shrink-0 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"></path></svg>
-                        Blacklist Management
-                    </h2>
+                <div class="bg-[#2a2a32] rounded-t-xl border-b border-[#3f3f46] px-6 py-4">
+                    <h2 class="text-lg font-semibold text-white">Blacklisted Releases</h2>
                 </div>
                 <div class="p-6">
                     <div class="overflow-x-auto max-h-96 overflow-y-auto">
@@ -397,17 +732,17 @@
                                         </td>
                                         <td class="px-4 py-3 text-xs">
                                             <span class="bg-red-900/40 text-red-400 px-2 py-1 rounded-md border border-red-800/50">
-                                                {{ item.reason or 'Unknown Failure' }}
+                                                {{ item.reason or 'Failed verification' }}
                                             </span>
                                         </td>
                                         <td class="px-4 py-3">
-                                            <button type="button" 
-                                                    hx-delete="/api/blacklist/{{ item.id }}" 
-                                                    hx-target="#blacklist-row-{{ item.id }}" 
+                                            <button type="button"
+                                                    hx-delete="/api/blacklist/{{ item.id }}"
+                                                    hx-target="#blacklist-row-{{ item.id }}"
                                                     hx-swap="outerHTML"
-                                                    class="text-gray-400 hover:text-red-400 transition-colors bg-[#2a2a32] hover:bg-red-900/20 p-1.5 rounded-lg border border-[#3f3f46] hover:border-red-900/50"
+                                                    class="text-gray-400 hover:text-red-400 bg-[#2a2a32] p-1.5 rounded-lg border border-[#3f3f46]"
                                                     title="Remove from Blacklist">
-                                                <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                                                Remove
                                             </button>
                                         </td>
                                     </tr>
@@ -426,434 +761,13 @@
             </div>
 
             <div class="flex justify-end pt-4">
-                <button type="submit" class="bg-[#d40060] hover:bg-[#a3004a] text-white px-8 py-3 rounded-lg flex items-center gap-2 font-bold transition-transform hover:scale-105 shadow-[0_0_15px_rgba(212,0,96,0.4)]">
+                <button type="submit" class="bg-[#d40060] hover:bg-[#a3004a] text-white px-8 py-3 rounded-lg font-bold shadow-[0_0_15px_rgba(212,0,96,0.4)]">
                     Save General Settings
                 </button>
             </div>
         </div>
-
-        <!-- Tab 2: Video Scoring & Rules -->
-        <div x-show="activeTab === 'scoring'" class="space-y-8 animate-fade-in" style="display: none;">
-            <div class="bg-[#1e1e24] border border-[#3f3f46] rounded-xl shadow-lg">
-                <div class="bg-[#2a2a32] rounded-t-xl border-b border-[#3f3f46] px-6 py-4 flex items-center justify-between">
-                    <h2 class="text-lg font-semibold text-white flex items-center gap-2">
-                        <svg class="w-5 h-5 shrink-0 text-[#d40060]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg>
-                        Video Scoring Engine (Strict Engine Specification)
-                    </h2>
-                    <span class="text-xs font-semibold px-2.5 py-1 rounded bg-[#2a2a32] border border-[#3f3f46] text-[#a1a1aa] uppercase">Automatic Rule Engine</span>
-                </div>
-                <div class="p-6 space-y-6">
-                    <p class="text-xs text-[#a1a1aa]">
-                        NZBoxer calculates release candidate scores deterministically using an algorithmic multi-tier point matrix. Highest scoring release matching your provider profile is automatically chosen.
-                    </p>
-
-                    <!-- Targets & Cutoffs -->
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div class="bg-[#111115] border border-[#3f3f46] rounded-lg p-4">
-                            <label class="block text-xs font-semibold text-[#a1a1aa] uppercase tracking-wider mb-1 flex items-center justify-between">
-                                <span>Target Score Cutoff</span>
-                                <span class="text-xs text-emerald-400 font-medium lowercase">Default: 8000 pts</span>
-                            </label>
-                            <div class="flex items-center gap-3 mt-1">
-                                <input type="number" name="cutoffs_target" value="{{ scoring.get('cutoffs', {}).get('target_score', 8000) if scoring else 8000 }}" min="1000" max="20000" step="100" class="w-32 bg-[#1e1e24] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2 text-white font-mono text-lg font-bold text-center">
-                                <span class="text-xs text-[#a1a1aa]">Prevents redundant re-searches once top release is grabbed.</span>
-                            </div>
-                        </div>
-
-                        <!-- Editable Upgrade Threshold with optimal hint -->
-                        <div class="bg-[#111115] border border-[#3f3f46] rounded-lg p-4">
-                            <label class="block text-xs font-semibold text-[#a1a1aa] uppercase tracking-wider mb-1 flex items-center justify-between">
-                                <span>Upgrade Threshold</span>
-                                <span class="text-xs text-emerald-400 font-medium lowercase">Optimal: 500 – 800 pts</span>
-                            </label>
-                            <div class="flex items-center gap-3 mt-1">
-                                <input type="number" name="cutoffs_upgrade" value="{{ scoring.get('cutoffs', {}).get('upgrade_threshold', db_settings.upgrade_threshold if db_settings else 500) if scoring else (db_settings.upgrade_threshold if db_settings else 500) }}" min="100" max="3000" step="50" class="w-32 bg-[#1e1e24] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2 text-white font-mono text-lg font-bold text-center">
-                                <span class="text-xs text-[#a1a1aa]">Minimum delta required to replace an existing release.</span>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Scoring Matrices -->
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                        <!-- Resolution -->
-                        <div class="bg-[#111115] border border-[#3f3f46] rounded-lg p-4 space-y-2">
-                            <h3 class="text-xs font-bold text-white uppercase tracking-wider border-b border-[#2a2a32] pb-2">Resolution</h3>
-                            <div class="flex justify-between text-xs py-1"><span class="text-gray-300">2160p (4K UHD)</span><span class="font-mono text-emerald-400 font-bold">+2500 pts</span></div>
-                            <div class="flex justify-between text-xs py-1"><span class="text-gray-300">1440p (QHD)</span><span class="font-mono text-teal-400 font-bold">+1800 pts</span></div>
-                            <div class="flex justify-between text-xs py-1"><span class="text-gray-300">1080p (FHD)</span><span class="font-mono text-blue-400 font-bold">+1200 pts</span></div>
-                            <div class="flex justify-between text-xs py-1"><span class="text-gray-300">720p (HD)</span><span class="font-mono text-yellow-500 font-bold">+500 pts</span></div>
-                            <div class="flex justify-between text-xs py-1"><span class="text-gray-300">480p / SD</span><span class="font-mono text-slate-500">+100 pts</span></div>
-                        </div>
-
-                        <!-- Source Quality -->
-                        <div class="bg-[#111115] border border-[#3f3f46] rounded-lg p-4 space-y-2">
-                            <h3 class="text-xs font-bold text-white uppercase tracking-wider border-b border-[#2a2a32] pb-2">Source Quality</h3>
-                            <div class="flex justify-between text-xs py-1"><span class="text-gray-300">Remux (Lossless)</span><span class="font-mono text-emerald-400 font-bold">+1500 pts</span></div>
-                            <div class="flex justify-between text-xs py-1"><span class="text-gray-300">BluRay / UHD BD</span><span class="font-mono text-teal-400 font-bold">+1000 pts</span></div>
-                            <div class="flex justify-between text-xs py-1"><span class="text-gray-300">WEB-DL</span><span class="font-mono text-blue-400 font-bold">+800 pts</span></div>
-                            <div class="flex justify-between text-xs py-1"><span class="text-gray-300">WEBRip</span><span class="font-mono text-yellow-500 font-bold">+500 pts</span></div>
-                            <div class="flex justify-between text-xs py-1"><span class="text-gray-300">HDTV / Broadcast</span><span class="font-mono text-slate-500">+200 pts</span></div>
-                        </div>
-
-                        <!-- Audio Codec Tier -->
-                        <div class="bg-[#111115] border border-[#3f3f46] rounded-lg p-4 space-y-2">
-                            <h3 class="text-xs font-bold text-white uppercase tracking-wider border-b border-[#2a2a32] pb-2">Audio Formats</h3>
-                            <div class="flex justify-between text-xs py-1"><span class="text-gray-300">TrueHD Atmos / DTS:X</span><span class="font-mono text-emerald-400 font-bold">+3800 pts</span></div>
-                            <div class="flex justify-between text-xs py-1"><span class="text-gray-300">DTS-HD MA / TrueHD / FLAC</span><span class="font-mono text-teal-400 font-bold">+3000 pts</span></div>
-                            <div class="flex justify-between text-xs py-1"><span class="text-gray-300">EAC3 Atmos / DD+ Atmos</span><span class="font-mono text-blue-400 font-bold">+2000 pts</span></div>
-                            <div class="flex justify-between text-xs py-1"><span class="text-gray-300">EAC3 / DTS / AC3 (5.1)</span><span class="font-mono text-yellow-500 font-bold">+1000 pts</span></div>
-                            <div class="flex justify-between text-xs py-1"><span class="text-gray-300">AAC / Opus / MP3</span><span class="font-mono text-slate-500">+200 pts</span></div>
-                        </div>
-                    </div>
-
-                    <!-- Codec, HDR & Bitrate -->
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 pt-2">
-                        <!-- Codecs -->
-                        <div class="bg-[#111115] border border-[#3f3f46] rounded-lg p-4 space-y-2">
-                            <h3 class="text-xs font-bold text-white uppercase tracking-wider border-b border-[#2a2a32] pb-2">Video Codec</h3>
-                            <div class="flex justify-between text-xs py-1"><span class="text-gray-300">AV1</span><span class="font-mono text-emerald-400 font-bold">+500 pts</span></div>
-                            <div class="flex justify-between text-xs py-1"><span class="text-gray-300">HEVC / H.265 / x265</span><span class="font-mono text-teal-400 font-bold">+400 pts</span></div>
-                            <div class="flex justify-between text-xs py-1"><span class="text-gray-300">AVC / H.264 / x264</span><span class="font-mono text-blue-400 font-bold">+200 pts</span></div>
-                        </div>
-
-                        <!-- HDR -->
-                        <div class="bg-[#111115] border border-[#3f3f46] rounded-lg p-4 space-y-2">
-                            <h3 class="text-xs font-bold text-white uppercase tracking-wider border-b border-[#2a2a32] pb-2">HDR & Color</h3>
-                            <div class="flex justify-between text-xs py-1"><span class="text-gray-300">Dolby Vision (DV)</span><span class="font-mono text-emerald-400 font-bold">+1000 pts</span></div>
-                            <div class="flex justify-between text-xs py-1"><span class="text-gray-300">HDR10+ / HDR10 / HDR</span><span class="font-mono text-teal-400 font-bold">+700 pts</span></div>
-                            <div class="flex justify-between text-xs py-1"><span class="text-gray-300">10-Bit Color</span><span class="font-mono text-blue-400 font-bold">+300 pts</span></div>
-                        </div>
-
-                        <!-- Channels & Bitrate -->
-                        <div class="bg-[#111115] border border-[#3f3f46] rounded-lg p-4 space-y-2">
-                            <h3 class="text-xs font-bold text-white uppercase tracking-wider border-b border-[#2a2a32] pb-2">Channels & Bitrate</h3>
-                            <div class="flex justify-between text-xs py-1"><span class="text-gray-300">7.1 / 5.1 Surround</span><span class="font-mono text-teal-400 font-bold">+200 pts</span></div>
-                            <div class="flex justify-between text-xs py-1"><span class="text-gray-300">Bitrate &ge; 80 Mbps</span><span class="font-mono text-emerald-400 font-bold">+500 pts</span></div>
-                            <div class="flex justify-between text-xs py-1"><span class="text-gray-300">Bitrate &ge; 50 Mbps</span><span class="font-mono text-teal-400 font-bold">+300 pts</span></div>
-                            <div class="flex justify-between text-xs py-1"><span class="text-gray-300">Bitrate &ge; 25 Mbps</span><span class="font-mono text-blue-400 font-bold">+150 pts</span></div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <div class="flex justify-end pt-4">
-                <button type="submit" class="bg-[#d40060] hover:bg-[#a3004a] text-white px-8 py-3 rounded-lg flex items-center gap-2 font-bold transition-transform hover:scale-105 shadow-[0_0_15px_rgba(212,0,96,0.4)]">
-                    Save Upgrade Threshold
-                </button>
-            </div>
-        </div>
     </form>
-
-      <!-- Tab 3: Providers & Profiles -->
-    <div x-show="activeTab === 'providers'" class="space-y-8 animate-fade-in" style="display: none;">
-        <div class="flex items-center justify-between mb-2">
-            <div>
-                <h2 class="text-2xl font-bold text-white">Connected Providers</h2>
-                <p class="text-xs text-[#a1a1aa] mt-1">Manage your Watchlists, Metadata, Downloader, and Indexer services.</p>
-            </div>
-            <button hx-get="/settings/provider/new" hx-target="#modal-container" class="bg-[#d40060] hover:bg-[#a3004a] text-white px-5 py-2.5 rounded-lg text-sm font-bold transition-all shadow-lg shadow-[#d40060]/20 flex items-center gap-2">
-                <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
-                Add New Provider
-            </button>
-        </div>
-
-        <!-- 1. WATCHLIST PROVIDERS -->
-        <div class="space-y-4">
-            <div class="flex items-center justify-between border-b border-[#3f3f46] pb-2">
-                <h3 class="text-sm font-bold text-[#d40060] uppercase tracking-wider flex items-center gap-2">
-                    <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
-                    Watchlist Providers
-                </h3>
-            </div>
-            <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-                {% set count = namespace(w=0) %}
-                {% for provider in providers %}
-                {% if provider.category == 'watchlist' or (provider.category.value is defined and provider.category.value == 'watchlist') %}
-                {% set count.w = count.w + 1 %}
-                <div class="bg-[#1e1e24] border border-[#3f3f46] hover:border-[#d40060] rounded-xl p-5 transition-all group shadow-lg flex flex-col justify-between">
-                    <div>
-                        <!-- Header Row -->
-                        <div class="flex items-start justify-between gap-3 mb-4">
-                            <div class="flex items-center gap-3 min-w-0 flex-1">
-                                <div class="w-10 h-10 rounded-xl bg-sky-500/15 border border-sky-500/30 text-sky-400 flex items-center justify-center font-bold text-base shrink-0 shadow-inner">
-                                    S
-                                </div>
-                                <div class="min-w-0 flex-1">
-                                    <h4 class="text-base font-bold text-white truncate leading-tight" title="{{ provider.name }}">{{ provider.name }}</h4>
-                                    <p class="text-xs text-[#a1a1aa] font-mono mt-0.5 truncate">{{ provider.type }} • {{ provider.username or 'No user' }}</p>
-                                </div>
-                            </div>
-                            <div class="flex items-center gap-1.5 shrink-0">
-                                <button hx-get="/settings/provider/{{ provider.id }}/edit" hx-target="#modal-container" class="p-1.5 bg-[#2a2a32] hover:bg-[#3f3f46] rounded text-[#a1a1aa] hover:text-white transition-colors flex items-center justify-center" title="Edit">
-                                    <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg>
-                                </button>
-                                <button hx-delete="/settings/provider/{{ provider.id }}" hx-confirm="Are you sure you want to delete this provider?" class="p-1.5 bg-[#2a2a32] hover:bg-red-900/60 rounded text-[#a1a1aa] hover:text-red-400 transition-colors flex items-center justify-center" title="Delete">
-                                    <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Footer Row -->
-                    <div class="flex items-center justify-between gap-2 pt-3 border-t border-[#2a2a32] mt-2">
-                        <div class="flex items-center gap-1.5 flex-wrap">
-                            {% set movie_profile = (provider.profiles | selectattr("media_type", "in", ["movies", "movie"]) | list | first) if provider.profiles else none %}
-                            {% set show_profile = (provider.profiles | selectattr("media_type", "in", ["shows", "show", "series"]) | list | first) if provider.profiles else none %}
-                            {% set anime_profile = (provider.profiles | selectattr("media_type", "in", ["anime"]) | list | first) if provider.profiles else none %}
-                            <span class="px-1.5 py-0.5 rounded text-[11px] font-semibold {% if movie_profile %}bg-emerald-500/20 text-emerald-400 border border-emerald-500/30{% else %}bg-[#2a2a32] text-[#71717a]{% endif %}">Movies</span>
-                            <span class="px-1.5 py-0.5 rounded text-[11px] font-semibold {% if show_profile %}bg-emerald-500/20 text-emerald-400 border border-emerald-500/30{% else %}bg-[#2a2a32] text-[#71717a]{% endif %}">Shows</span>
-                            <span class="px-1.5 py-0.5 rounded text-[11px] font-semibold {% if anime_profile %}bg-emerald-500/20 text-emerald-400 border border-emerald-500/30{% else %}bg-[#2a2a32] text-[#71717a]{% endif %}">Anime</span>
-                        </div>
-                        <button hx-post="/settings/provider/{{ provider.id }}/toggle-active" class="px-2.5 py-1 rounded-md text-xs font-bold transition-colors whitespace-nowrap {% if provider.is_active %}bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 border border-emerald-500/30{% else %}bg-[#3f3f46]/50 text-[#71717a] hover:bg-[#3f3f46] border border-[#3f3f46]{% endif %}" title="Toggle Active">
-                            {{ 'Active' if provider.is_active else 'Inactive' }}
-                        </button>
-                    </div>
-                </div>
-                {% endif %}
-                {% endfor %}
-                {% if count.w == 0 %}
-                <div class="col-span-full bg-[#111115] border border-dashed border-[#3f3f46] rounded-xl p-6 text-center text-[#71717a] text-sm">
-                    No watchlist providers configured.
-                </div>
-                {% endif %}
-            </div>
-        </div>
-
-        <!-- 2. METADATA PROVIDERS -->
-        <div class="space-y-4">
-            <div class="flex items-center justify-between border-b border-[#3f3f46] pb-2">
-                <h3 class="text-sm font-bold text-amber-400 uppercase tracking-wider flex items-center gap-2">
-                    <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                    Metadata Providers
-                </h3>
-            </div>
-            <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-                {% set count = namespace(m=0) %}
-                {% for provider in providers %}
-                {% if provider.category == 'metadata' or (provider.category.value is defined and provider.category.value == 'metadata') %}
-                {% set count.m = count.m + 1 %}
-                <div class="bg-[#1e1e24] border border-[#3f3f46] hover:border-amber-400 rounded-xl p-5 transition-all group shadow-lg flex flex-col justify-between">
-                    <div>
-                        <!-- Header Row -->
-                        <div class="flex items-start justify-between gap-3 mb-4">
-                            <div class="flex items-center gap-3 min-w-0 flex-1">
-                                <div class="w-10 h-10 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-400 flex items-center justify-center font-bold text-base shrink-0 shadow-inner">
-                                    {{ 'T' if provider.type == 'tmdb' else 'A' }}
-                                </div>
-                                <div class="min-w-0 flex-1">
-                                    <h4 class="text-base font-bold text-white truncate leading-tight" title="{{ provider.name }}">{{ provider.name }}</h4>
-                                    <p class="text-xs text-[#a1a1aa] font-mono mt-0.5 truncate">{{ provider.type }}</p>
-                                </div>
-                            </div>
-                            <div class="flex items-center gap-1.5 shrink-0">
-                                <button hx-get="/settings/provider/{{ provider.id }}/edit" hx-target="#modal-container" class="p-1.5 bg-[#2a2a32] hover:bg-[#3f3f46] rounded text-[#a1a1aa] hover:text-white transition-colors flex items-center justify-center" title="Edit">
-                                    <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg>
-                                </button>
-                                <button hx-delete="/settings/provider/{{ provider.id }}" hx-confirm="Are you sure you want to delete this provider?" class="p-1.5 bg-[#2a2a32] hover:bg-red-900/60 rounded text-[#a1a1aa] hover:text-red-400 transition-colors flex items-center justify-center" title="Delete">
-                                    <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Footer Row -->
-                    <div class="flex items-center justify-between gap-2 pt-3 border-t border-[#2a2a32] mt-2">
-                        <span class="text-xs text-[#a1a1aa] font-mono truncate max-w-[180px]">{{ 'Key: ••••••••' if provider.api_key else (provider.username or 'API Connected') }}</span>
-                        <button hx-post="/settings/provider/{{ provider.id }}/toggle-active" class="px-2.5 py-1 rounded-md text-xs font-bold transition-colors whitespace-nowrap {% if provider.is_active %}bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 border border-emerald-500/30{% else %}bg-[#3f3f46]/50 text-[#71717a] hover:bg-[#3f3f46] border border-[#3f3f46]{% endif %}" title="Toggle Active">
-                            {{ 'Active' if provider.is_active else 'Inactive' }}
-                        </button>
-                    </div>
-                </div>
-                {% endif %}
-                {% endfor %}
-                {% if count.m == 0 %}
-                <div class="col-span-full bg-[#111115] border border-dashed border-[#3f3f46] rounded-xl p-6 text-center text-[#71717a] text-sm">
-                    No metadata providers configured.
-                </div>
-                {% endif %}
-            </div>
-        </div>
-
-        <!-- 4. DOWNLOADER PROVIDERS -->
-        <div class="space-y-4">
-            <div class="flex items-center justify-between border-b border-[#3f3f46] pb-2">
-                <h3 class="text-sm font-bold text-purple-400 uppercase tracking-wider flex items-center gap-2">
-                    <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
-                    Downloader Providers
-                    <span class="text-xs font-normal text-[#a1a1aa] lowercase">(single active downloader rule)</span>
-                </h3>
-            </div>
-            <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-                {% set count = namespace(d=0) %}
-                {% for provider in providers %}
-                {% if provider.category == 'downloader' or (provider.category.value is defined and provider.category.value == 'downloader') %}
-                {% set count.d = count.d + 1 %}
-                <div class="bg-[#1e1e24] border {% if provider.is_active %}border-purple-500/80 shadow-[0_0_15px_rgba(168,85,247,0.15)]{% else %}border-[#3f3f46]{% endif %} hover:border-purple-400 rounded-xl p-5 transition-all group shadow-lg flex flex-col justify-between">
-                    <div>
-                        <!-- Header Row -->
-                        <div class="flex items-start justify-between gap-3 mb-4">
-                            <div class="flex items-center gap-3 min-w-0 flex-1">
-                                <div class="w-10 h-10 rounded-xl bg-purple-500/15 border border-purple-500/30 text-purple-400 flex items-center justify-center font-bold text-base shrink-0 shadow-inner">
-                                    TB
-                                </div>
-                                <div class="min-w-0 flex-1">
-                                    <h4 class="text-base font-bold text-white truncate leading-tight" title="{{ provider.name }}">{{ provider.name }}</h4>
-                                    <p class="text-xs text-[#a1a1aa] font-mono mt-0.5 truncate">{{ provider.type }}</p>
-                                </div>
-                            </div>
-                            <div class="flex items-center gap-1.5 shrink-0">
-                                <button hx-get="/settings/provider/{{ provider.id }}/edit" hx-target="#modal-container" class="p-1.5 bg-[#2a2a32] hover:bg-[#3f3f46] rounded text-[#a1a1aa] hover:text-white transition-colors flex items-center justify-center" title="Edit">
-                                    <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg>
-                                </button>
-                                <button hx-delete="/settings/provider/{{ provider.id }}" hx-confirm="Are you sure you want to delete this provider?" class="p-1.5 bg-[#2a2a32] hover:bg-red-900/60 rounded text-[#a1a1aa] hover:text-red-400 transition-colors flex items-center justify-center" title="Delete">
-                                    <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Footer Row -->
-                    <div class="flex items-center justify-between gap-2 pt-3 border-t border-[#2a2a32] mt-2">
-                        <span class="text-xs text-[#a1a1aa] font-mono truncate max-w-[180px]">{{ provider.api_url or 'https://api.torbox.app/v1/api' }}</span>
-                        <button hx-post="/settings/provider/{{ provider.id }}/toggle-active" class="px-3 py-1 rounded-md text-xs font-bold transition-all whitespace-nowrap shadow-sm {% if provider.is_active %}bg-purple-600 hover:bg-purple-500 text-white shadow-purple-900/40 border border-purple-500{% else %}bg-[#3f3f46]/50 text-[#71717a] hover:bg-[#3f3f46] border border-[#3f3f46]{% endif %}" title="Toggle Active Downloader">
-                            {{ 'Active' if provider.is_active else 'Inactive' }}
-                        </button>
-                    </div>
-                </div>
-                {% endif %}
-                {% endfor %}
-                {% if count.d == 0 %}
-                <div class="col-span-full bg-[#111115] border border-dashed border-[#3f3f46] rounded-xl p-6 text-center text-[#71717a] text-sm">
-                    No download providers configured.
-                </div>
-                {% endif %}
-            </div>
-        </div>
-
-        <!-- 5. INDEXER PROVIDERS -->
-        <div class="space-y-4">
-            <div class="flex items-center justify-between border-b border-[#3f3f46] pb-2">
-                <h3 class="text-sm font-bold text-blue-400 uppercase tracking-wider flex items-center gap-2">
-                    <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
-                    Usenet Indexers
-                    <span class="text-xs font-normal text-[#a1a1aa] lowercase">(sequential search cascade)</span>
-                </h3>
-            </div>
-            <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-                {% set count = namespace(i=0) %}
-                {% for provider in providers %}
-                {% if provider.category == 'indexer' or (provider.category.value is defined and provider.category.value == 'indexer') %}
-                {% set count.i = count.i + 1 %}
-                <div class="bg-[#1e1e24] border border-[#3f3f46] hover:border-blue-400 rounded-xl p-5 transition-all group shadow-lg flex flex-col justify-between">
-                    <div>
-                        <!-- Header Row -->
-                        <div class="flex items-start justify-between gap-3 mb-4">
-                            <div class="flex items-center gap-3 min-w-0 flex-1">
-                                <div class="w-10 h-10 rounded-xl bg-blue-500/15 border border-blue-500/30 text-blue-400 flex items-center justify-center font-bold text-base shrink-0 shadow-inner">
-                                    TM
-                                </div>
-                                <div class="min-w-0 flex-1">
-                                    <h4 class="text-base font-bold text-white truncate leading-tight" title="{{ provider.name }}">{{ provider.name }}</h4>
-                                    <p class="text-xs text-[#a1a1aa] font-mono mt-0.5 truncate">{{ provider.type }}</p>
-                                </div>
-                            </div>
-                            <div class="flex items-center gap-1.5 shrink-0">
-                                <button hx-get="/settings/provider/{{ provider.id }}/edit" hx-target="#modal-container" class="p-1.5 bg-[#2a2a32] hover:bg-[#3f3f46] rounded text-[#a1a1aa] hover:text-white transition-colors flex items-center justify-center" title="Edit">
-                                    <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg>
-                                </button>
-                                <button hx-delete="/settings/provider/{{ provider.id }}" hx-confirm="Are you sure you want to delete this provider?" class="p-1.5 bg-[#2a2a32] hover:bg-red-900/60 rounded text-[#a1a1aa] hover:text-red-400 transition-colors flex items-center justify-center" title="Delete">
-                                    <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
-                                </button>
-                            </div>
-                        </div>
-
-                        <!-- Indexer Details -->
-                        <div class="text-xs text-[#a1a1aa] space-y-1 font-mono mb-3">
-                            <div class="truncate text-white" title="{{ provider.api_url }}">{{ provider.api_url or 'https://treasuremaps.net/api' }}</div>
-                            <div class="text-[#71717a] text-[11px]">Cats: M:{{ provider.movie_category_id or 2000 }} • TV:{{ provider.series_category_id or 5000 }} • A:{{ provider.anime_category_id or 5070 }}</div>
-                        </div>
-                    </div>
-
-                    <!-- Footer Row -->
-                    <div class="flex items-center justify-between gap-2 pt-3 border-t border-[#2a2a32] mt-2">
-                        <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold font-mono bg-blue-500/15 text-blue-300 border border-blue-500/30 whitespace-nowrap">
-                            Priority {{ provider.priority if provider.priority is not none else '1' }}
-                        </span>
-                        <button hx-post="/settings/provider/{{ provider.id }}/toggle-active" class="px-2.5 py-1 rounded-md text-xs font-bold transition-colors whitespace-nowrap {% if provider.is_active %}bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 border border-emerald-500/30{% else %}bg-[#3f3f46]/50 text-[#71717a] hover:bg-[#3f3f46] border border-[#3f3f46]{% endif %}" title="Toggle Active">
-                            {{ 'Active' if provider.is_active else 'Inactive' }}
-                        </button>
-                    </div>
-                </div>
-                {% endif %}
-                {% endfor %}
-                {% if count.i == 0 %}
-                <div class="col-span-full bg-[#111115] border border-dashed border-[#3f3f46] rounded-xl p-6 text-center text-[#71717a] text-sm">
-                    No indexer providers configured.
-                </div>
-                {% endif %}
-            </div>
-        </div>
-    </div>
-
-    <!-- Tab 5: Notifications -->
-    <div x-show="activeTab === 'notifications'" class="space-y-6 animate-fade-in" style="display: none;">
-        <div class="flex items-center justify-between mb-4">
-            <h2 class="text-xl font-bold text-white">Notification Channels</h2>
-            <button hx-get="/settings/notification/new" hx-target="#modal-container" class="bg-[#3f3f46] hover:bg-[#52525b] text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-2">
-                <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
-                Add New Channel
-            </button>
-        </div>
-        
-        <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-            {% for notif in notifications %}
-            <div class="bg-[#1e1e24] border border-[#3f3f46] hover:border-[#3b82f6] rounded-xl transition-all group shadow-lg">
-                <div class="p-6 relative">
-                    <div class="absolute top-4 right-4 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button hx-get="/settings/notification/{{ notif.id }}/edit" hx-target="#modal-container" class="p-1.5 bg-[#2a2a32] hover:bg-[#3f3f46] rounded text-[#a1a1aa] hover:text-white transition-colors" title="Edit">
-                            <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg>
-                        </button>
-                        <button hx-delete="/settings/notification/{{ notif.id }}" hx-confirm="Are you sure you want to delete this channel?" class="p-1.5 bg-[#2a2a32] hover:bg-red-900 rounded text-[#a1a1aa] hover:text-red-400 transition-colors" title="Delete">
-                            <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
-                        </button>
-                    </div>
-                    
-                    <div class="flex items-center gap-3 mb-4">
-                        <div class="w-10 h-10 rounded-full bg-blue-500 bg-opacity-20 flex items-center justify-center text-blue-400">
-                            <svg class="w-5 h-5 shrink-0" fill="currentColor" viewBox="0 0 24 24"><path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/></svg>
-                        </div>
-                        <div>
-                            <h3 class="text-lg font-bold text-white">{{ notif.name }}</h3>
-                            <p class="text-xs text-[#a1a1aa]">Telegram Bot</p>
-                        </div>
-                    </div>
-                    
-                    <div class="bg-[#111115] rounded p-3 border border-[#3f3f46] mt-4">
-                        <div class="text-xs text-[#a1a1aa] mb-1">Chat ID</div>
-                        <div class="font-mono text-sm text-white">{{ notif.chat_id or 'Not configured' }}</div>
-                    </div>
-                </div>
-            </div>
-            {% else %}
-            <div class="col-span-full bg-[#111115] border border-dashed border-[#3f3f46] rounded-xl p-12 text-center text-[#a1a1aa]">
-                No notification channels configured.
-            </div>
-            {% endfor %}
-        </div>
-    </div>
-
 </div>
 
-<!-- Modal Container for HTMX targets -->
 <div id="modal-container"></div>
-
-<style>
-    .animate-fade-in {
-        animation: fadeIn 0.3s ease-out;
-    }
-    @keyframes fadeIn {
-        from { opacity: 0; transform: translateY(5px); }
-        to { opacity: 1; transform: translateY(0); }
-    }
-</style>
 {% endblock %}
