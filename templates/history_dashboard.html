@@ -1,11 +1,9 @@
 {% extends "base.html" %}
 
 {% block content %}
-{% include "components/navbar.html" %}
-
 <div class="mb-6 flex flex-col gap-2">
     <h1 class="text-2xl font-bold text-white tracking-wider">History Archive</h1>
-    <p class="text-[#a1a1aa] text-sm">Fully completed or ignored media items that no longer require automated tracking.</p>
+    <p class="text-[#a1a1aa] text-sm">Fully completed media items archived from your active watchlist. Click Re-Push to open the Push Modal at any time.</p>
 </div>
 
 <div class="bg-[#24242b] border border-[#3f3f46] rounded-lg shadow overflow-hidden" 
@@ -14,7 +12,7 @@
     <!-- Header Controls -->
     <div class="p-4 border-b border-[#3f3f46] bg-[#1e1e24] flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         
-        <!-- Category Tabs -->
+        <!-- Category Sub-Tabs (Movies | Series | Anime) -->
         <div class="flex flex-wrap gap-2">
             <button @click="tab = 'movies'" :class="{'bg-[#d40060] text-white shadow': tab === 'movies', 'bg-[#2a2a32] text-[#a1a1aa] hover:text-white': tab !== 'movies'}" class="px-4 py-2 rounded-md text-sm font-medium transition-colors">
                 Movies <span class="ml-1 opacity-75 text-xs">({{ movie_items|length }})</span>
@@ -36,7 +34,58 @@
         </div>
     </div>
 
-    <!-- Video Items Tables -->
+    {% macro render_archive_row(item, tab_key) %}
+    <tr class="hover:bg-[#2a2a32] transition-colors" 
+        data-sortable="true"
+        data-title="{{ item.title|lower }}"
+        data-profile="simkl"
+        data-archived-at="{{ item.updated_at.isoformat() if item.updated_at is defined and item.updated_at else '' }}"
+        x-show="tab === '{{ tab_key }}' && ('{{ item.title|replace('\'', '\\\'') }}'.toLowerCase().includes(search.toLowerCase()))">
+        <td class="px-6 py-4">
+            <div class="flex items-center gap-2">
+                <span class="font-bold text-white">{{ item.title }}</span>
+                {% if item.year %}
+                <span class="text-xs text-[#a1a1aa]">({{ item.year }})</span>
+                {% endif %}
+            </div>
+        </td>
+        <td class="px-6 py-4 whitespace-nowrap">
+            <span class="bg-[#3f3f46] text-gray-200 text-xs font-bold px-2.5 py-1 rounded uppercase">SIMKL</span>
+        </td>
+        <td class="px-6 py-4 text-gray-400 text-xs font-mono whitespace-nowrap">{{ item.updated_at.strftime('%Y-%m-%d %H:%M:%S') if item.updated_at is defined and item.updated_at else '—' }}</td>
+        <td class="px-6 py-4 whitespace-nowrap">
+            <div class="flex flex-wrap items-center gap-1.5">
+                <span class="bg-emerald-600 text-white text-[11px] font-bold px-2 py-0.5 rounded uppercase tracking-wider">DONE</span>
+                {% for pill in item.progress_pills %}
+                <span class="bg-[#1e1e24] text-gray-200 border border-[#3f3f46] text-[10px] font-bold px-2 py-0.5 rounded">{{ pill }}</span>
+                {% endfor %}
+            </div>
+        </td>
+        <td class="px-6 py-4 text-right whitespace-nowrap w-1">
+            <div class="flex justify-end items-center gap-2">
+                <button type="button"
+                        hx-get="/api/items/{{ item.id }}/push-modal"
+                        hx-target="#modal-container"
+                        hx-swap="innerHTML"
+                        title="Re-open Unified Push Modal"
+                        class="bg-[#2a2a32] hover:bg-[#d40060] text-gray-200 hover:text-white border border-[#3f3f46] text-xs font-semibold px-3 py-1.5 rounded-md transition-colors flex items-center gap-1.5">
+                    <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                    <span>Re-Push</span>
+                </button>
+                <button hx-delete="/items/{{ item.id }}"
+                        hx-target="closest tr"
+                        hx-swap="outerHTML"
+                        hx-confirm="Are you sure you want to delete this item?"
+                        title="Delete item"
+                        class="bg-transparent border border-red-800 text-red-500 hover:bg-red-600 hover:text-white transition-colors p-1.5 rounded-md">
+                    <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                </button>
+            </div>
+        </td>
+    </tr>
+    {% endmacro %}
+
+    <!-- 5-Column Video History Table (Title | Profile | Archived At | Status | Actions) -->
     <div class="overflow-x-auto" x-show="['movies', 'series', 'anime'].includes(tab)">
         <table class="min-w-full divide-y divide-[#3f3f46]">
             <thead class="bg-[#1e1e24]">
@@ -47,105 +96,31 @@
                             <span x-show="sortCol === 'title'" x-text="sortDir === 'asc' ? '▲' : '▼'" class="text-[#d40060] font-bold text-xs"></span>
                         </div>
                     </th>
-                    <th scope="col" @click="sortBy('type')" class="px-6 py-3 text-left text-xs font-semibold text-[#a1a1aa] uppercase tracking-wider cursor-pointer hover:text-white select-none">
+                    <th scope="col" @click="sortBy('profile')" class="px-6 py-3 text-left text-xs font-semibold text-[#a1a1aa] uppercase tracking-wider cursor-pointer hover:text-white select-none">
                         <div class="flex items-center gap-1">
-                            <span>Type</span>
-                            <span x-show="sortCol === 'type'" x-text="sortDir === 'asc' ? '▲' : '▼'" class="text-[#d40060] font-bold text-xs"></span>
+                            <span>Profile</span>
+                            <span x-show="sortCol === 'profile'" x-text="sortDir === 'asc' ? '▲' : '▼'" class="text-[#d40060] font-bold text-xs"></span>
                         </div>
                     </th>
-                    <th scope="col" class="px-6 py-3 text-left text-xs font-semibold text-[#a1a1aa] uppercase tracking-wider">Final Status</th>
                     <th scope="col" @click="sortBy('archived-at')" class="px-6 py-3 text-left text-xs font-semibold text-[#a1a1aa] uppercase tracking-wider cursor-pointer hover:text-white select-none">
                         <div class="flex items-center gap-1">
                             <span>Archived At</span>
                             <span x-show="sortCol === 'archived-at'" x-text="sortDir === 'asc' ? '▲' : '▼'" class="text-[#d40060] font-bold text-xs"></span>
                         </div>
                     </th>
+                    <th scope="col" class="px-6 py-3 text-left text-xs font-semibold text-[#a1a1aa] uppercase tracking-wider">Status</th>
                     <th scope="col" class="px-6 py-3 text-right text-xs font-semibold text-[#a1a1aa] uppercase tracking-wider whitespace-nowrap w-1">Actions</th>
                 </tr>
             </thead>
             <tbody class="divide-y divide-[#3f3f46] bg-[#24242b]" id="video-history-table">
-                <!-- Movies -->
                 {% for item in movie_items %}
-                <tr class="hover:bg-[#2a2a32] transition-colors" 
-                    data-sortable="true"
-                    data-title="{{ item.title|lower }}"
-                    data-type="{{ item.media_type.value if item.media_type else 'movie' }}"
-                    data-archived-at="{{ item.updated_at.isoformat() if item.updated_at is defined and item.updated_at else '' }}"
-                    x-show="tab === 'movies' && ('{{ item.title|replace('\'', '\\\'') }}'.toLowerCase().includes(search.toLowerCase()))">
-                    <td class="px-6 py-4">
-                        <div class="flex items-center gap-2">
-                            <a href="/items/{{ item.id }}" class="font-bold text-white hover:text-indigo-400 transition-colors">{{ item.title }}</a>
-                        </div>
-                    </td>
-                    <td class="px-6 py-4">
-                        {% include "components/type_badge.html" %}
-                    </td>
-                    <td class="px-6 py-4">
-                        <span class="bg-slate-700 text-slate-300 text-[11px] font-bold px-2 py-1 rounded uppercase tracking-wider">{{ item.status.value }}</span>
-                    </td>
-                    <td class="px-6 py-4 text-gray-400 text-xs font-mono">{{ item.updated_at.strftime('%Y-%m-%d %H:%M:%S') if item.updated_at is defined and item.updated_at else '—' }}</td>
-                    <td class="px-6 py-4 text-right whitespace-nowrap w-1">
-                        <button hx-post="/items/{{ item.id }}/retry" title="Reactivate (Reset status)" class="bg-transparent border border-yellow-600 text-yellow-500 hover:bg-yellow-600 hover:text-white transition-colors p-1.5 rounded-md">
-                            <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
-                        </button>
-                    </td>
-                </tr>
+                    {{ render_archive_row(item, 'movies') }}
                 {% endfor %}
-                
-                <!-- Series -->
                 {% for item in series_items %}
-                <tr class="hover:bg-[#2a2a32] transition-colors" 
-                    data-sortable="true"
-                    data-title="{{ item.title|lower }}"
-                    data-type="{{ item.media_type.value if item.media_type else 'series' }}"
-                    data-archived-at="{{ item.updated_at.isoformat() if item.updated_at is defined and item.updated_at else '' }}"
-                    x-show="tab === 'series' && ('{{ item.title|replace('\'', '\\\'') }}'.toLowerCase().includes(search.toLowerCase()))">
-                    <td class="px-6 py-4">
-                        <div class="flex items-center gap-2">
-                            <a href="/items/{{ item.id }}" class="font-bold text-white hover:text-indigo-400 transition-colors">{{ item.title }}</a>
-                        </div>
-                    </td>
-                    <td class="px-6 py-4">
-                        {% include "components/type_badge.html" %}
-                    </td>
-                    <td class="px-6 py-4">
-                        <span class="bg-slate-700 text-slate-300 text-[11px] font-bold px-2 py-1 rounded uppercase tracking-wider">{{ item.downloaded_seasons }}/{{ item.total_seasons }} Seasons</span>
-                    </td>
-                    <td class="px-6 py-4 text-gray-400 text-xs font-mono">{{ item.updated_at.strftime('%Y-%m-%d %H:%M:%S') if item.updated_at is defined and item.updated_at else '—' }}</td>
-                    <td class="px-6 py-4 text-right whitespace-nowrap w-1">
-                        <button hx-post="/items/{{ item.id }}/retry" title="Reactivate (Reset status)" class="bg-transparent border border-yellow-600 text-yellow-500 hover:bg-yellow-600 hover:text-white transition-colors p-1.5 rounded-md">
-                            <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
-                        </button>
-                    </td>
-                </tr>
+                    {{ render_archive_row(item, 'series') }}
                 {% endfor %}
-                
-                <!-- Anime -->
                 {% for item in anime_items %}
-                <tr class="hover:bg-[#2a2a32] transition-colors" 
-                    data-sortable="true"
-                    data-title="{{ item.title|lower }}"
-                    data-type="{{ item.media_type.value if item.media_type else 'anime' }}"
-                    data-archived-at="{{ item.updated_at.isoformat() if item.updated_at is defined and item.updated_at else '' }}"
-                    x-show="tab === 'anime' && ('{{ item.title|replace('\'', '\\\'') }}'.toLowerCase().includes(search.toLowerCase()))">
-                    <td class="px-6 py-4">
-                        <div class="flex items-center gap-2">
-                            <a href="/items/{{ item.id }}" class="font-bold text-white hover:text-indigo-400 transition-colors">{{ item.title }}</a>
-                        </div>
-                    </td>
-                    <td class="px-6 py-4">
-                        {% include "components/type_badge.html" %}
-                    </td>
-                    <td class="px-6 py-4">
-                        <span class="bg-slate-700 text-slate-300 text-[11px] font-bold px-2 py-1 rounded uppercase tracking-wider">{{ item.downloaded_seasons }}/{{ item.total_seasons }} Seasons</span>
-                    </td>
-                    <td class="px-6 py-4 text-gray-400 text-xs font-mono">{{ item.updated_at.strftime('%Y-%m-%d %H:%M:%S') if item.updated_at is defined and item.updated_at else '—' }}</td>
-                    <td class="px-6 py-4 text-right whitespace-nowrap w-1">
-                        <button hx-post="/items/{{ item.id }}/retry" title="Reactivate (Reset status)" class="bg-transparent border border-yellow-600 text-yellow-500 hover:bg-yellow-600 hover:text-white transition-colors p-1.5 rounded-md">
-                            <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
-                        </button>
-                    </td>
-                </tr>
+                    {{ render_archive_row(item, 'anime') }}
                 {% endfor %}
             </tbody>
         </table>

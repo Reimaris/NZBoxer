@@ -264,17 +264,24 @@ app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
 @app.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request, background_tasks: BackgroundTasks):
-    """Main dashboard displaying the watchlist."""
+    """Main dashboard displaying the 6-Card Interactive Top Deck and 3-Tier Status Tables."""
     from sqlalchemy import select
     from sqlalchemy.orm import selectinload
 
     from app.core.automation import (
+        classify_v3_status_tier,
+        classify_video_item_partition,
         consolidate_standalone_anime_sequels,
         should_trigger_dashboard_simkl_sync,
         sync_all_providers,
     )
+    from app.core.transfer_poller import (
+        count_downloading_entities,
+        get_active_pushes,
+        transfer_poller,
+    )
     from app.db.database import async_session_factory
-    from app.db.models import MediaItem, MediaType
+    from app.db.models import MediaItem, MediaType, Season, SystemSettings
 
     async with async_session_factory() as session:
         if await should_trigger_dashboard_simkl_sync(session):
@@ -288,7 +295,8 @@ async def dashboard(request: Request, background_tasks: BackgroundTasks):
             select(MediaItem)
             .order_by(MediaItem.created_at.desc())
             .options(
-                selectinload(MediaItem.seasons),
+                selectinload(MediaItem.seasons).selectinload(Season.episodes),
+                selectinload(MediaItem.seasons).selectinload(Season.download_history),
                 selectinload(MediaItem.failure_logs),
                 selectinload(MediaItem.download_history),
                 selectinload(MediaItem.provider),
@@ -297,14 +305,24 @@ async def dashboard(request: Request, background_tasks: BackgroundTasks):
         result = await session.execute(stmt)
         all_items = result.scalars().all()
         items = [i for i in all_items if not i.is_fully_completed]
-
-        from app.core.automation import classify_video_item_partition
+        history_video = sorted(
+            [i for i in all_items if i.is_fully_completed],
+            key=lambda x: (
+                x.updated_at.timestamp() if getattr(x, "updated_at", None) else 0.0
+            ),
+            reverse=True,
+        )
 
         for item in items:
             item.partition = classify_video_item_partition(item)
+            item.status_tier = classify_v3_status_tier(item)
 
         missing_items = [i for i in items if i.partition == "missing"]
         upgrading_items = [i for i in items if i.partition == "upgrading"]
+
+        in_progress_items = [i for i in items if i.status_tier == "in_progress"]
+        ready_to_push_items = [i for i in items if i.status_tier == "ready_to_push"]
+        upcoming_items = [i for i in items if i.status_tier == "upcoming"]
 
         items_payload = [
             {
@@ -315,14 +333,15 @@ async def dashboard(request: Request, background_tasks: BackgroundTasks):
                 )
                 else i.media_type.value,
                 "partition": getattr(i, "partition", "missing"),
+                "status_tier": getattr(i, "status_tier", "ready_to_push"),
                 "title": (i.title or "").lower(),
                 "alt_title": (i.alt_title or "").lower(),
-                "ids": f"{i.tvdb_id or ''} {i.tmdb_id or ''} {i.imdb_id or ''} {i.simkl_id or ''}".lower(),
+                "ids": f"{i.tvdb_id or ''} {i.tmdb_id or ''} {i.imdb_id or ''} {i.simkl_id or ''} {i.anilist_id or ''}".lower(),
             }
             for i in items
         ]
 
-        # Detailed stats calculations
+        # Active category collections
         movie_items = [
             i
             for i in items
@@ -336,42 +355,64 @@ async def dashboard(request: Request, background_tasks: BackgroundTasks):
             if i.media_type == MediaType.ANIME or getattr(i, "is_anime_movie", False)
         ]
 
-        movie_stats = {
-            "total": len(movie_items),
-            "wanted": sum(
-                1 for i in movie_items if i.status in ("searching", "pending")
-            ),
-            "completed": sum(
-                1 for i in movie_items if i.status in ("completed", "downloaded")
-            ),
-            "ignored": sum(
-                1 for i in movie_items if i.status in ("ignored", "canceled")
-            ),
-        }
-        series_stats = {
-            "total": len(series_items),
-            "wanted": sum(
-                1 for i in series_items if i.status in ("searching", "pending")
-            ),
-            "completed": sum(
-                1 for i in series_items if i.status in ("completed", "downloaded")
-            ),
-            "ignored": sum(
-                1 for i in series_items if i.status in ("ignored", "canceled")
-            ),
-        }
-        anime_stats = {
-            "total": len(anime_items),
-            "wanted": sum(
-                1 for i in anime_items if i.status in ("searching", "pending")
-            ),
-            "completed": sum(
-                1 for i in anime_items if i.status in ("completed", "downloaded")
-            ),
-            "ignored": sum(
-                1 for i in anime_items if i.status in ("ignored", "canceled")
-            ),
-        }
+        # History category collections
+        history_movie_items = [
+            i
+            for i in history_video
+            if i.media_type == MediaType.MOVIE
+            and not getattr(i, "is_anime_movie", False)
+        ]
+        history_series_items = [
+            i for i in history_video if i.media_type == MediaType.SHOW
+        ]
+        history_anime_items = [
+            i
+            for i in history_video
+            if i.media_type == MediaType.ANIME or getattr(i, "is_anime_movie", False)
+        ]
+
+        def _build_cat_stats(
+            cat_items: list[MediaItem], hist_items: list[MediaItem]
+        ) -> dict[str, int]:
+            return {
+                "total": len(cat_items),
+                "in_progress": sum(
+                    1 for i in cat_items if i.status_tier == "in_progress"
+                ),
+                "ready_to_push": sum(
+                    1 for i in cat_items if i.status_tier == "ready_to_push"
+                ),
+                "upcoming": sum(1 for i in cat_items if i.status_tier == "upcoming"),
+                "wanted": sum(
+                    1 for i in cat_items if i.status in ("searching", "pending")
+                ),
+                "completed": len(hist_items),
+                "ignored": sum(
+                    1 for i in cat_items if i.status in ("ignored", "canceled")
+                ),
+            }
+
+        movie_stats = _build_cat_stats(movie_items, history_movie_items)
+        series_stats = _build_cat_stats(series_items, history_series_items)
+        anime_stats = _build_cat_stats(anime_items, history_anime_items)
+
+        # Card 5: Active Pushes
+        active_pushes = await get_active_pushes(session)
+        downloading_count = await count_downloading_entities(session)
+
+        # Card 6: Manual Search defaults
+        db_settings = (
+            (
+                await session.execute(
+                    select(SystemSettings).where(SystemSettings.id == 1)
+                )
+            )
+            .scalars()
+            .first()
+        )
+        defaults: dict[str, Any] = {}
+        if db_settings and db_settings.scoring_settings:
+            defaults = db_settings.scoring_settings.get("manual_search_defaults", {})
 
     return templates.TemplateResponse(
         request=request,
@@ -381,6 +422,9 @@ async def dashboard(request: Request, background_tasks: BackgroundTasks):
             "items_payload": items_payload,
             "missing_items": missing_items,
             "upgrading_items": upgrading_items,
+            "in_progress_items": in_progress_items,
+            "ready_to_push_items": ready_to_push_items,
+            "upcoming_items": upcoming_items,
             "movie_items": movie_items,
             "series_items": series_items,
             "anime_items": anime_items,
@@ -390,6 +434,15 @@ async def dashboard(request: Request, background_tasks: BackgroundTasks):
             "movies_wanted": movie_stats["wanted"],
             "series_wanted": series_stats["wanted"],
             "anime_wanted": anime_stats["wanted"],
+            "history_movie_items": history_movie_items,
+            "history_series_items": history_series_items,
+            "history_anime_items": history_anime_items,
+            "history_total": len(history_video),
+            "active_pushes": active_pushes,
+            "active_pushes_count": len(active_pushes),
+            "downloading_count": downloading_count,
+            "poller_awake": transfer_poller.is_awake,
+            "defaults": defaults,
             "max_upgrade_attempts": settings.max_upgrade_attempts,
         },
     )
@@ -3246,6 +3299,7 @@ async def history_dashboard(request: Request):
     from app.db.models import (
         MediaItem,
         MediaType,
+        Season,
     )
 
     async with async_session_factory() as session:
@@ -3254,7 +3308,8 @@ async def history_dashboard(request: Request):
             select(MediaItem)
             .order_by(MediaItem.updated_at.desc())
             .options(
-                selectinload(MediaItem.seasons),
+                selectinload(MediaItem.seasons).selectinload(Season.episodes),
+                selectinload(MediaItem.seasons).selectinload(Season.download_history),
                 selectinload(MediaItem.failure_logs),
                 selectinload(MediaItem.download_history),
                 selectinload(MediaItem.provider),

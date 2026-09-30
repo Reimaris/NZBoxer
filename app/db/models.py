@@ -757,6 +757,19 @@ class MediaItem(Base):
         self._partition = val
 
     @property
+    def status_tier(self) -> str:
+        """v3.0.0 3-tier status section ('in_progress', 'ready_to_push', or 'upcoming')."""
+        if hasattr(self, "_status_tier"):
+            return self._status_tier
+        from app.core.automation import classify_v3_status_tier
+
+        return classify_v3_status_tier(self)
+
+    @status_tier.setter
+    def status_tier(self, val: str) -> None:
+        self._status_tier = val
+
+    @property
     def best_score(self) -> float | None:
         """Returns the highest score from all associated download history entries."""
         if hasattr(self, "_best_score_override"):
@@ -837,7 +850,7 @@ class MediaItem(Base):
             return False
 
         elif self.media_type in (MediaType.SHOW, MediaType.ANIME):
-            if not self.seasons or self.total_seasons == 0:
+            if not self.seasons or (self.total_seasons + self.total_movies) == 0:
                 return False
 
             for season in self.seasons:

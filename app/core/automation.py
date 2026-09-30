@@ -4145,3 +4145,55 @@ def classify_video_item_partition(item: MediaItem) -> str:
         return "upgrading"
 
     return "missing"
+
+
+def classify_v3_status_tier(item: MediaItem) -> str:
+    """Classify an active MediaItem into one of the 3 v3.0.0 dashboard horizontal sections:
+    - 'in_progress'   (Section 1: Active / Partially Downloaded)
+    - 'ready_to_push' (Section 2: Ready to Push / Wanted & Unpushed)
+    - 'upcoming'      (Section 3: Upcoming / Future & TBA)
+    """
+    from sqlalchemy import inspect as sa_inspect
+
+    if item.status in (MediaStatus.DOWNLOADING, MediaStatus.FAILED):
+        return "in_progress"
+
+    seasons: list[Season] = []
+    if "seasons" not in sa_inspect(item).unloaded:
+        seasons = list(item.seasons or [])
+
+    if seasons:
+        for s in seasons:
+            if s.status in (SeasonStatus.DOWNLOADING, SeasonStatus.FAILED):
+                return "in_progress"
+            if "episodes" not in sa_inspect(s).unloaded:
+                for ep in s.episodes or []:
+                    if ep.status in (EpisodeStatus.DOWNLOADING, EpisodeStatus.FAILED):
+                        return "in_progress"
+
+        if (item.downloaded_seasons + item.downloaded_movies) > 0:
+            return "in_progress"
+
+        non_special = [s for s in seasons if s.season_number > 0]
+        if non_special:
+            has_released_entry = False
+            for s in non_special:
+                if s.status == SeasonStatus.FUTURE:
+                    continue
+                if s.air_date is not None:
+                    if not is_future_or_tba(s.air_date):
+                        has_released_entry = True
+                        break
+                elif not is_future_or_tba(item.release_date, item.year):
+                    has_released_entry = True
+                    break
+            if not has_released_entry:
+                return "upcoming"
+            return "ready_to_push"
+
+    if item.status == MediaStatus.FUTURE or is_future_or_tba(
+        item.release_date, item.year
+    ):
+        return "upcoming"
+
+    return "ready_to_push"

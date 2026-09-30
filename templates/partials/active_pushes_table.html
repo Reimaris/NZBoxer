@@ -1,0 +1,114 @@
+<div class="border border-[#3f3f46] rounded-lg overflow-x-auto bg-[#1e1e24]/40 min-h-[160px]">
+    <table class="w-full text-left border-collapse">
+        <thead class="bg-[#1e1e24] text-[#a1a1aa] font-semibold text-xs uppercase tracking-wider border-b border-[#3f3f46]">
+            <tr>
+                <th class="px-6 py-3.5">Title &amp; Target</th>
+                <th class="px-6 py-3.5">Release Name</th>
+                <th class="px-6 py-3.5">Progress Bar (%)</th>
+                <th class="px-6 py-3.5">Speed &amp; ETA</th>
+                <th class="px-6 py-3.5">Status</th>
+                <th class="px-6 py-3.5 text-right whitespace-nowrap w-1">Actions</th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-[#3f3f46] text-sm">
+            {% for p in active_pushes %}
+            <tr class="hover:bg-[#2a2a32] transition-colors" data-push-row="true" data-history-id="{{ p.history_id }}">
+                <!-- Col 1: Title & Target -->
+                <td class="px-6 py-4 max-w-[260px] break-words">
+                    <div class="font-bold text-white">{{ p.title_and_target }}</div>
+                    <div class="flex items-center gap-1.5 mt-1">
+                        <span class="bg-[#2a2a32] text-gray-300 border border-[#3f3f46] text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wider">{{ p.target_label }}</span>
+                        <span class="bg-[#1e1e24] text-gray-400 border border-[#3f3f46] text-[10px] font-mono px-1.5 py-0.5 rounded uppercase">{{ p.push_mode }}</span>
+                    </div>
+                </td>
+
+                <!-- Col 2: Release Name & Quality/Language Pills -->
+                <td class="px-6 py-4 max-w-[320px] break-words">
+                    <div class="text-xs font-mono text-gray-200 break-all">{{ p.release_name }}</div>
+                    <div class="flex flex-wrap gap-1.5 mt-1.5 text-[10px] font-bold">
+                        {% if p.language %}
+                        <span class="bg-indigo-950/80 text-indigo-300 border border-indigo-700/50 px-2 py-0.5 rounded uppercase">{{ p.language }}</span>
+                        {% endif %}
+                        {% if p.resolution %}
+                        <span class="bg-pink-950/80 text-pink-300 border border-pink-700/50 px-2 py-0.5 rounded uppercase">{{ p.resolution }}</span>
+                        {% endif %}
+                        {% if p.source %}
+                        <span class="bg-emerald-950/80 text-emerald-300 border border-emerald-700/50 px-2 py-0.5 rounded uppercase">{{ p.source }}</span>
+                        {% endif %}
+                    </div>
+                </td>
+
+                <!-- Col 3: Progress Bar (%) -->
+                <td class="px-6 py-4 whitespace-nowrap min-w-[180px]">
+                    <div class="flex items-center gap-3">
+                        <div class="w-full bg-[#1e1e24] border border-[#3f3f46] rounded-full h-2.5 overflow-hidden">
+                            <div class="h-full rounded-full transition-all duration-300 {% if p.is_failed %}bg-red-600{% elif p.progress_pct >= 100 %}bg-emerald-500{% else %}bg-gradient-to-r from-[#d40060] to-pink-500{% endif %}"
+                                 style="width: {{ p.progress_pct }}%"></div>
+                        </div>
+                        <span class="text-xs font-mono font-bold text-white w-12 text-right">{{ p.progress_pct }}%</span>
+                    </div>
+                </td>
+
+                <!-- Col 4: Speed & ETA -->
+                <td class="px-6 py-4 whitespace-nowrap text-xs font-mono text-gray-300">
+                    {{ p.speed_and_eta }}
+                </td>
+
+                <!-- Col 5: Status -->
+                <td class="px-6 py-4 whitespace-nowrap">
+                    {% if p.is_failed %}
+                        <span class="bg-red-900/90 text-red-200 border border-red-700 text-[11px] font-bold px-2.5 py-1 rounded uppercase tracking-wider shadow-sm">{{ p.status }}</span>
+                        {% if p.status_detail %}
+                        <div class="text-[10px] text-red-400 mt-1 max-w-[180px] truncate" title="{{ p.status_detail }}">{{ p.status_detail }}</div>
+                        {% endif %}
+                    {% elif p.status == 'Unpacking' or p.status == 'Verifying' %}
+                        <span class="bg-indigo-600 text-white text-[11px] font-bold px-2.5 py-1 rounded uppercase tracking-wider shadow-sm animate-pulse">{{ p.status }}</span>
+                    {% else %}
+                        <span class="bg-cyan-600 text-white text-[11px] font-bold px-2.5 py-1 rounded uppercase tracking-wider shadow-sm animate-pulse">{{ p.status }}</span>
+                    {% endif %}
+                </td>
+
+                <!-- Col 6: Actions -->
+                <td class="px-6 py-4 text-right whitespace-nowrap w-1">
+                    <div class="flex justify-end gap-2">
+                        {% if p.is_failed %}
+                        <button hx-get="/api/items/{{ p.media_item_id }}/push-modal"
+                                hx-target="#modal-container"
+                                hx-swap="innerHTML"
+                                class="bg-[#d40060] hover:bg-[#a3004a] text-white text-xs font-semibold px-3 py-1.5 rounded-md transition-colors flex items-center gap-1.5 shadow-sm">
+                            <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                            Re-Search &amp; Pick
+                        </button>
+                        <button hx-post="/api/pushes/{{ p.history_id }}/dismiss"
+                                hx-target="#active-pushes-container"
+                                hx-swap="innerHTML"
+                                class="bg-[#2a2a32] hover:bg-[#3f3f46] text-gray-300 hover:text-white border border-[#3f3f46] text-xs font-semibold px-3 py-1.5 rounded-md transition-colors flex items-center gap-1.5">
+                            <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                            Dismiss
+                        </button>
+                        {% else %}
+                        <button hx-post="/api/pushes/{{ p.history_id }}/cancel"
+                                hx-target="#active-pushes-container"
+                                hx-swap="innerHTML"
+                                hx-confirm="Cancel and delete this active transfer from TorBox?"
+                                class="bg-transparent border border-red-800 text-red-400 hover:bg-red-600 hover:text-white text-xs font-semibold px-3 py-1.5 rounded-md transition-colors flex items-center gap-1.5">
+                            <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                            Cancel &amp; Delete
+                        </button>
+                        {% endif %}
+                    </div>
+                </td>
+            </tr>
+            {% else %}
+            <tr data-empty-row="true">
+                <td colspan="6" class="px-6 py-10 text-center text-[#a1a1aa]">
+                    <div class="flex flex-col items-center justify-center gap-1">
+                        <p class="text-sm font-medium text-gray-300">No active TorBox transfers</p>
+                        <p class="text-xs text-[#71717a]">Transfer poller is sleeping (0 background API calls). Push any movie, season, or episode to wake it automatically.</p>
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
