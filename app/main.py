@@ -901,9 +901,6 @@ async def export_settings():
                 "treasure_maps_api_key": db_settings.treasure_maps_api_key,
                 "torbox_api_key": db_settings.torbox_api_key,
                 "scan_interval_multiplier": db_settings.scan_interval_multiplier,
-                "self_healing_interval": getattr(
-                    db_settings, "self_healing_interval", 15
-                ),
                 "sh_max_retries": db_settings.sh_max_retries,
                 "sh_max_time_hours": db_settings.sh_max_time_hours,
                 "sh_auto_retry": db_settings.sh_auto_retry,
@@ -984,7 +981,6 @@ async def export_settings():
 async def save_global_settings(
     request: Request,
     scan_interval_multiplier: int = Form(1),
-    self_healing_interval: int = Form(15),
     download_timeout_hours: int = Form(24),
     sh_max_retries: int = Form(3),
     sh_max_time_hours: float = Form(12.0),
@@ -998,14 +994,9 @@ async def save_global_settings(
     from sqlalchemy import select
 
     from app.core.default_scoring import DEFAULT_SCORING_CONFIG
-    from app.core.scheduler_utils import VALID_INTERVAL_PRESETS
     from app.db.models import SystemSettings
 
     form_data = await request.form()
-
-    # Validate interval presets
-    if self_healing_interval not in VALID_INTERVAL_PRESETS:
-        self_healing_interval = 15
 
     if download_timeout_hours < 1 or download_timeout_hours > 168:
         download_timeout_hours = 24
@@ -1016,7 +1007,6 @@ async def save_global_settings(
 
         if db_settings:
             db_settings.scan_interval_multiplier = scan_interval_multiplier
-            db_settings.self_healing_interval = self_healing_interval
             db_settings.download_timeout_hours = download_timeout_hours
             db_settings.sh_max_retries = sh_max_retries
             db_settings.sh_max_time_hours = sh_max_time_hours

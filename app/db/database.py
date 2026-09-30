@@ -291,15 +291,6 @@ async def init_db(database_url: str) -> None:
                 except Exception:
                     pass
 
-            try:
-                await session.execute(
-                    __import__("sqlalchemy").text(
-                        "ALTER TABLE system_settings ADD COLUMN self_healing_interval INTEGER NOT NULL DEFAULT 15;"
-                    )
-                )
-            except Exception:
-                pass
-
             # Season external identifiers (simkl_id, anilist_id)
             for col in ["simkl_id", "anilist_id"]:
                 try:
@@ -487,43 +478,6 @@ async def init_db(database_url: str) -> None:
             except Exception as e:
                 logger.warning("Error migrating indexer domain: %s", e)
 
-            # --- Migrate legacy cutoffs.target_score if set to 2500 ---
-            try:
-                from app.core.default_scoring import DEFAULT_SCORING_CONFIG
-                from app.db.models import SystemSettings
-
-                settings_res = await session.execute(
-                    select(SystemSettings).where(SystemSettings.id == 1)
-                )
-                db_settings = settings_res.scalars().first()
-                if db_settings and db_settings.scoring_settings:
-                    import copy
-
-                    sc = copy.deepcopy(db_settings.scoring_settings)
-                    cutoffs = sc.get("cutoffs")
-                    if (
-                        isinstance(cutoffs, dict)
-                        and cutoffs.get("target_score") == 2500
-                    ):
-                        raw_cutoffs = (
-                            DEFAULT_SCORING_CONFIG.get("cutoffs")
-                            if isinstance(DEFAULT_SCORING_CONFIG, dict)
-                            else None
-                        )
-                        default_target = (
-                            raw_cutoffs.get("target_score", 8000)
-                            if isinstance(raw_cutoffs, dict)
-                            else 8000
-                        )
-                        cutoffs["target_score"] = default_target
-                        db_settings.scoring_settings = sc
-                        logger.info(
-                            "Migrated legacy target_score cutoff from 2500 to %d",
-                            default_target,
-                        )
-            except Exception as e:
-                logger.warning("Error migrating scoring cutoffs: %s", e)
-
             # --- v3.0.0 Schema Migrations ---
             v3_migrations = [
                 # MediaItem sticky & Simkl watch progress columns
@@ -570,6 +524,43 @@ async def init_db(database_url: str) -> None:
                 )
             except Exception:
                 pass
+
+            # --- Migrate legacy cutoffs.target_score if set to 2500 ---
+            try:
+                from app.core.default_scoring import DEFAULT_SCORING_CONFIG
+                from app.db.models import SystemSettings
+
+                settings_res = await session.execute(
+                    select(SystemSettings).where(SystemSettings.id == 1)
+                )
+                db_settings = settings_res.scalars().first()
+                if db_settings and db_settings.scoring_settings:
+                    import copy
+
+                    sc = copy.deepcopy(db_settings.scoring_settings)
+                    cutoffs = sc.get("cutoffs")
+                    if (
+                        isinstance(cutoffs, dict)
+                        and cutoffs.get("target_score") == 2500
+                    ):
+                        raw_cutoffs = (
+                            DEFAULT_SCORING_CONFIG.get("cutoffs")
+                            if isinstance(DEFAULT_SCORING_CONFIG, dict)
+                            else None
+                        )
+                        default_target = (
+                            raw_cutoffs.get("target_score", 8000)
+                            if isinstance(raw_cutoffs, dict)
+                            else 8000
+                        )
+                        cutoffs["target_score"] = default_target
+                        db_settings.scoring_settings = sc
+                        logger.info(
+                            "Migrated legacy target_score cutoff from 2500 to %d",
+                            default_target,
+                        )
+            except Exception as e:
+                logger.warning("Error migrating scoring cutoffs: %s", e)
 
             # Auto-seed default SearchPreset if no presets exist
             try:

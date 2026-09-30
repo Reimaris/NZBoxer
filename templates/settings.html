@@ -662,7 +662,7 @@
                     <h2 class="text-lg font-semibold text-white">Active Push Monitoring & Self-Healing</h2>
                 </div>
                 <div class="p-6 space-y-6">
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div>
                             <label class="block text-xs font-semibold uppercase text-[#d1d5db] mb-1">Stalled Download Timeout (Hours)</label>
                             <select name="download_timeout_hours" class="w-full bg-[#111115] border border-[#3f3f46] rounded-lg p-2.5 text-white">
@@ -670,14 +670,6 @@
                                 <option value="12" {% if db_settings and db_settings.download_timeout_hours == 12 %}selected{% endif %}>12 hours</option>
                                 <option value="24" {% if not db_settings or db_settings.download_timeout_hours == 24 %}selected{% endif %}>24 hours (Default)</option>
                                 <option value="48" {% if db_settings and db_settings.download_timeout_hours == 48 %}selected{% endif %}>48 hours</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label class="block text-xs font-semibold uppercase text-[#d1d5db] mb-1">Self-Healing Poll Interval</label>
-                            <select name="self_healing_interval" class="w-full bg-[#111115] border border-[#3f3f46] rounded-lg p-2.5 text-white">
-                                <option value="15" {% if not db_settings or db_settings.self_healing_interval == 15 %}selected{% endif %}>Every 15 minutes</option>
-                                <option value="30" {% if db_settings and db_settings.self_healing_interval == 30 %}selected{% endif %}>Every 30 minutes</option>
-                                <option value="60" {% if db_settings and db_settings.self_healing_interval == 60 %}selected{% endif %}>Every hour</option>
                             </select>
                         </div>
                         <div>

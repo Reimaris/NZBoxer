@@ -122,9 +122,6 @@ class SystemSettings(Base):
 
     # Self-Healing & Active Push Monitoring
     scan_interval_multiplier: Mapped[int] = mapped_column(Integer, default=1)
-    self_healing_interval: Mapped[int] = mapped_column(
-        Integer, default=15, server_default="15"
-    )
     sh_max_retries: Mapped[int] = mapped_column(Integer, default=3)
     sh_max_time_hours: Mapped[float] = mapped_column(
         Float, nullable=False, default=12.0
