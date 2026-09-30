@@ -689,6 +689,84 @@ async def init_db(database_url: str) -> None:
             except Exception as e:
                 logger.warning("Error migrating scoring cutoffs: %s", e)
 
+            # --- v3.0.0 Schema Migrations ---
+            v3_migrations = [
+                # MediaItem sticky & Simkl watch progress columns
+                "ALTER TABLE media_items ADD COLUMN preset_id INTEGER REFERENCES search_presets(id) ON DELETE SET NULL;",
+                "ALTER TABLE media_items ADD COLUMN custom_search_config_json TEXT;",
+                "ALTER TABLE media_items ADD COLUMN prefer_season_packs BOOLEAN NOT NULL DEFAULT 1;",
+                "ALTER TABLE media_items ADD COLUMN auto_advance_seasons BOOLEAN NOT NULL DEFAULT 0;",
+                "ALTER TABLE media_items ADD COLUMN last_watched_order_simkl INTEGER NOT NULL DEFAULT 0;",
+                "ALTER TABLE media_items ADD COLUMN simkl_watched_completed BOOLEAN NOT NULL DEFAULT 0;",
+                # Season chronological franchise columns
+                "ALTER TABLE seasons ADD COLUMN entry_type VARCHAR(20) NOT NULL DEFAULT 'season';",
+                "ALTER TABLE seasons ADD COLUMN watch_order INTEGER NOT NULL DEFAULT 1;",
+                "ALTER TABLE seasons ADD COLUMN type_number INTEGER NOT NULL DEFAULT 1;",
+                # DownloadHistory live transfer & push mode columns
+                "ALTER TABLE download_history ADD COLUMN push_mode VARCHAR(20) NOT NULL DEFAULT 'auto';",
+                "ALTER TABLE download_history ADD COLUMN progress_pct FLOAT NOT NULL DEFAULT 0.0;",
+                "ALTER TABLE download_history ADD COLUMN download_speed_bytes BIGINT NOT NULL DEFAULT 0;",
+                "ALTER TABLE download_history ADD COLUMN eta_seconds INTEGER;",
+                "ALTER TABLE download_history ADD COLUMN status_detail VARCHAR(200);",
+                "ALTER TABLE download_history ADD COLUMN is_dismissed BOOLEAN NOT NULL DEFAULT 0;",
+                # SystemSettings Discord webhook & per-event notification columns
+                "ALTER TABLE system_settings ADD COLUMN discord_webhook_url VARCHAR(500);",
+                "ALTER TABLE system_settings ADD COLUMN discord_enabled BOOLEAN NOT NULL DEFAULT 0;",
+                "ALTER TABLE system_settings ADD COLUMN notify_on_push_initiated BOOLEAN NOT NULL DEFAULT 0;",
+                "ALTER TABLE system_settings ADD COLUMN notify_on_completed BOOLEAN NOT NULL DEFAULT 1;",
+                "ALTER TABLE system_settings ADD COLUMN notify_on_failure BOOLEAN NOT NULL DEFAULT 1;",
+                "ALTER TABLE system_settings ADD COLUMN notify_on_auto_advance BOOLEAN NOT NULL DEFAULT 1;",
+                # Provider Simkl sync config_json column
+                "ALTER TABLE providers ADD COLUMN config_json TEXT NOT NULL DEFAULT '{}';",
+            ]
+            for sql_stmt in v3_migrations:
+                try:
+                    await session.execute(__import__("sqlalchemy").text(sql_stmt))
+                except Exception:
+                    pass
+
+            # Backfill existing seasons watch_order and type_number from season_number
+            try:
+                await session.execute(
+                    __import__("sqlalchemy").text(
+                        "UPDATE seasons SET watch_order = season_number, type_number = season_number "
+                        "WHERE watch_order = 1 AND season_number > 1;"
+                    )
+                )
+            except Exception:
+                pass
+
+            # Auto-seed default SearchPreset if no presets exist
+            try:
+                from sqlalchemy import select
+
+                from app.db.models import SearchPreset
+
+                existing_presets = (
+                    (
+                        await session.execute(
+                            select(SearchPreset).order_by(SearchPreset.id.asc())
+                        )
+                    )
+                    .scalars()
+                    .all()
+                )
+                if not existing_presets:
+                    default_preset = SearchPreset(
+                        name="Default (Best)",
+                        is_default=True,
+                        primary_language="en",
+                        fallback_language=None,
+                        video_quality_mode="best",
+                        audio_quality_mode="best",
+                        custom_config_json="{}",
+                    )
+                    session.add(default_preset)
+                elif not any(p.is_default for p in existing_presets):
+                    existing_presets[0].is_default = True
+            except Exception as e:
+                logger.warning("Error seeding default SearchPreset: %s", e)
+
             await session.commit()
 
     logger.info("Database initialized successfully.")

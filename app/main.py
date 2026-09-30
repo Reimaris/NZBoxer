@@ -1844,6 +1844,10 @@ async def get_settings_page(request: Request):
             (await session.execute(select(NotificationChannel))).scalars().all()
         )
 
+        from app.services.preset_service import list_presets
+
+        presets = await list_presets(session)
+
         blacklisted_releases = (
             (
                 await session.execute(
@@ -1870,6 +1874,7 @@ async def get_settings_page(request: Request):
             "db_settings": db_settings,
             "scoring": scoring,
             "providers": providers,
+            "presets": presets,
             "notifications": notifications,
             "blacklisted_releases": blacklisted_releases,
         },
@@ -1908,6 +1913,20 @@ async def export_settings():
                 "sh_retry_wait_hours": db_settings.sh_retry_wait_hours,
                 "download_timeout_hours": getattr(
                     db_settings, "download_timeout_hours", 24
+                ),
+                "discord_webhook_url": getattr(
+                    db_settings, "discord_webhook_url", None
+                ),
+                "discord_enabled": getattr(db_settings, "discord_enabled", False),
+                "notify_on_push_initiated": getattr(
+                    db_settings, "notify_on_push_initiated", False
+                ),
+                "notify_on_completed": getattr(
+                    db_settings, "notify_on_completed", True
+                ),
+                "notify_on_failure": getattr(db_settings, "notify_on_failure", True),
+                "notify_on_auto_advance": getattr(
+                    db_settings, "notify_on_auto_advance", True
                 ),
                 "scoring_settings": db_settings.scoring_settings,
             }
@@ -1954,6 +1973,7 @@ async def export_settings():
                     "movie_category_id": p.movie_category_id,
                     "series_category_id": p.series_category_id,
                     "bandwidth_mbit": p.bandwidth_mbit,
+                    "config_json": getattr(p, "config_json", "{}"),
                     "profiles": profiles,
                 }
             )
@@ -2046,6 +2066,30 @@ async def save_global_settings(
             db_settings.upgrade_threshold = upgrade_threshold
             db_settings.backoff_tier2_skip = backoff_tier2_skip
             db_settings.backoff_tier3_skip = backoff_tier3_skip
+
+            if "discord_webhook_url" in form_data:
+                raw_url = str(form_data.get("discord_webhook_url") or "").strip()
+                db_settings.discord_webhook_url = raw_url or None
+            if "discord_enabled" in form_data:
+                db_settings.discord_enabled = str(
+                    form_data.get("discord_enabled")
+                ).lower() in ("1", "true", "on", "yes")
+            if "notify_on_push_initiated" in form_data:
+                db_settings.notify_on_push_initiated = str(
+                    form_data.get("notify_on_push_initiated")
+                ).lower() in ("1", "true", "on", "yes")
+            if "notify_on_completed" in form_data:
+                db_settings.notify_on_completed = str(
+                    form_data.get("notify_on_completed")
+                ).lower() in ("1", "true", "on", "yes")
+            if "notify_on_failure" in form_data:
+                db_settings.notify_on_failure = str(
+                    form_data.get("notify_on_failure")
+                ).lower() in ("1", "true", "on", "yes")
+            if "notify_on_auto_advance" in form_data:
+                db_settings.notify_on_auto_advance = str(
+                    form_data.get("notify_on_auto_advance")
+                ).lower() in ("1", "true", "on", "yes")
 
             sc: dict[str, Any] = copy.deepcopy(
                 db_settings.scoring_settings or DEFAULT_SCORING_CONFIG
@@ -3048,3 +3092,180 @@ async def delete_blacklisted_release(blacklist_id: int):
 
     # Return empty string for HTMX to clear the row
     return Response(content="", status_code=200)
+
+
+# ---------------------------------------------------------------------------
+# Search Presets & Sticky Item Config API (v3.0.0)
+# ---------------------------------------------------------------------------
+
+
+async def _parse_request_payload(request: Request) -> dict[str, Any]:
+    """Parse either JSON body or Form data into a dictionary."""
+    content_type = (request.headers.get("content-type") or "").lower()
+    if "application/json" in content_type:
+        try:
+            data = await request.json()
+            return data if isinstance(data, dict) else {}
+        except Exception:
+            return {}
+    try:
+        form = await request.form()
+        payload: dict[str, Any] = {}
+        for k in form.keys():
+            vals = form.getlist(k)
+            if k.endswith("[]"):
+                payload[k[:-2]] = vals
+            elif len(vals) > 1:
+                payload[k] = vals
+            else:
+                payload[k] = form.get(k)
+        return payload
+    except Exception:
+        return {}
+
+
+@app.get("/api/presets")
+async def api_list_presets() -> list[dict[str, Any]]:
+    """Return all saved SearchPreset rows ordered with the default preset first."""
+    from app.db.database import async_session_factory
+    from app.services.preset_service import list_presets
+
+    async with async_session_factory() as session:
+        presets = await list_presets(session)
+        return [p.to_dict() for p in presets]
+
+
+@app.get("/api/presets/{preset_id}")
+async def api_get_preset(preset_id: int) -> Response:
+    """Return a single SearchPreset by ID."""
+    from fastapi.responses import JSONResponse
+
+    from app.db.database import async_session_factory
+    from app.services.preset_service import get_preset
+
+    async with async_session_factory() as session:
+        preset = await get_preset(session, preset_id)
+        if preset is None:
+            return JSONResponse(status_code=404, content={"error": "Preset not found"})
+        return JSONResponse(status_code=200, content=preset.to_dict())
+
+
+@app.post("/api/presets")
+async def api_create_preset(request: Request) -> Response:
+    """Create a new SearchPreset (or update if same name) and enforce single default."""
+    from fastapi.responses import JSONResponse
+
+    from app.db.database import async_session_factory
+    from app.services.preset_service import create_preset
+
+    payload = await _parse_request_payload(request)
+    async with async_session_factory() as session:
+        try:
+            preset = await create_preset(session, payload)
+            await session.commit()
+            await session.refresh(preset)
+            return JSONResponse(status_code=201, content=preset.to_dict())
+        except ValueError as exc:
+            return JSONResponse(status_code=400, content={"error": str(exc)})
+
+
+@app.post("/api/presets/save-inline")
+async def api_save_inline_preset(request: Request) -> Response:
+    """Save the current Push Modal configuration as a named SearchPreset without leaving the modal."""
+    from fastapi.responses import JSONResponse
+
+    from app.db.database import async_session_factory
+    from app.services.preset_service import save_inline_preset
+
+    payload = await _parse_request_payload(request)
+    async with async_session_factory() as session:
+        try:
+            preset = await save_inline_preset(session, payload)
+            await session.commit()
+            await session.refresh(preset)
+            return JSONResponse(status_code=201, content=preset.to_dict())
+        except ValueError as exc:
+            return JSONResponse(status_code=400, content={"error": str(exc)})
+
+
+@app.put("/api/presets/{preset_id}")
+@app.post("/api/presets/{preset_id}")
+async def api_update_preset(preset_id: int, request: Request) -> Response:
+    """Update an existing SearchPreset by ID."""
+    from fastapi.responses import JSONResponse
+
+    from app.db.database import async_session_factory
+    from app.services.preset_service import update_preset
+
+    payload = await _parse_request_payload(request)
+    async with async_session_factory() as session:
+        preset = await update_preset(session, preset_id, payload)
+        if preset is None:
+            return JSONResponse(status_code=404, content={"error": "Preset not found"})
+        await session.commit()
+        await session.refresh(preset)
+        return JSONResponse(status_code=200, content=preset.to_dict())
+
+
+@app.post("/api/presets/{preset_id}/default")
+@app.post("/api/presets/{preset_id}/set-default")
+async def api_set_default_preset(preset_id: int) -> Response:
+    """Mark a SearchPreset as the single default preset."""
+    from fastapi.responses import JSONResponse
+
+    from app.db.database import async_session_factory
+    from app.services.preset_service import set_default_preset
+
+    async with async_session_factory() as session:
+        preset = await set_default_preset(session, preset_id)
+        if preset is None:
+            return JSONResponse(status_code=404, content={"error": "Preset not found"})
+        await session.commit()
+        await session.refresh(preset)
+        return JSONResponse(status_code=200, content=preset.to_dict())
+
+
+@app.delete("/api/presets/{preset_id}")
+async def api_delete_preset(preset_id: int) -> Response:
+    """Delete a SearchPreset and promote another preset to default if needed."""
+    from fastapi.responses import JSONResponse
+
+    from app.db.database import async_session_factory
+    from app.services.preset_service import delete_preset
+
+    async with async_session_factory() as session:
+        deleted = await delete_preset(session, preset_id)
+        if not deleted:
+            return JSONResponse(status_code=404, content={"error": "Preset not found"})
+        await session.commit()
+        return JSONResponse(status_code=200, content={"deleted": True, "id": preset_id})
+
+
+@app.post("/api/items/{item_id}/search-config")
+@app.put("/api/items/{item_id}/search-config")
+async def api_update_item_search_config(item_id: int, request: Request) -> Response:
+    """Persist sticky search configuration on a MediaItem."""
+    from fastapi.responses import JSONResponse
+
+    from app.db.database import async_session_factory
+    from app.services.preset_service import update_item_sticky_search_config
+
+    payload = await _parse_request_payload(request)
+    async with async_session_factory() as session:
+        item = await update_item_sticky_search_config(session, item_id, payload)
+        if item is None:
+            return JSONResponse(
+                status_code=404, content={"error": "MediaItem not found"}
+            )
+        await session.commit()
+        await session.refresh(item)
+        return JSONResponse(
+            status_code=200,
+            content={
+                "id": item.id,
+                "preset_id": item.preset_id,
+                "custom_search_config_json": item.custom_search_config_json,
+                "prefer_season_packs": item.prefer_season_packs,
+                "auto_advance_seasons": item.auto_advance_seasons,
+            },
+        )

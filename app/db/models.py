@@ -12,6 +12,7 @@ Models:
 from __future__ import annotations
 
 import enum
+import json
 from datetime import datetime, timezone
 from typing import Any
 
@@ -29,7 +30,13 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy.orm import (
+    DeclarativeBase,
+    Mapped,
+    mapped_column,
+    relationship,
+    validates,
+)
 
 # ---------------------------------------------------------------------------
 # Enumerations
@@ -62,6 +69,7 @@ class MediaStatus(str, enum.Enum):
     DOWNLOADING = "downloading"
     DOWNLOADED = "downloaded"
     COMPLETED = "completed"
+    FAILED = "failed"
     CANCELED = "canceled"
     IGNORED = "ignored"
     MANUAL_GRAB = (
@@ -78,6 +86,7 @@ class SeasonStatus(str, enum.Enum):
     DOWNLOADING = "downloading"
     DOWNLOADED = "downloaded"
     COMPLETED = "completed"
+    FAILED = "failed"
     CANCELED = "canceled"
     IGNORED = "ignored"
     MANUAL_GRAB = (
@@ -94,6 +103,7 @@ class EpisodeStatus(str, enum.Enum):
     DOWNLOADING = "downloading"
     DOWNLOADED = "downloaded"
     COMPLETED = "completed"
+    FAILED = "failed"
     CANCELED = "canceled"
     IGNORED = "ignored"
     MANUAL_GRAB = (
@@ -180,6 +190,26 @@ class SystemSettings(Base):
         Integer, default=24, server_default="24"
     )
 
+    # Discord Webhook & Per-Event Notification Triggers (v3.0.0)
+    discord_webhook_url: Mapped[str | None] = mapped_column(
+        String(500), nullable=True, default=None
+    )
+    discord_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="0"
+    )
+    notify_on_push_initiated: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="0"
+    )
+    notify_on_completed: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="1"
+    )
+    notify_on_failure: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="1"
+    )
+    notify_on_auto_advance: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="1"
+    )
+
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
@@ -256,6 +286,37 @@ class Provider(Base):
     anime_category_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     bandwidth_mbit: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
+    # Provider-specific JSON configuration (e.g. Simkl sync interval, category flags, last_synced_at)
+    config_json: Mapped[str] = mapped_column(
+        Text, nullable=False, default="{}", server_default="{}"
+    )
+
+    @validates("config_json")
+    def _validate_config_json(self, _key: str, value: Any) -> str:
+        if value is None:
+            return "{}"
+        if isinstance(value, dict):
+            return json.dumps(value)
+        return str(value)
+
+    @property
+    def simkl_config(self) -> dict[str, Any]:
+        """Return parsed Simkl provider configuration with v3.0.0 defaults."""
+        defaults: dict[str, Any] = {
+            "sync_interval_minutes": 60,
+            "sync_movies": True,
+            "sync_series": True,
+            "sync_anime": True,
+            "last_synced_at": None,
+        }
+        try:
+            raw = json.loads(self.config_json or "{}")
+            if isinstance(raw, dict):
+                defaults.update(raw)
+        except Exception:
+            pass
+        return defaults
+
     profiles: Mapped[list[ProviderProfile]] = relationship(
         "ProviderProfile",
         back_populates="provider",
@@ -265,6 +326,73 @@ class Provider(Base):
     media_items: Mapped[list[MediaItem]] = relationship(
         "MediaItem", back_populates="provider", cascade="all, delete-orphan"
     )
+
+
+# ---------------------------------------------------------------------------
+# SearchPreset Model (v3.0.0)
+# ---------------------------------------------------------------------------
+
+
+class SearchPreset(Base):
+    """User-defined search preset storing reusable language, video, and audio preferences."""
+
+    __tablename__ = "search_presets"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
+    is_default: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="0"
+    )
+    primary_language: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="en", server_default="en"
+    )
+    fallback_language: Mapped[str | None] = mapped_column(
+        String(20), nullable=True, default=None
+    )
+    video_quality_mode: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="best", server_default="best"
+    )
+    audio_quality_mode: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="best", server_default="best"
+    )
+    custom_config_json: Mapped[str] = mapped_column(
+        Text, nullable=False, default="{}", server_default="{}"
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    @validates("custom_config_json")
+    def _validate_custom_config_json(self, _key: str, value: Any) -> str:
+        if value is None:
+            return "{}"
+        if isinstance(value, dict):
+            return json.dumps(value)
+        return str(value)
+
+    @property
+    def custom_config(self) -> dict[str, Any]:
+        """Return parsed dictionary of custom quality overrides."""
+        try:
+            parsed = json.loads(self.custom_config_json or "{}")
+            return parsed if isinstance(parsed, dict) else {}
+        except Exception:
+            return {}
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize preset to a JSON-compatible dictionary."""
+        return {
+            "id": self.id,
+            "name": self.name,
+            "is_default": bool(self.is_default),
+            "primary_language": self.primary_language,
+            "fallback_language": self.fallback_language,
+            "video_quality_mode": self.video_quality_mode,
+            "audio_quality_mode": self.audio_quality_mode,
+            "custom_config_json": self.custom_config_json or "{}",
+            "custom_config": self.custom_config,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
 
 
 class ProviderProfile(Base):
@@ -382,7 +510,9 @@ class MediaItem(Base):
     )
 
     # --- External identifiers ---
-    simkl_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    simkl_id: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0", index=True
+    )
     imdb_id: Mapped[str | None] = mapped_column(String(20), nullable=True, index=True)
     tmdb_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     tvdb_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
@@ -418,6 +548,38 @@ class MediaItem(Base):
     auto_monitor_next_season: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="0"
     )
+
+    # --- On-Demand Search Preset & Sticky Configuration (v3.0.0) ---
+    preset_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("search_presets.id", ondelete="SET NULL"),
+        nullable=True,
+        default=None,
+        index=True,
+    )
+    custom_search_config_json: Mapped[str | None] = mapped_column(
+        Text, nullable=True, default=None
+    )
+    prefer_season_packs: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="1"
+    )
+    auto_advance_seasons: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="0"
+    )
+    last_watched_order_simkl: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    simkl_watched_completed: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="0"
+    )
+
+    @validates("custom_search_config_json")
+    def _validate_custom_search_config_json(self, _key: str, value: Any) -> str | None:
+        if value is None:
+            return None
+        if isinstance(value, dict):
+            return json.dumps(value)
+        return str(value)
 
     # --- Sync tracking ---
     simkl_synced_at: Mapped[datetime | None] = mapped_column(
@@ -461,6 +623,7 @@ class MediaItem(Base):
 
     # --- Relationships ---
     provider: Mapped[Provider] = relationship("Provider", back_populates="media_items")
+    preset: Mapped[SearchPreset | None] = relationship("SearchPreset", lazy="selectin")
     seasons: Mapped[list[Season]] = relationship(
         "Season",
         back_populates="media_item",
@@ -671,8 +834,17 @@ class Season(Base):
         index=True,
     )
 
-    # --- Season data ---
+    # --- Season / Chronological Franchise Entry data ---
     season_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    entry_type: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="season", server_default="season"
+    )
+    watch_order: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=1, server_default="1"
+    )
+    type_number: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=1, server_default="1"
+    )
     simkl_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     anilist_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     title: Mapped[str | None] = mapped_column(String(512), nullable=True)
@@ -1017,6 +1189,26 @@ class DownloadHistory(Base):
     )
     grabbed_language: Mapped[str | None] = mapped_column(
         String(50), nullable=True, default=None
+    )
+
+    # --- Live Transfer & Push Mode Tracking (v3.0.0) ---
+    push_mode: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="auto", server_default="auto"
+    )
+    progress_pct: Mapped[float] = mapped_column(
+        Float, nullable=False, default=0.0, server_default="0.0"
+    )
+    download_speed_bytes: Mapped[int] = mapped_column(
+        BigInteger, nullable=False, default=0, server_default="0"
+    )
+    eta_seconds: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, default=None
+    )
+    status_detail: Mapped[str | None] = mapped_column(
+        String(200), nullable=True, default=None
+    )
+    is_dismissed: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="0"
     )
 
     # --- Audit timestamps ---

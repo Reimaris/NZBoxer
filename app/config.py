@@ -65,6 +65,20 @@ class Settings:
         os.getenv("AUTO_GRAB_TITLE_FALLBACKS", "False").lower() == "true"
     )
 
+    # Discord & Event Notification Settings (v3.0.0)
+    discord_webhook_url: str | None = os.getenv("DISCORD_WEBHOOK_URL") or None
+    discord_enabled: bool = os.getenv("DISCORD_ENABLED", "False").lower() == "true"
+    notify_on_push_initiated: bool = (
+        os.getenv("NOTIFY_ON_PUSH_INITIATED", "False").lower() == "true"
+    )
+    notify_on_completed: bool = (
+        os.getenv("NOTIFY_ON_COMPLETED", "True").lower() == "true"
+    )
+    notify_on_failure: bool = os.getenv("NOTIFY_ON_FAILURE", "True").lower() == "true"
+    notify_on_auto_advance: bool = (
+        os.getenv("NOTIFY_ON_AUTO_ADVANCE", "True").lower() == "true"
+    )
+
     # --- App ---
     app_env: str = os.getenv("APP_ENV", "development")
     log_level: str = os.getenv("LOG_LEVEL", "INFO")
@@ -133,6 +147,12 @@ async def reload_settings_from_db(session: AsyncSession) -> None:
             dry_run=settings.dry_run,
             auto_grab_title_fallbacks=settings.auto_grab_title_fallbacks,
             automation_state=settings.automation_state,
+            discord_webhook_url=settings.discord_webhook_url,
+            discord_enabled=settings.discord_enabled,
+            notify_on_push_initiated=settings.notify_on_push_initiated,
+            notify_on_completed=settings.notify_on_completed,
+            notify_on_failure=settings.notify_on_failure,
+            notify_on_auto_advance=settings.notify_on_auto_advance,
             scoring_settings=scoring_config,
         )
         session.add(db_settings)
@@ -172,6 +192,18 @@ async def reload_settings_from_db(session: AsyncSession) -> None:
     settings.dry_run = db_settings.dry_run
     settings.auto_grab_title_fallbacks = getattr(
         db_settings, "auto_grab_title_fallbacks", False
+    )
+    settings.discord_webhook_url = getattr(db_settings, "discord_webhook_url", None)
+    settings.discord_enabled = bool(getattr(db_settings, "discord_enabled", False))
+    settings.notify_on_push_initiated = bool(
+        getattr(db_settings, "notify_on_push_initiated", False)
+    )
+    settings.notify_on_completed = bool(
+        getattr(db_settings, "notify_on_completed", True)
+    )
+    settings.notify_on_failure = bool(getattr(db_settings, "notify_on_failure", True))
+    settings.notify_on_auto_advance = bool(
+        getattr(db_settings, "notify_on_auto_advance", True)
     )
     settings.automation_state = (
         db_settings.automation_state.value
