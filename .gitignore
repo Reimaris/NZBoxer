@@ -14,9 +14,11 @@ build/
 *.egg-info/
 
 # Databases and Runtime Logs
+config/
 *.db
 *.db-shm
 *.db-wal
+*.bak
 *.sqlite
 *.sqlite3
 file:testdb*
