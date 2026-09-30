@@ -214,8 +214,8 @@ async def get_anime_sequels(anilist_id: int) -> list[dict[str, Any]]:
 async def get_anime_root_and_hierarchy(anilist_id: int) -> dict[str, Any] | None:
     """
     Traverses PREQUEL relations up to the root franchise anime, then traverses
-    SEQUEL relations down to build the complete ordered season hierarchy.
-    Excludes Movies, OVAs, Specials, and Music formats.
+    SEQUEL relations down to build the complete chronological hierarchy of
+    both TV/ONA seasons and canonical MOVIE entries, bridging across OVAs/Specials.
     """
     query_str = """
     query ($id: Int) {
@@ -247,7 +247,7 @@ async def get_anime_root_and_hierarchy(anilist_id: int) -> dict[str, Any] | None
     }
     """
 
-    SEASON_FORMATS = {"TV", "TV_SHORT", "ONA"}
+    CANONICAL_FORMATS = {"TV", "TV_SHORT", "ONA", "MOVIE"}
     BRIDGE_FORMATS = {"TV", "TV_SHORT", "ONA", "OVA", "MOVIE", "SPECIAL"}
 
     async with httpx.AsyncClient(timeout=10.0) as client:
@@ -281,7 +281,7 @@ async def get_anime_root_and_hierarchy(anilist_id: int) -> dict[str, Any] | None
             if not media:
                 break
 
-            if media.get("format") in SEASON_FORMATS or root_node is None:
+            if media.get("format") in CANONICAL_FORMATS or root_node is None:
                 root_node = media
 
             edges = media.get("relations", {}).get("edges", [])
@@ -315,7 +315,7 @@ async def get_anime_root_and_hierarchy(anilist_id: int) -> dict[str, Any] | None
             curr = queue.pop(0)
             curr_id = curr.get("id")
             if (
-                curr.get("format") in SEASON_FORMATS
+                curr.get("format") in CANONICAL_FORMATS
                 and isinstance(curr_id, int)
                 and curr_id not in hierarchy_ids
             ):
@@ -343,7 +343,7 @@ async def get_anime_root_and_hierarchy(anilist_id: int) -> dict[str, Any] | None
                         queue.append(child_media)
                 elif (
                     rel in ("SIDE_STORY", "ALTERNATIVE")
-                    and curr.get("format") not in SEASON_FORMATS
+                    and curr.get("format") not in CANONICAL_FORMATS
                 ):
                     visited_down.add(node_id)
                     child_media = await fetch_media(node_id)
@@ -353,11 +353,27 @@ async def get_anime_root_and_hierarchy(anilist_id: int) -> dict[str, Any] | None
         # Sort hierarchy by start date to guarantee chronological order
         hierarchy.sort(
             key=lambda m: (
-                m.get("startDate", {}).get("year") or 9999,
-                m.get("startDate", {}).get("month") or 99,
-                m.get("startDate", {}).get("day") or 99,
+                (m.get("startDate") or {}).get("year") or 9999,
+                (m.get("startDate") or {}).get("month") or 99,
+                (m.get("startDate") or {}).get("day") or 99,
             )
         )
+
+        season_counter = 0
+        movie_counter = 0
+        for idx, node in enumerate(hierarchy, start=1):
+            fmt = str(node.get("format") or "TV").upper()
+            if fmt == "MOVIE":
+                entry_type = "movie"
+                movie_counter += 1
+                type_number = movie_counter
+            else:
+                entry_type = "season"
+                season_counter += 1
+                type_number = season_counter
+            node["entry_type"] = entry_type
+            node["watch_order"] = idx
+            node["type_number"] = type_number
 
         canonical_root = hierarchy[0] if hierarchy else root_node
         return {"root": canonical_root, "hierarchy": hierarchy}

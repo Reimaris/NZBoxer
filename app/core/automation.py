@@ -221,6 +221,148 @@ def is_eligible_for_metadata_refresh(item: MediaItem) -> bool:
     return (now - last_refreshed) >= timedelta(hours=24)
 
 
+def is_future_or_tba(
+    release_date: datetime | None,
+    year: int | None = None,
+    now: datetime | None = None,
+) -> bool:
+    """Return True if an item or season is unreleased or TBA (missing release_date or year > current_year)."""
+    if now is None:
+        now = datetime.now(timezone.utc)
+    elif now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
+
+    if year is not None and year > now.year:
+        return True
+    if release_date is None:
+        return True
+
+    rd = (
+        release_date.replace(tzinfo=timezone.utc)
+        if release_date.tzinfo is None
+        else release_date
+    )
+    return rd > now
+
+
+def _parse_anilist_start_date(
+    start_date: dict[str, Any] | None, now: datetime | None = None
+) -> datetime | None:
+    """Parse an AniList startDate dict into a UTC datetime, returning None if TBA/unannounced."""
+    if not start_date or not start_date.get("year"):
+        return None
+    if now is None:
+        now = datetime.now(timezone.utc)
+    try:
+        yr = int(start_date["year"])
+        mo = start_date.get("month")
+        dy = start_date.get("day")
+        if yr >= now.year and not mo:
+            # Unannounced month/day in current or future year -> TBA
+            return None
+        return datetime(yr, int(mo or 1), int(dy or 1), tzinfo=timezone.utc)
+    except (ValueError, TypeError):
+        return None
+
+
+def _parse_iso_utc(ts_str: str | None) -> datetime | None:
+    """Parse an ISO-8601 timestamp string into a timezone-aware UTC datetime."""
+    if not ts_str or not isinstance(ts_str, str):
+        return None
+    try:
+        dt = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt
+    except ValueError:
+        return None
+
+
+def is_simkl_sync_due_on_load(
+    provider: Provider,
+    now: datetime | None = None,
+    cooldown_minutes: int = 15,
+) -> bool:
+    """Return True if a Simkl provider is active, configured, and >15m have elapsed since last_synced_at."""
+    if getattr(provider, "type", None) != "simkl":
+        return False
+    if not getattr(provider, "is_active", True):
+        return False
+    if not provider.client_id or not provider.access_token:
+        return False
+
+    cfg = provider.simkl_config
+    last_synced = _parse_iso_utc(cfg.get("last_synced_at"))
+    if last_synced is None:
+        return True
+
+    if now is None:
+        now = datetime.now(timezone.utc)
+    elif now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
+
+    return (now - last_synced) > timedelta(minutes=cooldown_minutes)
+
+
+def is_simkl_periodic_sync_due(
+    provider: Provider,
+    now: datetime | None = None,
+) -> bool:
+    """Return True if a Simkl provider has periodic sync enabled (sync_interval_minutes > 0) and interval has elapsed."""
+    if getattr(provider, "type", None) != "simkl":
+        return False
+    if not getattr(provider, "is_active", True):
+        return False
+    if not provider.client_id or not provider.access_token:
+        return False
+
+    cfg = provider.simkl_config
+    try:
+        interval = int(cfg.get("sync_interval_minutes", 60) or 0)
+    except (ValueError, TypeError):
+        interval = 60
+
+    if interval <= 0:
+        return False
+
+    last_synced = _parse_iso_utc(cfg.get("last_synced_at"))
+    if last_synced is None:
+        return True
+
+    if now is None:
+        now = datetime.now(timezone.utc)
+    elif now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
+
+    return (now - last_synced) >= timedelta(minutes=interval)
+
+
+async def should_trigger_dashboard_simkl_sync(
+    session: AsyncSession,
+    now: datetime | None = None,
+    cooldown_minutes: int = 15,
+) -> bool:
+    """Check if any active Simkl provider is due for an automatic page-load sync (>15m cooldown)."""
+    stmt = select(Provider).where(Provider.type == "simkl")
+    providers = (await session.execute(stmt)).scalars().all()
+    return any(
+        is_simkl_sync_due_on_load(p, now=now, cooldown_minutes=cooldown_minutes)
+        for p in providers
+    )
+
+
+async def run_periodic_simkl_sync_if_due(now: datetime | None = None) -> bool:
+    """Run sync_all_providers if any active Simkl provider's periodic sync interval is due."""
+    async with async_session_factory() as session:
+        stmt = select(Provider).where(Provider.type == "simkl")
+        providers = (await session.execute(stmt)).scalars().all()
+        due = any(is_simkl_periodic_sync_due(p, now=now) for p in providers)
+    if due:
+        await sync_all_providers()
+        return True
+    return False
+
+
 async def sync_all_providers() -> None:
     """Sync watchlists and libraries from all configured providers (Simkl, etc.)."""
     log_process_start(logger, "Provider Sync Engine")
@@ -234,6 +376,8 @@ async def sync_all_providers() -> None:
 
             for provider in providers:
                 if provider.type == "simkl":
+                    if not getattr(provider, "is_active", True):
+                        continue
                     if not provider.client_id or not provider.access_token:
                         logger.warning(
                             "Provider %s lacks Simkl credentials, skipping.",
@@ -241,21 +385,34 @@ async def sync_all_providers() -> None:
                         )
                         continue
 
-                    movies = await simkl.get_watchlist(
-                        "movies", provider.client_id, provider.access_token
-                    )
-                    shows = await simkl.get_watchlist(
-                        "shows", provider.client_id, provider.access_token
-                    )
-                    anime = await simkl.get_watchlist(
-                        "anime", provider.client_id, provider.access_token
-                    )
+                    cfg = provider.simkl_config
+                    sync_movies = bool(cfg.get("sync_movies", True))
+                    sync_series = bool(cfg.get("sync_series", True))
+                    sync_anime = bool(cfg.get("sync_anime", True))
 
-                    await _sync_items(session, movies, MediaType.MOVIE, provider.id)
-                    await _sync_items(session, shows, MediaType.SHOW, provider.id)
-                    await _sync_items(session, anime, MediaType.ANIME, provider.id)
+                    if sync_movies:
+                        movies = await simkl.get_watchlist(
+                            "movies", provider.client_id, provider.access_token
+                        )
+                        await _sync_items(session, movies, MediaType.MOVIE, provider.id)
 
-                    await consolidate_standalone_anime_sequels(session)
+                    if sync_series:
+                        shows = await simkl.get_watchlist(
+                            "shows", provider.client_id, provider.access_token
+                        )
+                        await _sync_items(session, shows, MediaType.SHOW, provider.id)
+
+                    if sync_anime:
+                        anime = await simkl.get_watchlist(
+                            "anime", provider.client_id, provider.access_token
+                        )
+                        await _sync_items(session, anime, MediaType.ANIME, provider.id)
+                        await consolidate_standalone_anime_sequels(session)
+
+                    import json
+
+                    cfg["last_synced_at"] = datetime.now(timezone.utc).isoformat()
+                    provider.config_json = json.dumps(cfg)
 
             await session.commit()
             from app.core.self_healing import adopt_torbox_downloads_for_video
@@ -469,6 +626,26 @@ async def _sync_items(
                         "    ⏩ Skipping AniList hierarchy enrichment for existing anime '%s' with established seasons.",
                         item.title,
                     )
+                    if item.status in (
+                        MediaStatus.PENDING,
+                        MediaStatus.SEARCHING,
+                        MediaStatus.FUTURE,
+                    ):
+                        item.status = (
+                            MediaStatus.FUTURE
+                            if is_future_or_tba(item.release_date, item.year)
+                            else MediaStatus.SEARCHING
+                        )
+            elif item.status in (
+                MediaStatus.PENDING,
+                MediaStatus.SEARCHING,
+                MediaStatus.FUTURE,
+            ):
+                item.status = (
+                    MediaStatus.FUTURE
+                    if is_future_or_tba(item.release_date, item.year)
+                    else MediaStatus.SEARCHING
+                )
 
         elif (tmdb_id or item.imdb_id) and (
             is_new
@@ -556,10 +733,7 @@ async def _sync_items(
                     MediaStatus.SEARCHING,
                     MediaStatus.FUTURE,
                 ):
-                    if release_date and release_date > datetime.now(timezone.utc):
-                        item.status = MediaStatus.FUTURE
-                    elif item.year and item.year > datetime.now().year:
-                        # Fallback if no release date but year is in the future
+                    if is_future_or_tba(release_date, item.year):
                         item.status = MediaStatus.FUTURE
                     else:
                         item.status = MediaStatus.SEARCHING
@@ -614,11 +788,7 @@ async def _sync_items(
                         MediaStatus.SEARCHING,
                         MediaStatus.FUTURE,
                     ):
-                        if item.release_date and item.release_date > datetime.now(
-                            timezone.utc
-                        ):
-                            item.status = MediaStatus.FUTURE
-                        elif item.year and item.year > datetime.now().year:
+                        if is_future_or_tba(item.release_date, item.year):
                             item.status = MediaStatus.FUTURE
                         else:
                             item.status = MediaStatus.SEARCHING
@@ -635,9 +805,9 @@ async def _sync_items(
                                 except ValueError:
                                     pass
 
-                            is_season_future = (
-                                s_air_date and s_air_date > datetime.now(timezone.utc)
-                            ) or (item.status == MediaStatus.FUTURE)
+                            is_season_future = is_future_or_tba(s_air_date) or (
+                                item.status == MediaStatus.FUTURE
+                            )
 
                             # Check if season already exists to avoid UNIQUE constraint error
                             existing_season_stmt = select(Season).where(
@@ -653,6 +823,9 @@ async def _sync_items(
                                 season_obj = Season(
                                     media_item_id=item.id,
                                     season_number=s_num,
+                                    watch_order=s_num,
+                                    type_number=s_num,
+                                    entry_type="season",
                                     monitored=(s_num == 1),
                                     episode_count=s.get("episode_count"),
                                     air_date=s_air_date,
@@ -688,6 +861,16 @@ async def _sync_items(
                                             if existing_season.monitored
                                             else SeasonStatus.PENDING
                                         )
+                elif item.status in (
+                    MediaStatus.PENDING,
+                    MediaStatus.SEARCHING,
+                    MediaStatus.FUTURE,
+                ):
+                    item.status = (
+                        MediaStatus.FUTURE
+                        if is_future_or_tba(item.release_date, item.year)
+                        else MediaStatus.SEARCHING
+                    )
 
         else:
             # Update existing
@@ -716,12 +899,7 @@ async def _sync_items(
                 MediaStatus.SEARCHING,
                 MediaStatus.FUTURE,
             ):
-                rd = item.release_date
-                if rd and rd.tzinfo is None:
-                    rd = rd.replace(tzinfo=timezone.utc)
-                if rd and rd > datetime.now(timezone.utc):
-                    item.status = MediaStatus.FUTURE
-                elif not rd and item.year and item.year > datetime.now().year:
+                if is_future_or_tba(item.release_date, item.year):
                     item.status = MediaStatus.FUTURE
                 else:
                     item.status = MediaStatus.SEARCHING
@@ -3299,24 +3477,42 @@ async def enrich_anime_metadata(session: AsyncSession, item: MediaItem) -> None:
             titles = root_node.get("title", {})
             item.title = titles.get("english") or titles.get("romaji") or item.title
 
-        async def _create_anilist_season(s_num: int, anilist_node: dict):
-            ep_count = anilist_node.get("episodes")
-            s_air_date = None
-            start_date = anilist_node.get("startDate")
-            if start_date and start_date.get("year"):
-                try:
-                    s_air_date = datetime(
-                        start_date["year"],
-                        start_date.get("month") or 1,
-                        start_date.get("day") or 1,
-                        tzinfo=timezone.utc,
-                    )
-                except ValueError:
-                    pass
+        now = datetime.now(timezone.utc)
+        root_air_date = _parse_anilist_start_date(root_node.get("startDate"), now)
+        if item.release_date is None and root_air_date is not None:
+            item.release_date = root_air_date
 
-            is_season_future = (
-                s_air_date and s_air_date > datetime.now(timezone.utc)
-            ) or (item.status == MediaStatus.FUTURE)
+        if item.status in (
+            MediaStatus.PENDING,
+            MediaStatus.SEARCHING,
+            MediaStatus.FUTURE,
+        ):
+            item.status = (
+                MediaStatus.FUTURE
+                if is_future_or_tba(item.release_date, item.year, now)
+                else MediaStatus.SEARCHING
+            )
+
+        season_counter = 0
+        movie_counter = 0
+
+        async def _create_anilist_season(
+            s_num: int,
+            anilist_node: dict,
+            entry_type: str,
+            watch_order: int,
+            type_number: int,
+        ):
+            ep_count = anilist_node.get("episodes")
+            start_date = anilist_node.get("startDate")
+            s_air_date = _parse_anilist_start_date(start_date, now)
+            start_year = (
+                start_date.get("year") if isinstance(start_date, dict) else None
+            )
+
+            is_season_future = is_future_or_tba(s_air_date, start_year, now) or (
+                item.status == MediaStatus.FUTURE
+            )
             is_monitored = True if s_num == 1 else False
 
             existing_season_stmt = select(Season).where(
@@ -3331,6 +3527,9 @@ async def enrich_anime_metadata(session: AsyncSession, item: MediaItem) -> None:
                 season_obj = Season(
                     media_item_id=item.id,
                     season_number=s_num,
+                    watch_order=watch_order,
+                    type_number=type_number,
+                    entry_type=entry_type,
                     monitored=is_monitored,
                     episode_count=ep_count,
                     air_date=s_air_date,
@@ -3368,12 +3567,30 @@ async def enrich_anime_metadata(session: AsyncSession, item: MediaItem) -> None:
             else:
                 if not existing_season.anilist_id:
                     existing_season.anilist_id = anilist_node.get("id")
+                existing_season.watch_order = watch_order
+                existing_season.type_number = type_number
+                existing_season.entry_type = entry_type
 
         for idx, node in enumerate(hierarchy_list):
-            await _create_anilist_season(idx + 1, node)
-
-        if item.status == MediaStatus.PENDING:
-            item.status = MediaStatus.SEARCHING
+            node_format = str(node.get("format") or "").upper()
+            resolved_entry_type = node.get("entry_type") or (
+                "movie" if node_format == "MOVIE" else "season"
+            )
+            if resolved_entry_type == "movie":
+                movie_counter += 1
+                default_type_num = movie_counter
+            else:
+                season_counter += 1
+                default_type_num = season_counter
+            resolved_watch_order = int(node.get("watch_order") or (idx + 1))
+            resolved_type_number = int(node.get("type_number") or default_type_num)
+            await _create_anilist_season(
+                idx + 1,
+                node,
+                resolved_entry_type,
+                resolved_watch_order,
+                resolved_type_number,
+            )
 
         await consolidate_standalone_anime_sequels(session)
 
@@ -3577,6 +3794,7 @@ async def reset_anime_metadata(session: AsyncSession, item_id: int) -> MediaItem
         select(MediaItem)
         .where(MediaItem.id == item_id)
         .options(selectinload(MediaItem.seasons).selectinload(Season.episodes))
+        .execution_options(populate_existing=True)
     )
     item = (await session.execute(stmt)).scalars().first()
     if not item:
@@ -3671,6 +3889,20 @@ async def reset_anime_metadata(session: AsyncSession, item_id: int) -> MediaItem
             return item
 
     now = datetime.now(timezone.utc)
+    if root_node:
+        root_air_date = _parse_anilist_start_date(root_node.get("startDate"), now)
+        if item.release_date is None and root_air_date is not None:
+            item.release_date = root_air_date
+        if item.status in (
+            MediaStatus.PENDING,
+            MediaStatus.SEARCHING,
+            MediaStatus.FUTURE,
+        ):
+            item.status = (
+                MediaStatus.FUTURE
+                if is_future_or_tba(item.release_date, item.year, now)
+                else MediaStatus.SEARCHING
+            )
 
     # Map existing seasons and episodes
     existing_seasons_map = {s.season_number: s for s in item.seasons}
@@ -3682,24 +3914,30 @@ async def reset_anime_metadata(session: AsyncSession, item_id: int) -> MediaItem
 
     # Reconcile seasons according to AniList hierarchy
     valid_season_numbers = set()
+    season_counter = 0
+    movie_counter = 0
     for idx, node in enumerate(hierarchy_list):
         s_num = idx + 1
         valid_season_numbers.add(s_num)
-        ep_count = node.get("episodes")
-        s_air_date = None
-        start_date = node.get("startDate")
-        if start_date and start_date.get("year"):
-            try:
-                s_air_date = datetime(
-                    start_date["year"],
-                    start_date.get("month") or 1,
-                    start_date.get("day") or 1,
-                    tzinfo=timezone.utc,
-                )
-            except ValueError:
-                pass
+        node_format = str(node.get("format") or "").upper()
+        entry_type = node.get("entry_type") or (
+            "movie" if node_format == "MOVIE" else "season"
+        )
+        if entry_type == "movie":
+            movie_counter += 1
+            default_type_num = movie_counter
+        else:
+            season_counter += 1
+            default_type_num = season_counter
+        watch_order = int(node.get("watch_order") or s_num)
+        type_number = int(node.get("type_number") or default_type_num)
 
-        is_season_future = (s_air_date is not None and s_air_date > now) or (
+        ep_count = node.get("episodes")
+        start_date = node.get("startDate")
+        s_air_date = _parse_anilist_start_date(start_date, now)
+        start_year = start_date.get("year") if isinstance(start_date, dict) else None
+
+        is_season_future = is_future_or_tba(s_air_date, start_year, now) or (
             item.status == MediaStatus.FUTURE
         )
 
@@ -3711,6 +3949,9 @@ async def reset_anime_metadata(session: AsyncSession, item_id: int) -> MediaItem
             season_obj = Season(
                 media_item_id=item.id,
                 season_number=s_num,
+                watch_order=watch_order,
+                type_number=type_number,
+                entry_type=entry_type,
                 monitored=is_monitored,
                 episode_count=ep_count,
                 air_date=s_air_date,
@@ -3738,16 +3979,24 @@ async def reset_anime_metadata(session: AsyncSession, item_id: int) -> MediaItem
             season_obj.episode_count = ep_count or season_obj.episode_count
             season_obj.air_date = s_air_date or season_obj.air_date
             season_obj.anilist_id = node.get("id") or season_obj.anilist_id
+            season_obj.watch_order = watch_order
+            season_obj.type_number = type_number
+            season_obj.entry_type = entry_type
 
             if season_obj.status in (
                 SeasonStatus.PENDING,
                 SeasonStatus.SEARCHING,
                 SeasonStatus.CANCELED,
+                SeasonStatus.FUTURE,
             ):
                 season_obj.status = (
-                    SeasonStatus.SEARCHING
-                    if season_obj.monitored
-                    else SeasonStatus.PENDING
+                    SeasonStatus.FUTURE
+                    if is_season_future
+                    else (
+                        SeasonStatus.SEARCHING
+                        if season_obj.monitored
+                        else SeasonStatus.PENDING
+                    )
                 )
 
         # Reset season search counters

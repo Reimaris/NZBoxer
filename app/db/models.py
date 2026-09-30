@@ -639,22 +639,83 @@ class MediaItem(Base):
 
     @property
     def total_seasons(self) -> int:
-        """Total seasons excluding season 0 (specials)."""
+        """Total TV/ONA seasons excluding season 0 (specials) and franchise movies."""
         if self.media_type not in (MediaType.SHOW, MediaType.ANIME) or not self.seasons:
             return 0
-        return sum(1 for s in self.seasons if s.season_number > 0)
+        return sum(
+            1
+            for s in self.seasons
+            if s.season_number > 0 and getattr(s, "entry_type", "season") != "movie"
+        )
 
     @property
     def downloaded_seasons(self) -> int:
-        """Total downloaded or completed seasons excluding season 0."""
+        """Total downloaded or completed TV/ONA seasons excluding season 0 and franchise movies."""
         if self.media_type not in (MediaType.SHOW, MediaType.ANIME) or not self.seasons:
             return 0
         return sum(
             1
             for s in self.seasons
             if s.season_number > 0
+            and getattr(s, "entry_type", "season") != "movie"
             and s.status in [SeasonStatus.DOWNLOADED, SeasonStatus.COMPLETED]
         )
+
+    @property
+    def total_movies(self) -> int:
+        """Total canonical franchise movies for an Anime item (or 1 for a standalone anime movie)."""
+        if self.seasons:
+            movie_entries = [
+                s for s in self.seasons if getattr(s, "entry_type", "season") == "movie"
+            ]
+            if movie_entries:
+                return len(movie_entries)
+        if getattr(self, "is_anime_movie", False):
+            return 1
+        return 0
+
+    @property
+    def downloaded_movies(self) -> int:
+        """Total downloaded or completed franchise movies for an Anime item (or standalone anime movie)."""
+        if self.seasons:
+            movie_entries = [
+                s for s in self.seasons if getattr(s, "entry_type", "season") == "movie"
+            ]
+            if movie_entries:
+                return sum(
+                    1
+                    for s in movie_entries
+                    if s.status in [SeasonStatus.DOWNLOADED, SeasonStatus.COMPLETED]
+                )
+        if getattr(self, "is_anime_movie", False):
+            return (
+                1
+                if self.status in [MediaStatus.DOWNLOADED, MediaStatus.COMPLETED]
+                else 0
+            )
+        return 0
+
+    @property
+    def progress_pills(self) -> list[str]:
+        """Formatted progress pills for Series and Anime (e.g. ['1/2 Seasons', '1/2 Movies'])."""
+        pills: list[str] = []
+        t_seasons = self.total_seasons
+        if t_seasons > 0:
+            s_label = "Season" if t_seasons == 1 else "Seasons"
+            pills.append(f"{self.downloaded_seasons}/{t_seasons} {s_label}")
+        t_movies = self.total_movies
+        if t_movies > 0:
+            m_label = "Movie" if t_movies == 1 else "Movies"
+            pills.append(f"{self.downloaded_movies}/{t_movies} {m_label}")
+        return pills
+
+    @property
+    def is_tba(self) -> bool:
+        """True if the item lacks an exact release date or its year is in the future."""
+        now_year = datetime.now(timezone.utc).year
+        if self.year is not None and self.year > now_year:
+            return True
+        return self.release_date is None
 
     @property
     def aggregated_upgrade_attempts(self) -> int:
@@ -953,6 +1014,11 @@ class Season(Base):
     @is_fallback.setter
     def is_fallback(self, value: bool) -> None:
         self._is_fallback_override = value
+
+    @property
+    def is_tba(self) -> bool:
+        """True if the season/entry lacks an exact air date."""
+        return self.air_date is None
 
     # ---------------------------------------------------------------------------
     # Episode Model

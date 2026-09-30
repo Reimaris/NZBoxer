@@ -130,7 +130,10 @@ async def run_orchestrator_tick(now: datetime | None = None) -> None:
     """
     from datetime import datetime
 
-    from app.core.automation import run_automation_cycle
+    from app.core.automation import (
+        run_automation_cycle,
+        run_periodic_simkl_sync_if_due,
+    )
     from app.core.automation_state import automation_state_manager
     from app.core.scheduler_utils import is_interval_due
     from app.core.self_healing import run_download_check_cycle, run_self_healing_cycle
@@ -159,6 +162,9 @@ async def run_orchestrator_tick(now: datetime | None = None) -> None:
         now.strftime("%Y-%m-%d %H:%M:%S"),
         current_state,
     )
+
+    # 0. Optional Periodic Simkl Watchlist Sync (per provider simkl_config)
+    await run_periodic_simkl_sync_if_due(now)
 
     # 1. Self-Healing & Download Check (Runs in ACTIVE, UPGRADES_ONLY, and PAUSED states)
     if is_interval_due(settings.self_healing_interval, now):
@@ -240,16 +246,23 @@ app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
 
 @app.get("/", response_class=HTMLResponse)
-async def dashboard(request: Request):
+async def dashboard(request: Request, background_tasks: BackgroundTasks):
     """Main dashboard displaying the watchlist."""
     from sqlalchemy import select
     from sqlalchemy.orm import selectinload
 
-    from app.core.automation import consolidate_standalone_anime_sequels
+    from app.core.automation import (
+        consolidate_standalone_anime_sequels,
+        should_trigger_dashboard_simkl_sync,
+        sync_all_providers,
+    )
     from app.db.database import async_session_factory
     from app.db.models import MediaItem, MediaType
 
     async with async_session_factory() as session:
+        if await should_trigger_dashboard_simkl_sync(session):
+            background_tasks.add_task(sync_all_providers)
+
         # Auto-consolidate any legacy standalone sequels before rendering
         await consolidate_standalone_anime_sequels(session)
 
@@ -2255,6 +2268,10 @@ async def save_provider(
     anime_prefer_seasons: bool = Form(False),
     anime_block_size: int = Form(5),
     provider_type: str = Form("simkl"),
+    sync_interval_minutes: int = Form(0),
+    sync_movies: bool | None = Form(None),
+    sync_series: bool | None = Form(None),
+    sync_anime: bool | None = Form(None),
 ):
     from sqlalchemy.orm import selectinload
 
@@ -2302,6 +2319,28 @@ async def save_provider(
         provider.series_category_id = series_category_id
         provider.anime_category_id = anime_category_id
         provider.bandwidth_mbit = bandwidth_mbit
+
+        if provider.type.lower() == "simkl":
+            import json
+
+            existing_cfg = provider.simkl_config
+            existing_cfg["sync_interval_minutes"] = max(0, int(sync_interval_minutes))
+            existing_cfg["sync_movies"] = (
+                bool(sync_movies)
+                if sync_movies is not None
+                else bool(enable_movies or existing_cfg.get("sync_movies", True))
+            )
+            existing_cfg["sync_series"] = (
+                bool(sync_series)
+                if sync_series is not None
+                else bool(enable_series or existing_cfg.get("sync_series", True))
+            )
+            existing_cfg["sync_anime"] = (
+                bool(sync_anime)
+                if sync_anime is not None
+                else bool(enable_anime or existing_cfg.get("sync_anime", True))
+            )
+            provider.config_json = json.dumps(existing_cfg)
 
         await session.flush()  # get ID
 
