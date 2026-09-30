@@ -585,6 +585,10 @@ async def _dispatch_candidate_list_to_torbox(
 
         await session.flush()
 
+        from app.core.transfer_poller import wake_transfer_poller
+
+        wake_transfer_poller()
+
         target_lbl = discord.format_target_label(
             item=item, season=season, episode=episode
         )

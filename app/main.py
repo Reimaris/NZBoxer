@@ -207,6 +207,17 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     # 2. Setup and Start APScheduler
     from apscheduler.triggers.cron import CronTrigger
+    from apscheduler.triggers.interval import IntervalTrigger
+
+    from app.core.transfer_poller import (
+        count_downloading_entities,
+        run_transfer_poller_tick,
+        transfer_poller,
+    )
+
+    async with async_session_factory() as session:
+        if await count_downloading_entities(session) > 0:
+            transfer_poller.wake()
 
     scheduler.add_job(
         run_orchestrator_tick,
@@ -214,9 +225,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         id="orchestrator_job",
         replace_existing=True,
     )
+    scheduler.add_job(
+        run_transfer_poller_tick,
+        IntervalTrigger(seconds=20),
+        id="transfer_poller_job",
+        replace_existing=True,
+    )
     scheduler.start()
     logger.info(
-        "APScheduler started with quarter-hour cron trigger (:00, :15, :30, :45)."
+        "APScheduler started with quarter-hour cron trigger and 20s auto-wake transfer poller."
     )
 
     # Yield control to the FastAPI application
@@ -3645,3 +3662,115 @@ async def api_push_item_manual_grab(item_id: int, request: Request) -> Response:
         return JSONResponse(status_code=status_code, content=result)
     finally:
         item_lock_manager.release(item_id)
+
+
+# ---------------------------------------------------------------------------
+# Card 5: Active Pushes & Split Failure Recovery API (v3.0.0)
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/pushes/active")
+async def api_get_active_pushes(request: Request) -> Response:
+    """Return active transfers (`DOWNLOADING`) and unacknowledged failed manual picks (`FAILED`)."""
+    from app.core.transfer_poller import (
+        count_downloading_entities,
+        get_active_pushes,
+        transfer_poller,
+    )
+
+    async with async_session_factory() as session:
+        pushes = await get_active_pushes(session)
+        downloading_count = await count_downloading_entities(session)
+
+    accept = (request.headers.get("accept") or "").lower()
+    is_hx = request.headers.get("HX-Request") == "true"
+    partial_tpl = Path("templates/partials/active_pushes_table.html")
+    if is_hx and "application/json" not in accept and partial_tpl.exists():
+        return templates.TemplateResponse(
+            request=request,
+            name="partials/active_pushes_table.html",
+            context={
+                "active_pushes": pushes,
+                "downloading_count": downloading_count,
+                "poller_awake": transfer_poller.is_awake,
+            },
+        )
+
+    return JSONResponse(
+        status_code=200,
+        content={
+            "pushes": pushes,
+            "active_count": len(pushes),
+            "downloading_count": downloading_count,
+            "poller_awake": transfer_poller.is_awake,
+        },
+    )
+
+
+@app.post("/api/pushes/{history_id}/dismiss")
+async def api_dismiss_failed_push(history_id: int, request: Request) -> Response:
+    """Dismiss a failed manual-pick row from Active Pushes and revert its entity to SEARCHING."""
+    from app.core.transfer_poller import dismiss_failed_push, get_active_pushes
+
+    async with async_session_factory() as session:
+        ok = await dismiss_failed_push(session, history_id)
+        if not ok:
+            return JSONResponse(
+                status_code=404, content={"ok": False, "error": "Push row not found"}
+            )
+        pushes = await get_active_pushes(session)
+
+    if request.headers.get("HX-Request") == "true":
+        partial_tpl = Path("templates/partials/active_pushes_table.html")
+        if partial_tpl.exists():
+            return templates.TemplateResponse(
+                request=request,
+                name="partials/active_pushes_table.html",
+                context={"active_pushes": pushes},
+            )
+        return HTMLResponse(content="", status_code=200)
+
+    return JSONResponse(
+        status_code=200,
+        content={"ok": True, "history_id": history_id, "remaining_pushes": len(pushes)},
+    )
+
+
+@app.post("/api/pushes/{history_id}/cancel")
+@app.delete("/api/pushes/{history_id}")
+async def api_cancel_active_push(history_id: int, request: Request) -> Response:
+    """Cancel and delete an active transfer on TorBox and remove it from Active Pushes."""
+    from app.core.transfer_poller import cancel_active_push, get_active_pushes
+
+    async with async_session_factory() as session:
+        ok = await cancel_active_push(session, history_id)
+        if not ok:
+            return JSONResponse(
+                status_code=404, content={"ok": False, "error": "Push row not found"}
+            )
+        pushes = await get_active_pushes(session)
+
+    if request.headers.get("HX-Request") == "true":
+        partial_tpl = Path("templates/partials/active_pushes_table.html")
+        if partial_tpl.exists():
+            return templates.TemplateResponse(
+                request=request,
+                name="partials/active_pushes_table.html",
+                context={"active_pushes": pushes},
+            )
+        return HTMLResponse(content="", status_code=200)
+
+    return JSONResponse(
+        status_code=200,
+        content={"ok": True, "history_id": history_id, "remaining_pushes": len(pushes)},
+    )
+
+
+@app.post("/api/pushes/poll")
+async def api_trigger_transfer_poller_tick() -> Response:
+    """Trigger an immediate transfer poller tick."""
+    from app.core.transfer_poller import run_transfer_poller_tick
+
+    async with async_session_factory() as session:
+        res = await run_transfer_poller_tick(session)
+    return JSONResponse(status_code=200, content=res)
