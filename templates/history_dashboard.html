@@ -25,15 +25,6 @@
             <button @click="tab = 'anime'" :class="{'bg-[#d40060] text-white shadow': tab === 'anime', 'bg-[#2a2a32] text-[#a1a1aa] hover:text-white': tab !== 'anime'}" class="px-4 py-2 rounded-md text-sm font-medium transition-colors">
                 Anime <span class="ml-1 opacity-75 text-xs">({{ anime_items|length }})</span>
             </button>
-            <button @click="tab = 'manga'" :class="{'bg-[#d40060] text-white shadow': tab === 'manga', 'bg-[#2a2a32] text-[#a1a1aa] hover:text-white': tab !== 'manga'}" class="px-4 py-2 rounded-md text-sm font-medium transition-colors border-l border-[#3f3f46] ml-2 pl-4">
-                Manga <span class="ml-1 opacity-75 text-xs">({{ manga_items|length }})</span>
-            </button>
-            <button @click="tab = 'books'" :class="{'bg-[#d40060] text-white shadow': tab === 'books', 'bg-[#2a2a32] text-[#a1a1aa] hover:text-white': tab !== 'books'}" class="px-4 py-2 rounded-md text-sm font-medium transition-colors">
-                Books <span class="ml-1 opacity-75 text-xs">({{ book_items|length }})</span>
-            </button>
-            <button @click="tab = 'magazines'" :class="{'bg-[#d40060] text-white shadow': tab === 'magazines', 'bg-[#2a2a32] text-[#a1a1aa] hover:text-white': tab !== 'magazines'}" class="px-4 py-2 rounded-md text-sm font-medium transition-colors">
-                Magazines <span class="ml-1 opacity-75 text-xs">({{ mag_items|length }})</span>
-            </button>
         </div>
 
         <!-- Search input -->
@@ -159,88 +150,6 @@
             </tbody>
         </table>
     </div>
-    
-    <!-- Print Items Tables -->
-    <div class="overflow-x-auto" x-show="['manga', 'books', 'magazines'].includes(tab)" style="display: none;">
-        <table class="min-w-full divide-y divide-[#3f3f46]">
-            <thead class="bg-[#1e1e24]">
-                <tr>
-                    <th scope="col" @click="sortBy('title')" class="px-6 py-3 text-left text-xs font-semibold text-[#a1a1aa] uppercase tracking-wider cursor-pointer hover:text-white select-none">
-                        <div class="flex items-center gap-1">
-                            <span>Title</span>
-                            <span x-show="sortCol === 'title'" x-text="sortDir === 'asc' ? '▲' : '▼'" class="text-[#d40060] font-bold text-xs"></span>
-                        </div>
-                    </th>
-                    <th scope="col" class="px-6 py-3 text-left text-xs font-semibold text-[#a1a1aa] uppercase tracking-wider">Final Status</th>
-                    <th scope="col" @click="sortBy('archived-at')" class="px-6 py-3 text-left text-xs font-semibold text-[#a1a1aa] uppercase tracking-wider cursor-pointer hover:text-white select-none">
-                        <div class="flex items-center gap-1">
-                            <span>Archived At</span>
-                            <span x-show="sortCol === 'archived-at'" x-text="sortDir === 'asc' ? '▲' : '▼'" class="text-[#d40060] font-bold text-xs"></span>
-                        </div>
-                    </th>
-                    <th scope="col" class="px-6 py-3 text-right text-xs font-semibold text-[#a1a1aa] uppercase tracking-wider">Actions</th>
-                </tr>
-            </thead>
-            <tbody class="divide-y divide-[#3f3f46] bg-[#24242b]" id="print-history-table">
-                <!-- Manga -->
-                {% for item in manga_items %}
-                <tr class="hover:bg-[#2a2a32] transition-colors" 
-                    data-sortable="true"
-                    data-title="{{ item.title|lower }}"
-                    data-type="manga"
-                    data-archived-at="{{ item.updated_at.isoformat() if item.updated_at is defined and item.updated_at else '' }}"
-                    x-show="tab === 'manga' && ('{{ item.title|replace('\'', '\\\'') }}'.toLowerCase().includes(search.toLowerCase()))">
-                    <td class="px-6 py-4"><div class="font-bold text-white">{{ item.title }}</div></td>
-                    <td class="px-6 py-4"><span class="bg-slate-700 text-slate-300 text-[11px] font-bold px-2 py-1 rounded uppercase tracking-wider">{{ item.status.value }}</span></td>
-                    <td class="px-6 py-4 text-gray-400 text-xs font-mono">{{ item.updated_at.strftime('%Y-%m-%d %H:%M:%S') if item.updated_at is defined and item.updated_at else '—' }}</td>
-                    <td class="px-6 py-4 text-right">
-                        <button hx-post="/print/{{ item.id if false else ('manga/' ~ item.id if tab == 'manga' else ('books/' ~ item.id if tab == 'books' else 'magazines/' ~ item.id)) }}/retry" class="bg-transparent border border-yellow-600 text-yellow-500 hover:bg-yellow-600 hover:text-white p-1.5 rounded-md">
-                            <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
-                        </button>
-                    </td>
-                </tr>
-                {% endfor %}
-                
-                <!-- Books -->
-                {% for item in book_items %}
-                <tr class="hover:bg-[#2a2a32] transition-colors" 
-                    data-sortable="true"
-                    data-title="{{ item.title|lower }}"
-                    data-type="book"
-                    data-archived-at="{{ item.updated_at.isoformat() if item.updated_at is defined and item.updated_at else '' }}"
-                    x-show="tab === 'books' && ('{{ item.title|replace('\'', '\\\'') }}'.toLowerCase().includes(search.toLowerCase()))">
-                    <td class="px-6 py-4"><div class="font-bold text-white">{{ item.title }}</div></td>
-                    <td class="px-6 py-4"><span class="bg-slate-700 text-slate-300 text-[11px] font-bold px-2 py-1 rounded uppercase tracking-wider">{{ item.status.value }}</span></td>
-                    <td class="px-6 py-4 text-gray-400 text-xs font-mono">{{ item.updated_at.strftime('%Y-%m-%d %H:%M:%S') if item.updated_at is defined and item.updated_at else '—' }}</td>
-                    <td class="px-6 py-4 text-right">
-                        <button hx-post="/print/books/{{ item.id }}/retry" class="bg-transparent border border-yellow-600 text-yellow-500 hover:bg-yellow-600 hover:text-white p-1.5 rounded-md">
-                            <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
-                        </button>
-                    </td>
-                </tr>
-                {% endfor %}
-                
-                <!-- Magazines -->
-                {% for item in mag_items %}
-                <tr class="hover:bg-[#2a2a32] transition-colors" 
-                    data-sortable="true"
-                    data-title="{{ item.title|lower }}"
-                    data-type="magazine"
-                    data-archived-at="{{ item.updated_at.isoformat() if item.updated_at is defined and item.updated_at else '' }}"
-                    x-show="tab === 'magazines' && ('{{ item.title|replace('\'', '\\\'') }}'.toLowerCase().includes(search.toLowerCase()))">
-                    <td class="px-6 py-4"><div class="font-bold text-white">{{ item.title }}</div></td>
-                    <td class="px-6 py-4"><span class="bg-slate-700 text-slate-300 text-[11px] font-bold px-2 py-1 rounded uppercase tracking-wider">{{ item.status.value }}</span></td>
-                    <td class="px-6 py-4 text-gray-400 text-xs font-mono">{{ item.updated_at.strftime('%Y-%m-%d %H:%M:%S') if item.updated_at is defined and item.updated_at else '—' }}</td>
-                    <td class="px-6 py-4 text-right">
-                        <button hx-post="/print/magazines/{{ item.id }}/retry" class="bg-transparent border border-yellow-600 text-yellow-500 hover:bg-yellow-600 hover:text-white p-1.5 rounded-md">
-                            <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
-                        </button>
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
 </div>
 
 <script>
@@ -263,7 +172,7 @@ function initHistoryDashboard() {
             this.applySort();
         },
         applySort() {
-            const tableIds = ['video-history-table', 'print-history-table'];
+            const tableIds = ['video-history-table'];
             tableIds.forEach(id => {
                 const tbody = document.getElementById(id);
                 if (!tbody) return;

@@ -1,7 +1,7 @@
 """
 Centralized Automation State Manager
 ====================================
-Tracks whether an automation cycle is IDLE, RUNNING_VIDEO, RUNNING_PRINT,
+Tracks whether an automation cycle is IDLE, RUNNING_VIDEO,
 or transitioning through ABORTING. Ensures mutual exclusion between cycles
 and provides a safe coordination seam for graceful termination.
 """
@@ -16,7 +16,6 @@ from typing import Final
 class AutomationStatus(str, enum.Enum):
     IDLE = "idle"
     RUNNING_VIDEO = "running_video"
-    RUNNING_PRINT = "running_print"
     ABORTING = "aborting"
 
 
@@ -35,7 +34,6 @@ class AutomationState:
         with self._lock:
             return self._state in (
                 AutomationStatus.RUNNING_VIDEO,
-                AutomationStatus.RUNNING_PRINT,
                 AutomationStatus.ABORTING,
             )
 
@@ -54,10 +52,7 @@ class AutomationState:
             except ValueError:
                 return False
 
-        if target_state not in (
-            AutomationStatus.RUNNING_VIDEO,
-            AutomationStatus.RUNNING_PRINT,
-        ):
+        if target_state not in (AutomationStatus.RUNNING_VIDEO,):
             return False
 
         with self._lock:
@@ -74,10 +69,7 @@ class AutomationState:
         Returns True if a run was active and state changed to ABORTING, False otherwise.
         """
         with self._lock:
-            if self._state in (
-                AutomationStatus.RUNNING_VIDEO,
-                AutomationStatus.RUNNING_PRINT,
-            ):
+            if self._state in (AutomationStatus.RUNNING_VIDEO,):
                 self._state = AutomationStatus.ABORTING
                 return True
             return False

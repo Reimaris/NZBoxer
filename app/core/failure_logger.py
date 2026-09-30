@@ -2,7 +2,7 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import BookItem, Episode, FailureLog, MangaVolume, MediaItem, Season
+from app.db.models import Episode, FailureLog, MediaItem, Season
 
 
 def log_failure(
@@ -16,10 +16,6 @@ def log_failure(
         target_kwargs["season_id"] = target.id
     elif isinstance(target, Episode):
         target_kwargs["episode_id"] = target.id
-    elif isinstance(target, BookItem):
-        target_kwargs["book_item_id"] = target.id
-    elif isinstance(target, MangaVolume):
-        target_kwargs["manga_volume_id"] = target.id
 
     # Still update last_error for legacy compatibility if it exists
     if hasattr(target, "last_error"):

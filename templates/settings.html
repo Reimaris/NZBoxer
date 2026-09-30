@@ -3,7 +3,7 @@
 {% block content %}
 <div class="max-w-7xl mx-auto space-y-8 text-sm"
      x-data="{
-         validTabs: ['general', 'scoring', 'print', 'providers', 'notifications'],
+         validTabs: ['general', 'scoring', 'providers', 'notifications'],
          activeTab: 'general',
          setTab(tab) {
              if (!this.validTabs.includes(tab)) tab = 'general';
@@ -58,10 +58,6 @@
                 <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg>
                 Video Scoring & Rules
             </button>
-            <button @click="setTab('print')" :class="activeTab === 'print' ? 'border-[#d40060] text-[#d40060]' : 'border-transparent text-[#a1a1aa] hover:text-white hover:border-[#3f3f46]'" class="whitespace-nowrap pb-4 px-1 border-b-2 font-medium transition-colors flex items-center gap-2">
-                <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path></svg>
-                Print Media
-            </button>
             <button @click="setTab('providers')" :class="activeTab === 'providers' ? 'border-[#d40060] text-[#d40060]' : 'border-transparent text-[#a1a1aa] hover:text-white hover:border-[#3f3f46]'" class="whitespace-nowrap pb-4 px-1 border-b-2 font-medium transition-colors flex items-center gap-2">
                 <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 002-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
                 Providers & Profiles
@@ -89,7 +85,7 @@
                     </h2>
                 </div>
                 <div class="p-6 space-y-6">
-                    <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-6">
+                    <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
                         <div>
                             <label class="flex items-center gap-1.5 text-[#d1d5db] font-medium mb-1 text-xs uppercase tracking-wider">
                                 <span>Video Search Interval</span>
@@ -111,29 +107,6 @@
                                 <option value="360" {% if db_settings and db_settings.video_search_interval == 360 %}selected{% endif %}>Every 6 hours</option>
                                 <option value="720" {% if db_settings and db_settings.video_search_interval == 720 %}selected{% endif %}>Every 12 hours</option>
                                 <option value="1440" {% if db_settings and db_settings.video_search_interval == 1440 %}selected{% endif %}>Every 24 hours</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label class="flex items-center gap-1.5 text-[#d1d5db] font-medium mb-1 text-xs uppercase tracking-wider">
-                                <span>Print Search Interval</span>
-                                <div class="relative inline-flex items-center group">
-                                    <svg class="w-3.5 h-3.5 shrink-0 text-[#71717a] group-hover:text-[#d1d5db] transition-colors cursor-help" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                                    </svg>
-                                    <div class="opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 absolute bottom-full left-0 mb-2 w-64 max-w-[calc(100vw-2rem)] bg-[#2a2a32] border border-[#3f3f46] text-gray-200 text-[11px] normal-case tracking-normal font-normal rounded-lg p-2.5 shadow-2xl z-30 pointer-events-none leading-relaxed">
-                                        Wall-clock aligned interval for automated Print releases (Manga & Books) querying active Usenet Indexers.
-                                    </div>
-                                </div>
-                            </label>
-                            <select name="print_search_interval" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors">
-                                <option value="15" {% if db_settings and db_settings.print_search_interval == 15 %}selected{% endif %}>Every 15 minutes</option>
-                                <option value="30" {% if db_settings and db_settings.print_search_interval == 30 %}selected{% endif %}>Every 30 minutes</option>
-                                <option value="60" {% if not db_settings or db_settings.print_search_interval == 60 %}selected{% endif %}>Every hour</option>
-                                <option value="120" {% if db_settings and db_settings.print_search_interval == 120 %}selected{% endif %}>Every 2 hours</option>
-                                <option value="240" {% if db_settings and db_settings.print_search_interval == 240 %}selected{% endif %}>Every 4 hours</option>
-                                <option value="360" {% if db_settings and db_settings.print_search_interval == 360 %}selected{% endif %}>Every 6 hours</option>
-                                <option value="720" {% if db_settings and db_settings.print_search_interval == 720 %}selected{% endif %}>Every 12 hours</option>
-                                <option value="1440" {% if db_settings and db_settings.print_search_interval == 1440 %}selected{% endif %}>Every 24 hours</option>
                             </select>
                         </div>
                         <div>
@@ -569,63 +542,14 @@
                 </button>
             </div>
         </div>
-
-        <!-- Tab 3: Print Media -->
-        <div x-show="activeTab === 'print'" class="space-y-8 animate-fade-in" style="display: none;">
-            <div class="bg-[#1e1e24] border border-[#3f3f46] rounded-xl shadow-lg">
-                <div class="bg-[#2a2a32] rounded-t-xl border-b border-[#3f3f46] px-6 py-4 flex items-center gap-2">
-                    <h2 class="text-lg font-semibold text-white">Storage & Hierarchy Settings</h2>
-                </div>
-                <div class="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div>
-                        <label class="block text-[#d1d5db] font-medium mb-1 text-xs uppercase tracking-wider">Reading Download Directory</label>
-                        <input type="text" name="reading_download_dir" value="{{ db_settings.reading_download_dir if db_settings else 'downloads' }}" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors">
-                    </div>
-                    <div>
-                        <div class="bg-[#2a2a32] border border-[#3f3f46] rounded-lg p-3 text-xs text-[#a1a1aa] space-y-1">
-                            <span class="text-white font-semibold block mb-1">Standard Format Hierarchy:</span>
-                            <div>• Manga: <span class="text-emerald-400 font-bold">CBZ</span> (1000) > <span class="text-teal-300">CBR</span> (700) > PDF (300)</div>
-                            <div>• Books: <span class="text-blue-400 font-bold">EPUB</span> (1000) > PDF (400)</div>
-                            <div>• Magazines: <span class="text-rose-400 font-bold">PDF</span> (1000) > EPUB (700)</div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <div class="bg-[#1e1e24] border border-[#3f3f46] rounded-xl shadow-lg">
-                <div class="bg-[#2a2a32] rounded-t-xl border-b border-[#3f3f46] px-6 py-4 flex items-center gap-2">
-                    <h2 class="text-lg font-semibold text-white">Print Media Format Blacklists (Comma Separated)</h2>
-                </div>
-                <div class="p-6 grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <div>
-                        <label class="block text-[#d1d5db] font-medium mb-1 text-xs uppercase tracking-wider">Manga Blacklist</label>
-                        <input type="text" name="manga_blacklisted_formats" value="{{ db_settings.manga_blacklisted_formats if db_settings else '' }}" placeholder="pdf, mobi" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors">
-                    </div>
-                    <div>
-                        <label class="block text-[#d1d5db] font-medium mb-1 text-xs uppercase tracking-wider">Book Blacklist</label>
-                        <input type="text" name="book_blacklisted_formats" value="{{ db_settings.book_blacklisted_formats if db_settings else '' }}" placeholder="pdf" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors">
-                    </div>
-                    <div>
-                        <label class="block text-[#d1d5db] font-medium mb-1 text-xs uppercase tracking-wider">Magazine Blacklist</label>
-                        <input type="text" name="magazine_blacklisted_formats" value="{{ db_settings.magazine_blacklisted_formats if db_settings else '' }}" placeholder="epub" class="w-full bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg p-2.5 text-white focus:outline-none transition-colors">
-                    </div>
-                </div>
-            </div>
-
-            <div class="flex justify-end pt-4">
-                <button type="submit" class="bg-[#d40060] hover:bg-[#a3004a] text-white px-8 py-3 rounded-lg flex items-center gap-2 font-bold transition-transform hover:scale-105 shadow-[0_0_15px_rgba(212,0,96,0.4)]">
-                    Save Print Media Settings
-                </button>
-            </div>
-        </div>
     </form>
 
-      <!-- Tab 4: Providers & Profiles -->
+      <!-- Tab 3: Providers & Profiles -->
     <div x-show="activeTab === 'providers'" class="space-y-8 animate-fade-in" style="display: none;">
         <div class="flex items-center justify-between mb-2">
             <div>
                 <h2 class="text-2xl font-bold text-white">Connected Providers</h2>
-                <p class="text-xs text-[#a1a1aa] mt-1">Manage your Watchlists, Print Media, Metadata, Downloader, and Indexer services.</p>
+                <p class="text-xs text-[#a1a1aa] mt-1">Manage your Watchlists, Metadata, Downloader, and Indexer services.</p>
             </div>
             <button hx-get="/settings/provider/new" hx-target="#modal-container" class="bg-[#d40060] hover:bg-[#a3004a] text-white px-5 py-2.5 rounded-lg text-sm font-bold transition-all shadow-lg shadow-[#d40060]/20 flex items-center gap-2">
                 <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
@@ -695,62 +619,7 @@
             </div>
         </div>
 
-        <!-- 2. PRINT MEDIA PROVIDERS -->
-        <div class="space-y-4">
-            <div class="flex items-center justify-between border-b border-[#3f3f46] pb-2">
-                <h3 class="text-sm font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-2">
-                    <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path></svg>
-                    Print Media Providers
-                </h3>
-            </div>
-            <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-                {% set count = namespace(p=0) %}
-                {% for provider in providers %}
-                {% if provider.category == 'print_media' or (provider.category.value is defined and provider.category.value == 'print_media') %}
-                {% set count.p = count.p + 1 %}
-                <div class="bg-[#1e1e24] border border-[#3f3f46] hover:border-emerald-400 rounded-xl p-5 transition-all group shadow-lg flex flex-col justify-between">
-                    <div>
-                        <!-- Header Row -->
-                        <div class="flex items-start justify-between gap-3 mb-4">
-                            <div class="flex items-center gap-3 min-w-0 flex-1">
-                                <div class="w-10 h-10 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 flex items-center justify-center font-bold text-base shrink-0 shadow-inner">
-                                    {{ 'H' if provider.type == 'hardcover' else 'OL' }}
-                                </div>
-                                <div class="min-w-0 flex-1">
-                                    <h4 class="text-base font-bold text-white truncate leading-tight" title="{{ provider.name }}">{{ provider.name }}</h4>
-                                    <p class="text-xs text-[#a1a1aa] font-mono mt-0.5 truncate">{{ provider.type }}</p>
-                                </div>
-                            </div>
-                            <div class="flex items-center gap-1.5 shrink-0">
-                                <button hx-get="/settings/provider/{{ provider.id }}/edit" hx-target="#modal-container" class="p-1.5 bg-[#2a2a32] hover:bg-[#3f3f46] rounded text-[#a1a1aa] hover:text-white transition-colors flex items-center justify-center" title="Edit">
-                                    <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg>
-                                </button>
-                                <button hx-delete="/settings/provider/{{ provider.id }}" hx-confirm="Are you sure you want to delete this provider?" class="p-1.5 bg-[#2a2a32] hover:bg-red-900/60 rounded text-[#a1a1aa] hover:text-red-400 transition-colors flex items-center justify-center" title="Delete">
-                                    <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Footer Row -->
-                    <div class="flex items-center justify-between gap-2 pt-3 border-t border-[#2a2a32] mt-2">
-                        <span class="text-xs text-[#a1a1aa] font-mono truncate max-w-[180px]">{{ provider.username or (provider.api_url or 'Active integration') }}</span>
-                        <button hx-post="/settings/provider/{{ provider.id }}/toggle-active" class="px-2.5 py-1 rounded-md text-xs font-bold transition-colors whitespace-nowrap {% if provider.is_active %}bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 border border-emerald-500/30{% else %}bg-[#3f3f46]/50 text-[#71717a] hover:bg-[#3f3f46] border border-[#3f3f46]{% endif %}" title="Toggle Active">
-                            {{ 'Active' if provider.is_active else 'Inactive' }}
-                        </button>
-                    </div>
-                </div>
-                {% endif %}
-                {% endfor %}
-                {% if count.p == 0 %}
-                <div class="col-span-full bg-[#111115] border border-dashed border-[#3f3f46] rounded-xl p-6 text-center text-[#71717a] text-sm">
-                    No print media providers configured.
-                </div>
-                {% endif %}
-            </div>
-        </div>
-
-        <!-- 3. METADATA PROVIDERS -->
+        <!-- 2. METADATA PROVIDERS -->
         <div class="space-y-4">
             <div class="flex items-center justify-between border-b border-[#3f3f46] pb-2">
                 <h3 class="text-sm font-bold text-amber-400 uppercase tracking-wider flex items-center gap-2">

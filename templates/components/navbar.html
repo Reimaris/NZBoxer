@@ -1,15 +1,10 @@
 <div class="flex flex-col sm:flex-row items-center justify-between gap-4 mb-6 pb-4 border-b border-[#3f3f46]">
-    <!-- Primary Domain Switcher (Video Media vs Print Media) -->
+    <!-- Primary Domain Switcher -->
     <div class="inline-flex bg-[#1e1e24] p-1 rounded-lg border border-[#3f3f46]">
         <a href="/" 
-           class="px-5 py-2 rounded-md text-sm font-medium transition-colors flex items-center gap-2 {% if not request.url.path.startswith('/dashboard/print') and not request.url.path.startswith('/print') and not request.url.path.startswith('/history') %}bg-[#d40060] text-white shadow-sm{% else %}text-[#a1a1aa] hover:text-white hover:bg-[#2a2a32]{% endif %}">
+           class="px-5 py-2 rounded-md text-sm font-medium transition-colors flex items-center gap-2 {% if not request.url.path.startswith('/history') %}bg-[#d40060] text-white shadow-sm{% else %}text-[#a1a1aa] hover:text-white hover:bg-[#2a2a32]{% endif %}">
             <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 4v16M17 4v16M3 8h4m10 0h4M3 12h18M3 16h4m10 0h4M4 20h16a1 1 0 001-1V5a1 1 0 00-1-1H4a1 1 0 00-1 1v14a1 1 0 001 1z"></path></svg>
             Video Media
-        </a>
-        <a href="/dashboard/print" 
-           class="px-5 py-2 rounded-md text-sm font-medium transition-colors flex items-center gap-2 {% if request.url.path.startswith('/dashboard/print') or request.url.path.startswith('/print') %}bg-[#d40060] text-white shadow-sm{% else %}text-[#a1a1aa] hover:text-white hover:bg-[#2a2a32]{% endif %}">
-            <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path></svg>
-            Print Media
         </a>
         <a href="/history" 
            class="px-5 py-2 rounded-md text-sm font-medium transition-colors flex items-center gap-2 {% if request.url.path.startswith('/history') %}bg-[#d40060] text-white shadow-sm{% else %}text-[#a1a1aa] hover:text-white hover:bg-[#2a2a32]{% endif %}">
@@ -20,18 +15,6 @@
 
     <!-- Contextual Sub-Switcher -->
     <div class="inline-flex bg-[#1e1e24] p-1 rounded-lg border border-[#3f3f46]">
-        {% if request.url.path.startswith('/dashboard/print') or request.url.path.startswith('/print') %}
-        <a href="/dashboard/print" 
-           class="px-4 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-1.5 {% if request.url.path == '/dashboard/print' %}bg-[#3f3f46] text-white shadow-sm{% else %}text-[#a1a1aa] hover:text-white hover:bg-[#2a2a32]{% endif %}">
-            <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"></path></svg>
-            Reading List
-        </a>
-        <a href="/dashboard/print/manual-search" 
-           class="px-4 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-1.5 {% if request.url.path == '/dashboard/print/manual-search' %}bg-[#3f3f46] text-white shadow-sm{% else %}text-[#a1a1aa] hover:text-white hover:bg-[#2a2a32]{% endif %}">
-            <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
-            Manual Search
-        </a>
-        {% else %}
         <a href="/" 
            class="px-4 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-1.5 {% if request.url.path == '/' %}bg-[#3f3f46] text-white shadow-sm{% else %}text-[#a1a1aa] hover:text-white hover:bg-[#2a2a32]{% endif %}">
             <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"></path></svg>
@@ -42,6 +25,5 @@
             <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
             Manual Search
         </a>
-        {% endif %}
     </div>
 </div>

@@ -49,7 +49,6 @@ class Settings:
     scan_interval_multiplier: int = int(os.getenv("SCAN_INTERVAL_MULTIPLIER", "1"))
     self_healing_interval: int = int(os.getenv("SELF_HEALING_INTERVAL", "15"))
     video_search_interval: int = int(os.getenv("VIDEO_SEARCH_INTERVAL", "60"))
-    print_search_interval: int = int(os.getenv("PRINT_SEARCH_INTERVAL", "60"))
     sh_max_retries: int = int(os.getenv("SH_MAX_RETRIES", "3"))
     sh_max_time_hours: float = float(os.getenv("SH_MAX_TIME_HOURS", "12.0"))
     sh_auto_retry: bool = os.getenv("SH_AUTO_RETRY", "True").lower() == "true"
@@ -65,12 +64,6 @@ class Settings:
     auto_grab_title_fallbacks: bool = (
         os.getenv("AUTO_GRAB_TITLE_FALLBACKS", "False").lower() == "true"
     )
-
-    # Print Media Configuration
-    reading_download_dir: str = os.getenv("READING_DOWNLOAD_DIR", "downloads")
-    manga_blacklisted_formats: str = os.getenv("MANGA_BLACKLISTED_FORMATS", "")
-    book_blacklisted_formats: str = os.getenv("BOOK_BLACKLISTED_FORMATS", "")
-    magazine_blacklisted_formats: str = os.getenv("MAGAZINE_BLACKLISTED_FORMATS", "")
 
     # --- App ---
     app_env: str = os.getenv("APP_ENV", "development")
@@ -128,7 +121,6 @@ async def reload_settings_from_db(session: AsyncSession) -> None:
             scan_interval_multiplier=settings.scan_interval_multiplier,
             self_healing_interval=settings.self_healing_interval,
             video_search_interval=settings.video_search_interval,
-            print_search_interval=settings.print_search_interval,
             sh_max_retries=settings.sh_max_retries,
             sh_max_time_hours=settings.sh_max_time_hours,
             sh_auto_retry=settings.sh_auto_retry,
@@ -158,9 +150,6 @@ async def reload_settings_from_db(session: AsyncSession) -> None:
     settings.video_search_interval = getattr(
         db_settings, "video_search_interval", settings.video_search_interval
     )
-    settings.print_search_interval = getattr(
-        db_settings, "print_search_interval", settings.print_search_interval
-    )
     settings.sh_max_retries = db_settings.sh_max_retries
     settings.sh_max_time_hours = db_settings.sh_max_time_hours
     settings.sh_auto_retry = db_settings.sh_auto_retry
@@ -189,19 +178,6 @@ async def reload_settings_from_db(session: AsyncSession) -> None:
         if hasattr(db_settings.automation_state, "value")
         else db_settings.automation_state
     )
-    if (
-        hasattr(db_settings, "reading_download_dir")
-        and db_settings.reading_download_dir
-    ):
-        settings.reading_download_dir = db_settings.reading_download_dir
-    if hasattr(db_settings, "manga_blacklisted_formats"):
-        settings.manga_blacklisted_formats = db_settings.manga_blacklisted_formats or ""
-    if hasattr(db_settings, "book_blacklisted_formats"):
-        settings.book_blacklisted_formats = db_settings.book_blacklisted_formats or ""
-    if hasattr(db_settings, "magazine_blacklisted_formats"):
-        settings.magazine_blacklisted_formats = (
-            db_settings.magazine_blacklisted_formats or ""
-        )
 
     # Overwrite scoring config cache
     if db_settings.scoring_settings:

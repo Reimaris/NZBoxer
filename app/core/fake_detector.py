@@ -11,9 +11,6 @@ MIN_RESOLUTION_MB = {
 
 # General media constraints
 SIZE_CONSTRAINTS: dict[str, dict[str, float]] = {
-    "manga": {"min_mb": 5, "max_mb": 2500},
-    "book": {"min_mb": 0.2, "max_mb": 500},
-    "magazine": {"min_mb": 2, "max_mb": 1000},
     "movie": {"min_mb": 500, "max_mb": 150000},
     "episode": {"min_mb": 100, "max_mb": 20000},
 }
@@ -37,7 +34,6 @@ BAD_EXTENSIONS = {
     ".ps1",
 }
 PHISHING_FILES = {"password.txt", "pass.txt", "instructions.txt", "readme_first.txt"}
-DOCUMENT_EXTENSIONS = {".epub", ".pdf", ".cbz", ".cbr", ".azw3", ".mobi"}
 VIDEO_ARCHIVE_EXTENSIONS = {
     ".mkv",
     ".mp4",
@@ -140,37 +136,24 @@ def is_nzb_content_fake(
                 return True, f"Contains phishing instructions: {phish}"
 
         # Check payload types
-        if media_type in ["manga", "book", "magazine"]:
-            for doc_ext in DOCUMENT_EXTENSIONS:
-                if doc_ext in subject_lower:
-                    has_valid_payload = True
-                    break
-        else:
-            for vid_ext in VIDEO_ARCHIVE_EXTENSIONS:
-                if vid_ext in subject_lower:
-                    has_valid_payload = True
-                    break
-            if not has_valid_payload:
-                # Check for multipart rar / par2 / numeric extensions like .001, .r02, .vol01, or yEnc
-                if re.search(
-                    r"\.(par2|r\d{2}|\d{3}|part\d+|vol\d+)|yenc", subject_lower
-                ):
-                    has_valid_payload = True
-                    break
+        for vid_ext in VIDEO_ARCHIVE_EXTENSIONS:
+            if vid_ext in subject_lower:
+                has_valid_payload = True
+                break
+        if not has_valid_payload:
+            # Check for multipart rar / par2 / numeric extensions like .001, .r02, .vol01, or yEnc
+            if re.search(r"\.(par2|r\d{2}|\d{3}|part\d+|vol\d+)|yenc", subject_lower):
+                has_valid_payload = True
+                break
 
     if not has_valid_payload:
         # If segments exist and no bad extension or phishing file was detected, allow obfuscated usenet files
         has_segments = bool(re.search(r"<segment", content, re.IGNORECASE))
-        if has_segments and media_type not in ["manga", "book", "magazine"]:
+        if has_segments:
             has_valid_payload = True
 
     if not has_valid_payload:
-        expected = (
-            "document"
-            if media_type in ["manga", "book", "magazine"]
-            else "video/archive"
-        )
-        return True, f"Does not contain expected {expected} segments"
+        return True, "Does not contain expected video/archive segments"
 
     return False, None
 
@@ -211,23 +194,12 @@ def is_torbox_filelist_fake(
             if fname.endswith(bad_ext):
                 return True, f"Downloaded executable file: {raw_name}"
 
-        if media_type in ["manga", "book", "magazine"]:
-            for doc_ext in DOCUMENT_EXTENSIONS:
-                if fname.endswith(doc_ext):
-                    has_valid_payload = True
-                    break
-        else:
-            for vid_ext in [".mkv", ".mp4", ".ts", ".avi"]:
-                if fname.endswith(vid_ext):
-                    has_valid_payload = True
-                    break
+        for vid_ext in [".mkv", ".mp4", ".ts", ".avi"]:
+            if fname.endswith(vid_ext):
+                has_valid_payload = True
+                break
 
     if not has_valid_payload:
-        expected = (
-            "document"
-            if media_type in ["manga", "book", "magazine"]
-            else "playable video"
-        )
-        return True, f"Downloaded payload lacks a valid {expected} file"
+        return True, "Downloaded payload lacks a valid playable video file"
 
     return False, None

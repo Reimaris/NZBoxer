@@ -142,9 +142,6 @@ class SystemSettings(Base):
     video_search_interval: Mapped[int] = mapped_column(
         Integer, default=60, server_default="60"
     )
-    print_search_interval: Mapped[int] = mapped_column(
-        Integer, default=60, server_default="60"
-    )
     sh_max_retries: Mapped[int] = mapped_column(Integer, default=3)
     sh_max_time_hours: Mapped[float] = mapped_column(
         Float, nullable=False, default=12.0
@@ -183,20 +180,6 @@ class SystemSettings(Base):
         Integer, default=24, server_default="24"
     )
 
-    # Print Media (ADR-013)
-    reading_download_dir: Mapped[str] = mapped_column(
-        String(500), default="downloads", server_default="downloads"
-    )
-    manga_blacklisted_formats: Mapped[str] = mapped_column(
-        String(200), default="", server_default=""
-    )
-    book_blacklisted_formats: Mapped[str] = mapped_column(
-        String(200), default="", server_default=""
-    )
-    magazine_blacklisted_formats: Mapped[str] = mapped_column(
-        String(200), default="", server_default=""
-    )
-
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
@@ -232,14 +215,13 @@ class ProviderCategory(str, enum.Enum):
     """Broad functional category for third-party providers and integrations."""
 
     WATCHLIST = "watchlist"
-    PRINT_MEDIA = "print_media"
     METADATA = "metadata"
     DOWNLOADER = "downloader"
     INDEXER = "indexer"
 
 
 class Provider(Base):
-    """Represents a third-party integration or service provider (Watchlist, Reading, Metadata, Downloader, Indexer)."""
+    """Represents a third-party integration or service provider (Watchlist, Metadata, Downloader, Indexer)."""
 
     __tablename__ = "providers"
 
@@ -253,7 +235,7 @@ class Provider(Base):
     )
     type: Mapped[str] = mapped_column(
         String(50), nullable=False
-    )  # e.g., 'simkl', 'torbox', 'treasure_maps', 'tmdb', 'anilist', 'hardcover', 'openlibrary'
+    )  # e.g., 'simkl', 'torbox', 'treasure_maps', 'tmdb', 'anilist'
     name: Mapped[str] = mapped_column(String(200), nullable=False)
 
     # Generic API & Endpoint Credentials
@@ -1107,205 +1089,6 @@ class DailyGrabCounter(Base):
 
 
 # ---------------------------------------------------------------------------
-# Print Media Models (ADR-013)
-# ---------------------------------------------------------------------------
-
-
-class MangaItem(Base):
-    """Represents a tracked Manga series (e.g. from AniList)."""
-
-    __tablename__ = "manga_items"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    anilist_id: Mapped[str] = mapped_column(String(100), unique=True, index=True)
-    title: Mapped[str] = mapped_column(String(500), nullable=False)
-    status: Mapped[MediaStatus] = mapped_column(
-        Enum(MediaStatus), default=MediaStatus.PENDING
-    )
-
-    # Metadata
-    description: Mapped[str | None] = mapped_column(Text, nullable=True)
-    cover_image: Mapped[str | None] = mapped_column(String(500), nullable=True)
-    start_year: Mapped[int | None] = mapped_column(Integer, nullable=True)
-
-    # Tracking & Errors
-    best_score: Mapped[float | None] = mapped_column(Float, nullable=True)
-    empty_search_count: Mapped[int] = mapped_column(Integer, default=0)
-    upgrade_attempts_count: Mapped[int] = mapped_column(
-        Integer, default=0, server_default="0"
-    )
-    last_searched_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    fail_count: Mapped[int] = mapped_column(Integer, default=0)
-    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
-
-    volumes: Mapped[list["MangaVolume"]] = relationship(
-        "MangaVolume",
-        back_populates="manga",
-        cascade="all, delete-orphan",
-        lazy="selectin",
-    )
-
-    @property
-    def is_fully_completed(self) -> bool:
-        """Returns True if the item requires no further automated actions (History)."""
-        from app.config import scoring_config
-
-        target_score = scoring_config.get("cutoffs", {}).get("target_score", 8000)
-
-        if self.status in [MediaStatus.COMPLETED, MediaStatus.IGNORED]:
-            return True
-
-        if (
-            self.status == MediaStatus.DOWNLOADED
-            and self.best_score is not None
-            and self.best_score >= target_score
-        ):
-            return True
-        return False
-
-
-class MangaVolume(Base):
-    """Represents a specific volume of a Manga."""
-
-    __tablename__ = "manga_volumes"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    manga_id: Mapped[int] = mapped_column(
-        ForeignKey("manga_items.id", ondelete="CASCADE"), nullable=False, index=True
-    )
-    volume_number: Mapped[int] = mapped_column(Integer, nullable=False)
-    status: Mapped[EpisodeStatus] = mapped_column(
-        Enum(EpisodeStatus), default=EpisodeStatus.PENDING
-    )
-
-    best_score: Mapped[float | None] = mapped_column(Float, nullable=True)
-    empty_search_count: Mapped[int] = mapped_column(Integer, default=0)
-    upgrade_attempts_count: Mapped[int] = mapped_column(
-        Integer, default=0, server_default="0"
-    )
-    last_searched_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    last_upgrade_search_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-
-    manga: Mapped[MangaItem] = relationship("MangaItem", back_populates="volumes")
-    failure_logs: Mapped[list["FailureLog"]] = relationship(
-        "FailureLog",
-        back_populates="manga_volume",
-        cascade="all, delete-orphan",
-        lazy="selectin",
-    )
-
-
-class BookItem(Base):
-    """Represents a standalone Book (e.g. from Hardcover/OpenLibrary)."""
-
-    __tablename__ = "book_items"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    isbn: Mapped[str | None] = mapped_column(String(50), nullable=True, index=True)
-    title: Mapped[str] = mapped_column(String(500), nullable=False)
-    author: Mapped[str | None] = mapped_column(String(200), nullable=True)
-    status: Mapped[MediaStatus] = mapped_column(
-        Enum(MediaStatus), default=MediaStatus.PENDING
-    )
-
-    best_score: Mapped[float | None] = mapped_column(Float, nullable=True)
-    empty_search_count: Mapped[int] = mapped_column(Integer, default=0)
-    upgrade_attempts_count: Mapped[int] = mapped_column(
-        Integer, default=0, server_default="0"
-    )
-    last_searched_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    last_upgrade_search_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    fail_count: Mapped[int] = mapped_column(Integer, default=0)
-    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
-    failure_logs: Mapped[list["FailureLog"]] = relationship(
-        "FailureLog",
-        back_populates="book_item",
-        cascade="all, delete-orphan",
-        lazy="selectin",
-    )
-
-    @property
-    def is_fully_completed(self) -> bool:
-        """Returns True if the item requires no further automated actions (History)."""
-        from app.config import scoring_config
-
-        target_score = scoring_config.get("cutoffs", {}).get("target_score", 8000)
-
-        if self.status in [MediaStatus.COMPLETED, MediaStatus.IGNORED]:
-            return True
-
-        if (
-            self.status == MediaStatus.DOWNLOADED
-            and self.best_score is not None
-            and self.best_score >= target_score
-        ):
-            return True
-        return False
-
-
-class MagazineSubscription(Base):
-    """Represents a recurring subscription to a Magazine."""
-
-    __tablename__ = "magazine_subscriptions"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    title: Mapped[str] = mapped_column(String(500), nullable=False)
-    publisher: Mapped[str | None] = mapped_column(String(200), nullable=True)
-    status: Mapped[MediaStatus] = mapped_column(
-        Enum(MediaStatus), default=MediaStatus.PENDING
-    )
-
-    best_score: Mapped[float | None] = mapped_column(Float, nullable=True)
-    empty_search_count: Mapped[int] = mapped_column(Integer, default=0)
-    upgrade_attempts_count: Mapped[int] = mapped_column(
-        Integer, default=0, server_default="0"
-    )
-    last_searched_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-
-    issues: Mapped[list["MagazineIssue"]] = relationship(
-        "MagazineIssue",
-        back_populates="subscription",
-        cascade="all, delete-orphan",
-        lazy="selectin",
-    )
-
-
-class MagazineIssue(Base):
-    """Represents a single downloaded issue of a Magazine."""
-
-    __tablename__ = "magazine_issues"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    subscription_id: Mapped[int] = mapped_column(
-        ForeignKey("magazine_subscriptions.id"), nullable=False
-    )
-    issue_date: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False
-    )
-    issue_number: Mapped[str | None] = mapped_column(String(50), nullable=True)
-
-    status: Mapped[EpisodeStatus] = mapped_column(
-        Enum(EpisodeStatus), default=EpisodeStatus.COMPLETED
-    )
-
-    subscription: Mapped[MagazineSubscription] = relationship(
-        "MagazineSubscription", back_populates="issues"
-    )
-
-
-# ---------------------------------------------------------------------------
 # SeenTorboxDownload Model
 # ---------------------------------------------------------------------------
 
@@ -1321,7 +1104,7 @@ class SeenTorboxDownload(Base):
         parsed_year:    Extracted release year (if available).
         season_number:  Extracted season number (if season pack or episode).
         episode_number: Extracted episode number (if individual episode).
-        media_type:     Inferred media type ('movie', 'series_season', 'series_episode', 'book', 'manga', 'unknown').
+        media_type:     Inferred media type ('movie', 'series_season', 'series_episode', 'unknown').
         download_state: TorBox state ('completed', 'cached', 'downloading', 'queued', 'processing', 'failed', 'error', etc.).
         size_bytes:     File size in bytes.
         progress:       Download progress percentage (0.0 to 1.0 or 0 to 100).
@@ -1389,18 +1172,6 @@ class FailureLog(Base):
         index=True,
         nullable=True,
     )
-    book_item_id: Mapped[int | None] = mapped_column(
-        Integer,
-        ForeignKey("book_items.id", ondelete="CASCADE"),
-        index=True,
-        nullable=True,
-    )
-    manga_volume_id: Mapped[int | None] = mapped_column(
-        Integer,
-        ForeignKey("manga_volumes.id", ondelete="CASCADE"),
-        index=True,
-        nullable=True,
-    )
 
     category: Mapped[str] = mapped_column(String(100), nullable=False)
     message: Mapped[str] = mapped_column(Text, nullable=False)
@@ -1417,10 +1188,4 @@ class FailureLog(Base):
     )
     episode: Mapped[Episode | None] = relationship(
         "Episode", back_populates="failure_logs"
-    )
-    book_item: Mapped[BookItem | None] = relationship(
-        "BookItem", back_populates="failure_logs"
-    )
-    manga_volume: Mapped[MangaVolume | None] = relationship(
-        "MangaVolume", back_populates="failure_logs"
     )

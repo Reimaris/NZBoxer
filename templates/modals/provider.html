@@ -17,9 +17,7 @@
              },
              enable_movies: {{ 'true' if (provider and (provider.profiles|selectattr('media_type','in',['movies', 'movie'])|list|length > 0)) else 'false' }},
              enable_series: {{ 'true' if (provider and (provider.profiles|selectattr('media_type','in',['shows', 'show', 'series'])|list|length > 0)) else 'false' }},
-             enable_anime: {{ 'true' if (provider and (provider.profiles|selectattr('media_type','in',['anime'])|list|length > 0)) else 'false' }},
-             enable_manga: {{ 'true' if (provider and (provider.profiles|selectattr('media_type','in',['shows', 'show', 'series', 'manga'])|list|length > 0)) else 'true' }},
-             enable_books: {{ 'true' if (provider and (provider.profiles|selectattr('media_type','in',['movies', 'movie', 'books', 'book'])|list|length > 0)) else 'true' }}
+             enable_anime: {{ 'true' if (provider and (provider.profiles|selectattr('media_type','in',['anime'])|list|length > 0)) else 'false' }}
          }">
         
         <!-- Header -->
@@ -67,36 +65,6 @@
                     </div>
                 </div>
 
-                <!-- Print Media Section -->
-                <div class="space-y-3">
-                    <h3 class="text-xs font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-2">
-                        <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path></svg>
-                        Print Media Providers
-                    </h3>
-                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        <button type="button" @click="selectProvider('hardcover', 'print_media', 'Hardcover Books')" class="bg-[#111115] hover:bg-[#2a2a32] border border-[#3f3f46] hover:border-emerald-400 rounded-xl p-4 text-left transition-all group flex flex-col justify-between">
-                            <div class="flex items-center gap-3 mb-2">
-                                <div class="w-10 h-10 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold text-lg">H</div>
-                                <div>
-                                    <div class="font-bold text-white group-hover:text-emerald-400 transition-colors">Hardcover</div>
-                                    <div class="text-xs text-[#a1a1aa]">Book Tracking</div>
-                                </div>
-                            </div>
-                            <p class="text-xs text-[#71717a] mt-1">Sync Want-to-Read books, graphic novels, and literature via API Bearer token.</p>
-                        </button>
-                        <button type="button" @click="selectProvider('openlibrary', 'print_media', 'OpenLibrary')" class="bg-[#111115] hover:bg-[#2a2a32] border border-[#3f3f46] hover:border-emerald-400 rounded-xl p-4 text-left transition-all group flex flex-col justify-between">
-                            <div class="flex items-center gap-3 mb-2">
-                                <div class="w-10 h-10 rounded-lg bg-teal-500/20 text-teal-400 flex items-center justify-center font-bold text-lg">OL</div>
-                                <div>
-                                    <div class="font-bold text-white group-hover:text-emerald-400 transition-colors">OpenLibrary</div>
-                                    <div class="text-xs text-[#a1a1aa]">Open Book Database</div>
-                                </div>
-                            </div>
-                            <p class="text-xs text-[#71717a] mt-1">Open-source catalog and reading list provider for book discovery and metadata.</p>
-                        </button>
-                    </div>
-                </div>
-
                 <!-- Metadata Section -->
                 <div class="space-y-3">
                     <h3 class="text-xs font-bold text-amber-400 uppercase tracking-wider flex items-center gap-2">
@@ -119,10 +87,10 @@
                                 <div class="w-10 h-10 rounded-lg bg-indigo-500/20 text-indigo-400 flex items-center justify-center font-bold text-lg">A</div>
                                 <div>
                                     <div class="font-bold text-white group-hover:text-amber-400 transition-colors">AniList</div>
-                                    <div class="text-xs text-[#a1a1aa]">Anime & Manga Metadata</div>
+                                    <div class="text-xs text-[#a1a1aa]">Anime Metadata</div>
                                 </div>
                             </div>
-                            <p class="text-xs text-[#71717a] mt-1">Japanese animation and manga series metadata, tracking, and volume structure.</p>
+                            <p class="text-xs text-[#71717a] mt-1">Japanese animation metadata, tracking, and season structure.</p>
                         </button>
                     </div>
                 </div>
@@ -266,18 +234,6 @@
                                     <a href="https://www.themoviedb.org/settings/api" target="_blank" class="text-xs text-blue-400 hover:underline">Get TMDB Key</a>
                                 </label>
                                 <input type="password" name="api_key" value="{{ provider.api_key if provider and provider.api_key else '' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors font-mono" placeholder="Your TMDB v3 API Key">
-                            </div>
-                        </div>
-                    </fieldset>
-
-                    <!-- ========================================== -->
-                    <!-- OPENLIBRARY CONFIGURATION                  -->
-                    <!-- ========================================== -->
-                    <fieldset :disabled="providerType !== 'openlibrary'" x-show="providerType === 'openlibrary'" class="border-0 p-0 m-0 space-y-6">
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            <div class="flex flex-col col-span-1 md:col-span-2">
-                                <label class="h-6 text-[#d1d5db] font-medium mb-1 flex items-center">OpenLibrary Base URL</label>
-                                <input type="text" name="api_url" value="{{ provider.api_url if provider and provider.api_url else 'https://openlibrary.org' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors font-mono" placeholder="https://openlibrary.org">
                             </div>
                         </div>
                     </fieldset>
@@ -752,47 +708,6 @@
                     </fieldset>
 
                     <!-- ========================================== -->
-                    <!-- HARDCOVER CONFIGURATION                    -->
-                    <!-- ========================================== -->
-                    <fieldset :disabled="providerType !== 'hardcover'" x-show="providerType === 'hardcover'" class="border-0 p-0 m-0 space-y-6">
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            <div class="flex flex-col">
-                                <label class="h-6 text-[#d1d5db] font-medium mb-1 flex items-center">Hardcover Username</label>
-                                <input type="text" name="simkl_username" value="{{ provider.username if provider else '' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors" placeholder="Hardcover username">
-                            </div>
-                            <div class="flex flex-col">
-                                <label class="h-6 text-[#d1d5db] font-medium mb-1 flex items-center justify-between">
-                                    <span>Hardcover API Bearer Token <span class="text-red-500 ml-1">*</span></span>
-                                    <a href="https://hardcover.app/account/api" target="_blank" class="text-xs text-blue-400 hover:underline">Get Token</a>
-                                </label>
-                                <input type="password" name="access_token" value="{{ provider.access_token if provider and provider.access_token else '' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors font-mono" placeholder="Bearer Token">
-                            </div>
-                        </div>
-
-                        <!-- Hardcover Profile -->
-                        {% set m_prof_list = provider.profiles | selectattr("media_type", "in", ["movies", "movie", "books", "book"]) | list if provider else [] %}
-                        {% set m_prof = m_prof_list[0] if m_prof_list else none %}
-                        <div class="border border-[#3f3f46] rounded-xl bg-[#1e1e24]">
-                            <div class="bg-[#2a2a32] rounded-t-xl px-6 py-4 flex items-center justify-between cursor-pointer">
-                                <h4 class="text-base font-bold text-white flex items-center gap-2">
-                                    <input type="checkbox" name="enable_books" value="True" x-model="enable_books" class="w-4 h-4 accent-[#d40060]">
-                                    Sync Want-to-Read Books & Novels
-                                </h4>
-                            </div>
-                            <div x-show="enable_books" class="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
-                                <div>
-                                    <label class="text-xs uppercase tracking-wider text-[#a1a1aa] mb-1 block font-semibold">E-Books Category ID</label>
-                                    <input type="number" name="movie_category_id" value="{{ provider.movie_category_id if provider and provider.movie_category_id else '7020' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] rounded-lg px-3 text-white font-mono text-sm">
-                                </div>
-                                <div>
-                                    <label class="text-xs uppercase tracking-wider text-[#a1a1aa] mb-1 block font-semibold">Reject Words (CSV)</label>
-                                    <input type="text" name="movies_reject" value="{{ m_prof.reject_words_csv if m_prof and m_prof.reject_words_csv is not none else 'audiobook,mp3,m4b' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] rounded-lg px-3 text-white text-sm">
-                                </div>
-                            </div>
-                        </div>
-                    </fieldset>
-
-                    <!-- ========================================== -->
                     <!-- ANILIST CONFIGURATION                      -->
                     <!-- ========================================== -->
                     <fieldset :disabled="providerType !== 'anilist'" x-show="providerType === 'anilist'" class="border-0 p-0 m-0 space-y-6">
@@ -810,30 +725,9 @@
                         </div>
 
                         <!-- AniList Profiles -->
-                        {% set s_prof_list = provider.profiles | selectattr("media_type", "in", ["shows", "show", "series", "manga"]) | list if provider else [] %}
-                        {% set s_prof = s_prof_list[0] if s_prof_list else none %}
                         {% set a_prof_list = provider.profiles | selectattr("media_type", "in", ["anime"]) | list if provider else [] %}
                         {% set a_prof = a_prof_list[0] if a_prof_list else none %}
                         <div class="space-y-4">
-                            <div class="border border-[#3f3f46] rounded-xl bg-[#1e1e24]">
-                                <div class="bg-[#2a2a32] rounded-t-xl px-6 py-4 flex items-center justify-between cursor-pointer">
-                                    <h4 class="text-base font-bold text-white flex items-center gap-2">
-                                        <input type="checkbox" name="enable_manga" value="True" x-model="enable_manga" class="w-4 h-4 accent-[#d40060]">
-                                        Sync Manga Reading List
-                                    </h4>
-                                </div>
-                                <div x-show="enable_manga" class="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
-                                    <div>
-                                        <label class="text-xs uppercase tracking-wider text-[#a1a1aa] mb-1 block font-semibold">Manga Category ID</label>
-                                        <input type="number" name="series_category_id" value="{{ provider.series_category_id if provider and provider.series_category_id else '7030' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] rounded-lg px-3 text-white font-mono text-sm">
-                                    </div>
-                                    <div>
-                                        <label class="text-xs uppercase tracking-wider text-[#a1a1aa] mb-1 block font-semibold">Reject Words (CSV)</label>
-                                        <input type="text" name="series_reject" value="{{ s_prof.reject_words_csv if s_prof and s_prof.reject_words_csv is not none else 'raw,french,german,spanish' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] rounded-lg px-3 text-white text-sm">
-                                    </div>
-                                </div>
-                            </div>
-
                             <div class="border border-[#3f3f46] rounded-xl bg-[#1e1e24]">
                                 <div class="bg-[#2a2a32] rounded-t-xl px-6 py-4 flex items-center justify-between cursor-pointer">
                                     <h4 class="text-base font-bold text-white flex items-center gap-2">

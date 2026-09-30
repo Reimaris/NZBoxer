@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from fastapi import BackgroundTasks, FastAPI, Form, HTTPException, Request, Response
+from fastapi import BackgroundTasks, FastAPI, Form, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -124,13 +124,13 @@ async def run_orchestrator_tick(now: datetime | None = None) -> None:
 
     State rules:
     - DISABLED: Halts immediately (no self-healing, download checks, or searches).
-    - PAUSED: Runs Self-Healing & Download Checks on schedule, but skips Video & Print searches.
-    - UPGRADES_ONLY: Runs Self-Healing & Download Checks, and runs Video & Print automation in upgrades-only mode.
-    - ACTIVE: Runs all due domain tasks (Self-Healing/Download Checks, Video Search, Print Search).
+    - PAUSED: Runs Self-Healing & Download Checks on schedule, but skips Video searches.
+    - UPGRADES_ONLY: Runs Self-Healing & Download Checks, and runs Video automation in upgrades-only mode.
+    - ACTIVE: Runs all due domain tasks (Self-Healing/Download Checks, Video Search).
     """
     from datetime import datetime
 
-    from app.core.automation import run_automation_cycle, run_print_automation_cycle
+    from app.core.automation import run_automation_cycle
     from app.core.automation_state import automation_state_manager
     from app.core.scheduler_utils import is_interval_due
     from app.core.self_healing import run_download_check_cycle, run_self_healing_cycle
@@ -174,7 +174,7 @@ async def run_orchestrator_tick(now: datetime | None = None) -> None:
         return
 
     if current_state == "paused":
-        logger.info("Automation is PAUSED. Skipping Video and Print search automation.")
+        logger.info("Automation is PAUSED. Skipping Video search automation.")
         return
 
     is_upgrades_only = current_state == "upgrades_only"
@@ -187,19 +187,6 @@ async def run_orchestrator_tick(now: datetime | None = None) -> None:
             is_upgrades_only,
         )
         await run_automation_cycle(upgrades_only=is_upgrades_only)
-
-    if automation_state_manager.is_aborting():
-        logger.info("🛑 Automation abort detected after video cycle. Halting tick.")
-        return
-
-    # 3. Print Media Automation (Runs in ACTIVE and UPGRADES_ONLY states)
-    if is_interval_due(settings.print_search_interval, now):
-        logger.info(
-            "⏰ Running scheduled Print Automation (Interval: %dm, Upgrades Only: %s)",
-            settings.print_search_interval,
-            is_upgrades_only,
-        )
-        await run_print_automation_cycle(upgrades_only=is_upgrades_only)
 
 
 @asynccontextmanager
@@ -658,158 +645,6 @@ async def manual_search(
             "fallback_results": fallback_results,
             "mismatched_results": mismatched_results,
         },
-    )
-
-
-@app.post("/api/search/print/manual", response_class=HTMLResponse)
-async def manual_search_print(
-    request: Request,
-    media_type: str = Form("manga"),
-    query: str = Form(""),
-    volume: str = Form(""),
-    author: str = Form(""),
-    format_filter: str = Form("any"),
-):
-    """Dedicated manual search endpoint for Print Media releases."""
-    from app.core.reading_scorer import (
-        detect_print_format,
-        match_volume_or_issue,
-        score_print_release,
-    )
-    from app.services import treasure_maps
-
-    if not query.strip():
-        return HTMLResponse(
-            content='<div class="p-8 text-center bg-[#2a2a32] border border-[#3f3f46] rounded-xl text-[#a1a1aa]">'
-            '<div class="text-3xl mb-2">🔍</div><p>Please enter a title or search query.</p></div>'
-        )
-
-    base_title = query.strip()
-    vol_clean = (
-        volume.strip()
-        .lower()
-        .replace("volume", "")
-        .replace("vol", "")
-        .replace("v", "")
-        .replace("#", "")
-        .strip()
-        if volume.strip()
-        else ""
-    )
-
-    # Build search query fallback cascade
-    search_queries = []
-    if media_type == "manga" and vol_clean:
-        if vol_clean.isdigit():
-            vol_num = int(vol_clean)
-            search_queries.append(f"{base_title} v{vol_num:02d}")
-            search_queries.append(f"{base_title} {vol_num:02d}")
-            search_queries.append(f"{base_title} vol {vol_num}")
-            search_queries.append(f"{base_title} v{vol_num}")
-            search_queries.append(base_title)
-        else:
-            search_queries.append(f"{base_title} {volume.strip()}")
-            search_queries.append(base_title)
-    elif media_type == "book" and author.strip():
-        search_queries.append(f"{base_title} {author.strip()}")
-        search_queries.append(base_title)
-    else:
-        search_queries.append(base_title)
-
-    # Categories to query: primary + generic fallback
-    cat_ids = (
-        [7030, 7000]
-        if media_type == "manga"
-        else ([7010, 7000] if media_type == "magazine" else [7020, 7000])
-    )
-
-    PRINT_CATEGORY_NAMES: dict[int, str] = {
-        7000: "EBooks (General)",
-        7010: "Magazines",
-        7020: "EBooks",
-        7030: "Comics / Manga",
-    }
-
-    seen_guids: set[str] = set()
-    raw_results = []
-
-    for q in search_queries:
-        for cat in cat_ids:
-            items = await treasure_maps.search_raw(query=q, category=cat)
-            for item in items:
-                guid = item.get("guid") or item.get("title") or item.get("link")
-                if guid and guid not in seen_guids:
-                    seen_guids.add(guid)
-                    raw_results.append(item)
-
-    if not raw_results:
-        return templates.TemplateResponse(
-            request=request,
-            name="partials/print_search_results.html",
-            context={"results": []},
-        )
-
-    valid_results = []
-    for item in raw_results:
-        title = item.get("title", "")
-        description = item.get("description", "")
-
-        # Safely coerce category to int — indexers may return a human-readable
-        # string like "Books > Comics" instead of a numeric ID.
-        raw_cat = item.get("category", cat_ids[0])
-        try:
-            item_cat_id = int(raw_cat) if raw_cat is not None else cat_ids[0]
-        except (ValueError, TypeError):
-            item_cat_id = cat_ids[0]
-
-        # Volume strict filtering if specified
-        is_exact_vol = False
-        if vol_clean:
-            is_match, is_exact_vol = match_volume_or_issue(title, vol_clean)
-            if not is_match:
-                continue  # Skip releases that do not match the requested volume!
-
-        detected_fmt = detect_print_format(
-            title=title,
-            description=description,
-            category_id=item_cat_id,
-            media_type=media_type,
-        )
-
-        # Apply format filter if specified
-        if format_filter != "any" and detected_fmt != format_filter.lower():
-            continue
-
-        scoring_res = score_print_release(
-            parsed_format=detected_fmt, media_type=media_type
-        )
-        score_val = scoring_res.get("score", 0)
-
-        # Priority boost for exact volume single releases vs packs
-        if vol_clean:
-            score_val += 500 if is_exact_vol else 200
-
-        valid_results.append(
-            {
-                "title": title,
-                "link": item.get("link", ""),
-                "size": item.get("size", 0),
-                "pub_date": item.get("pub_date", ""),
-                "format": detected_fmt,
-                "score": score_val,
-                "category_id": item_cat_id,
-                "category_name": PRINT_CATEGORY_NAMES.get(
-                    item_cat_id, f"Cat {item_cat_id}"
-                ),
-            }
-        )
-
-    valid_results.sort(key=lambda x: x["score"], reverse=True)
-
-    return templates.TemplateResponse(
-        request=request,
-        name="partials/print_search_results.html",
-        context={"results": valid_results},
     )
 
 
@@ -1979,450 +1814,6 @@ async def get_status():
 # ---------------------------------------------------------------------------
 
 
-@app.get("/dashboard/print", response_class=HTMLResponse)
-async def print_dashboard(request: Request):
-    """Main dashboard displaying Print Media (Manga, Books, Magazines)."""
-    from sqlalchemy import select
-    from sqlalchemy.orm import selectinload
-
-    from app.db.database import async_session_factory
-    from app.db.models import BookItem, MagazineSubscription, MangaItem, MediaStatus
-
-    async with async_session_factory() as session:
-        manga_stmt = (
-            select(MangaItem)
-            .options(selectinload(MangaItem.volumes))
-            .order_by(MangaItem.title)
-        )
-        book_stmt = select(BookItem).order_by(BookItem.title)
-        mag_stmt = (
-            select(MagazineSubscription)
-            .options(selectinload(MagazineSubscription.issues))
-            .order_by(MagazineSubscription.title)
-        )
-
-        all_mangas = (await session.execute(manga_stmt)).scalars().all()
-        mangas = [m for m in all_mangas if not m.is_fully_completed]
-        all_books = (await session.execute(book_stmt)).scalars().all()
-        books = [b for b in all_books if not b.is_fully_completed]
-        all_mags = (await session.execute(mag_stmt)).scalars().all()
-        magazines = [
-            m
-            for m in all_mags
-            if m.status not in (MediaStatus.COMPLETED, MediaStatus.IGNORED)
-        ]
-
-        manga_stats = {
-            "total": len(mangas),
-            "wanted": sum(
-                1
-                for m in mangas
-                if m.status in [MediaStatus.PENDING, MediaStatus.SEARCHING]
-            ),
-            "completed": sum(
-                1
-                for m in mangas
-                if m.status in [MediaStatus.DOWNLOADED, MediaStatus.COMPLETED]
-            ),
-            "ignored": sum(1 for m in mangas if m.status == MediaStatus.IGNORED),
-        }
-        book_stats = {
-            "total": len(books),
-            "wanted": sum(
-                1
-                for b in books
-                if b.status in [MediaStatus.PENDING, MediaStatus.SEARCHING]
-            ),
-            "completed": sum(
-                1
-                for b in books
-                if b.status in [MediaStatus.DOWNLOADED, MediaStatus.COMPLETED]
-            ),
-            "ignored": sum(1 for b in books if b.status == MediaStatus.IGNORED),
-        }
-        magazine_stats = {
-            "total": len(magazines),
-            "wanted": sum(
-                1
-                for m in magazines
-                if m.status in [MediaStatus.PENDING, MediaStatus.SEARCHING]
-            ),
-            "completed": sum(
-                1
-                for m in magazines
-                if m.status in [MediaStatus.DOWNLOADED, MediaStatus.COMPLETED]
-            ),
-            "ignored": sum(1 for m in magazines if m.status == MediaStatus.IGNORED),
-        }
-
-    return templates.TemplateResponse(
-        request=request,
-        name="print_dashboard.html",
-        context={
-            "mangas": mangas,
-            "books": books,
-            "magazines": magazines,
-            "manga_stats": manga_stats,
-            "book_stats": book_stats,
-            "magazine_stats": magazine_stats,
-            "max_upgrade_attempts": settings.max_upgrade_attempts,
-        },
-    )
-
-
-@app.get("/dashboard/print/manual-search", response_class=HTMLResponse)
-async def print_manual_search_page(
-    request: Request,
-    query: str = "",
-    media_type: str = "manga",
-    format_type: str = "any",
-    volume: str = "",
-    volume_number: str = "",
-    author: str = "",
-):
-    """Dedicated dashboard for manual searching print media (Manga, Books, Magazines)."""
-    vol = volume or volume_number
-    defaults = {
-        "query": query,
-        "media_type": media_type,
-        "format_type": format_type,
-        "volume": vol,
-        "author": author,
-    }
-    return templates.TemplateResponse(
-        request=request,
-        name="print_manual_search.html",
-        context={"defaults": defaults},
-    )
-
-
-@app.get("/print/add/modal", response_class=HTMLResponse)
-async def get_add_print_media_modal(request: Request):
-    """Render the modal to add a new print media item."""
-    return templates.TemplateResponse(
-        request=request,
-        name="modals/add_print_media.html",
-        context={},
-    )
-
-
-@app.post("/api/print/add")
-async def add_print_media(
-    request: Request,
-    media_type: str = Form(...),
-    title: str = Form(...),
-    anilist_id: str = Form(""),
-    start_year: str = Form(""),
-    author: str = Form(""),
-    isbn: str = Form(""),
-    publisher: str = Form(""),
-):
-    """Add a new Manga, Book, or Magazine subscription to database."""
-    from app.db.database import async_session_factory
-    from app.db.models import (
-        BookItem,
-        EpisodeStatus,
-        MagazineSubscription,
-        MangaItem,
-        MangaVolume,
-        MediaStatus,
-    )
-    from app.services.anilist import get_manga_details, search_manga
-
-    clean_title = title.strip()
-    clean_anilist = anilist_id.strip() if anilist_id else ""
-
-    async with async_session_factory() as session:
-        if media_type == "manga":
-            year_val = int(start_year) if start_year.isdigit() else None
-            cover_img = None
-            desc = None
-            total_volumes = None
-
-            # Attempt metadata fetch from AniList
-            if clean_anilist and clean_anilist.isdigit():
-                anilist_data = await get_manga_details(int(clean_anilist))
-                if anilist_data:
-                    cover_img = anilist_data.get("coverImage", {}).get("large")
-                    desc = anilist_data.get("description")
-                    total_volumes = anilist_data.get("volumes")
-                    if not year_val and anilist_data.get("startDate", {}).get("year"):
-                        year_val = anilist_data.get("startDate", {}).get("year")
-            else:
-                search_results = await search_manga(clean_title)
-                if search_results:
-                    top_match = search_results[0]
-                    clean_anilist = str(top_match.get("id", ""))
-                    cover_img = top_match.get("coverImage", {}).get("large")
-                    desc = top_match.get("description")
-                    total_volumes = top_match.get("volumes")
-                    if not year_val and top_match.get("startDate", {}).get("year"):
-                        year_val = top_match.get("startDate", {}).get("year")
-
-            manga = MangaItem(
-                title=clean_title,
-                anilist_id=clean_anilist if clean_anilist else None,
-                start_year=year_val,
-                cover_image=cover_img,
-                description=desc,
-                status=MediaStatus.SEARCHING,
-            )
-            session.add(manga)
-            await session.flush()
-
-            # Initialize volume rows in unmonitored (IGNORED) state
-            num_vols = total_volumes if (total_volumes and total_volumes > 0) else 1
-            for v_num in range(1, num_vols + 1):
-                vol = MangaVolume(
-                    manga_id=manga.id,
-                    volume_number=v_num,
-                    status=EpisodeStatus.IGNORED,
-                )
-                session.add(vol)
-
-        elif media_type == "book":
-            book = BookItem(
-                title=clean_title,
-                author=author.strip() if author else None,
-                isbn=isbn.strip() if isbn else None,
-                status=MediaStatus.SEARCHING,
-            )
-            session.add(book)
-            await session.flush()
-            from app.core.self_healing import match_and_adopt_target_from_cache
-
-            await match_and_adopt_target_from_cache(session, book)
-        elif media_type == "magazine":
-            magazine = MagazineSubscription(
-                title=clean_title,
-                publisher=publisher.strip() if publisher else None,
-                status=MediaStatus.PENDING,
-            )
-            session.add(magazine)
-
-        await session.commit()
-
-    return Response(headers={"HX-Redirect": "/dashboard/print"})
-
-
-@app.get("/dashboard/print/manga/{manga_id}/volumes", response_class=HTMLResponse)
-async def get_manga_volumes_partial(request: Request, manga_id: int):
-    """Render the volume management drawer partial for a specific manga."""
-    from sqlalchemy import select
-    from sqlalchemy.orm import selectinload
-
-    from app.db.database import async_session_factory
-    from app.db.models import MangaItem
-
-    async with async_session_factory() as session:
-        stmt = (
-            select(MangaItem)
-            .options(selectinload(MangaItem.volumes))
-            .where(MangaItem.id == manga_id)
-        )
-        manga = (await session.execute(stmt)).scalars().first()
-        if not manga:
-            raise HTTPException(status_code=404, detail="Manga not found")
-
-    return templates.TemplateResponse(
-        request=request,
-        name="partials/manga_volumes.html",
-        context={"manga": manga, "max_upgrade_attempts": settings.max_upgrade_attempts},
-    )
-
-
-@app.post("/api/print/manga/{manga_id}/monitor", response_class=HTMLResponse)
-async def set_manga_monitoring(
-    request: Request,
-    manga_id: int,
-    mode: str = "all",
-    start_volume: int = Form(1),
-):
-    """Bulk configure monitoring status for manga volumes ('all', 'from_volume', 'none')."""
-    from sqlalchemy import select
-    from sqlalchemy.orm import selectinload
-
-    from app.db.database import async_session_factory
-    from app.db.models import EpisodeStatus, MangaItem
-
-    # Support query parameter fallback if sent via GET/button query string
-    query_mode = request.query_params.get("mode")
-    if query_mode:
-        mode = query_mode
-
-    async with async_session_factory() as session:
-        stmt = (
-            select(MangaItem)
-            .options(selectinload(MangaItem.volumes))
-            .where(MangaItem.id == manga_id)
-        )
-        manga = (await session.execute(stmt)).scalars().first()
-        if not manga:
-            raise HTTPException(status_code=404, detail="Manga not found")
-
-        for vol in manga.volumes:
-            if mode == "all":
-                vol.status = EpisodeStatus.SEARCHING
-            elif mode == "none":
-                vol.status = EpisodeStatus.IGNORED
-            elif mode == "from_volume":
-                if vol.volume_number >= start_volume:
-                    vol.status = EpisodeStatus.SEARCHING
-                else:
-                    vol.status = EpisodeStatus.IGNORED
-
-        await session.commit()
-        await session.refresh(manga)
-
-    return templates.TemplateResponse(
-        request=request,
-        name="partials/manga_volumes.html",
-        context={"manga": manga, "max_upgrade_attempts": settings.max_upgrade_attempts},
-    )
-
-
-@app.post(
-    "/api/print/manga/volume/{volume_id}/toggle-status", response_class=HTMLResponse
-)
-async def toggle_manga_volume_status(request: Request, volume_id: int):
-    """Toggle an individual manga volume between SEARCHING (Wanted) and IGNORED."""
-    from sqlalchemy import select
-    from sqlalchemy.orm import selectinload
-
-    from app.db.database import async_session_factory
-    from app.db.models import EpisodeStatus, MangaItem, MangaVolume
-
-    async with async_session_factory() as session:
-        vol_stmt = select(MangaVolume).where(MangaVolume.id == volume_id)
-        volume = (await session.execute(vol_stmt)).scalars().first()
-        if not volume:
-            raise HTTPException(status_code=404, detail="Volume not found")
-
-        if volume.status in [EpisodeStatus.SEARCHING, EpisodeStatus.PENDING]:
-            volume.status = EpisodeStatus.IGNORED
-        else:
-            volume.status = EpisodeStatus.SEARCHING
-
-        manga_id = volume.manga_id
-        await session.commit()
-        manga_stmt = (
-            select(MangaItem)
-            .options(selectinload(MangaItem.volumes))
-            .where(MangaItem.id == manga_id)
-        )
-        m = (await session.execute(manga_stmt)).scalars().first()
-        if m:
-            from app.core.self_healing import match_and_adopt_target_from_cache
-
-            await match_and_adopt_target_from_cache(session, m)
-
-        # Reload manga with all volumes
-        manga_stmt = (
-            select(MangaItem)
-            .options(selectinload(MangaItem.volumes))
-            .where(MangaItem.id == manga_id)
-        )
-        manga = (await session.execute(manga_stmt)).scalars().first()
-
-    return templates.TemplateResponse(
-        request=request,
-        name="partials/manga_volumes.html",
-        context={"manga": manga, "max_upgrade_attempts": settings.max_upgrade_attempts},
-    )
-
-
-@app.post("/api/print/manga/{manga_id}/add-volume", response_class=HTMLResponse)
-async def add_manga_volume(request: Request, manga_id: int):
-    """Add a new volume to the manga series."""
-    from sqlalchemy import select
-    from sqlalchemy.orm import selectinload
-
-    from app.db.database import async_session_factory
-    from app.db.models import EpisodeStatus, MangaItem, MangaVolume
-
-    async with async_session_factory() as session:
-        stmt = (
-            select(MangaItem)
-            .options(selectinload(MangaItem.volumes))
-            .where(MangaItem.id == manga_id)
-        )
-        manga = (await session.execute(stmt)).scalars().first()
-        if not manga:
-            raise HTTPException(status_code=404, detail="Manga not found")
-
-        max_vol = max((v.volume_number for v in manga.volumes), default=0)
-        new_vol = MangaVolume(
-            manga_id=manga.id,
-            volume_number=max_vol + 1,
-            status=EpisodeStatus.IGNORED,
-        )
-        session.add(new_vol)
-        await session.commit()
-        await session.refresh(manga)
-
-    return templates.TemplateResponse(
-        request=request,
-        name="partials/manga_volumes.html",
-        context={"manga": manga, "max_upgrade_attempts": settings.max_upgrade_attempts},
-    )
-
-
-@app.delete("/api/print/manga/{manga_id}")
-async def delete_manga(manga_id: int):
-    """Delete a tracked Manga series and all its volumes."""
-    from sqlalchemy import delete
-
-    from app.db.database import async_session_factory
-    from app.db.models import MangaItem, MangaVolume
-
-    async with async_session_factory() as session:
-        vols_stmt = delete(MangaVolume).where(MangaVolume.manga_id == manga_id)
-        await session.execute(vols_stmt)
-        stmt = delete(MangaItem).where(MangaItem.id == manga_id)
-        await session.execute(stmt)
-        await session.commit()
-
-    return Response(content="", status_code=200)
-
-
-@app.post("/api/print/book/{book_id}/status")
-async def update_book_status(book_id: int, status: str = Form(...)):
-    """Update status of a book (e.g. searching, completed, ignored)."""
-    from sqlalchemy import select
-
-    from app.db.database import async_session_factory
-    from app.db.models import BookItem, MediaStatus
-
-    status_enum = MediaStatus(status.lower())
-
-    async with async_session_factory() as session:
-        stmt = select(BookItem).where(BookItem.id == book_id)
-        book = (await session.execute(stmt)).scalars().first()
-        if not book:
-            raise HTTPException(status_code=404, detail="Book not found")
-
-        book.status = status_enum
-        await session.commit()
-
-    return Response(headers={"HX-Redirect": "/dashboard/print"})
-
-
-@app.delete("/api/print/book/{book_id}")
-async def delete_book(book_id: int):
-    """Delete a tracked book."""
-    from sqlalchemy import delete
-
-    from app.db.database import async_session_factory
-    from app.db.models import BookItem
-
-    async with async_session_factory() as session:
-        stmt = delete(BookItem).where(BookItem.id == book_id)
-        await session.execute(stmt)
-        await session.commit()
-
-    return Response(content="", status_code=200)
-
-
 @app.get("/settings", response_class=HTMLResponse)
 async def get_settings_page(request: Request):
     """Render the settings form."""
@@ -2510,9 +1901,6 @@ async def export_settings():
                 ),
                 "video_search_interval": getattr(
                     db_settings, "video_search_interval", 60
-                ),
-                "print_search_interval": getattr(
-                    db_settings, "print_search_interval", 60
                 ),
                 "sh_max_retries": db_settings.sh_max_retries,
                 "sh_max_time_hours": db_settings.sh_max_time_hours,
@@ -2606,7 +1994,6 @@ async def save_global_settings(
     scan_interval_multiplier: int = Form(1),
     self_healing_interval: int = Form(15),
     video_search_interval: int = Form(60),
-    print_search_interval: int = Form(60),
     upgrade_search_interval_hours: int = Form(24),
     download_timeout_hours: int = Form(24),
     sh_max_retries: int = Form(3),
@@ -2619,10 +2006,6 @@ async def save_global_settings(
     upgrade_threshold: int = Form(500),
     backoff_tier2_skip: int = Form(6),
     backoff_tier3_skip: int = Form(24),
-    reading_download_dir: str = Form("downloads"),
-    manga_blacklisted_formats: str = Form(""),
-    book_blacklisted_formats: str = Form(""),
-    magazine_blacklisted_formats: str = Form(""),
 ):
     import copy
 
@@ -2639,8 +2022,6 @@ async def save_global_settings(
         self_healing_interval = 15
     if video_search_interval not in VALID_INTERVAL_PRESETS:
         video_search_interval = 60
-    if print_search_interval not in VALID_INTERVAL_PRESETS:
-        print_search_interval = 60
 
     if download_timeout_hours < 1 or download_timeout_hours > 168:
         download_timeout_hours = 24
@@ -2653,7 +2034,6 @@ async def save_global_settings(
             db_settings.scan_interval_multiplier = scan_interval_multiplier
             db_settings.self_healing_interval = self_healing_interval
             db_settings.video_search_interval = video_search_interval
-            db_settings.print_search_interval = print_search_interval
             db_settings.upgrade_search_interval_hours = upgrade_search_interval_hours
             db_settings.download_timeout_hours = download_timeout_hours
             db_settings.sh_max_retries = sh_max_retries
@@ -2666,10 +2046,6 @@ async def save_global_settings(
             db_settings.upgrade_threshold = upgrade_threshold
             db_settings.backoff_tier2_skip = backoff_tier2_skip
             db_settings.backoff_tier3_skip = backoff_tier3_skip
-            db_settings.reading_download_dir = reading_download_dir
-            db_settings.manga_blacklisted_formats = manga_blacklisted_formats
-            db_settings.book_blacklisted_formats = book_blacklisted_formats
-            db_settings.magazine_blacklisted_formats = magazine_blacklisted_formats
 
             sc: dict[str, Any] = copy.deepcopy(
                 db_settings.scoring_settings or DEFAULT_SCORING_CONFIG
@@ -2788,8 +2164,6 @@ async def save_provider(
     bandwidth_mbit: int = Form(None),
     # Profile settings
     enable_movies: bool = Form(False),
-    enable_books: bool = Form(False),
-    enable_manga: bool = Form(False),
     movies_mode: str = Form(""),
     movies_resolution: str = Form("any"),
     movies_source: str = Form("any"),
@@ -2848,8 +2222,6 @@ async def save_provider(
     if not resolved_category:
         type_cat_map = {
             "simkl": ProviderCategory.WATCHLIST.value,
-            "hardcover": ProviderCategory.PRINT_MEDIA.value,
-            "openlibrary": ProviderCategory.PRINT_MEDIA.value,
             "tmdb": ProviderCategory.METADATA.value,
             "anilist": ProviderCategory.METADATA.value,
             "torbox": ProviderCategory.DOWNLOADER.value,
@@ -2902,7 +2274,7 @@ async def save_provider(
                 await session.delete(p)
             provider.profiles.clear()
 
-        if enable_movies or (enable_books and provider_type == "hardcover"):
+        if enable_movies:
             m_prim = (
                 movies_primary_lang
                 if movies_primary_lang and movies_primary_lang not in ("any", "")
@@ -2935,7 +2307,7 @@ async def save_provider(
             )
             session.add(pm)
 
-        if enable_series or (enable_manga and provider_type == "anilist"):
+        if enable_series:
             s_prim = (
                 series_primary_lang
                 if series_primary_lang and series_primary_lang not in ("any", "")
@@ -3422,7 +2794,6 @@ async def rescan_torbox_cache():
     import logging
 
     from app.core.self_healing import (
-        adopt_torbox_downloads_for_print,
         adopt_torbox_downloads_for_video,
         sync_torbox_cache,
     )
@@ -3437,7 +2808,6 @@ async def rescan_torbox_cache():
             if raw_downloads is not None:
                 await sync_torbox_cache(session, raw_downloads, force_rescan=True)
                 await adopt_torbox_downloads_for_video(session)
-                await adopt_torbox_downloads_for_print(session)
                 return HTMLResponse(
                     content='<span class="text-green-500 font-medium text-sm flex items-center gap-1.5"><svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>Rescan complete! Reload to see changes.</span>'
                 )
@@ -3460,7 +2830,10 @@ async def run_video_automation_endpoint(background_tasks: BackgroundTasks):
     from app.core.automation import run_automation_cycle
     from app.core.automation_state import AutomationStatus, automation_state_manager
 
-    if not automation_state_manager.set_running(AutomationStatus.RUNNING_VIDEO):
+    if (
+        automation_state_manager.is_running()
+        or not automation_state_manager.set_running(AutomationStatus.RUNNING_VIDEO)
+    ):
         return HTMLResponse(
             content="""
             <div class="bg-amber-600 text-white px-4 py-3 rounded-md shadow-lg border border-amber-700 flex items-center justify-between animate-fade-in-down mb-4">
@@ -3491,60 +2864,6 @@ async def run_video_automation_endpoint(background_tasks: BackgroundTasks):
         "Video upgrades evaluation started in background!"
         if is_upgrades_only
         else "Video media search started in background!"
-    )
-
-    return HTMLResponse(
-        content=f"""
-        <div class="bg-[#d40060] text-white px-4 py-3 rounded-md shadow-lg border border-[#a3004a] flex items-center justify-between animate-fade-in-down mb-4">
-            <div class="flex items-center gap-3">
-                <svg class="w-5 h-5 shrink-0 text-pink-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
-                <span class="text-sm font-medium">{toast_msg}</span>
-            </div>
-            <button onclick="this.parentElement.remove()" class="p-1 text-gray-300 hover:text-white hover:bg-black/20 rounded transition-colors focus:outline-none">
-                <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
-            </button>
-        </div>
-        """
-    )
-
-
-@app.post("/api/automation/run/print", response_class=HTMLResponse)
-async def run_print_automation_endpoint(background_tasks: BackgroundTasks):
-    """Trigger manual print automation cycle."""
-    from app.core.automation import run_print_automation_cycle
-    from app.core.automation_state import AutomationStatus, automation_state_manager
-
-    if not automation_state_manager.set_running(AutomationStatus.RUNNING_PRINT):
-        return HTMLResponse(
-            content="""
-            <div class="bg-amber-600 text-white px-4 py-3 rounded-md shadow-lg border border-amber-700 flex items-center justify-between animate-fade-in-down mb-4">
-                <div class="flex items-center gap-3">
-                    <svg class="w-5 h-5 shrink-0 text-amber-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
-                    <span class="text-sm font-medium">An automation run is already active or aborting!</span>
-                </div>
-                <button onclick="this.parentElement.remove()" class="p-1 text-gray-200 hover:text-white hover:bg-black/20 rounded transition-colors focus:outline-none">
-                    <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
-                </button>
-            </div>
-            """
-        )
-
-    from app.config import settings
-
-    current_state = (
-        settings.automation_state.value
-        if hasattr(settings.automation_state, "value")
-        else str(settings.automation_state)
-    ).lower()
-    is_upgrades_only = current_state == "upgrades_only"
-    background_tasks.add_task(
-        run_print_automation_cycle, force=True, upgrades_only=is_upgrades_only
-    )
-
-    toast_msg = (
-        "Print upgrades evaluation started in background!"
-        if is_upgrades_only
-        else "Print media search started in background!"
     )
 
     return HTMLResponse(
@@ -3618,7 +2937,6 @@ async def automation_status_endpoint(request: Request):
     now = datetime.now()
     next_heal = get_next_scheduled_time(settings.self_healing_interval, now)
     next_video = get_next_scheduled_time(settings.video_search_interval, now)
-    next_print = get_next_scheduled_time(settings.print_search_interval, now)
 
     return templates.TemplateResponse(
         request=request,
@@ -3628,7 +2946,6 @@ async def automation_status_endpoint(request: Request):
             "global_state": global_state,
             "next_heal": next_heal,
             "next_video": next_video,
-            "next_print": next_print,
         },
     )
 
@@ -3641,11 +2958,7 @@ async def history_dashboard(request: Request):
 
     from app.db.database import async_session_factory
     from app.db.models import (
-        BookItem,
-        MagazineSubscription,
-        MangaItem,
         MediaItem,
-        MediaStatus,
         MediaType,
     )
 
@@ -3677,35 +2990,6 @@ async def history_dashboard(request: Request):
             if i.media_type == MediaType.ANIME or getattr(i, "is_anime_movie", False)
         ]
 
-        # Fetch Print Media
-        manga_stmt = (
-            select(MangaItem)
-            .options(selectinload(MangaItem.volumes))
-            .order_by(MangaItem.title)
-        )
-        book_stmt = select(BookItem).order_by(BookItem.title)
-        mag_stmt = (
-            select(MagazineSubscription)
-            .options(selectinload(MagazineSubscription.issues))
-            .order_by(MagazineSubscription.title)
-        )
-
-        manga_items = [
-            i
-            for i in (await session.execute(manga_stmt)).scalars().all()
-            if i.is_fully_completed
-        ]
-        book_items = [
-            i
-            for i in (await session.execute(book_stmt)).scalars().all()
-            if i.is_fully_completed
-        ]
-        mag_items = [
-            i
-            for i in (await session.execute(mag_stmt)).scalars().all()
-            if i.status in (MediaStatus.COMPLETED, MediaStatus.IGNORED)
-        ]
-
     return templates.TemplateResponse(
         request=request,
         name="history_dashboard.html",
@@ -3713,9 +2997,6 @@ async def history_dashboard(request: Request):
             "movie_items": movie_items,
             "series_items": series_items,
             "anime_items": anime_items,
-            "manga_items": manga_items,
-            "book_items": book_items,
-            "mag_items": mag_items,
         },
     )
 

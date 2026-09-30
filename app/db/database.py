@@ -394,11 +394,6 @@ async def init_db(database_url: str) -> None:
                         "ALTER TABLE system_settings ADD COLUMN video_search_interval INTEGER NOT NULL DEFAULT 60;"
                     )
                 )
-                await session.execute(
-                    __import__("sqlalchemy").text(
-                        "ALTER TABLE system_settings ADD COLUMN print_search_interval INTEGER NOT NULL DEFAULT 60;"
-                    )
-                )
             except Exception:
                 pass
 
@@ -406,30 +401,11 @@ async def init_db(database_url: str) -> None:
                 "media_items",
                 "seasons",
                 "episodes",
-                "book_items",
-                "manga_items",
-                "manga_volumes",
-                "magazine_subscriptions",
             ]:
                 try:
                     await session.execute(
                         __import__("sqlalchemy").text(
                             f"ALTER TABLE {tbl} ADD COLUMN upgrade_attempts_count INTEGER NOT NULL DEFAULT 0;"
-                        )
-                    )
-                except Exception:
-                    pass
-
-            for tbl in [
-                "book_items",
-                "manga_items",
-                "manga_volumes",
-                "magazine_subscriptions",
-            ]:
-                try:
-                    await session.execute(
-                        __import__("sqlalchemy").text(
-                            f"ALTER TABLE {tbl} ADD COLUMN best_score FLOAT;"
                         )
                     )
                 except Exception:
@@ -478,8 +454,6 @@ async def init_db(database_url: str) -> None:
                 "media_items",
                 "seasons",
                 "episodes",
-                "book_items",
-                "manga_volumes",
             ]:
                 try:
                     await session.execute(
@@ -562,12 +536,22 @@ async def init_db(database_url: str) -> None:
             try:
                 await session.execute(
                     __import__("sqlalchemy").text(
-                        "UPDATE providers SET category = 'print_media' WHERE type IN ('hardcover', 'openlibrary');"
+                        "DELETE FROM providers WHERE type IN ('hardcover', 'openlibrary') OR category = 'print_media';"
                     )
                 )
                 await session.execute(
                     __import__("sqlalchemy").text(
-                        "UPDATE providers SET category = 'metadata' WHERE type = 'anilist';"
+                        "UPDATE providers SET category = 'metadata' WHERE type IN ('anilist', 'tmdb');"
+                    )
+                )
+                await session.execute(
+                    __import__("sqlalchemy").text(
+                        "UPDATE providers SET category = 'downloader' WHERE type = 'torbox';"
+                    )
+                )
+                await session.execute(
+                    __import__("sqlalchemy").text(
+                        "UPDATE providers SET category = 'indexer' WHERE type = 'treasure_maps';"
                     )
                 )
                 await session.execute(
