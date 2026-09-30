@@ -417,6 +417,12 @@ async def init_db(database_url: str) -> None:
                 "ALTER TABLE system_settings ADD COLUMN notify_on_auto_advance BOOLEAN NOT NULL DEFAULT 1;",
                 # Provider Simkl sync config_json column
                 "ALTER TABLE providers ADD COLUMN config_json TEXT NOT NULL DEFAULT '{}';",
+                # Migrate retired v2 MANUAL_GRAB status values to SEARCHING
+                "UPDATE media_items SET status = 'SEARCHING' WHERE status IN ('MANUAL_GRAB', 'manual_grab');",
+                "UPDATE seasons SET status = 'SEARCHING' WHERE status IN ('MANUAL_GRAB', 'manual_grab');",
+                "UPDATE episodes SET status = 'SEARCHING' WHERE status IN ('MANUAL_GRAB', 'manual_grab');",
+                # Clean up orphaned v2 print media failure logs
+                "DELETE FROM failure_logs WHERE media_item_id IS NULL;",
             ]
             for sql_stmt in v3_migrations:
                 try:
