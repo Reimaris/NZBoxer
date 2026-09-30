@@ -545,6 +545,18 @@ async def _sync_items(
                     "    🔄 Activated previously unmonitored consolidated Season %d.",
                     existing_season.season_number,
                 )
+            if parent_item is not None:
+                from app.core.push_engine import (
+                    evaluate_simkl_watch_progress_and_advance,
+                )
+
+                parent_item.simkl_synced_at = datetime.now(timezone.utc)
+                await evaluate_simkl_watch_progress_and_advance(
+                    session=session,
+                    item=parent_item,
+                    item_data=item_data,
+                    matched_season=existing_season,
+                )
             continue
         if not item:
             item = MediaItem(
@@ -905,6 +917,14 @@ async def _sync_items(
                     item.status = MediaStatus.SEARCHING
 
         item.simkl_synced_at = datetime.now(timezone.utc)
+        from app.core.push_engine import evaluate_simkl_watch_progress_and_advance
+
+        await evaluate_simkl_watch_progress_and_advance(
+            session=session,
+            item=item,
+            item_data=item_data,
+            matched_season=None,
+        )
 
 
 async def _sync_season_episodes(

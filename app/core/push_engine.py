@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from datetime import datetime, timezone
 from typing import Any
 
@@ -264,7 +265,7 @@ def _score_and_partition_candidates(
     for raw in raw_results:
         title = str(raw.get("title") or "")
         guid = str(raw.get("guid") or raw.get("link") or "")
-        size_bytes = int(raw.get("size") or 0)
+        size_bytes = int(raw.get("size") or raw.get("size_bytes") or 0)
 
         if not title or not guid:
             continue
@@ -633,6 +634,444 @@ async def _load_blacklisted_sets(
     return guids, titles
 
 
+async def _push_single_season_or_movie_entry(
+    session: AsyncSession,
+    item: MediaItem,
+    season: Season,
+    effective_cfg: dict[str, Any],
+    blacklisted_guids: set[str],
+    blacklisted_titles: set[str],
+    is_auto_advance: bool = False,
+) -> list[DownloadHistory]:
+    """Search, score, and push a single chronological Season or Franchise Movie entry."""
+    from sqlalchemy import inspect as sa_inspect
+
+    ev_type = "auto_advance" if is_auto_advance else "push_initiated"
+    entry_type = getattr(season, "entry_type", "season") or "season"
+    prefer_season_packs = bool(effective_cfg.get("prefer_season_packs", True))
+    dispatched: list[DownloadHistory] = []
+
+    if entry_type == "movie":
+        raw_results = await _query_movie_across_indexers(
+            session,
+            item,
+            title_override=season.title or item.title,
+            use_external_ids=False,
+        )
+        partitioned = _score_and_partition_candidates(
+            raw_results=raw_results,
+            blacklisted_guids=blacklisted_guids,
+            blacklisted_titles=blacklisted_titles,
+            expected_title=season.title or item.title,
+            expected_year=season.air_date.year if season.air_date else None,
+            expected_alt_title=item.title,
+            expected_season=None,
+            expected_episode=None,
+            expected_season_title=season.title,
+            runtime_minutes=item.runtime_minutes,
+            effective_cfg=effective_cfg,
+        )
+        hist = await _dispatch_candidate_list_to_torbox(
+            session,
+            partitioned["all_valid"],
+            item=item,
+            season=season,
+            episode=None,
+            push_mode="auto",
+            event_type=ev_type,
+        )
+        if hist is not None:
+            dispatched.append(hist)
+        return dispatched
+
+    # TV / Anime Season entry (`entry_type == "season"`)
+    has_movie_entries = any(
+        getattr(s, "entry_type", "season") == "movie" for s in (item.seasons or [])
+    )
+    if has_movie_entries or (season.type_number and season.type_number > 1):
+        effective_s_num = int(season.type_number or season.season_number)
+    else:
+        effective_s_num = int(season.season_number)
+
+    if "episodes" in sa_inspect(season).unloaded:
+        await session.refresh(season, ["episodes"])
+
+    if prefer_season_packs:
+        raw_pack_results = await _query_show_across_indexers(
+            session, item, season_number=effective_s_num, episode_number=None
+        )
+        pack_partitioned = _score_and_partition_candidates(
+            raw_results=raw_pack_results,
+            blacklisted_guids=blacklisted_guids,
+            blacklisted_titles=blacklisted_titles,
+            expected_title=item.title,
+            expected_year=None,
+            expected_alt_title=item.alt_title,
+            expected_season=effective_s_num,
+            expected_episode=None,
+            expected_season_title=(
+                season.title if season.title and season.title != item.title else None
+            ),
+            runtime_minutes=None,
+            effective_cfg=effective_cfg,
+        )
+        hist = await _dispatch_candidate_list_to_torbox(
+            session,
+            pack_partitioned["all_valid"],
+            item=item,
+            season=season,
+            episode=None,
+            push_mode="auto",
+            event_type=ev_type,
+        )
+        if hist is not None:
+            dispatched.append(hist)
+            return dispatched
+
+    # Pack-to-Episode Fallback (or when prefer_season_packs is False)
+    sorted_eps = sorted(season.episodes, key=lambda e: e.episode_number)
+    for ep in sorted_eps:
+        if ep.status in (
+            EpisodeStatus.DOWNLOADED,
+            EpisodeStatus.COMPLETED,
+            EpisodeStatus.DOWNLOADING,
+            EpisodeStatus.FUTURE,
+        ):
+            continue
+        raw_ep_results = await _query_show_across_indexers(
+            session,
+            item,
+            season_number=effective_s_num,
+            episode_number=ep.episode_number,
+        )
+        ep_partitioned = _score_and_partition_candidates(
+            raw_results=raw_ep_results,
+            blacklisted_guids=blacklisted_guids,
+            blacklisted_titles=blacklisted_titles,
+            expected_title=item.title,
+            expected_year=None,
+            expected_alt_title=item.alt_title,
+            expected_season=effective_s_num,
+            expected_episode=ep.episode_number,
+            expected_season_title=(
+                season.title if season.title and season.title != item.title else None
+            ),
+            runtime_minutes=None,
+            effective_cfg=effective_cfg,
+        )
+        ep_hist = await _dispatch_candidate_list_to_torbox(
+            session,
+            ep_partitioned["all_valid"],
+            item=item,
+            season=season,
+            episode=ep,
+            push_mode="auto",
+            event_type=ev_type,
+        )
+        if ep_hist is not None:
+            dispatched.append(ep_hist)
+
+    return dispatched
+
+
+async def advance_season_buffer(
+    session: AsyncSession,
+    item: MediaItem,
+    base_watch_order: int,
+    effective_cfg: dict[str, Any] | None = None,
+    excluded_season_ids: set[int] | None = None,
+) -> list[DownloadHistory]:
+    """Advance the 1-season-ahead buffer from chronological entry `base_watch_order`.
+
+    - Pushes the immediate next chronological entry (`N+1`) if released and not already
+      `DOWNLOADING`, `DOWNLOADED`, or `COMPLETED`.
+    - Movie Bridge Lookahead: Whenever the target auto-advance entry has `entry_type == 'movie'`,
+      pushes both that Movie entry AND the following chronological entry (`N+2`, continuing
+      across any consecutive franchise movies) so the next season is ready on TorBox.
+    """
+    from sqlalchemy import inspect as sa_inspect
+
+    if "seasons" in sa_inspect(item).unloaded:
+        await session.refresh(item, ["seasons"])
+    if not item.seasons:
+        return []
+
+    if effective_cfg is None:
+        effective_cfg = await resolve_effective_search_config(session, item)
+
+    blacklisted_guids, blacklisted_titles = await _load_blacklisted_sets(
+        session, item.id
+    )
+    excluded = set(excluded_season_ids or set())
+
+    sorted_seasons = sorted(
+        item.seasons, key=lambda s: (s.watch_order, s.season_number)
+    )
+    remaining = [s for s in sorted_seasons if s.watch_order > base_watch_order]
+    if not remaining:
+        return []
+
+    dispatched: list[DownloadHistory] = []
+    idx = 0
+    while idx < len(remaining):
+        candidate_entry = remaining[idx]
+        is_eligible = (
+            candidate_entry.id not in excluded
+            and candidate_entry.status
+            not in (
+                SeasonStatus.FUTURE,
+                SeasonStatus.DOWNLOADED,
+                SeasonStatus.COMPLETED,
+                SeasonStatus.DOWNLOADING,
+            )
+            and not candidate_entry.is_tba
+        )
+        if is_eligible:
+            hists = await _push_single_season_or_movie_entry(
+                session=session,
+                item=item,
+                season=candidate_entry,
+                effective_cfg=effective_cfg,
+                blacklisted_guids=blacklisted_guids,
+                blacklisted_titles=blacklisted_titles,
+                is_auto_advance=True,
+            )
+            dispatched.extend(hists)
+            excluded.add(candidate_entry.id)
+
+        entry_type = getattr(candidate_entry, "entry_type", "season") or "season"
+        if (
+            entry_type == "movie"
+            and candidate_entry.status != SeasonStatus.FUTURE
+            and not candidate_entry.is_tba
+        ):
+            idx += 1
+            continue
+        break
+
+    return dispatched
+
+
+def extract_simkl_watched_order(
+    item: MediaItem,
+    item_data: dict[str, Any],
+    matched_season: Season | None = None,
+) -> int:
+    """Extract the highest chronological `watch_order` K where Simkl reports user watch progress."""
+    seasons_list = sorted(
+        item.seasons or [], key=lambda s: (s.watch_order, s.season_number)
+    )
+
+    def _order_for_season_num(s_num: int, has_episodes_hint: bool = False) -> int:
+        if not seasons_list:
+            return s_num
+        if has_episodes_hint:
+            for s in seasons_list:
+                if (
+                    getattr(s, "entry_type", "season") == "season"
+                    and s.type_number == s_num
+                ):
+                    return int(s.watch_order)
+        for s in seasons_list:
+            if s.season_number == s_num:
+                return int(s.watch_order)
+        for s in seasons_list:
+            if s.type_number == s_num:
+                return int(s.watch_order)
+        for s in seasons_list:
+            if s.watch_order == s_num:
+                return int(s.watch_order)
+        return s_num
+
+    detected_orders: list[int] = []
+
+    # 1. Explicit watch_order / last_watched_order_simkl
+    for explicit_key in ("watch_order", "last_watched_order_simkl"):
+        val = item_data.get(explicit_key)
+        if isinstance(val, int) and val > 0:
+            detected_orders.append(val)
+
+    # 2. Explicit last_watched_season / watched_season
+    for season_key in ("last_watched_season", "watched_season"):
+        val = item_data.get(season_key)
+        if isinstance(val, int) and val > 0:
+            detected_orders.append(_order_for_season_num(val, has_episodes_hint=True))
+
+    # 3. `seasons` array in Simkl payload (e.g. [{"number": 2, "episodes": [{"number": 1}]}])
+    raw_seasons = item_data.get("seasons")
+    if isinstance(raw_seasons, list):
+        for s_dict in raw_seasons:
+            if not isinstance(s_dict, dict):
+                continue
+            if "watch_order" in s_dict and isinstance(s_dict["watch_order"], int):
+                ep_val = s_dict.get("episodes")
+                w_cnt = s_dict.get("watched_episodes") or s_dict.get(
+                    "watched_episodes_count"
+                )
+                is_w = (
+                    bool(ep_val)
+                    if "episodes" in s_dict
+                    else (
+                        int(w_cnt or 0) > 0
+                        if w_cnt is not None
+                        else bool(s_dict.get("watched", True))
+                    )
+                )
+                if is_w and s_dict["watch_order"] > 0:
+                    detected_orders.append(int(s_dict["watch_order"]))
+                continue
+
+            s_num_raw = (
+                s_dict.get("number")
+                if s_dict.get("number") is not None
+                else (
+                    s_dict.get("season")
+                    if s_dict.get("season") is not None
+                    else s_dict.get("season_number")
+                )
+            )
+            if s_num_raw is None:
+                continue
+            try:
+                s_num = int(s_num_raw)
+            except (TypeError, ValueError):
+                continue
+            if s_num <= 0:
+                continue
+
+            if "episodes" in s_dict:
+                is_watched = bool(s_dict["episodes"])
+            elif "watched_episodes" in s_dict or "watched_episodes_count" in s_dict:
+                is_watched = (
+                    int(
+                        s_dict.get("watched_episodes")
+                        or s_dict.get("watched_episodes_count")
+                        or 0
+                    )
+                    > 0
+                )
+            elif "watched" in s_dict:
+                is_watched = bool(s_dict["watched"])
+            else:
+                is_watched = True
+
+            if is_watched:
+                detected_orders.append(
+                    _order_for_season_num(
+                        s_num,
+                        has_episodes_hint=(
+                            "episodes" in s_dict or "watched_episodes" in s_dict
+                        ),
+                    )
+                )
+
+    # 4. `last_watched` string (e.g. "S02E01")
+    last_watched_str = item_data.get("last_watched")
+    if isinstance(last_watched_str, str) and last_watched_str.strip():
+        m_se = re.search(r"(?i)S(\d+)\s*E(\d+)", last_watched_str)
+        if m_se:
+            detected_orders.append(
+                _order_for_season_num(int(m_se.group(1)), has_episodes_hint=True)
+            )
+        elif re.search(r"(?i)EP?\s*(\d+)", last_watched_str):
+            if matched_season is not None:
+                detected_orders.append(int(matched_season.watch_order))
+            elif seasons_list:
+                detected_orders.append(int(seasons_list[0].watch_order))
+
+    # 5. `watched_episodes` (list or int) / `watched_episodes_count` (int)
+    watched_eps = item_data.get("watched_episodes")
+    if isinstance(watched_eps, list) and len(watched_eps) > 0:
+        for ep_entry in watched_eps:
+            if isinstance(ep_entry, dict):
+                ep_s = ep_entry.get("season") or ep_entry.get("season_number")
+                if ep_s is not None:
+                    try:
+                        detected_orders.append(
+                            _order_for_season_num(int(ep_s), has_episodes_hint=True)
+                        )
+                    except (TypeError, ValueError):
+                        pass
+                elif matched_season is not None:
+                    detected_orders.append(int(matched_season.watch_order))
+                elif seasons_list:
+                    detected_orders.append(int(seasons_list[0].watch_order))
+            elif isinstance(ep_entry, str):
+                m_ep = re.search(r"(?i)S(\d+)\s*E(\d+)", ep_entry)
+                if m_ep:
+                    detected_orders.append(
+                        _order_for_season_num(
+                            int(m_ep.group(1)), has_episodes_hint=True
+                        )
+                    )
+            elif isinstance(ep_entry, int):
+                if matched_season is not None:
+                    detected_orders.append(int(matched_season.watch_order))
+                elif seasons_list:
+                    detected_orders.append(int(seasons_list[0].watch_order))
+
+    ep_count_val = (
+        watched_eps
+        if isinstance(watched_eps, int)
+        else item_data.get("watched_episodes_count")
+    )
+    if isinstance(ep_count_val, int) and ep_count_val > 0:
+        if matched_season is not None:
+            detected_orders.append(int(matched_season.watch_order))
+        elif not detected_orders:
+            if seasons_list:
+                detected_orders.append(int(seasons_list[0].watch_order))
+            else:
+                detected_orders.append(1)
+
+    # 6. Completed status on a consolidated season/movie entry
+    status_str = str(item_data.get("status") or "").lower()
+    if matched_season is not None and (
+        status_str == "completed" or item_data.get("watched") is True
+    ):
+        detected_orders.append(int(matched_season.watch_order))
+
+    return max(detected_orders) if detected_orders else 0
+
+
+async def evaluate_simkl_watch_progress_and_advance(
+    session: AsyncSession,
+    item: MediaItem,
+    item_data: dict[str, Any],
+    matched_season: Season | None = None,
+) -> list[DownloadHistory]:
+    """Inspect Simkl item payload for user watch progress, update `last_watched_order_simkl`,
+    and trigger Auto-Advance season expansion (with Movie Bridge Lookahead) if enabled."""
+    from sqlalchemy import inspect as sa_inspect
+
+    status_str = str(item_data.get("status") or "").lower()
+    if status_str == "completed" or item_data.get("simkl_watched_completed") is True:
+        if matched_season is None:
+            item.simkl_watched_completed = True
+
+    if "seasons" in sa_inspect(item).unloaded:
+        await session.refresh(item, ["seasons"])
+
+    detected_order = extract_simkl_watched_order(
+        item=item, item_data=item_data, matched_season=matched_season
+    )
+    current_order = int(item.last_watched_order_simkl or 0)
+    if detected_order <= current_order:
+        return []
+
+    item.last_watched_order_simkl = detected_order
+    await session.flush()
+
+    if not getattr(item, "auto_advance_seasons", False):
+        return []
+
+    return await advance_season_buffer(
+        session=session,
+        item=item,
+        base_watch_order=detected_order,
+    )
+
+
 async def execute_auto_push(
     session: AsyncSession,
     item_id: int,
@@ -657,7 +1096,6 @@ async def execute_auto_push(
 
     # 2. Resolve effective scoring config
     effective_cfg = await resolve_effective_search_config(session, item, payload)
-    prefer_season_packs = bool(effective_cfg["prefer_season_packs"])
     auto_advance_seasons = bool(effective_cfg["auto_advance_seasons"])
 
     blacklisted_guids, blacklisted_titles = await _load_blacklisted_sets(
@@ -677,138 +1115,6 @@ async def execute_auto_push(
 
     dispatched_histories: list[DownloadHistory] = []
     pushed_seasons: list[Season] = []
-
-    async def _push_single_season_or_movie_entry(
-        season: Season, is_auto_advance: bool = False
-    ) -> bool:
-        ev_type = "auto_advance" if is_auto_advance else "push_initiated"
-        entry_type = getattr(season, "entry_type", "season") or "season"
-        if entry_type == "movie":
-            raw_results = await _query_movie_across_indexers(
-                session,
-                item,
-                title_override=season.title or item.title,
-                use_external_ids=False,
-            )
-            partitioned = _score_and_partition_candidates(
-                raw_results=raw_results,
-                blacklisted_guids=blacklisted_guids,
-                blacklisted_titles=blacklisted_titles,
-                expected_title=season.title or item.title,
-                expected_year=season.air_date.year if season.air_date else None,
-                expected_alt_title=item.title,
-                expected_season=None,
-                expected_episode=None,
-                expected_season_title=season.title,
-                runtime_minutes=item.runtime_minutes,
-                effective_cfg=effective_cfg,
-            )
-            hist = await _dispatch_candidate_list_to_torbox(
-                session,
-                partitioned["all_valid"],
-                item=item,
-                season=season,
-                episode=None,
-                push_mode="auto",
-                event_type=ev_type,
-            )
-            if hist is not None:
-                dispatched_histories.append(hist)
-                pushed_seasons.append(season)
-                return True
-            return False
-
-        # TV / Anime Season entry (`entry_type == "season"`)
-        effective_s_num = int(season.type_number or season.season_number)
-        pack_grabbed = False
-        if prefer_season_packs:
-            raw_pack_results = await _query_show_across_indexers(
-                session, item, season_number=effective_s_num, episode_number=None
-            )
-            pack_partitioned = _score_and_partition_candidates(
-                raw_results=raw_pack_results,
-                blacklisted_guids=blacklisted_guids,
-                blacklisted_titles=blacklisted_titles,
-                expected_title=item.title,
-                expected_year=None,
-                expected_alt_title=item.alt_title,
-                expected_season=effective_s_num,
-                expected_episode=None,
-                expected_season_title=(
-                    season.title
-                    if season.title and season.title != item.title
-                    else None
-                ),
-                runtime_minutes=None,
-                effective_cfg=effective_cfg,
-            )
-            hist = await _dispatch_candidate_list_to_torbox(
-                session,
-                pack_partitioned["all_valid"],
-                item=item,
-                season=season,
-                episode=None,
-                push_mode="auto",
-                event_type=ev_type,
-            )
-            if hist is not None:
-                dispatched_histories.append(hist)
-                pushed_seasons.append(season)
-                pack_grabbed = True
-
-        if pack_grabbed:
-            return True
-
-        # Pack-to-Episode Fallback (or when prefer_season_packs is False)
-        any_ep_grabbed = False
-        sorted_eps = sorted(season.episodes, key=lambda e: e.episode_number)
-        for ep in sorted_eps:
-            if ep.status in (
-                EpisodeStatus.DOWNLOADED,
-                EpisodeStatus.COMPLETED,
-                EpisodeStatus.DOWNLOADING,
-                EpisodeStatus.FUTURE,
-            ):
-                continue
-            raw_ep_results = await _query_show_across_indexers(
-                session,
-                item,
-                season_number=effective_s_num,
-                episode_number=ep.episode_number,
-            )
-            ep_partitioned = _score_and_partition_candidates(
-                raw_results=raw_ep_results,
-                blacklisted_guids=blacklisted_guids,
-                blacklisted_titles=blacklisted_titles,
-                expected_title=item.title,
-                expected_year=None,
-                expected_alt_title=item.alt_title,
-                expected_season=effective_s_num,
-                expected_episode=ep.episode_number,
-                expected_season_title=(
-                    season.title
-                    if season.title and season.title != item.title
-                    else None
-                ),
-                runtime_minutes=None,
-                effective_cfg=effective_cfg,
-            )
-            ep_hist = await _dispatch_candidate_list_to_torbox(
-                session,
-                ep_partitioned["all_valid"],
-                item=item,
-                season=season,
-                episode=ep,
-                push_mode="auto",
-                event_type=ev_type,
-            )
-            if ep_hist is not None:
-                dispatched_histories.append(ep_hist)
-                any_ep_grabbed = True
-
-        if any_ep_grabbed:
-            pushed_seasons.append(season)
-        return any_ep_grabbed
 
     # Case 1: Standalone Movie (or movie item with no seasons)
     if item.media_type == MediaType.MOVIE and not season_ids and not episode_ids:
@@ -842,7 +1148,6 @@ async def execute_auto_push(
     else:
         seasons_by_id = {s.id: s for s in item.seasons}
         if not season_ids and not episode_ids and item.seasons:
-            # Default to monitored or first released season
             default_seasons = [
                 s
                 for s in sorted(item.seasons, key=lambda x: x.watch_order)
@@ -862,7 +1167,18 @@ async def execute_auto_push(
         )
         covered_season_ids: set[int] = set()
         for season in selected_seasons:
-            await _push_single_season_or_movie_entry(season, is_auto_advance=False)
+            s_hists = await _push_single_season_or_movie_entry(
+                session=session,
+                item=item,
+                season=season,
+                effective_cfg=effective_cfg,
+                blacklisted_guids=blacklisted_guids,
+                blacklisted_titles=blacklisted_titles,
+                is_auto_advance=False,
+            )
+            if s_hists:
+                dispatched_histories.extend(s_hists)
+                pushed_seasons.append(season)
             covered_season_ids.add(season.id)
 
         # Case 3: Explicitly selected individual episodes not already covered by a season push
@@ -911,45 +1227,16 @@ async def execute_auto_push(
 
         # Season Expansion & Movie Bridge Lookahead when auto_advance_seasons is ON
         if auto_advance_seasons and pushed_seasons:
-            by_order = {s.watch_order: s for s in item.seasons}
             max_order = max(s.watch_order for s in pushed_seasons)
             pushed_ids = {s.id for s in pushed_seasons}
-
-            next_entry = by_order.get(max_order + 1)
-            if (
-                next_entry is not None
-                and next_entry.id not in pushed_ids
-                and next_entry.status
-                not in (
-                    SeasonStatus.FUTURE,
-                    SeasonStatus.DOWNLOADED,
-                    SeasonStatus.COMPLETED,
-                    SeasonStatus.DOWNLOADING,
-                )
-                and not next_entry.is_tba
-            ):
-                await _push_single_season_or_movie_entry(
-                    next_entry, is_auto_advance=True
-                )
-                pushed_ids.add(next_entry.id)
-                # Movie Bridge Lookahead: if N+1 is a movie, also advance to N+2
-                if getattr(next_entry, "entry_type", "season") == "movie":
-                    bridge_entry = by_order.get(max_order + 2)
-                    if (
-                        bridge_entry is not None
-                        and bridge_entry.id not in pushed_ids
-                        and bridge_entry.status
-                        not in (
-                            SeasonStatus.FUTURE,
-                            SeasonStatus.DOWNLOADED,
-                            SeasonStatus.COMPLETED,
-                            SeasonStatus.DOWNLOADING,
-                        )
-                        and not bridge_entry.is_tba
-                    ):
-                        await _push_single_season_or_movie_entry(
-                            bridge_entry, is_auto_advance=True
-                        )
+            adv_hists = await advance_season_buffer(
+                session=session,
+                item=item,
+                base_watch_order=max_order,
+                effective_cfg=effective_cfg,
+                excluded_season_ids=pushed_ids,
+            )
+            dispatched_histories.extend(adv_hists)
 
     await session.commit()
     return {
@@ -1237,6 +1524,30 @@ async def execute_manual_grab(
             "status_code": 400,
         }
 
+    if (
+        "auto_advance_seasons" in payload
+        and payload["auto_advance_seasons"] is not None
+    ):
+        val = payload["auto_advance_seasons"]
+        item.auto_advance_seasons = (
+            val
+            if isinstance(val, bool)
+            else str(val).strip().lower() in ("1", "true", "yes", "on")
+        )
+
+    adv_hists: list[DownloadHistory] = []
+    if (
+        season_obj is not None
+        and episode_obj is None
+        and getattr(item, "auto_advance_seasons", False)
+    ):
+        adv_hists = await advance_season_buffer(
+            session=session,
+            item=item,
+            base_watch_order=season_obj.watch_order,
+            excluded_season_ids={season_obj.id},
+        )
+
     await session.commit()
     return {
         "pushed": True,
@@ -1244,6 +1555,7 @@ async def execute_manual_grab(
         "history_id": hist.id,
         "guid": hist.nzb_guid,
         "torbox_id": hist.torbox_id,
+        "auto_advanced_count": len(adv_hists),
         "status_code": 200,
     }
 
