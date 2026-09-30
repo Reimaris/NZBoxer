@@ -1049,7 +1049,7 @@ async def evaluate_simkl_watch_progress_and_advance(
         if matched_season is None:
             item.simkl_watched_completed = True
 
-    if "seasons" in sa_inspect(item).unloaded:
+    if "seasons" in sa_inspect(item).unloaded and hasattr(session, "refresh"):
         await session.refresh(item, ["seasons"])
 
     detected_order = extract_simkl_watched_order(

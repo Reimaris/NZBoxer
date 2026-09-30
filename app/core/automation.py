@@ -16,7 +16,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.config import scoring_config
 from app.core.logging_config import log_process_end, log_process_start
 from app.db.database import async_session_factory
 from app.db.models import (
@@ -32,7 +31,6 @@ from app.services import simkl, tmdb
 
 logger = logging.getLogger(__name__)
 
-_grabs_dispatched_in_cycle: int = 0
 _tick_cooling_indexers: set[str] = set()
 
 
@@ -67,23 +65,6 @@ def is_indexer_cooling(indexer: Provider | str | Any) -> bool:
     if isinstance(indexer, str) and indexer in _tick_cooling_indexers:
         return True
     return False
-
-
-def get_grabs_dispatched_in_cycle() -> int:
-    """Return count of grabs dispatched in the active automation cycle."""
-    return _grabs_dispatched_in_cycle
-
-
-def reset_grabs_dispatched_in_cycle() -> None:
-    """Reset the grab dispatch counter for a new automation cycle."""
-    global _grabs_dispatched_in_cycle
-    _grabs_dispatched_in_cycle = 0
-
-
-def increment_grabs_dispatched_in_cycle() -> None:
-    """Increment the grab dispatch counter."""
-    global _grabs_dispatched_in_cycle
-    _grabs_dispatched_in_cycle += 1
 
 
 def is_eligible_for_metadata_refresh(item: MediaItem) -> bool:
@@ -1855,57 +1836,6 @@ async def reset_anime_metadata(session: AsyncSession, item_id: int) -> MediaItem
         "✅ Anime metadata reset completed for '%s' (ID %d).", item_title, item_id
     )
     return item
-
-
-def classify_video_item_partition(item: MediaItem) -> str:
-    """
-    Classifies a MediaItem for the active video dashboard into either:
-      - 'missing'   (Top table: Not Yet Downloaded / Unacquired)
-      - 'upgrading' (Bottom table: Awaiting Upgrades)
-    """
-    target_score = scoring_config.get("cutoffs", {}).get("target_score", 8000)
-
-    # 1. Standalone Movies (and anime movies without seasons)
-    if (
-        item.media_type == MediaType.MOVIE
-        and not getattr(item, "is_anime_movie", False)
-    ) or (
-        getattr(item, "is_anime_movie", False) and not getattr(item, "seasons", None)
-    ):
-        if item.status == MediaStatus.DOWNLOADED:
-            if (item.best_score or 0) < target_score:
-                return "upgrading"
-        return "missing"
-
-    # 2. Episodic Media (Series and Anime)
-    seasons = getattr(item, "seasons", None) or []
-    if not seasons:
-        return "missing"
-
-    # Any standard season (or monitored special) that is open/unacquired anchors to missing:
-    for s in seasons:
-        if s.season_number == 0 and not s.monitored:
-            continue
-        if s.status == SeasonStatus.FUTURE:
-            continue
-        if s.status in (
-            SeasonStatus.DOWNLOADED,
-            SeasonStatus.COMPLETED,
-            SeasonStatus.IGNORED,
-        ):
-            continue
-        return "missing"
-
-    # If all released non-ignored seasons are acquired, check if any is hunting for upgrades
-    has_upgrading_season = any(
-        s.status == SeasonStatus.DOWNLOADED
-        for s in seasons
-        if s.season_number > 0 or s.monitored
-    )
-    if has_upgrading_season:
-        return "upgrading"
-
-    return "missing"
 
 
 def classify_v3_status_tier(item: MediaItem) -> str:

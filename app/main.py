@@ -120,12 +120,10 @@ templates.env.globals["app_version"] = APP_VERSION
 
 
 async def run_orchestrator_tick(now: datetime | None = None) -> None:
-    """Execute scheduled domain tasks aligned to wall-clock intervals."""
+    """Execute scheduled periodic Simkl watchlist sync aligned to wall-clock intervals."""
     from datetime import datetime
 
     from app.core.automation import run_periodic_simkl_sync_if_due
-    from app.core.scheduler_utils import is_interval_due
-    from app.core.self_healing import run_download_check_cycle, run_self_healing_cycle
 
     if now is None:
         now = datetime.now()
@@ -135,17 +133,7 @@ async def run_orchestrator_tick(now: datetime | None = None) -> None:
         now.strftime("%Y-%m-%d %H:%M:%S"),
     )
 
-    # 0. Optional Periodic Simkl Watchlist Sync (per provider simkl_config)
     await run_periodic_simkl_sync_if_due(now)
-
-    # 1. Self-Healing & Download Check
-    if is_interval_due(settings.self_healing_interval, now):
-        logger.info(
-            "⏰ Running scheduled Self-Healing & Download Check (Interval: %dm)",
-            settings.self_healing_interval,
-        )
-        await run_self_healing_cycle()
-        await run_download_check_cycle()
 
 
 @asynccontextmanager
@@ -223,7 +211,6 @@ async def dashboard(request: Request, background_tasks: BackgroundTasks):
 
     from app.core.automation import (
         classify_v3_status_tier,
-        classify_video_item_partition,
         consolidate_standalone_anime_sequels,
         should_trigger_dashboard_simkl_sync,
         sync_all_providers,
@@ -267,11 +254,7 @@ async def dashboard(request: Request, background_tasks: BackgroundTasks):
         )
 
         for item in items:
-            item.partition = classify_video_item_partition(item)
             item.status_tier = classify_v3_status_tier(item)
-
-        missing_items = [i for i in items if i.partition == "missing"]
-        upgrading_items = [i for i in items if i.partition == "upgrading"]
 
         in_progress_items = [i for i in items if i.status_tier == "in_progress"]
         ready_to_push_items = [i for i in items if i.status_tier == "ready_to_push"]
@@ -285,7 +268,6 @@ async def dashboard(request: Request, background_tasks: BackgroundTasks):
                     and getattr(i, "is_anime_movie", False)
                 )
                 else i.media_type.value,
-                "partition": getattr(i, "partition", "missing"),
                 "status_tier": getattr(i, "status_tier", "ready_to_push"),
                 "title": (i.title or "").lower(),
                 "alt_title": (i.alt_title or "").lower(),
@@ -373,8 +355,6 @@ async def dashboard(request: Request, background_tasks: BackgroundTasks):
         context={
             "items": items,
             "items_payload": items_payload,
-            "missing_items": missing_items,
-            "upgrading_items": upgrading_items,
             "in_progress_items": in_progress_items,
             "ready_to_push_items": ready_to_push_items,
             "upcoming_items": upcoming_items,
@@ -397,52 +377,6 @@ async def dashboard(request: Request, background_tasks: BackgroundTasks):
             "poller_awake": transfer_poller.is_awake,
             "defaults": defaults,
         },
-    )
-
-
-@app.get("/manual-search", response_class=HTMLResponse)
-async def manual_search_page(
-    request: Request,
-    query: str = "",
-    imdb_id: str = "",
-    tmdb_id: str = "",
-    tvdb_id: str = "",
-    category: str = "",
-    season: str = "",
-    episode: str = "",
-):
-    """Dedicated dashboard for manual searching with advanced filters."""
-    from sqlalchemy import select
-
-    from app.db.database import async_session_factory
-    from app.db.models import SystemSettings
-
-    async with async_session_factory() as session:
-        stmt = select(SystemSettings).where(SystemSettings.id == 1)
-        db_settings = (await session.execute(stmt)).scalars().first()
-
-        defaults = {}
-        if db_settings and db_settings.scoring_settings:
-            defaults = db_settings.scoring_settings.get("manual_search_defaults", {})
-
-        # Override with query parameters if present
-        if query:
-            defaults["query"] = query
-        if imdb_id:
-            defaults["imdb_id"] = imdb_id
-        if tmdb_id:
-            defaults["tmdb_id"] = tmdb_id
-        if tvdb_id:
-            defaults["tvdb_id"] = tvdb_id
-        if category:
-            defaults["category"] = category
-        if season:
-            defaults["season"] = season
-        if episode:
-            defaults["episode"] = episode
-
-    return templates.TemplateResponse(
-        request=request, name="manual_search.html", context={"defaults": defaults}
     )
 
 
@@ -683,67 +617,6 @@ async def manual_search(
     )
 
 
-@app.post("/items/{item_id}/seasons/{season_number}/toggle")
-async def toggle_season(item_id: int, season_number: int):
-    """HTMX endpoint to toggle season monitoring status."""
-    from sqlalchemy import select
-
-    from app.db.database import async_session_factory
-    from app.db.models import Season
-
-    async with async_session_factory() as session:
-        stmt = select(Season).where(
-            Season.media_item_id == item_id, Season.season_number == season_number
-        )
-        result = await session.execute(stmt)
-        season = result.scalars().first()
-
-        if season:
-            season.monitored = not season.monitored
-            # Return updated button html
-            is_monitored = season.monitored
-            await session.commit()
-
-            color = "bg-[#d40060]" if is_monitored else "bg-gray-600"
-            text = "Monitored" if is_monitored else "Ignored"
-            return HTMLResponse(
-                content=f'<button hx-post="/items/{item_id}/seasons/{season_number}/toggle" hx-swap="outerHTML" class="{color} text-white px-3 py-1 rounded text-sm">{text}</button>'
-            )
-
-    return HTMLResponse(content="Error", status_code=400)
-
-
-@app.post("/items/{item_id}/refresh_metadata")
-async def refresh_item_metadata_route(item_id: int):
-    """Force an immediate metadata refresh for a specific show/anime."""
-    from sqlalchemy import select
-    from sqlalchemy.orm import selectinload
-
-    from app.core.automation import _refresh_series_metadata
-    from app.db.database import async_session_factory
-    from app.db.models import MediaItem, MediaType, Season
-
-    async with async_session_factory() as session:
-        stmt = (
-            select(MediaItem)
-            .where(MediaItem.id == item_id)
-            .options(
-                selectinload(MediaItem.seasons).selectinload(Season.episodes),
-                selectinload(MediaItem.download_history),
-                selectinload(MediaItem.failure_logs),
-            )
-        )
-        item = (await session.execute(stmt)).scalars().first()
-        if not item or item.media_type not in (MediaType.SHOW, MediaType.ANIME):
-            return HTMLResponse(content="Invalid Item", status_code=400)
-
-        item.last_metadata_refreshed_at = None
-        await _refresh_series_metadata(session, item)
-        await session.commit()
-
-        return HTMLResponse(content="<script>window.location.reload();</script>")
-
-
 @app.post("/items/{item_id}/reset-metadata")
 async def reset_anime_metadata_endpoint(item_id: int):
     """Rebuilds anime metadata cleanly from AniList, purges phantom episodes, and resets backoff counters."""
@@ -765,65 +638,6 @@ async def reset_anime_metadata_endpoint(item_id: int):
         content="<script>window.location.reload();</script>",
         headers={"HX-Refresh": "true"},
     )
-
-
-@app.post("/items/{item_id}/retry")
-async def retry_item(item_id: int):
-    """Reset item and season status to pending and delete blacklisted releases for this item."""
-    from datetime import datetime, timezone
-
-    from sqlalchemy import select
-
-    from app.db.database import async_session_factory
-    from app.db.models import (
-        BlacklistedRelease,
-        MediaItem,
-        MediaStatus,
-        Season,
-        SeasonStatus,
-    )
-
-    async with async_session_factory() as session:
-        item = await session.get(MediaItem, item_id)
-        if item:
-            rd = item.release_date
-            if rd and rd.tzinfo is None:
-                rd = rd.replace(tzinfo=timezone.utc)
-            if (rd and rd > datetime.now(timezone.utc)) or (
-                not rd and item.year and item.year > datetime.now().year
-            ):
-                item.status = MediaStatus.FUTURE
-            else:
-                item.status = MediaStatus.SEARCHING
-            item.fail_count = 0
-            item.last_error = None
-
-            # Reset seasons
-            stmt = select(Season).where(Season.media_item_id == item_id)
-            result = await session.execute(stmt)
-            for season in result.scalars():
-                if item.status == MediaStatus.FUTURE:
-                    season.status = SeasonStatus.FUTURE
-                else:
-                    season.status = (
-                        SeasonStatus.SEARCHING
-                        if season.monitored
-                        else SeasonStatus.PENDING
-                    )
-                season.fail_count = 0
-                season.last_error = None
-
-            # Clear blacklisted releases for this item
-            stmt_bl = select(BlacklistedRelease).where(
-                BlacklistedRelease.media_item_id == item_id
-            )
-            bl_result = await session.execute(stmt_bl)
-            for bl in bl_result.scalars():
-                await session.delete(bl)
-
-            await session.commit()
-            return HTMLResponse(content="<script>window.location.reload();</script>")
-    return HTMLResponse(content="Error", status_code=400)
 
 
 @app.post("/api/torbox/add", response_class=HTMLResponse)
@@ -866,21 +680,6 @@ async def manual_push_to_torbox(magnet: str = Form(...)):
             content='<span class="text-red-400 font-medium text-xs px-2 py-1.5 bg-red-500/10 border border-red-500/20 rounded-md">Error</span>',
             status_code=500,
         )
-
-
-@app.post("/items/{item_id}/ignore")
-async def ignore_item(item_id: int):
-    """Set an item's status to IGNORED so automation skips it."""
-    from app.db.database import async_session_factory
-    from app.db.models import MediaItem, MediaStatus
-
-    async with async_session_factory() as session:
-        item = await session.get(MediaItem, item_id)
-        if item:
-            item.status = MediaStatus.IGNORED
-            await session.commit()
-            return HTMLResponse(content="<script>window.location.reload();</script>")
-    return HTMLResponse(content="Error", status_code=400)
 
 
 @app.post("/api/items/{item_id}/change-type")
@@ -990,21 +789,6 @@ async def change_type_endpoint(
             background_tasks.add_task(_bg_enrich)
 
     return RedirectResponse(url=request.headers.get("referer", "/"), status_code=303)
-
-
-@app.post("/items/{item_id}/toggle_auto_monitor")
-async def toggle_auto_monitor(item_id: int):
-    """Toggle whether to automatically monitor the next season when current is completed."""
-    from app.db.database import async_session_factory
-    from app.db.models import MediaItem
-
-    async with async_session_factory() as session:
-        item = await session.get(MediaItem, item_id)
-        if item:
-            item.auto_monitor_next_season = not item.auto_monitor_next_season
-            await session.commit()
-            return HTMLResponse(content="<script>window.location.reload();</script>")
-    return HTMLResponse(content="Error", status_code=400)
 
 
 @app.delete("/items/{item_id}")

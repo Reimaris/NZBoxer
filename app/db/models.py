@@ -575,19 +575,6 @@ class MediaItem(Base):
         return datetime.now(tz=self.release_date.tzinfo) >= self.release_date
 
     @property
-    def partition(self) -> str:
-        """Dashboard partition ('missing' or 'upgrading')."""
-        if hasattr(self, "_partition"):
-            return self._partition
-        from app.core.automation import classify_video_item_partition
-
-        return classify_video_item_partition(self)
-
-    @partition.setter
-    def partition(self, val: str) -> None:
-        self._partition = val
-
-    @property
     def status_tier(self) -> str:
         """v3.0.0 3-tier status section ('in_progress', 'ready_to_push', or 'upcoming')."""
         if hasattr(self, "_status_tier"):
