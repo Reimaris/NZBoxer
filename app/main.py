@@ -3308,3 +3308,154 @@ async def api_update_item_search_config(item_id: int, request: Request) -> Respo
                 "auto_advance_seasons": item.auto_advance_seasons,
             },
         )
+
+
+# ---------------------------------------------------------------------------
+# Unified Push Modal & On-Demand Push Engine API (v3.0.0)
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/items/{item_id}/push-modal")
+async def api_get_push_modal(item_id: int, request: Request) -> Response:
+    """Return the Unified Push Modal context (JSON or HTML partial)."""
+    from fastapi.responses import JSONResponse
+
+    from app.core.push_engine import get_push_modal_context
+    from app.db.database import async_session_factory
+
+    async with async_session_factory() as session:
+        ctx = await get_push_modal_context(session, item_id)
+        if ctx is None:
+            return JSONResponse(
+                status_code=404, content={"error": "MediaItem not found"}
+            )
+
+        accept = (request.headers.get("accept") or "").lower()
+        modal_tpl = Path("templates/modals/push_modal.html")
+        if "application/json" not in accept and modal_tpl.exists():
+            return templates.TemplateResponse(
+                request=request,
+                name="modals/push_modal.html",
+                context=ctx,
+            )
+
+        item = ctx["item"]
+        entries = ctx["entries"]
+        presets = ctx["presets"]
+        return JSONResponse(
+            status_code=200,
+            content={
+                "item": {
+                    "id": item.id,
+                    "title": item.title,
+                    "year": item.year,
+                    "media_type": str(item.media_type),
+                    "preset_id": item.preset_id,
+                    "prefer_season_packs": item.prefer_season_packs,
+                    "auto_advance_seasons": item.auto_advance_seasons,
+                },
+                "entries": [
+                    {
+                        "id": s.id,
+                        "season_number": s.season_number,
+                        "watch_order": s.watch_order,
+                        "type_number": s.type_number,
+                        "entry_type": s.entry_type,
+                        "title": s.title,
+                        "status": str(s.status),
+                        "episodes": [
+                            {
+                                "id": ep.id,
+                                "episode_number": ep.episode_number,
+                                "status": str(ep.status),
+                            }
+                            for ep in sorted(s.episodes, key=lambda e: e.episode_number)
+                        ],
+                    }
+                    for s in entries
+                ],
+                "presets": [p.to_dict() for p in presets],
+                "effective_config": ctx["effective_config"],
+            },
+        )
+
+
+@app.post("/api/items/{item_id}/push/auto")
+async def api_push_item_auto(item_id: int, request: Request) -> Response:
+    """Execute Auto-Push Best (`push_mode = 'auto'`) protected by MediaItemLockManager."""
+    from fastapi.responses import JSONResponse
+
+    from app.core.push_engine import execute_auto_push
+    from app.core.search_lock import create_conflict_response, item_lock_manager
+    from app.db.database import async_session_factory
+
+    if not item_lock_manager.try_acquire(item_id, owner="manual"):
+        owner = item_lock_manager.get_lock_owner(item_id)
+        msg = (
+            "Background automation is currently searching this item. Please wait."
+            if owner == "background"
+            else "A search or push is already in progress for this item. Please wait."
+        )
+        return create_conflict_response(msg)
+
+    try:
+        payload = await _parse_request_payload(request)
+        async with async_session_factory() as session:
+            result = await execute_auto_push(session, item_id, payload)
+        status_code = int(result.pop("status_code", 200))
+        return JSONResponse(status_code=status_code, content=result)
+    finally:
+        item_lock_manager.release(item_id)
+
+
+@app.post("/api/items/{item_id}/push/manual-search")
+async def api_push_item_manual_search(item_id: int, request: Request) -> Response:
+    """Search indexers and return scored releases partitioned into Season Packs/Movies and Episode Accordions."""
+    from fastapi.responses import JSONResponse
+
+    from app.core.push_engine import execute_manual_search, persist_sticky_preferences
+    from app.core.search_lock import create_conflict_response, item_lock_manager
+    from app.db.database import async_session_factory
+    from app.db.models import MediaItem
+
+    if not item_lock_manager.try_acquire(item_id, owner="manual"):
+        return create_conflict_response(
+            "A search or push is already in progress for this item. Please wait."
+        )
+
+    try:
+        payload = await _parse_request_payload(request)
+        async with async_session_factory() as session:
+            item = await session.get(MediaItem, item_id)
+            if item is not None:
+                await persist_sticky_preferences(session, item, payload)
+                await session.commit()
+            result = await execute_manual_search(session, item_id, payload)
+        status_code = int(result.pop("status_code", 200))
+        return JSONResponse(status_code=status_code, content=result)
+    finally:
+        item_lock_manager.release(item_id)
+
+
+@app.post("/api/items/{item_id}/push/manual-grab")
+async def api_push_item_manual_grab(item_id: int, request: Request) -> Response:
+    """Dispatch a manually chosen release to TorBox with `DownloadHistory.push_mode = 'manual'`."""
+    from fastapi.responses import JSONResponse
+
+    from app.core.push_engine import execute_manual_grab
+    from app.core.search_lock import create_conflict_response, item_lock_manager
+    from app.db.database import async_session_factory
+
+    if not item_lock_manager.try_acquire(item_id, owner="manual"):
+        return create_conflict_response(
+            "A search or push is already in progress for this item. Please wait."
+        )
+
+    try:
+        payload = await _parse_request_payload(request)
+        async with async_session_factory() as session:
+            result = await execute_manual_grab(session, item_id, payload)
+        status_code = int(result.pop("status_code", 200))
+        return JSONResponse(status_code=status_code, content=result)
+    finally:
+        item_lock_manager.release(item_id)

@@ -7,9 +7,11 @@ Evaluates whitelists, blacklists, and minimum constraints.
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 from dataclasses import dataclass
+from typing import Any
 
 from app.config import scoring_config
 from app.core.parser import ParsedRelease
@@ -21,6 +23,129 @@ _TOKEN_REGEX = re.compile(r"[a-z0-9]+")
 
 def _tokenize(t: str) -> set[str]:
     return set(_TOKEN_REGEX.findall(t.lower()))
+
+
+def _normalize_str_list(val: Any) -> list[str]:
+    if not val:
+        return []
+    if isinstance(val, str):
+        return [x.strip().lower() for x in val.split(",") if x.strip()]
+    if isinstance(val, (list, tuple, set)):
+        return [str(x).strip().lower() for x in val if str(x).strip()]
+    return []
+
+
+def _matches_custom_resolution(
+    allowed_resolutions: list[str], parsed_res: str | None, orig_lower: str
+) -> bool:
+    res = (parsed_res or "").lower()
+    for target in allowed_resolutions:
+        norm_t = "2160p" if target in ("4k", "uhd", "2160p") else target
+        if norm_t and (norm_t in res or norm_t in orig_lower):
+            return True
+    return False
+
+
+def _matches_custom_source(
+    allowed_sources: list[str], parsed_src: str | None, orig_lower: str
+) -> bool:
+    src = (parsed_src or "").lower()
+    combined = f"{src} {orig_lower}"
+    for target in allowed_sources:
+        t = target.strip().lower()
+        if t == "remux" and "remux" in combined:
+            return True
+        if t in ("bluray", "blu-ray", "bdrip", "brrip") and any(
+            k in combined for k in ("bluray", "blu-ray", "bdrip", "brrip")
+        ):
+            return True
+        if t in ("web-dl", "webdl", "web") and any(
+            k in combined for k in ("web-dl", "webdl", "web")
+        ):
+            return True
+        if t == "webrip" and "webrip" in combined:
+            return True
+        if t == "hdtv" and "hdtv" in combined:
+            return True
+        if t and t in combined:
+            return True
+    return False
+
+
+def _matches_custom_video_codec(
+    allowed_codecs: list[str],
+    parsed_vc: str | None,
+    parsed_hdr: str | None,
+    orig_lower: str,
+) -> bool:
+    vc = (parsed_vc or "").lower()
+    hdr = (parsed_hdr or "").lower()
+    combined = f"{vc} {hdr} {orig_lower}"
+    for target in allowed_codecs:
+        t = target.strip().lower()
+        if t in ("h265", "hevc", "x265", "h.265") and any(
+            k in combined for k in ("h265", "hevc", "x265", "h.265")
+        ):
+            return True
+        if t in ("h264", "avc", "x264", "h.264") and any(
+            k in combined for k in ("h264", "avc", "x264", "h.264")
+        ):
+            return True
+        if t == "av1" and "av1" in combined:
+            return True
+        if t in ("dv", "dolby vision", "dovi") and any(
+            k in combined for k in ("dv", "dolby vision", "dovi")
+        ):
+            return True
+        if t in ("hdr10+", "hdr10plus") and any(
+            k in combined for k in ("hdr10+", "hdr10plus")
+        ):
+            return True
+        if t in ("hdr", "hdr10") and "hdr" in combined:
+            return True
+        if t and t in combined:
+            return True
+    return False
+
+
+def _matches_custom_audio_format(
+    allowed_formats: list[str],
+    parsed_ac: str | None,
+    parsed_ch: str | None,
+    orig_lower: str,
+) -> bool:
+    ac = (parsed_ac or "").lower()
+    ch = (parsed_ch or "").lower()
+    combined = f"{ac} {ch} {orig_lower}"
+    for target in allowed_formats:
+        t = target.strip().lower()
+        if t == "truehd" and "truehd" in combined:
+            return True
+        if t == "atmos" and "atmos" in combined:
+            return True
+        if t in ("dts-hd", "dtshd", "dts-hd ma") and any(
+            k in combined for k in ("dts-hd", "dtshd", "dts.hd")
+        ):
+            return True
+        if t in ("dts:x", "dtsx", "dts-x") and any(
+            k in combined for k in ("dts:x", "dtsx", "dts-x")
+        ):
+            return True
+        if t in ("eac3", "e-ac-3", "dd+", "ddp") and any(
+            k in combined for k in ("eac3", "e-ac-3", "dd+", "ddp")
+        ):
+            return True
+        if t in ("ac3", "dd", "dolby digital") and any(
+            k in combined for k in ("ac3", "dolby digital", "dd5", "dd2")
+        ):
+            return True
+        if t == "dts" and "dts" in combined:
+            return True
+        if t in ("pcm", "lpcm") and any(k in combined for k in ("pcm", "lpcm")):
+            return True
+        if t and t in combined:
+            return True
+    return False
 
 
 @dataclass
@@ -64,8 +189,40 @@ def score_release(
     primary_language: str | None = None,
     fallback_language: str | None = None,
     api_language: str | None = None,
+    video_quality_mode: str = "best",
+    audio_quality_mode: str = "best",
+    custom_config: dict[str, Any] | str | None = None,
+    preset: Any = None,
 ) -> ScoreResult:
     """Calculate the score for a parsed release."""
+    if preset is not None:
+        if primary_language is None and getattr(preset, "primary_language", None):
+            primary_language = preset.primary_language
+        if fallback_language is None and getattr(preset, "fallback_language", None):
+            fallback_language = preset.fallback_language
+        if video_quality_mode == "best" and getattr(preset, "video_quality_mode", None):
+            video_quality_mode = str(preset.video_quality_mode)
+        if audio_quality_mode == "best" and getattr(preset, "audio_quality_mode", None):
+            audio_quality_mode = str(preset.audio_quality_mode)
+        if custom_config is None:
+            custom_config = getattr(preset, "custom_config", None) or getattr(
+                preset, "custom_config_json", None
+            )
+
+    resolved_custom: dict[str, Any] = {}
+    if isinstance(custom_config, dict):
+        resolved_custom = custom_config
+    elif isinstance(custom_config, str) and custom_config.strip():
+        try:
+            loaded = json.loads(custom_config)
+            if isinstance(loaded, dict):
+                resolved_custom = loaded
+        except Exception:
+            resolved_custom = {}
+
+    v_mode = str(video_quality_mode or "best").strip().lower()
+    a_mode = str(audio_quality_mode or "best").strip().lower()
+
     # 1. Apply hard filters (size, age, blacklist)
     filters = scoring_config.get("filters", {})
     min_size_mb = filters.get("min_size_mb", 0)
@@ -304,6 +461,127 @@ def score_release(
                 is_primary=False,
                 is_fallback=False,
                 matched_language=None,
+            )
+
+    # 1.5 Apply Custom Preset / Push Modal Constraints ("Best" vs "Custom")
+    if v_mode == "custom" and resolved_custom:
+        allowed_resolutions = _normalize_str_list(resolved_custom.get("resolutions"))
+        if allowed_resolutions and not _matches_custom_resolution(
+            allowed_resolutions, parsed.resolution, orig_lower
+        ):
+            return ScoreResult(
+                0,
+                True,
+                f"Custom resolution filter rejected '{parsed.resolution}' (allowed: {allowed_resolutions})",
+                None,
+                is_primary=is_primary,
+                is_fallback=is_fallback,
+                matched_language=matched_language,
+            )
+
+        allowed_sources = _normalize_str_list(resolved_custom.get("sources"))
+        if allowed_sources and not _matches_custom_source(
+            allowed_sources, parsed.source, orig_lower
+        ):
+            return ScoreResult(
+                0,
+                True,
+                f"Custom source filter rejected '{parsed.source}' (allowed: {allowed_sources})",
+                None,
+                is_primary=is_primary,
+                is_fallback=is_fallback,
+                matched_language=matched_language,
+            )
+
+        allowed_codecs = _normalize_str_list(resolved_custom.get("video_codecs"))
+        if allowed_codecs and not _matches_custom_video_codec(
+            allowed_codecs, parsed.video_codec, parsed.hdr, orig_lower
+        ):
+            return ScoreResult(
+                0,
+                True,
+                f"Custom video codec/HDR filter rejected '{parsed.video_codec}' (allowed: {allowed_codecs})",
+                None,
+                is_primary=is_primary,
+                is_fallback=is_fallback,
+                matched_language=matched_language,
+            )
+
+        raw_min_gb = resolved_custom.get("min_size_gb")
+        if raw_min_gb is not None and raw_min_gb != "":
+            try:
+                custom_min_gb = float(raw_min_gb)
+                if custom_min_gb > 0 and size_gb < custom_min_gb:
+                    return ScoreResult(
+                        0,
+                        True,
+                        f"Below custom min size: {size_gb:.2f}GB < {custom_min_gb:.2f}GB",
+                        None,
+                        is_primary=is_primary,
+                        is_fallback=is_fallback,
+                        matched_language=matched_language,
+                    )
+            except (TypeError, ValueError):
+                pass
+
+        raw_max_gb = resolved_custom.get("max_size_gb")
+        if raw_max_gb is not None and raw_max_gb != "":
+            try:
+                custom_max_gb = float(raw_max_gb)
+                if custom_max_gb > 0 and size_gb > custom_max_gb:
+                    return ScoreResult(
+                        0,
+                        True,
+                        f"Exceeds custom max size: {size_gb:.2f}GB > {custom_max_gb:.2f}GB",
+                        None,
+                        is_primary=is_primary,
+                        is_fallback=is_fallback,
+                        matched_language=matched_language,
+                    )
+            except (TypeError, ValueError):
+                pass
+
+        req_keywords = _normalize_str_list(resolved_custom.get("required_keywords"))
+        if req_keywords:
+            missing_kws = [kw for kw in req_keywords if kw not in orig_lower]
+            if missing_kws:
+                return ScoreResult(
+                    0,
+                    True,
+                    f"Missing required keyword(s): {missing_kws}",
+                    None,
+                    is_primary=is_primary,
+                    is_fallback=is_fallback,
+                    matched_language=matched_language,
+                )
+
+        excl_keywords = _normalize_str_list(resolved_custom.get("excluded_keywords"))
+        if excl_keywords:
+            matched_excl = [kw for kw in excl_keywords if kw in orig_lower]
+            if matched_excl:
+                return ScoreResult(
+                    0,
+                    True,
+                    f"Matched excluded keyword(s): {matched_excl}",
+                    None,
+                    is_primary=is_primary,
+                    is_fallback=is_fallback,
+                    matched_language=matched_language,
+                )
+
+    if a_mode == "custom" and resolved_custom:
+        allowed_audio = _normalize_str_list(resolved_custom.get("audio_formats"))
+        if allowed_audio and not _matches_custom_audio_format(
+            allowed_audio, parsed.audio_codec, parsed.audio_channels, orig_lower
+        ):
+            return ScoreResult(
+                0,
+                True,
+                f"Custom audio format filter rejected '{parsed.audio_codec}' (allowed: {allowed_audio})",
+                None,
+                is_primary=is_primary,
+                is_fallback=is_fallback,
+                matched_language=matched_language,
             )
 
     groups_cfg = scoring_config.get("release_groups", {})
