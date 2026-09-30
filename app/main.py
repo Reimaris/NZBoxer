@@ -18,7 +18,7 @@ from typing import Any
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import BackgroundTasks, FastAPI, Form, Request, Response
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -2571,6 +2571,192 @@ async def delete_notification(notification_id: int) -> HTMLResponse:
     return HTMLResponse(
         content="<script>window.location.hash = 'notifications'; window.location.reload();</script>"
     )
+
+
+@app.post("/api/notifications/test/discord")
+@app.post("/settings/notification/discord/test")
+async def test_discord_notification(request: Request) -> Response:
+    """Send a test rich Discord Embed to verify the configured or provided Discord Webhook URL."""
+    from sqlalchemy import select
+
+    from app.db.models import SystemSettings
+    from app.services import discord
+
+    payload = await _parse_request_payload(request)
+    webhook_url = str(payload.get("discord_webhook_url") or "").strip()
+
+    async with async_session_factory() as session:
+        if not webhook_url:
+            stmt = select(SystemSettings).where(SystemSettings.id == 1)
+            db_settings = (await session.execute(stmt)).scalars().first()
+            if db_settings and db_settings.discord_webhook_url:
+                webhook_url = db_settings.discord_webhook_url.strip()
+            elif settings.discord_webhook_url:
+                webhook_url = settings.discord_webhook_url.strip()
+
+    if not webhook_url:
+        if request.headers.get("HX-Request") == "true":
+            return HTMLResponse(
+                content='<span class="text-xs text-red-400">Please provide a Discord Webhook URL first.</span>',
+                status_code=400,
+            )
+        return JSONResponse(
+            {"ok": False, "error": "Discord Webhook URL is not configured"},
+            status_code=400,
+        )
+
+    embed = discord.build_discord_embed(
+        event_type="completed",
+        media_title="NZBoxer Test Notification",
+        media_year=2026,
+        target_label="Test Connection",
+        release_name="NZBoxer.v3.0.0.2160p.WEB-DL.DDP5.1.Atmos.H.265",
+        resolution="2160p",
+        source="WEB-DL",
+        video_codec="H.265",
+        audio_codec="Atmos",
+        language="en",
+        status_reason="Discord Webhook integration verified!",
+    )
+    ok = await discord.send_discord_webhook(webhook_url, embed=embed)
+    if request.headers.get("HX-Request") == "true":
+        if ok:
+            return HTMLResponse(
+                content='<span class="text-xs text-emerald-400">Discord test notification sent!</span>'
+            )
+        return HTMLResponse(
+            content='<span class="text-xs text-red-400">Discord webhook delivery failed.</span>',
+            status_code=400,
+        )
+    return JSONResponse(
+        {"ok": ok, "channel": "discord"},
+        status_code=200 if ok else 400,
+    )
+
+
+@app.post("/api/notifications/test/telegram")
+@app.post("/settings/notification/telegram/test")
+@app.post("/settings/notification/{notification_id}/test")
+async def test_telegram_notification(
+    request: Request, notification_id: int | None = None
+) -> Response:
+    """Send a test Telegram message to verify a specific or configured Telegram channel."""
+    from sqlalchemy import select
+
+    from app.db.models import NotificationChannel
+    from app.services import telegram
+
+    payload = await _parse_request_payload(request)
+    bot_token = str(payload.get("bot_token") or "").strip()
+    chat_id = str(payload.get("chat_id") or "").strip()
+    target_id = notification_id
+    if target_id is None and payload.get("notification_id"):
+        try:
+            target_id = int(payload["notification_id"])
+        except (TypeError, ValueError):
+            target_id = None
+
+    channels_to_test: list[tuple[str, str]] = []
+    if bot_token and chat_id:
+        channels_to_test.append((bot_token, chat_id))
+    else:
+        async with async_session_factory() as session:
+            if target_id is not None:
+                ch = await session.get(NotificationChannel, target_id)
+                if ch and ch.bot_token and ch.chat_id:
+                    channels_to_test.append((ch.bot_token, ch.chat_id))
+            else:
+                stmt = select(NotificationChannel).where(
+                    NotificationChannel.type == "telegram"
+                )
+                rows = (await session.execute(stmt)).scalars().all()
+                for ch in rows:
+                    if ch.bot_token and ch.chat_id:
+                        channels_to_test.append((ch.bot_token, ch.chat_id))
+
+    if not channels_to_test:
+        if request.headers.get("HX-Request") == "true":
+            return HTMLResponse(
+                content='<span class="text-xs text-red-400">No Telegram credentials configured.</span>',
+                status_code=400,
+            )
+        return JSONResponse(
+            {"ok": False, "error": "No Telegram channel configured"},
+            status_code=400,
+        )
+
+    test_msg = (
+        "<b>🔔 NZBoxer Test Notification</b>\nTelegram notification channel verified!"
+    )
+    sent_count = 0
+    for token, cid in channels_to_test:
+        if await telegram.send_notification(test_msg, token, cid):
+            sent_count += 1
+
+    ok = sent_count > 0
+    if request.headers.get("HX-Request") == "true":
+        if ok:
+            return HTMLResponse(
+                content='<span class="text-xs text-emerald-400">Telegram test notification sent!</span>'
+            )
+        return HTMLResponse(
+            content='<span class="text-xs text-red-400">Telegram delivery failed.</span>',
+            status_code=400,
+        )
+    return JSONResponse(
+        {"ok": ok, "channel": "telegram", "sent_count": sent_count},
+        status_code=200 if ok else 400,
+    )
+
+
+@app.post("/api/notifications/settings")
+async def save_notification_settings(request: Request) -> Response:
+    """Save Discord webhook URL, discord_enabled, and per-event trigger checkboxes on SystemSettings."""
+    from sqlalchemy import select
+
+    from app.config import reload_settings_from_db
+    from app.db.models import SystemSettings
+
+    payload = await _parse_request_payload(request)
+
+    def _to_bool(val: Any) -> bool:
+        if isinstance(val, bool):
+            return val
+        return str(val).strip().lower() in ("1", "true", "on", "yes")
+
+    async with async_session_factory() as session:
+        stmt = select(SystemSettings).where(SystemSettings.id == 1)
+        db_settings = (await session.execute(stmt)).scalars().first()
+        if not db_settings:
+            db_settings = SystemSettings(id=1)
+            session.add(db_settings)
+
+        if "discord_webhook_url" in payload:
+            raw_url = str(payload.get("discord_webhook_url") or "").strip()
+            db_settings.discord_webhook_url = raw_url or None
+
+        db_settings.discord_enabled = _to_bool(payload.get("discord_enabled", False))
+        db_settings.notify_on_push_initiated = _to_bool(
+            payload.get("notify_on_push_initiated", False)
+        )
+        db_settings.notify_on_completed = _to_bool(
+            payload.get("notify_on_completed", False)
+        )
+        db_settings.notify_on_failure = _to_bool(
+            payload.get("notify_on_failure", False)
+        )
+        db_settings.notify_on_auto_advance = _to_bool(
+            payload.get("notify_on_auto_advance", False)
+        )
+
+        await session.commit()
+        await reload_settings_from_db(session)
+
+    if request.headers.get("HX-Request") == "true":
+        return HTMLResponse(
+            content='<div class="p-3 bg-emerald-900/40 border border-emerald-500/40 text-emerald-200 rounded-lg text-xs">Notification settings saved!</div>'
+        )
+    return JSONResponse({"ok": True})
 
 
 @app.post("/simkl/auth/start")

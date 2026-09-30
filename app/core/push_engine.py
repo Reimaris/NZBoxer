@@ -487,9 +487,12 @@ async def _dispatch_candidate_list_to_torbox(
     season: Season | None = None,
     episode: Episode | None = None,
     push_mode: str = "auto",
+    event_type: str = "push_initiated",
+    status_reason: str | None = None,
 ) -> DownloadHistory | None:
     """Iterate through scored candidates, verify Layer 2 NZB fake check, and dispatch to TorBox."""
     from app.core.automation import increment_today_grab_count
+    from app.services import discord
 
     is_movie = episode is None and (
         season is None or getattr(season, "entry_type", "season") == "movie"
@@ -581,6 +584,34 @@ async def _dispatch_candidate_list_to_torbox(
             item.last_error = None
 
         await session.flush()
+
+        target_lbl = discord.format_target_label(
+            item=item, season=season, episode=episode
+        )
+        default_reason = (
+            "Auto-Advance Season Expansion triggered"
+            if event_type == "auto_advance"
+            else (
+                "Auto-Push Best dispatched to TorBox"
+                if push_mode == "auto"
+                else "Manual Pick dispatched to TorBox"
+            )
+        )
+        await discord.dispatch_notification_event(
+            session=session,
+            event_type=event_type,
+            media_title=item.title,
+            media_year=item.year,
+            target_label=target_lbl,
+            release_name=title,
+            resolution=history.resolution,
+            source=history.source,
+            video_codec=history.video_codec,
+            audio_codec=history.audio_codec,
+            language=history.grabbed_language,
+            status_reason=status_reason or default_reason,
+            poster_url=item.poster_url,
+        )
         return history
 
     return None
@@ -643,7 +674,10 @@ async def execute_auto_push(
     dispatched_histories: list[DownloadHistory] = []
     pushed_seasons: list[Season] = []
 
-    async def _push_single_season_or_movie_entry(season: Season) -> bool:
+    async def _push_single_season_or_movie_entry(
+        season: Season, is_auto_advance: bool = False
+    ) -> bool:
+        ev_type = "auto_advance" if is_auto_advance else "push_initiated"
         entry_type = getattr(season, "entry_type", "season") or "season"
         if entry_type == "movie":
             raw_results = await _query_movie_across_indexers(
@@ -672,6 +706,7 @@ async def execute_auto_push(
                 season=season,
                 episode=None,
                 push_mode="auto",
+                event_type=ev_type,
             )
             if hist is not None:
                 dispatched_histories.append(hist)
@@ -710,6 +745,7 @@ async def execute_auto_push(
                 season=season,
                 episode=None,
                 push_mode="auto",
+                event_type=ev_type,
             )
             if hist is not None:
                 dispatched_histories.append(hist)
@@ -760,6 +796,7 @@ async def execute_auto_push(
                 season=season,
                 episode=ep,
                 push_mode="auto",
+                event_type=ev_type,
             )
             if ep_hist is not None:
                 dispatched_histories.append(ep_hist)
@@ -792,6 +829,7 @@ async def execute_auto_push(
             season=None,
             episode=None,
             push_mode="auto",
+            event_type="push_initiated",
         )
         if hist is not None:
             dispatched_histories.append(hist)
@@ -820,7 +858,7 @@ async def execute_auto_push(
         )
         covered_season_ids: set[int] = set()
         for season in selected_seasons:
-            await _push_single_season_or_movie_entry(season)
+            await _push_single_season_or_movie_entry(season, is_auto_advance=False)
             covered_season_ids.add(season.id)
 
         # Case 3: Explicitly selected individual episodes not already covered by a season push
@@ -862,6 +900,7 @@ async def execute_auto_push(
                     season=parent_s,
                     episode=ep_obj,
                     push_mode="auto",
+                    event_type="push_initiated",
                 )
                 if ep_hist is not None:
                     dispatched_histories.append(ep_hist)
@@ -885,7 +924,9 @@ async def execute_auto_push(
                 )
                 and not next_entry.is_tba
             ):
-                await _push_single_season_or_movie_entry(next_entry)
+                await _push_single_season_or_movie_entry(
+                    next_entry, is_auto_advance=True
+                )
                 pushed_ids.add(next_entry.id)
                 # Movie Bridge Lookahead: if N+1 is a movie, also advance to N+2
                 if getattr(next_entry, "entry_type", "season") == "movie":
@@ -902,7 +943,9 @@ async def execute_auto_push(
                         )
                         and not bridge_entry.is_tba
                     ):
-                        await _push_single_season_or_movie_entry(bridge_entry)
+                        await _push_single_season_or_movie_entry(
+                            bridge_entry, is_auto_advance=True
+                        )
 
     await session.commit()
     return {
