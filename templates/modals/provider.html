@@ -212,8 +212,29 @@
                         </div>
                     </fieldset>
 
-                    <!-- SIMKL CONFIGURATION (Simplified v3.0.0 — No Quality Rules) -->
+                    <!-- SIMKL CONFIGURATION (AUTH V2 — RFC 8628 Device Flow & Auto-Refresh) -->
                     <fieldset :disabled="providerType !== 'simkl'" x-show="providerType === 'simkl'" class="border-0 p-0 m-0 space-y-6">
+                        <input type="hidden" name="provider_id" value="{{ provider.id if provider else '' }}">
+                        <input type="hidden" id="simkl-refresh-token" name="refresh_token" value="{{ cfg.get('refresh_token', '') or '' }}">
+                        <input type="hidden" id="simkl-token-expires-at" name="token_expires_at" value="{{ cfg.get('token_expires_at', '') or '' }}">
+
+                        <div class="flex items-center justify-between bg-[#111115] border border-[#3f3f46] rounded-xl px-4 py-3">
+                            <span class="text-xs font-bold text-[#a1a1aa] uppercase tracking-wider">Simkl Auth Status</span>
+                            {% if provider and provider.is_simkl_v2_authenticated %}
+                            <span id="simkl-modal-status-badge" class="px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                                {{ provider.simkl_auth_status_label }}
+                            </span>
+                            {% elif provider and provider.simkl_auth_status_label == 'Reconnect Required (Legacy V1 / Expired)' %}
+                            <span id="simkl-modal-status-badge" class="px-2.5 py-1 rounded-full text-xs font-bold bg-amber-500/15 text-amber-400 border border-amber-500/30">
+                                {{ provider.simkl_auth_status_label }}
+                            </span>
+                            {% else %}
+                            <span id="simkl-modal-status-badge" class="px-2.5 py-1 rounded-full text-xs font-bold bg-slate-500/15 text-slate-400 border border-slate-500/30">
+                                Not Connected
+                            </span>
+                            {% endif %}
+                        </div>
+
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                             <div class="flex flex-col">
                                 <label class="h-6 text-[#d1d5db] font-medium mb-1 flex items-center">Simkl Username</label>
@@ -223,17 +244,20 @@
                             <div class="flex flex-col">
                                 <label class="h-6 text-[#d1d5db] font-medium mb-1 flex items-center justify-between">
                                     <span>Simkl Client ID</span>
-                                    <a href="https://simkl.com/settings/developer/" target="_blank" class="text-xs text-blue-400 hover:underline">Get Client ID</a>
+                                    <a href="https://simkl.com/settings/developer/" target="_blank" rel="noopener noreferrer" class="text-xs text-blue-400 hover:underline">Get Client ID</a>
                                 </label>
                                 <input type="password" name="client_id" value="{{ provider.client_id if provider and provider.client_id else '' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors font-mono">
+                                <p class="text-[11px] text-[#71717a] mt-1.5 leading-relaxed">
+                                    Create an app at <a href="https://simkl.com/settings/developer/" target="_blank" rel="noopener noreferrer" class="text-blue-400 hover:underline">simkl.com/settings/developer</a> with Application Type set to <strong>TV, devices &amp; command line</strong> or <strong>Mobile, desktop &amp; browser apps</strong> (AUTH V2 public client — no Client Secret required).
+                                </p>
                             </div>
 
                             <div class="flex flex-col col-span-1 md:col-span-2">
                                 <label class="h-6 text-[#d1d5db] font-medium mb-1 flex items-center">Simkl Access Token</label>
                                 <div class="flex gap-2 w-full">
                                     <input type="password" id="access_token" name="access_token" value="{{ provider.access_token if provider and provider.access_token else '' }}" class="flex-1 min-w-0 h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors font-mono">
-                                    <button type="button" hx-post="/simkl/auth/start" hx-include="[name='client_id']" hx-target="#simkl-auth-container-modal" class="h-11 bg-blue-600 hover:bg-blue-700 text-white px-4 rounded-lg font-medium transition-colors text-sm whitespace-nowrap shrink-0">
-                                        Connect via PIN
+                                    <button type="button" hx-post="/simkl/auth/pin" hx-include="[name='client_id'], [name='provider_id']" hx-target="#simkl-auth-container-modal" class="h-11 bg-blue-600 hover:bg-blue-700 text-white px-4 rounded-lg font-medium transition-colors text-sm whitespace-nowrap shrink-0">
+                                        Get PIN &amp; Connect
                                     </button>
                                 </div>
                                 <div id="simkl-auth-container-modal" class="mt-2"></div>

@@ -252,13 +252,15 @@ class Provider(Base):
 
     @property
     def simkl_config(self) -> dict[str, Any]:
-        """Return parsed Simkl provider configuration with v3.0.0 defaults."""
+        """Return parsed Simkl provider configuration with v3.0.0 AUTH V2 defaults."""
         defaults: dict[str, Any] = {
             "sync_interval_minutes": 60,
             "sync_movies": True,
             "sync_series": True,
             "sync_anime": True,
             "last_synced_at": None,
+            "refresh_token": None,
+            "token_expires_at": None,
         }
         try:
             raw = json.loads(self.config_json or "{}")
@@ -266,7 +268,34 @@ class Provider(Base):
                 defaults.update(raw)
         except Exception:
             pass
+        if not defaults.get("client_id") and self.client_id:
+            defaults["client_id"] = self.client_id
+        if not defaults.get("access_token") and self.access_token:
+            defaults["access_token"] = self.access_token
         return defaults
+
+    @property
+    def is_simkl_v2_authenticated(self) -> bool:
+        """Return True when Simkl provider has a valid V2 access_token and refresh_token."""
+        if (self.type or "").lower() != "simkl" and (
+            self.name or ""
+        ).lower() != "simkl":
+            return False
+        cfg = self.simkl_config
+        token = str(self.access_token or cfg.get("access_token") or "").strip()
+        refresh = str(cfg.get("refresh_token") or "").strip()
+        return bool(token and refresh)
+
+    @property
+    def simkl_auth_status_label(self) -> str:
+        """Return human-readable Simkl AUTH V2 connection status label."""
+        if self.is_simkl_v2_authenticated:
+            return "Connected · AUTH V2 (Auto-Refresh)"
+        cfg = self.simkl_config
+        token = str(self.access_token or cfg.get("access_token") or "").strip()
+        if token:
+            return "Reconnect Required (Legacy V1 / Expired)"
+        return "Not Connected"
 
     @property
     def config(self) -> dict[str, Any]:

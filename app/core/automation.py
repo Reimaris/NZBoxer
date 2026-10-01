@@ -240,10 +240,12 @@ def is_simkl_sync_due_on_load(
         return False
     if not getattr(provider, "is_active", True):
         return False
-    if not provider.client_id or not provider.access_token:
+    cfg = provider.simkl_config
+    if not (provider.client_id or cfg.get("client_id")) or not (
+        provider.access_token or cfg.get("access_token") or cfg.get("refresh_token")
+    ):
         return False
 
-    cfg = provider.simkl_config
     last_synced = _parse_iso_utc(cfg.get("last_synced_at"))
     if last_synced is None:
         return True
@@ -265,10 +267,12 @@ def is_simkl_periodic_sync_due(
         return False
     if not getattr(provider, "is_active", True):
         return False
-    if not provider.client_id or not provider.access_token:
+    cfg = provider.simkl_config
+    if not (provider.client_id or cfg.get("client_id")) or not (
+        provider.access_token or cfg.get("access_token") or cfg.get("refresh_token")
+    ):
         return False
 
-    cfg = provider.simkl_config
     try:
         interval = int(cfg.get("sync_interval_minutes", 60) or 0)
     except (ValueError, TypeError):
@@ -315,8 +319,31 @@ async def run_periodic_simkl_sync_if_due(now: datetime | None = None) -> bool:
     return False
 
 
+async def _fetch_simkl_category_with_retry(
+    session: AsyncSession,
+    provider: Provider,
+    media_type_key: str,
+    client_id: str,
+    access_token: str,
+) -> tuple[list[dict[str, Any]], str, str]:
+    """Fetch a Simkl watchlist category, retrying once with token refresh on HTTP 401."""
+    try:
+        items = await simkl.get_watchlist(media_type_key, client_id, access_token)
+        return items, client_id, access_token
+    except simkl.SimklUnauthorizedError:
+        if provider.simkl_config.get("refresh_token"):
+            client_id, access_token = await simkl.refresh_provider_simkl_token(
+                session, provider
+            )
+            items = await simkl.get_watchlist(media_type_key, client_id, access_token)
+            return items, client_id, access_token
+        raise
+
+
 async def sync_all_providers() -> None:
     """Sync watchlists and libraries from all configured providers (Simkl, etc.)."""
+    import json
+
     log_process_start(logger, "Provider Sync Engine")
     from app.db.models import Provider
 
@@ -324,53 +351,110 @@ async def sync_all_providers() -> None:
         try:
             stmt = select(Provider)
             providers_res = await session.execute(stmt)
-            providers = providers_res.scalars().unique().all()
+            provider_ids = [
+                p.id
+                for p in providers_res.scalars().unique().all()
+                if p.type == "simkl" and getattr(p, "is_active", True)
+            ]
 
-            for provider in providers:
-                if provider.type == "simkl":
-                    if not getattr(provider, "is_active", True):
-                        continue
-                    if not provider.client_id or not provider.access_token:
-                        logger.warning(
-                            "Provider %s lacks Simkl credentials, skipping.",
-                            provider.name,
-                        )
-                        continue
+            any_synced = False
+            for prov_id in provider_ids:
+                provider = await session.get(Provider, prov_id)
+                if provider is None or not getattr(provider, "is_active", True):
+                    continue
 
+                cfg = provider.simkl_config
+                has_cid = bool(provider.client_id or cfg.get("client_id"))
+                has_tok = bool(
+                    provider.access_token
+                    or cfg.get("access_token")
+                    or cfg.get("refresh_token")
+                )
+                if not has_cid or not has_tok:
+                    logger.warning(
+                        "Provider %s lacks Simkl credentials, skipping.",
+                        provider.name,
+                    )
+                    continue
+
+                try:
+                    client_id, access_token = await simkl.ensure_valid_simkl_token(
+                        session, provider
+                    )
                     cfg = provider.simkl_config
                     sync_movies = bool(cfg.get("sync_movies", True))
                     sync_series = bool(cfg.get("sync_series", True))
                     sync_anime = bool(cfg.get("sync_anime", True))
 
                     if sync_movies:
-                        movies = await simkl.get_watchlist(
-                            "movies", provider.client_id, provider.access_token
+                        (
+                            movies,
+                            client_id,
+                            access_token,
+                        ) = await _fetch_simkl_category_with_retry(
+                            session,
+                            provider,
+                            "movies",
+                            client_id,
+                            access_token,
                         )
                         await _sync_items(session, movies, MediaType.MOVIE, provider.id)
 
                     if sync_series:
-                        shows = await simkl.get_watchlist(
-                            "shows", provider.client_id, provider.access_token
+                        (
+                            shows,
+                            client_id,
+                            access_token,
+                        ) = await _fetch_simkl_category_with_retry(
+                            session,
+                            provider,
+                            "shows",
+                            client_id,
+                            access_token,
                         )
                         await _sync_items(session, shows, MediaType.SHOW, provider.id)
 
                     if sync_anime:
-                        anime = await simkl.get_watchlist(
-                            "anime", provider.client_id, provider.access_token
+                        (
+                            anime,
+                            client_id,
+                            access_token,
+                        ) = await _fetch_simkl_category_with_retry(
+                            session,
+                            provider,
+                            "anime",
+                            client_id,
+                            access_token,
                         )
                         await _sync_items(session, anime, MediaType.ANIME, provider.id)
                         await consolidate_standalone_anime_sequels(session)
 
-                    import json
-
+                    cfg = provider.simkl_config
                     cfg["last_synced_at"] = datetime.now(timezone.utc).isoformat()
                     provider.config_json = json.dumps(cfg)
+                    await session.commit()
+                    any_synced = True
+                except Exception as prov_err:  # noqa: BLE001
+                    logger.error(
+                        "Provider sync failed for %s: %s",
+                        provider.name,
+                        prov_err,
+                    )
+                    await session.rollback()
+                    prov_after_rb = await session.get(Provider, prov_id)
+                    if prov_after_rb is not None:
+                        rb_cfg = prov_after_rb.simkl_config
+                        rb_cfg["last_synced_at"] = datetime.now(
+                            timezone.utc
+                        ).isoformat()
+                        prov_after_rb.config_json = json.dumps(rb_cfg)
+                        await session.commit()
 
-            await session.commit()
-            from app.core.self_healing import adopt_torbox_downloads_for_video
+            if any_synced:
+                from app.core.self_healing import adopt_torbox_downloads_for_video
 
-            await adopt_torbox_downloads_for_video(session)
-            logger.info("All provider watchlists synced successfully.")
+                await adopt_torbox_downloads_for_video(session)
+                logger.info("All provider watchlists synced successfully.")
         except Exception as e:  # noqa: BLE001
             logger.error("Provider sync failed: %s", e)
             await session.rollback()

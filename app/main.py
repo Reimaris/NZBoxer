@@ -1141,6 +1141,8 @@ async def save_provider(
     name: str = Form(...),
     simkl_username: str = Form(""),
     access_token: str = Form(""),
+    refresh_token: str = Form(""),
+    token_expires_at: str = Form(""),
     client_id: str = Form(""),
     api_key: str = Form(""),
     api_url: str = Form(""),
@@ -1161,7 +1163,7 @@ async def save_provider(
     sync_anime: bool | None = Form(None),
 ):
     from app.db.models import Provider, ProviderCategory
-    from app.services import provider_service
+    from app.services import provider_service, simkl
 
     # Determine standard category from provider type if not explicitly supplied
     resolved_category = category
@@ -1178,22 +1180,40 @@ async def save_provider(
         )
 
     async with async_session_factory() as session:
+        old_client_id = ""
+        old_access_token = ""
+        old_refresh_token = ""
+
         if provider_id:
             provider = await session.get(Provider, provider_id)
             if not provider:
                 provider = Provider(type=provider_type, category=resolved_category)
                 session.add(provider)
             else:
+                old_cfg = provider.simkl_config
+                old_client_id = str(
+                    provider.client_id or old_cfg.get("client_id") or ""
+                ).strip()
+                old_access_token = str(
+                    provider.access_token or old_cfg.get("access_token") or ""
+                ).strip()
+                old_refresh_token = str(old_cfg.get("refresh_token") or "").strip()
                 provider.type = provider_type
                 provider.category = resolved_category
         else:
             provider = Provider(type=provider_type, category=resolved_category)
             session.add(provider)
 
+        effective_access_token = (
+            old_access_token
+            if access_token.strip() == "***" and old_access_token
+            else access_token.strip()
+        )
+
         provider.name = name
         provider.username = simkl_username
-        provider.access_token = access_token
-        provider.client_id = client_id
+        provider.access_token = effective_access_token
+        provider.client_id = client_id.strip()
         provider.api_key = api_key
         provider.api_url = api_url
         provider.priority = priority
@@ -1207,6 +1227,22 @@ async def save_provider(
             import json
 
             existing_cfg = provider.simkl_config
+            # If user manually replaced an existing token with a different one, best-effort revoke old token
+            if (
+                old_access_token
+                and effective_access_token
+                and effective_access_token != old_access_token
+            ):
+                tok_to_revoke = old_refresh_token or old_access_token
+                if (
+                    tok_to_revoke
+                    and tok_to_revoke != refresh_token.strip()
+                    and tok_to_revoke != effective_access_token
+                ):
+                    await simkl.revoke_token(
+                        old_client_id or client_id.strip(), tok_to_revoke
+                    )
+
             existing_cfg["sync_interval_minutes"] = max(0, int(sync_interval_minutes))
             existing_cfg["sync_movies"] = (
                 bool(sync_movies)
@@ -1223,6 +1259,27 @@ async def save_provider(
                 if sync_anime is not None
                 else bool(enable_anime or existing_cfg.get("sync_anime", True))
             )
+            existing_cfg["client_id"] = client_id.strip()
+            existing_cfg["access_token"] = effective_access_token
+
+            if refresh_token.strip():
+                existing_cfg["refresh_token"] = refresh_token.strip()
+            elif effective_access_token == old_access_token and old_refresh_token:
+                existing_cfg["refresh_token"] = old_refresh_token
+            elif not effective_access_token or (
+                old_access_token and effective_access_token != old_access_token
+            ):
+                existing_cfg["refresh_token"] = None
+
+            if token_expires_at.strip():
+                existing_cfg["token_expires_at"] = token_expires_at.strip()
+            elif effective_access_token == old_access_token and existing_cfg.get(
+                "token_expires_at"
+            ):
+                pass
+            elif not existing_cfg.get("refresh_token"):
+                existing_cfg["token_expires_at"] = None
+
             provider.config_json = json.dumps(existing_cfg)
 
         await session.flush()  # get ID
@@ -1272,10 +1329,24 @@ async def toggle_provider_active(provider_id: int) -> HTMLResponse:
 @app.delete("/settings/provider/{provider_id}", response_class=HTMLResponse)
 async def delete_provider(provider_id: int) -> HTMLResponse:
     from app.db.models import Provider
+    from app.services import simkl
 
     async with async_session_factory() as session:
         provider = await session.get(Provider, provider_id)
         if provider:
+            if (provider.type or "").lower() == "simkl" or (
+                provider.name or ""
+            ).lower() == "simkl":
+                cfg = provider.simkl_config
+                cid = str(provider.client_id or cfg.get("client_id") or "").strip()
+                tok = str(
+                    cfg.get("refresh_token")
+                    or provider.access_token
+                    or cfg.get("access_token")
+                    or ""
+                ).strip()
+                if cid and tok:
+                    await simkl.revoke_token(cid, tok)
             await session.delete(provider)
             await session.commit()
     return HTMLResponse(
@@ -1533,72 +1604,188 @@ async def save_notification_settings(request: Request) -> Response:
     return JSONResponse({"ok": True})
 
 
-@app.post("/simkl/auth/start")
-async def start_simkl_auth(client_id: str = Form(...)):
-    """Start the Simkl PIN flow."""
-    from app.services import simkl
-
-    try:
-        data = await simkl.request_pin(client_id)
-    except Exception as e:
-        return HTMLResponse(
-            content=f'<div class="text-red-500">Error requesting PIN: {e}</div>'
-        )
-
-    if "user_code" not in data:
-        return HTMLResponse(
-            content='<div class="text-red-500">Invalid response from Simkl</div>'
-        )
-
-    user_code = data["user_code"]
-    verification_uri = data.get("verification_uri", "https://simkl.com/pin")
-
-    html = f'''
-    <div class="bg-[#1e1e24] border border-[#d40060] rounded p-4 text-center mt-4">
-        <h4 class="text-white font-bold mb-2">Simkl Device Authorization</h4>
-        <p class="text-[#a1a1aa] text-sm mb-4">Go to <a href="{verification_uri}" target="_blank" class="text-[#d40060] hover:underline font-bold">{verification_uri}</a> and enter the code below:</p>
-        <div class="text-3xl font-mono text-[#d40060] tracking-widest mb-4">{user_code}</div>
-        
-        <div id="simkl-poll-status" hx-get="/simkl/auth/poll?client_id={client_id}&user_code={user_code}" hx-trigger="every 5s" class="text-sm text-yellow-500 animate-pulse">
-            Waiting for authorization...
+def _render_simkl_device_card(auth_session: dict[str, Any]) -> str:
+    """Render the HTMX RFC 8628 Device Authorization card without exposing device_code."""
+    session_id = auth_session["session_id"]
+    user_code = auth_session["user_code"]
+    verification_uri = auth_session.get("verification_uri", "https://simkl.com/pin")
+    verification_uri_complete = auth_session.get(
+        "verification_uri_complete", f"{verification_uri}?user_code={user_code}"
+    )
+    interval = int(auth_session.get("interval", 5) or 5)
+    return f"""
+    <div id="simkl-poll-status" hx-get="/simkl/auth/poll?session_id={session_id}" hx-trigger="every {interval}s" hx-swap="outerHTML" class="bg-[#111115] border border-[#d40060]/60 rounded-xl p-5 text-center mt-3 space-y-3">
+        <h4 class="text-white font-bold text-sm">Simkl AUTH V2 Device Authorization</h4>
+        <p class="text-[#a1a1aa] text-xs">Click the button below or visit <a href="{verification_uri}" target="_blank" rel="noopener noreferrer" class="text-[#d40060] hover:underline font-semibold">{verification_uri}</a> and confirm your 8-character code:</p>
+        <div class="text-2xl font-mono font-bold text-[#d40060] tracking-widest bg-[#1e1e24] border border-[#3f3f46] rounded-lg py-2.5 px-4 inline-block">{user_code}</div>
+        <div>
+            <a href="{verification_uri_complete}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-2 px-4 py-2 bg-[#d40060] hover:bg-[#a3004a] text-white rounded-lg text-xs font-bold transition-colors shadow-lg shadow-[#d40060]/20">
+                Open Simkl &amp; Authorize ({user_code})
+            </a>
+        </div>
+        <div class="text-xs text-amber-400 animate-pulse pt-1">
+            Waiting for authorization on Simkl (polling every {interval}s)...
         </div>
     </div>
-    '''
-    return HTMLResponse(content=html)
+    """
+
+
+@app.post("/simkl/auth/pin")
+@app.post("/simkl/auth/start")
+async def start_simkl_auth(
+    client_id: str = Form(""),
+    provider_id: str | None = Form(None),
+) -> HTMLResponse:
+    """Start the Simkl AUTH V2 RFC 8628 Device Authorization Flow."""
+    from app.services import simkl
+
+    clean_client_id = (client_id or "").strip()
+    if not clean_client_id:
+        return HTMLResponse(
+            content='<div class="p-3 bg-amber-900/30 border border-amber-500/40 rounded-lg text-amber-200 text-xs mt-2">Please enter your Simkl V2 Client ID first.</div>'
+        )
+
+    try:
+        data = await simkl.request_device_code(clean_client_id, scope="media:read")
+    except simkl.SimklOAuthError as e:
+        if e.status_code in (401, 412) or e.error in (
+            "invalid_client",
+            "client_id_failed",
+        ):
+            return HTMLResponse(
+                content=(
+                    '<div class="p-4 bg-red-900/30 border border-red-500/40 rounded-xl text-red-200 text-xs mt-2 space-y-1.5">'
+                    '<div class="font-bold text-red-300">Simkl AUTH V2 Client ID Rejected ('
+                    f"{e.status_code} {e.error})</div>"
+                    "<p>Simkl AUTH V2 Device Flow requires a public client application. Please register or update your app at "
+                    '<a href="https://simkl.com/settings/developer/" target="_blank" rel="noopener noreferrer" class="underline font-semibold text-white">simkl.com/settings/developer</a> '
+                    "with <strong>Application Type</strong> set to <strong>TV, devices &amp; command line</strong> or "
+                    "<strong>Mobile, desktop &amp; browser apps</strong>.</p>"
+                    "</div>"
+                )
+            )
+        return HTMLResponse(
+            content=f'<div class="p-3 bg-red-900/30 border border-red-500/40 rounded-lg text-red-300 text-xs mt-2">Error requesting PIN: {e}</div>'
+        )
+    except Exception as e:
+        return HTMLResponse(
+            content=f'<div class="p-3 bg-red-900/30 border border-red-500/40 rounded-lg text-red-300 text-xs mt-2">Error requesting PIN: {e}</div>'
+        )
+
+    if not data.get("user_code") or not data.get("device_code"):
+        return HTMLResponse(
+            content='<div class="p-3 bg-red-900/30 border border-red-500/40 rounded-lg text-red-300 text-xs mt-2">Invalid device authorization response from Simkl.</div>'
+        )
+
+    prov_id_int = (
+        int(provider_id) if provider_id and str(provider_id).isdigit() else None
+    )
+    auth_session = simkl.create_device_auth_session(
+        clean_client_id, data, provider_id=prov_id_int
+    )
+    return HTMLResponse(content=_render_simkl_device_card(auth_session))
 
 
 @app.get("/simkl/auth/poll")
-async def poll_simkl_auth(client_id: str, user_code: str):
-    """Poll Simkl for the access token."""
+async def poll_simkl_auth(session_id: str = "") -> HTMLResponse:
+    """Poll Simkl AUTH V2 token endpoint using server-side session_id without exposing device_code."""
+    import json
+
+    from sqlalchemy import select
+
+    from app.db.models import Provider
     from app.services import simkl
 
+    auth_session = simkl.get_device_auth_session(session_id)
+    if auth_session is None:
+        return HTMLResponse(
+            content='<div class="p-3 bg-amber-900/30 border border-amber-500/40 rounded-lg text-amber-200 text-xs mt-2">Expired PIN — please click Get PIN &amp; Connect again.</div>'
+        )
+
     try:
-        data = await simkl.check_pin(client_id, user_code)
+        token_data = await simkl.poll_device_token(
+            auth_session["client_id"], auth_session["device_code"]
+        )
+    except simkl.SimklOAuthError as e:
+        if e.error == "authorization_pending":
+            return HTMLResponse(content=_render_simkl_device_card(auth_session))
+        if e.error == "slow_down":
+            auth_session["interval"] = int(auth_session.get("interval", 5) or 5) + 5
+            return HTMLResponse(content=_render_simkl_device_card(auth_session))
+        simkl.pop_device_auth_session(session_id)
+        if e.error in ("expired_token", "access_denied"):
+            return HTMLResponse(
+                content=f'<div class="p-3 bg-amber-900/30 border border-amber-500/40 rounded-lg text-amber-200 text-xs mt-2">Simkl authorization ended ({e.error}). Please click Get PIN &amp; Connect to try again.</div>'
+            )
+        return HTMLResponse(
+            content=f'<div class="p-3 bg-red-900/30 border border-red-500/40 rounded-lg text-red-300 text-xs mt-2">Error polling Simkl status: {e}</div>'
+        )
     except Exception as e:
+        simkl.pop_device_auth_session(session_id)
         return HTMLResponse(
-            content=f'<div class="text-red-500">Error polling status: {e}</div>'
+            content=f'<div class="p-3 bg-red-900/30 border border-red-500/40 rounded-lg text-red-300 text-xs mt-2">Error polling status: {e}</div>'
         )
 
-    if data.get("result") == "OK" and "access_token" in data:
-        # Success! Fill the access token field via JS
-        access_token = data["access_token"]
-        return HTMLResponse(
-            content=f'''
-            <div class="text-green-500 font-bold mb-4">Successfully authorized!</div>
-            <script>
-                document.getElementById('access_token').value = "{access_token}";
-                document.getElementById('simkl-auth-container-modal').innerHTML = '';
-            </script>
-        '''
-        )
+    simkl.pop_device_auth_session(session_id)
+    client_id = str(auth_session["client_id"])
+    access_token = str(token_data.get("access_token") or "")
+    refresh_token = str(token_data.get("refresh_token") or "")
+    token_expires_at = str(token_data.get("token_expires_at") or "")
+    target_provider_id = auth_session.get("provider_id")
 
-    # Still pending
+    # Persist to existing Simkl Provider row in SQLite if present, and revoke old token best-effort
+    async with async_session_factory() as session:
+        provider: Provider | None = None
+        if target_provider_id:
+            provider = await session.get(Provider, int(target_provider_id))
+        if provider is None:
+            stmt = select(Provider).where(Provider.type == "simkl")
+            provider = (await session.execute(stmt)).scalars().first()
+
+        if provider is not None:
+            old_cfg = provider.simkl_config
+            old_cid = str(
+                provider.client_id or old_cfg.get("client_id") or client_id
+            ).strip()
+            old_tok = str(
+                old_cfg.get("refresh_token")
+                or provider.access_token
+                or old_cfg.get("access_token")
+                or ""
+            ).strip()
+            if old_tok and old_tok not in (access_token, refresh_token):
+                await simkl.revoke_token(old_cid, old_tok)
+
+            provider.client_id = client_id
+            provider.access_token = access_token
+            old_cfg["client_id"] = client_id
+            old_cfg["access_token"] = access_token
+            old_cfg["refresh_token"] = refresh_token
+            old_cfg["token_expires_at"] = token_expires_at
+            provider.config_json = json.dumps(old_cfg)
+            await session.commit()
+
     return HTMLResponse(
         content=f"""
-        <div id="simkl-poll-status" hx-get="/simkl/auth/poll?client_id={client_id}&user_code={user_code}" hx-trigger="every 5s" hx-swap="outerHTML" class="text-sm text-yellow-500 animate-pulse">
-            Waiting for authorization...
+        <div class="p-3 bg-emerald-900/30 border border-emerald-500/40 rounded-lg text-emerald-300 text-xs font-bold mt-2 flex items-center justify-between">
+            <span>Connected · AUTH V2 (Auto-Refresh Enabled)</span>
         </div>
-    """
+        <script>
+            (function() {{
+                const atInput = document.getElementById('access_token') || document.getElementById('simkl-access-token');
+                if (atInput) atInput.value = "{access_token}";
+                const rtInput = document.getElementById('simkl-refresh-token');
+                if (rtInput) rtInput.value = "{refresh_token}";
+                const expInput = document.getElementById('simkl-token-expires-at');
+                if (expInput) expInput.value = "{token_expires_at}";
+                const badge = document.getElementById('simkl-modal-status-badge');
+                if (badge) {{
+                    badge.textContent = "Connected · AUTH V2 (Auto-Refresh)";
+                    badge.className = "px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30";
+                }}
+            }})();
+        </script>
+        """
     )
 
 
@@ -1618,6 +1805,7 @@ async def run_system_check(request: Request):
 
     from app.config import DEFAULT_USER_AGENT
     from app.db.models import NotificationChannel, Provider, SystemSettings
+    from app.services import simkl
 
     results = {}
     async with async_session_factory() as session:
@@ -1742,17 +1930,27 @@ async def run_system_check(request: Request):
             else:
                 results["torbox"] = {"ok": False, "msg": "API key missing"}
 
-            # 4. Simkl
+            # 4. Simkl (with AUTH V2 proactive & reactive refresh)
             simkl_p = get_prov("simkl")
-            if simkl_p and simkl_p.access_token and simkl_p.client_id:
+            if (
+                simkl_p
+                and (simkl_p.client_id or simkl_p.simkl_config.get("client_id"))
+                and (
+                    simkl_p.access_token
+                    or simkl_p.simkl_config.get("access_token")
+                    or simkl_p.simkl_config.get("refresh_token")
+                )
+            ):
                 try:
-                    r = await client.get(
-                        "https://api.simkl.com/users/settings",
-                        headers={
-                            "Authorization": f"Bearer {simkl_p.access_token}",
-                            "simkl-api-key": simkl_p.client_id,
-                        },
-                    )
+                    cid, tok = await simkl.ensure_valid_simkl_token(session, simkl_p)
+                    r = await simkl.check_simkl_user_settings(cid, tok)
+                    if r.status_code == 401 and simkl_p.simkl_config.get(
+                        "refresh_token"
+                    ):
+                        cid, tok = await simkl.refresh_provider_simkl_token(
+                            session, simkl_p
+                        )
+                        r = await simkl.check_simkl_user_settings(cid, tok)
                     results["simkl"] = {
                         "ok": r.status_code == 200,
                         "msg": "Success"
