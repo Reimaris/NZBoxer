@@ -335,7 +335,11 @@ async def dashboard(request: Request, background_tasks: BackgroundTasks):
         active_pushes = await get_active_pushes(session)
         downloading_count = await count_downloading_entities(session)
 
-        # Card 6: Manual Search defaults
+        # Card 6: Manual Search defaults & Search Presets
+        from app.services.preset_service import list_presets
+
+        presets = await list_presets(session)
+        presets_payload = [p.to_dict() for p in presets]
         db_settings = (
             (
                 await session.execute(
@@ -376,6 +380,8 @@ async def dashboard(request: Request, background_tasks: BackgroundTasks):
             "active_pushes_count": len(active_pushes),
             "downloading_count": downloading_count,
             "poller_awake": transfer_poller.is_awake,
+            "presets": presets,
+            "presets_payload": presets_payload,
             "defaults": defaults,
         },
     )
@@ -441,12 +447,26 @@ async def manual_search(
                 db_settings.scoring_settings = current
                 await session.commit()
 
+    clean_query = query.strip()
+    clean_imdb = imdb_id.strip()
+    clean_tmdb = tmdb_id.strip()
+    clean_tvdb = tvdb_id.strip()
+    if not clean_query and not clean_imdb and not clean_tmdb and not clean_tvdb:
+        return templates.TemplateResponse(
+            request=request,
+            name="partials/search_results.html",
+            context={
+                "results": [],
+                "error_message": "Please enter a search query or at least one External ID (IMDb, TMDb, or TVDb).",
+            },
+        )
+
     cat_id = None
     if category == "movie":
         cat_id = 2000
     elif category == "series":
         cat_id = 5000
-    elif category == "anime":
+    elif category in ("anime", "anime-movie"):
         cat_id = 5070
 
     # Convert numeric fields
@@ -454,19 +474,22 @@ async def manual_search(
     ep_val = None
     if episode:
         ep_val = int(episode) if episode.isdigit() else episode
-    tmdb_val = int(tmdb_id) if tmdb_id and tmdb_id.isdigit() else None
-    tvdb_val = int(tvdb_id) if tvdb_id and tvdb_id.isdigit() else None
-    imdb_val = imdb_id if imdb_id else None
+    tmdb_val = int(clean_tmdb) if clean_tmdb and clean_tmdb.isdigit() else None
+    tvdb_val = int(clean_tvdb) if clean_tvdb and clean_tvdb.isdigit() else None
+    imdb_val = clean_imdb if clean_imdb else None
 
     # Call the right function based on inputs
     try:
         if category == "movie":
             raw_results = await treasure_maps.search_movie(
-                title=query, category=cat_id, tmdb_id=tmdb_val, imdb_id=imdb_val
+                title=clean_query or None,
+                category=cat_id,
+                tmdb_id=tmdb_val,
+                imdb_id=imdb_val,
             )
         elif category == "series":
             raw_results = await treasure_maps.search_show(
-                title=query,
+                title=clean_query or None,
                 category=cat_id,
                 season=season_val,
                 ep=ep_val,
@@ -476,7 +499,7 @@ async def manual_search(
             )
         else:
             raw_results = await treasure_maps.search_raw(
-                query=query,
+                query=clean_query or None,
                 category=cat_id,
                 season=season_val,
                 ep=ep_val,
@@ -495,37 +518,78 @@ async def manual_search(
     fallback_results = []
     mismatched_results = []
 
-    def is_match(filter_val: str, parsed_val: str | None) -> bool:
-        if filter_val == "any":
+    def is_match(filter_val: str, parsed_val: str | None, orig_title: str = "") -> bool:
+        fv = (filter_val or "any").lower()
+        if fv == "any":
             return True
-        if not parsed_val:
-            return False
-        return filter_val.lower() in parsed_val.lower()
+        combined = f"{parsed_val or ''} {orig_title}".lower()
+        if fv == "sdr":
+            return not any(k in combined for k in ["hdr", "dv", "dolby vision", "dovi"])
+        if fv in ("hdr10plus", "hdr10+"):
+            return any(k in combined for k in ["hdr10plus", "hdr10+"])
+        if fv in ("dv", "dolby vision"):
+            return any(k in combined for k in ["dv", "dolby vision", "dovi"])
+        if fv in ("hevc", "h265", "x265"):
+            return any(k in combined for k in ["hevc", "h265", "x265", "h.265"])
+        if fv in ("x264", "h264", "avc"):
+            return any(k in combined for k in ["x264", "h264", "avc", "h.264"])
+        if fv in ("bluray", "blu-ray"):
+            return any(k in combined for k in ["bluray", "blu-ray", "bdrip", "brrip"])
+        if fv in ("web", "web-dl", "webrip"):
+            return any(k in combined for k in ["web", "web-dl", "webdl", "webrip"])
+        return fv in combined
 
-    def check_audio_tier(filter_val: str, parsed_codec: str | None) -> bool:
-        if filter_val == "any":
+    def check_audio_tier(
+        filter_val: str, parsed_codec: str | None, orig_title: str = ""
+    ) -> bool:
+        fv = (filter_val or "any").lower()
+        if fv == "any":
             return True
-        if not parsed_codec:
-            return False
-        pc = parsed_codec.lower()
-        if filter_val == "tier1" and any(x in pc for x in ["truehd", "dts:x", "auro"]):
+        pc = f"{parsed_codec or ''} {orig_title}".lower()
+        if fv == "lossless" and any(
+            x in pc
+            for x in [
+                "truehd",
+                "dts:x",
+                "dts-x",
+                "dtsx",
+                "dts-hd",
+                "dtshd",
+                "lpcm",
+                "pcm",
+                "flac",
+                "atmos",
+            ]
+        ):
             return True
-        if filter_val == "tier2" and any(x in pc for x in ["dts-hd", "lpcm", "flac"]):
+        if fv == "dts" and "dts" in pc:
             return True
-        if filter_val == "tier3" and "atmos" in pc and ("eac3" in pc or "dd+" in pc):
+        if fv in ("ddp", "dd+", "eac3", "ac3") and any(
+            x in pc for x in ["eac3", "e-ac-3", "dd+", "ddp", "ac3", "dolby"]
+        ):
             return True
-        if filter_val == "tier4" and any(
+        if fv == "aac" and any(x in pc for x in ["aac", "opus", "mp3"]):
+            return True
+        if fv == "tier1" and any(x in pc for x in ["truehd", "dts:x", "auro"]):
+            return True
+        if fv == "tier2" and any(x in pc for x in ["dts-hd", "lpcm", "flac"]):
+            return True
+        if fv == "tier3" and "atmos" in pc and ("eac3" in pc or "dd+" in pc):
+            return True
+        if fv == "tier4" and any(
             x in pc for x in ["eac3", "dts", "ac3", "dolby digital"]
         ):
             return True
-        if filter_val == "tier5" and any(x in pc for x in ["aac", "opus", "mp3"]):
+        if fv == "tier5" and any(x in pc for x in ["aac", "opus", "mp3"]):
             return True
-        return filter_val == "tier1" and "truehd atmos" in pc
+        if fv == "tier1" and "truehd atmos" in pc:
+            return True
+        return fv in pc
 
     prim_lang = (
         primary_language
-        if primary_language != "any"
-        else (language if language != "any" else None)
+        if primary_language not in ("any", "")
+        else (language if language not in ("any", "") else None)
     )
     fall_lang = (
         fallback_language if fallback_language not in ("none", "any", "") else None
@@ -543,17 +607,17 @@ async def manual_search(
             if parsed.episode is not None:
                 continue
 
-        if not is_match(resolution, parsed.resolution):
+        if not is_match(resolution, parsed.resolution, title):
             continue
-        if not is_match(source, parsed.source):
+        if not is_match(source, parsed.source, title):
             continue
-        if not is_match(hdr, parsed.hdr):
+        if not is_match(hdr, parsed.hdr, title):
             continue
-        if not is_match(video_codec, parsed.video_codec):
+        if not is_match(video_codec, parsed.video_codec, title):
             continue
-        if not is_match(audio_channels, parsed.audio_channels):
+        if not is_match(audio_channels, parsed.audio_channels, title):
             continue
-        if not check_audio_tier(audio_tier, parsed.audio_codec):
+        if not check_audio_tier(audio_tier, parsed.audio_codec, title):
             continue
 
         sr = score_release(

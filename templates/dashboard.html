@@ -4,6 +4,9 @@
 <script id="video-items-payload" type="application/json">
 {{ items_payload | tojson | safe }}
 </script>
+<script id="search-presets-payload" type="application/json">
+{{ (presets_payload | default([])) | tojson | safe }}
+</script>
 
 <script>
 function initVideoDashboard() {
@@ -15,6 +18,16 @@ function initVideoDashboard() {
         }
     } catch (e) {
         console.error('Failed to parse video items payload:', e);
+    }
+
+    let rawPresets = [];
+    try {
+        const pel = document.getElementById('search-presets-payload');
+        if (pel && pel.textContent) {
+            rawPresets = JSON.parse(pel.textContent);
+        }
+    } catch (e) {
+        console.error('Failed to parse search presets payload:', e);
     }
 
     const initialParam = new URLSearchParams(window.location.search).get('tab') || localStorage.getItem('video_dashboard_tab') || 'movie';
@@ -32,12 +45,50 @@ function initVideoDashboard() {
         historySortCol: 'archived-at',
         historySortDir: 'desc',
         items: rawItems,
+        presets: rawPresets,
+        manualPresetId: '',
+        manualCategory: {{ (defaults.get('category', 'any') if defaults is defined else 'any') | tojson }},
+        manualPrimaryLanguage: {{ (defaults.get('primary_language', 'any') if defaults is defined else 'any') | tojson }},
+        manualFallbackLanguage: {{ (defaults.get('fallback_language', 'none') if defaults is defined else 'none') | tojson }},
+        manualResolution: {{ (defaults.get('resolution', 'any') if defaults is defined else 'any') | tojson }},
+        manualSource: {{ (defaults.get('source', 'any') if defaults is defined else 'any') | tojson }},
+        manualVideoCodec: {{ (defaults.get('video_codec', 'any') if defaults is defined else 'any') | tojson }},
+        manualHdr: {{ (defaults.get('hdr', 'any') if defaults is defined else 'any') | tojson }},
+        manualAudioTier: {{ (defaults.get('audio_tier', 'any') if defaults is defined else 'any') | tojson }},
+        manualAudioChannels: {{ (defaults.get('audio_channels', 'any') if defaults is defined else 'any') | tojson }},
+        manualLimit: {{ (defaults.get('limit', 10) if defaults is defined else 10) | tojson }},
         init() {
             this.applySort();
             this.applyHistorySort();
             const url = new URL(window.location);
             url.searchParams.set('tab', this.activeCard);
             window.history.replaceState({}, '', url);
+        },
+        applySearchPreset(presetId) {
+            if (!presetId) return;
+            const p = this.presets.find(item => String(item.id) === String(presetId));
+            if (!p) return;
+            this.manualPrimaryLanguage = p.primary_language || 'any';
+            this.manualFallbackLanguage = p.fallback_language || 'none';
+            const cfg = p.custom_config || {};
+            if (p.video_quality_mode === 'best') {
+                this.manualResolution = 'any';
+                this.manualSource = 'any';
+                this.manualVideoCodec = 'any';
+                this.manualHdr = 'any';
+            } else {
+                this.manualResolution = (Array.isArray(cfg.resolutions) && cfg.resolutions.length) ? cfg.resolutions[0] : (cfg.resolution || 'any');
+                this.manualSource = (Array.isArray(cfg.sources) && cfg.sources.length) ? cfg.sources[0] : (cfg.source || 'any');
+                this.manualVideoCodec = (Array.isArray(cfg.video_codecs) && cfg.video_codecs.length) ? cfg.video_codecs[0] : (cfg.video_codec || 'any');
+                this.manualHdr = (Array.isArray(cfg.hdr_formats) && cfg.hdr_formats.length) ? cfg.hdr_formats[0] : (cfg.hdr || 'any');
+            }
+            if (p.audio_quality_mode === 'best') {
+                this.manualAudioTier = 'any';
+                this.manualAudioChannels = 'any';
+            } else {
+                this.manualAudioTier = (Array.isArray(cfg.audio_formats) && cfg.audio_formats.length) ? cfg.audio_formats[0] : (cfg.audio_tier || 'any');
+                this.manualAudioChannels = (Array.isArray(cfg.audio_channels) && cfg.audio_channels.length) ? cfg.audio_channels[0] : (cfg.audio_channel || 'any');
+            }
         },
         setCard(cardName) {
             this.activeCard = cardName;
@@ -804,17 +855,41 @@ document.addEventListener('alpine:init', () => {
          class="bg-[#24242b] border border-[#3f3f46] rounded-lg shadow overflow-hidden p-5">
         <div class="mb-4 border-b border-[#3f3f46] pb-3">
             <h3 class="text-base font-bold text-white uppercase tracking-wider">Ad-Hoc Manual Search</h3>
-            <p class="text-xs text-[#a1a1aa] mt-0.5">Query configured Newznab indexers directly for any title outside your Simkl watchlist.</p>
+            <p class="text-xs text-[#a1a1aa] mt-0.5">Query configured Newznab indexers directly for any title or External ID outside your Simkl watchlist.</p>
         </div>
 
         <div class="flex flex-col lg:flex-row gap-6">
-            <div class="w-full lg:w-[320px] shrink-0">
-                <form hx-post="/api/search/manual" hx-target="#search-results" hx-indicator="#search-loading" class="bg-[#1e1e24] border border-[#3f3f46] rounded-xl p-4 flex flex-col gap-3">
+            <div class="w-full lg:w-[360px] shrink-0">
+                <form hx-post="/api/search/manual" hx-target="#search-results" hx-indicator="#search-loading" class="bg-[#1e1e24] border border-[#3f3f46] rounded-xl p-4 flex flex-col gap-3.5">
+                    <!-- 1. Search Preset Quick-Fill Selector -->
+                    <div class="pb-3 border-b border-[#3f3f46]">
+                        <label class="block text-xs font-semibold text-[#d40060] uppercase tracking-wider mb-1">Quick-Fill Search Preset</label>
+                        <select x-model="manualPresetId"
+                                @change="applySearchPreset($event.target.value)"
+                                class="w-full bg-[#24242b] border border-[#3f3f46] rounded-md px-3 py-2 text-white text-sm focus:outline-none focus:border-[#d40060]">
+                            <option value="">-- Custom / Saved Defaults --</option>
+                            {% for preset in presets | default([]) %}
+                            <option value="{{ preset.id }}">{{ preset.name }}{% if preset.is_default %} (Default){% endif %}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <!-- 2. Search Query, Category, Season & Episode -->
                     <div>
                         <label class="block text-xs font-semibold text-[#a1a1aa] uppercase tracking-wider mb-1">Search Query</label>
-                        <input type="text" name="query" value="{{ defaults.get('query', '') if defaults is defined else '' }}" class="w-full bg-[#24242b] border border-[#3f3f46] rounded-md px-3 py-2 text-white text-sm focus:outline-none focus:border-[#d40060]" placeholder="Movie or Series title...">
+                        <input type="text" name="query" value="{{ defaults.get('query', '') if defaults is defined else '' }}" class="w-full bg-[#24242b] border border-[#3f3f46] rounded-md px-3 py-2 text-white text-sm focus:outline-none focus:border-[#d40060]" placeholder="Movie or Series title (optional with IDs)...">
                     </div>
-                    <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-semibold text-[#a1a1aa] uppercase tracking-wider mb-1">Category</label>
+                        <select name="category" x-model="manualCategory" class="w-full bg-[#24242b] border border-[#3f3f46] rounded-md px-3 py-2 text-white text-sm focus:outline-none focus:border-[#d40060]">
+                            <option value="any">Any</option>
+                            <option value="movie">Movie</option>
+                            <option value="series">Series</option>
+                            <option value="anime">Anime</option>
+                            <option value="anime-movie">Anime Movie</option>
+                        </select>
+                    </div>
+                    <div class="grid grid-cols-2 gap-3" x-show="['any', 'series', 'anime'].includes(manualCategory)">
                         <div>
                             <label class="block text-xs font-semibold text-[#a1a1aa] uppercase tracking-wider mb-1">Season</label>
                             <input type="number" name="season" min="1" class="w-full bg-[#24242b] border border-[#3f3f46] rounded-md px-3 py-2 text-white text-sm focus:outline-none focus:border-[#d40060]" placeholder="e.g. 1">
@@ -824,15 +899,161 @@ document.addEventListener('alpine:init', () => {
                             <input type="text" name="episode" class="w-full bg-[#24242b] border border-[#3f3f46] rounded-md px-3 py-2 text-white text-sm focus:outline-none focus:border-[#d40060]" placeholder="e.g. 1">
                         </div>
                     </div>
-                    <div>
-                        <label class="block text-xs font-semibold text-[#a1a1aa] uppercase tracking-wider mb-1">Category</label>
-                        <select name="category" class="w-full bg-[#24242b] border border-[#3f3f46] rounded-md px-3 py-2 text-white text-sm focus:outline-none focus:border-[#d40060]">
-                            <option value="any">Any</option>
-                            <option value="movie">Movie</option>
-                            <option value="series">Series</option>
-                            <option value="anime">Anime</option>
-                        </select>
+
+                    <!-- 3. External IDs (Optional) -->
+                    <div class="pt-2 border-t border-[#3f3f46] space-y-2.5">
+                        <div class="text-[11px] font-bold text-gray-300 uppercase tracking-wider">External IDs (Optional)</div>
+                        <div class="grid grid-cols-3 gap-2">
+                            <div>
+                                <label class="block text-[10px] font-semibold text-[#a1a1aa] uppercase mb-1">IMDb ID</label>
+                                <input type="text" name="imdb_id" class="w-full bg-[#24242b] border border-[#3f3f46] rounded-md px-2.5 py-1.5 text-white text-xs focus:outline-none focus:border-[#d40060]" placeholder="tt123456">
+                            </div>
+                            <div>
+                                <label class="block text-[10px] font-semibold text-[#a1a1aa] uppercase mb-1">TMDb ID</label>
+                                <input type="text" name="tmdb_id" class="w-full bg-[#24242b] border border-[#3f3f46] rounded-md px-2.5 py-1.5 text-white text-xs focus:outline-none focus:border-[#d40060]" placeholder="e.g. 603">
+                            </div>
+                            <div>
+                                <label class="block text-[10px] font-semibold text-[#a1a1aa] uppercase mb-1">TVDb ID</label>
+                                <input type="text" name="tvdb_id" class="w-full bg-[#24242b] border border-[#3f3f46] rounded-md px-2.5 py-1.5 text-white text-xs focus:outline-none focus:border-[#d40060]" placeholder="e.g. 81189">
+                            </div>
+                        </div>
                     </div>
+
+                    <!-- 4. Language Preferences -->
+                    <div class="pt-2 border-t border-[#3f3f46] space-y-2.5">
+                        <div class="text-[11px] font-bold text-gray-300 uppercase tracking-wider">Language Preferences</div>
+                        <div class="grid grid-cols-2 gap-2.5">
+                            <div>
+                                <label class="block text-[10px] font-semibold text-[#a1a1aa] uppercase mb-1">Primary Language</label>
+                                <select name="primary_language" x-model="manualPrimaryLanguage" class="w-full bg-[#24242b] border border-[#3f3f46] rounded-md px-2.5 py-1.5 text-white text-xs focus:outline-none focus:border-[#d40060]">
+                                    <option value="any">Any</option>
+                                    <option value="en">English (en)</option>
+                                    <option value="de">German (de)</option>
+                                    <option value="ja">Japanese (ja)</option>
+                                    <option value="fr">French (fr)</option>
+                                    <option value="es">Spanish (es)</option>
+                                    <option value="it">Italian (it)</option>
+                                    <option value="nl">Dutch (nl)</option>
+                                    <option value="pl">Polish (pl)</option>
+                                    <option value="pt">Portuguese (pt)</option>
+                                    <option value="ru">Russian (ru)</option>
+                                    <option value="ko">Korean (ko)</option>
+                                    <option value="zh">Chinese (zh)</option>
+                                    <option value="multi">Multi</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-[10px] font-semibold text-[#a1a1aa] uppercase mb-1">Fallback Language</label>
+                                <select name="fallback_language" x-model="manualFallbackLanguage" class="w-full bg-[#24242b] border border-[#3f3f46] rounded-md px-2.5 py-1.5 text-white text-xs focus:outline-none focus:border-[#d40060]">
+                                    <option value="none">None (Strict Primary Only)</option>
+                                    <option value="en">English (en)</option>
+                                    <option value="de">German (de)</option>
+                                    <option value="ja">Japanese (ja)</option>
+                                    <option value="fr">French (fr)</option>
+                                    <option value="es">Spanish (es)</option>
+                                    <option value="it">Italian (it)</option>
+                                    <option value="nl">Dutch (nl)</option>
+                                    <option value="pl">Polish (pl)</option>
+                                    <option value="pt">Portuguese (pt)</option>
+                                    <option value="ru">Russian (ru)</option>
+                                    <option value="ko">Korean (ko)</option>
+                                    <option value="zh">Chinese (zh)</option>
+                                    <option value="multi">Multi</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 5. Video Requirements -->
+                    <div class="pt-2 border-t border-[#3f3f46] space-y-2.5">
+                        <div class="text-[11px] font-bold text-gray-300 uppercase tracking-wider">Video Requirements</div>
+                        <div class="grid grid-cols-2 gap-2.5">
+                            <div>
+                                <label class="block text-[10px] font-semibold text-[#a1a1aa] uppercase mb-1">Resolution</label>
+                                <select name="resolution" x-model="manualResolution" class="w-full bg-[#24242b] border border-[#3f3f46] rounded-md px-2.5 py-1.5 text-white text-xs focus:outline-none focus:border-[#d40060]">
+                                    <option value="any">Any</option>
+                                    <option value="2160p">4K / 2160p</option>
+                                    <option value="1080p">1080p</option>
+                                    <option value="720p">720p</option>
+                                    <option value="480p">480p</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-[10px] font-semibold text-[#a1a1aa] uppercase mb-1">Source</label>
+                                <select name="source" x-model="manualSource" class="w-full bg-[#24242b] border border-[#3f3f46] rounded-md px-2.5 py-1.5 text-white text-xs focus:outline-none focus:border-[#d40060]">
+                                    <option value="any">Any</option>
+                                    <option value="remux">Remux</option>
+                                    <option value="bluray">BluRay</option>
+                                    <option value="web">WEB-DL / WEBRip</option>
+                                    <option value="hdtv">HDTV</option>
+                                    <option value="dvd">DVD</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-[10px] font-semibold text-[#a1a1aa] uppercase mb-1">Video Codec</label>
+                                <select name="video_codec" x-model="manualVideoCodec" class="w-full bg-[#24242b] border border-[#3f3f46] rounded-md px-2.5 py-1.5 text-white text-xs focus:outline-none focus:border-[#d40060]">
+                                    <option value="any">Any</option>
+                                    <option value="av1">AV1</option>
+                                    <option value="hevc">HEVC / x265</option>
+                                    <option value="x264">AVC / x264</option>
+                                    <option value="xvid">XviD</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-[10px] font-semibold text-[#a1a1aa] uppercase mb-1">HDR / Dynamic Range</label>
+                                <select name="hdr" x-model="manualHdr" class="w-full bg-[#24242b] border border-[#3f3f46] rounded-md px-2.5 py-1.5 text-white text-xs focus:outline-none focus:border-[#d40060]">
+                                    <option value="any">Any</option>
+                                    <option value="dv">Dolby Vision (DV)</option>
+                                    <option value="hdr10plus">HDR10+</option>
+                                    <option value="hdr10">HDR10</option>
+                                    <option value="sdr">SDR</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 6. Audio Requirements -->
+                    <div class="pt-2 border-t border-[#3f3f46] space-y-2.5">
+                        <div class="text-[11px] font-bold text-gray-300 uppercase tracking-wider">Audio Requirements</div>
+                        <div class="grid grid-cols-2 gap-2.5">
+                            <div>
+                                <label class="block text-[10px] font-semibold text-[#a1a1aa] uppercase mb-1">Audio Tier</label>
+                                <select name="audio_tier" x-model="manualAudioTier" class="w-full bg-[#24242b] border border-[#3f3f46] rounded-md px-2.5 py-1.5 text-white text-xs focus:outline-none focus:border-[#d40060]">
+                                    <option value="any">Any</option>
+                                    <option value="lossless">Lossless / Atmos (TrueHD, DTS:X, DTS-HD)</option>
+                                    <option value="dts">DTS</option>
+                                    <option value="ddp">DD+ / EAC3 / AC3</option>
+                                    <option value="aac">AAC / Opus / MP3</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-[10px] font-semibold text-[#a1a1aa] uppercase mb-1">Audio Channels</label>
+                                <select name="audio_channels" x-model="manualAudioChannels" class="w-full bg-[#24242b] border border-[#3f3f46] rounded-md px-2.5 py-1.5 text-white text-xs focus:outline-none focus:border-[#d40060]">
+                                    <option value="any">Any</option>
+                                    <option value="7.1">7.1</option>
+                                    <option value="5.1">5.1</option>
+                                    <option value="2.0">2.0</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 7. Results Limit & Sticky Defaults -->
+                    <div class="pt-2 border-t border-[#3f3f46] flex items-center justify-between gap-3">
+                        <div class="w-28">
+                            <label class="block text-[10px] font-semibold text-[#a1a1aa] uppercase mb-1">Results Limit</label>
+                            <select name="limit" x-model="manualLimit" class="w-full bg-[#24242b] border border-[#3f3f46] rounded-md px-2.5 py-1.5 text-white text-xs focus:outline-none focus:border-[#d40060]">
+                                <option value="10">10</option>
+                                <option value="25">25</option>
+                                <option value="50">50</option>
+                            </select>
+                        </div>
+                        <label class="flex items-center gap-2 text-xs text-gray-300 cursor-pointer select-none mt-4">
+                            <input type="checkbox" name="save_defaults" value="true" class="rounded bg-[#24242b] border-[#3f3f46] text-[#d40060] focus:ring-[#d40060]">
+                            <span>💾 Save as Default</span>
+                        </label>
+                    </div>
+
                     <button type="submit" class="w-full mt-2 bg-[#d40060] hover:bg-[#a3004a] text-white font-semibold py-2 px-4 rounded-md shadow-md transition-all flex items-center justify-center gap-2 text-sm">
                         <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
                         Execute Search
@@ -845,7 +1066,7 @@ document.addEventListener('alpine:init', () => {
                 </div>
                 <div id="search-results" class="flex flex-col gap-3">
                     <div class="p-8 text-center border-2 border-dashed border-[#3f3f46] rounded-xl text-[#a1a1aa]">
-                        <p>Enter a query and execute a search to see scored releases here.</p>
+                        <p>Enter a query or External ID and execute a search to see scored releases here.</p>
                     </div>
                 </div>
             </div>
