@@ -211,8 +211,12 @@
                                 </div>
                             </div>
                             <div class="flex items-center gap-1.5 shrink-0">
-                                <button hx-get="/settings/provider/{{ provider.id }}/edit" hx-target="#modal-container" class="p-1.5 bg-[#2a2a32] hover:bg-[#3f3f46] rounded text-[#a1a1aa] hover:text-white" title="Edit">Edit</button>
-                                <button hx-delete="/settings/provider/{{ provider.id }}" hx-confirm="Delete this provider?" class="p-1.5 bg-[#2a2a32] hover:bg-red-900/60 rounded text-[#a1a1aa] hover:text-red-400" title="Delete">Del</button>
+                                <button type="button" hx-get="/settings/provider/{{ provider.id }}/edit" hx-target="#modal-container" class="p-1.5 bg-[#2a2a32] hover:bg-[#3f3f46] border border-[#3f3f46] rounded-md text-[#a1a1aa] hover:text-white transition-colors" title="Edit provider">
+                                    <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
+                                </button>
+                                <button type="button" hx-delete="/settings/provider/{{ provider.id }}" hx-confirm="Delete this provider?" class="p-1.5 bg-transparent border border-red-800/80 text-red-500 hover:bg-red-600 hover:text-white rounded-md transition-colors" title="Delete provider">
+                                    <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                                </button>
                             </div>
                         </div>
                         {% if provider.type == 'simkl' %}
@@ -270,8 +274,12 @@
                             </div>
                         </div>
                         <div class="flex items-center gap-1.5 shrink-0">
-                            <button hx-get="/settings/provider/{{ provider.id }}/edit" hx-target="#modal-container" class="p-1.5 bg-[#2a2a32] hover:bg-[#3f3f46] rounded text-[#a1a1aa] hover:text-white">Edit</button>
-                            <button hx-delete="/settings/provider/{{ provider.id }}" hx-confirm="Delete this provider?" class="p-1.5 bg-[#2a2a32] hover:bg-red-900/60 rounded text-[#a1a1aa] hover:text-red-400">Del</button>
+                            <button type="button" hx-get="/settings/provider/{{ provider.id }}/edit" hx-target="#modal-container" class="p-1.5 bg-[#2a2a32] hover:bg-[#3f3f46] border border-[#3f3f46] rounded-md text-[#a1a1aa] hover:text-white transition-colors" title="Edit provider">
+                                <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
+                            </button>
+                            <button type="button" hx-delete="/settings/provider/{{ provider.id }}" hx-confirm="Delete this provider?" class="p-1.5 bg-transparent border border-red-800/80 text-red-500 hover:bg-red-600 hover:text-white rounded-md transition-colors" title="Delete provider">
+                                <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                            </button>
                         </div>
                     </div>
                     <div class="flex items-center justify-between gap-2 pt-3 border-t border-[#2a2a32] mt-2">
@@ -307,8 +315,12 @@
                             </div>
                         </div>
                         <div class="flex items-center gap-1.5 shrink-0">
-                            <button hx-get="/settings/provider/{{ provider.id }}/edit" hx-target="#modal-container" class="p-1.5 bg-[#2a2a32] hover:bg-[#3f3f46] rounded text-[#a1a1aa] hover:text-white">Edit</button>
-                            <button hx-delete="/settings/provider/{{ provider.id }}" hx-confirm="Delete this provider?" class="p-1.5 bg-[#2a2a32] hover:bg-red-900/60 rounded text-[#a1a1aa] hover:text-red-400">Del</button>
+                            <button type="button" hx-get="/settings/provider/{{ provider.id }}/edit" hx-target="#modal-container" class="p-1.5 bg-[#2a2a32] hover:bg-[#3f3f46] border border-[#3f3f46] rounded-md text-[#a1a1aa] hover:text-white transition-colors" title="Edit provider">
+                                <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
+                            </button>
+                            <button type="button" hx-delete="/settings/provider/{{ provider.id }}" hx-confirm="Delete this provider?" class="p-1.5 bg-transparent border border-red-800/80 text-red-500 hover:bg-red-600 hover:text-white rounded-md transition-colors" title="Delete provider">
+                                <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                            </button>
                         </div>
                     </div>
                     <div class="flex items-center justify-between gap-2 pt-3 border-t border-[#2a2a32] mt-2">
@@ -345,8 +357,12 @@
                                 </div>
                             </div>
                             <div class="flex items-center gap-1.5 shrink-0">
-                                <button hx-get="/settings/provider/{{ provider.id }}/edit" hx-target="#modal-container" class="p-1.5 bg-[#2a2a32] hover:bg-[#3f3f46] rounded text-[#a1a1aa] hover:text-white">Edit</button>
-                                <button hx-delete="/settings/provider/{{ provider.id }}" hx-confirm="Delete this indexer?" class="p-1.5 bg-[#2a2a32] hover:bg-red-900/60 rounded text-[#a1a1aa] hover:text-red-400">Del</button>
+                                <button type="button" hx-get="/settings/provider/{{ provider.id }}/edit" hx-target="#modal-container" class="p-1.5 bg-[#2a2a32] hover:bg-[#3f3f46] border border-[#3f3f46] rounded-md text-[#a1a1aa] hover:text-white transition-colors" title="Edit indexer">
+                                    <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
+                                </button>
+                                <button type="button" hx-delete="/settings/provider/{{ provider.id }}" hx-confirm="Delete this indexer?" class="p-1.5 bg-transparent border border-red-800/80 text-red-500 hover:bg-red-600 hover:text-white rounded-md transition-colors" title="Delete indexer">
+                                    <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                                </button>
                             </div>
                         </div>
                     </div>
@@ -408,8 +424,16 @@
                                         "prefer_season_packs": preset.prefer_season_packs if preset.allow_season_packs else False,
                                         "custom_config": preset.custom_config
                                     } | tojson }})'
-                                    class="px-2 py-1 text-xs rounded bg-[#2a2a32] hover:bg-[#3f3f46] text-gray-300">Edit</button>
-                            <button type="button" @click="removePreset({{ preset.id }})" class="px-2 py-1 text-xs rounded bg-[#2a2a32] hover:bg-red-900/50 text-red-400">Delete</button>
+                                    class="p-1.5 bg-[#2a2a32] hover:bg-[#3f3f46] border border-[#3f3f46] rounded-md text-[#a1a1aa] hover:text-white transition-colors"
+                                    title="Edit preset">
+                                <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
+                            </button>
+                            <button type="button"
+                                    @click="removePreset({{ preset.id }})"
+                                    class="p-1.5 bg-transparent border border-red-800/80 text-red-500 hover:bg-red-600 hover:text-white rounded-md transition-colors"
+                                    title="Delete preset">
+                                <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                            </button>
                         </div>
                     </div>
                     <div class="text-xs text-[#a1a1aa] space-y-1">
@@ -431,7 +455,9 @@
         <div x-show="presetEditorOpen" x-cloak class="bg-[#1e1e24] border border-[#3f3f46] rounded-xl p-6 space-y-5">
             <div class="flex items-center justify-between border-b border-[#2a2a32] pb-3">
                 <h3 class="text-lg font-bold text-white" x-text="editingPresetId ? 'Edit Search Preset' : 'Create Search Preset'"></h3>
-                <button type="button" @click="presetEditorOpen = false" class="text-xs text-[#a1a1aa] hover:text-white">Close</button>
+                <button type="button" @click="presetEditorOpen = false" class="p-1.5 text-[#a1a1aa] hover:text-white hover:bg-[#3f3f46]/50 rounded-lg transition-colors" title="Close">
+                    <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
             </div>
 
             <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -652,8 +678,12 @@
                                 <div class="text-xs text-[#a1a1aa] font-mono">Telegram • Chat: {{ notif.chat_id or 'N/A' }}</div>
                             </div>
                             <div class="flex items-center gap-1.5">
-                                <button type="button" hx-get="/settings/notification/{{ notif.id }}/edit" hx-target="#modal-container" class="px-2 py-1 text-xs rounded bg-[#2a2a32] text-gray-300">Edit</button>
-                                <button type="button" hx-delete="/settings/notification/{{ notif.id }}" class="px-2 py-1 text-xs rounded bg-[#2a2a32] text-red-400">Del</button>
+                                <button type="button" hx-get="/settings/notification/{{ notif.id }}/edit" hx-target="#modal-container" class="p-1.5 bg-[#2a2a32] hover:bg-[#3f3f46] border border-[#3f3f46] rounded-md text-[#a1a1aa] hover:text-white transition-colors" title="Edit notification channel">
+                                    <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
+                                </button>
+                                <button type="button" hx-delete="/settings/notification/{{ notif.id }}" hx-confirm="Delete this Telegram channel?" class="p-1.5 bg-transparent border border-red-800/80 text-red-500 hover:bg-red-600 hover:text-white rounded-md transition-colors" title="Delete notification channel">
+                                    <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                                </button>
                             </div>
                         </div>
                         {% else %}
@@ -675,11 +705,13 @@
                             <button type="button"
                                     hx-post="/api/settings/discord/test"
                                     hx-include="[name='discord_webhook_url']"
-                                    hx-target="#settings-result"
-                                    class="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shrink-0">
+                                    hx-target="#discord-test-result"
+                                    hx-swap="innerHTML"
+                                    class="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shrink-0 transition-colors">
                                 Test Discord Webhook
                             </button>
                         </div>
+                        <div id="discord-test-result" class="empty:hidden"></div>
                     </div>
 
                     <!-- Per-Event Trigger Checkboxes -->
@@ -762,7 +794,7 @@
                                     <th class="px-4 py-3 font-medium">Date</th>
                                     <th class="px-4 py-3 font-medium">Release Title</th>
                                     <th class="px-4 py-3 font-medium">Reason</th>
-                                    <th class="px-4 py-3 font-medium w-24">Action</th>
+                                    <th class="px-4 py-3 font-medium w-24 text-right">Action</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -780,14 +812,14 @@
                                                 {{ item.reason or 'Failed verification' }}
                                             </span>
                                         </td>
-                                        <td class="px-4 py-3">
+                                        <td class="px-4 py-3 text-right">
                                             <button type="button"
                                                     hx-delete="/api/blacklist/{{ item.id }}"
                                                     hx-target="#blacklist-row-{{ item.id }}"
                                                     hx-swap="outerHTML"
-                                                    class="text-gray-400 hover:text-red-400 bg-[#2a2a32] p-1.5 rounded-lg border border-[#3f3f46]"
+                                                    class="bg-transparent border border-red-800/80 text-red-500 hover:bg-red-600 hover:text-white transition-colors p-1.5 rounded-md inline-flex items-center justify-center"
                                                     title="Remove from Blacklist">
-                                                Remove
+                                                <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
                                             </button>
                                         </td>
                                     </tr>
@@ -813,6 +845,4 @@
         </div>
     </form>
 </div>
-
-<div id="modal-container"></div>
 {% endblock %}

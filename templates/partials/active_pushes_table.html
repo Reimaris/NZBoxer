@@ -112,3 +112,8 @@
         </tbody>
     </table>
 </div>
+{% if downloading_count is defined %}
+<span id="card-active-pushes-total" hx-swap-oob="true" class="text-xs font-bold text-white bg-black/35 px-2 py-0.5 rounded-md border border-white/10">{{ active_pushes | length }}</span>
+<div id="card-active-pushes-downloading" hx-swap-oob="true" class="text-base font-bold text-cyan-400">{{ downloading_count }}</div>
+<div id="card-active-pushes-poller" hx-swap-oob="true" class="text-xs font-bold mt-1 {% if poller_awake %}text-emerald-400{% else %}text-gray-400{% endif %}">{{ "Awake" if poller_awake else "Sleeping" }}</div>
+{% endif %}

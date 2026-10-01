@@ -1098,6 +1098,7 @@ async def _push_single_season_or_movie_entry(
                     )
                     if ep_hist is not None:
                         dispatched.append(ep_hist)
+                        await session.commit()
                 return dispatched
 
     # State 1 (allow_season_packs=False) or Pack-to-Episode Fallback (when no valid Season Pack exists)
@@ -1135,6 +1136,7 @@ async def _push_single_season_or_movie_entry(
         )
         if ep_hist is not None:
             dispatched.append(ep_hist)
+            await session.commit()
 
     return dispatched
 

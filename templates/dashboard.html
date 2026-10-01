@@ -235,6 +235,7 @@ document.addEventListener('alpine:init', () => {
                 <div class="flex items-center gap-2 text-white">
                     <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 4v16M17 4v16M3 8h4m10 0h4M3 12h18M3 16h4m10 0h4M4 20h16a1 1 0 001-1V5a1 1 0 00-1-1H4a1 1 0 00-1 1v14a1 1 0 001 1z"></path></svg>
                     <h2 class="text-sm font-bold tracking-wider uppercase">Movies</h2>
+                    <span x-show="search.trim().length > 0" x-cloak class="text-[10px] font-bold text-pink-200 bg-black/40 px-1.5 py-0.5 rounded">(<span x-text="getTabCount('movie')"></span>)</span>
                 </div>
                 <span class="text-xs font-bold text-white bg-black/35 px-2 py-0.5 rounded-md border border-white/10">{{ movie_stats.total }}</span>
             </div>
@@ -262,6 +263,7 @@ document.addEventListener('alpine:init', () => {
                 <div class="flex items-center gap-2 text-white">
                     <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path></svg>
                     <h2 class="text-sm font-bold tracking-wider uppercase">Series</h2>
+                    <span x-show="search.trim().length > 0" x-cloak class="text-[10px] font-bold text-purple-200 bg-black/40 px-1.5 py-0.5 rounded">(<span x-text="getTabCount('show')"></span>)</span>
                 </div>
                 <span class="text-xs font-bold text-white bg-black/35 px-2 py-0.5 rounded-md border border-white/10">{{ series_stats.total }}</span>
             </div>
@@ -289,6 +291,7 @@ document.addEventListener('alpine:init', () => {
                 <div class="flex items-center gap-2 text-white">
                     <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
                     <h2 class="text-sm font-bold tracking-wider uppercase">Anime</h2>
+                    <span x-show="search.trim().length > 0" x-cloak class="text-[10px] font-bold text-amber-100 bg-black/40 px-1.5 py-0.5 rounded">(<span x-text="getTabCount('anime')"></span>)</span>
                 </div>
                 <span class="text-xs font-bold text-white bg-black/35 px-2 py-0.5 rounded-md border border-white/10">{{ anime_stats.total }}</span>
             </div>
@@ -344,16 +347,16 @@ document.addEventListener('alpine:init', () => {
                     <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
                     <h2 class="text-sm font-bold tracking-wider uppercase">Active Pushes</h2>
                 </div>
-                <span class="text-xs font-bold text-white bg-black/35 px-2 py-0.5 rounded-md border border-white/10">{{ active_pushes_count | default(0) }}</span>
+                <span id="card-active-pushes-total" class="text-xs font-bold text-white bg-black/35 px-2 py-0.5 rounded-md border border-white/10">{{ active_pushes_count | default(0) }}</span>
             </div>
             <div class="grid grid-cols-2 divide-x divide-[#3f3f46] bg-[#1e1e24] flex-1 text-center py-2.5">
                 <div>
                     <div class="text-[10px] text-[#a1a1aa] uppercase font-semibold">Downloading</div>
-                    <div class="text-base font-bold text-cyan-400">{{ downloading_count | default(0) }}</div>
+                    <div id="card-active-pushes-downloading" class="text-base font-bold text-cyan-400">{{ downloading_count | default(0) }}</div>
                 </div>
                 <div>
                     <div class="text-[10px] text-[#a1a1aa] uppercase font-semibold">Poller</div>
-                    <div class="text-xs font-bold mt-1 {% if poller_awake %}text-emerald-400{% else %}text-gray-400{% endif %}">
+                    <div id="card-active-pushes-poller" class="text-xs font-bold mt-1 {% if poller_awake %}text-emerald-400{% else %}text-gray-400{% endif %}">
                         {{ "Awake" if poller_awake else "Sleeping" }}
                     </div>
                 </div>

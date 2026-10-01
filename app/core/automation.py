@@ -541,8 +541,24 @@ async def _sync_items(
                     parent_item.tvdb_id = tvdb_id
                 if not parent_item.mal_id and mal_id:
                     parent_item.mal_id = mal_id
+                if parent_item.status == MediaStatus.IGNORED:
+                    parent_item.status = (
+                        MediaStatus.FUTURE
+                        if is_future_or_tba(parent_item.release_date, parent_item.year)
+                        else MediaStatus.SEARCHING
+                    )
+                    logger.info(
+                        "    🔄 Restored previously ignored parent franchise '%s' (ID %d) because Season %d is active on watchlist.",
+                        parent_item.title,
+                        parent_item.id,
+                        existing_season.season_number,
+                    )
 
-            if item and item.id != existing_season.media_item_id:
+            if (
+                item
+                and item.id != existing_season.media_item_id
+                and item.status != MediaStatus.IGNORED
+            ):
                 logger.info(
                     "    ⏩ Soft-ignoring standalone sequel MediaItem '%s' (ID %d) as it is consolidated under parent series ID %d Season %d.",
                     item.title,
@@ -552,7 +568,7 @@ async def _sync_items(
                 )
                 item.status = MediaStatus.IGNORED
             elif not item:
-                logger.info(
+                logger.debug(
                     "    ⏩ Item '%s' is already tracked as Season %d of a consolidated parent series. Skipping standalone creation.",
                     movie_data.get("title"),
                     existing_season.season_number,
@@ -639,25 +655,28 @@ async def _sync_items(
                     item.title, item.year
                 )
             if item.anilist_id and media_type == MediaType.ANIME:
-                # Check if item.anilist_id matches an existing Season on another MediaItem
+                # Check if item.anilist_id matches an existing Season on another active MediaItem
                 dup_stmt = (
                     select(Season)
+                    .join(MediaItem, Season.media_item_id == MediaItem.id)
                     .where(
                         Season.anilist_id == item.anilist_id,
                         Season.media_item_id != item.id,
+                        MediaItem.status != MediaStatus.IGNORED,
                     )
                     .options(selectinload(Season.media_item))
                 )
                 parent_season = (await session.execute(dup_stmt)).scalars().first()
                 if parent_season:
-                    logger.info(
-                        "    ⏩ Soft-ignoring MediaItem '%s' (ID %d) as AniList ID %d is tracked as Season %d of parent series ID %d.",
-                        item.title,
-                        item.id,
-                        item.anilist_id,
-                        parent_season.season_number,
-                        parent_season.media_item_id,
-                    )
+                    if item.status != MediaStatus.IGNORED:
+                        logger.info(
+                            "    ⏩ Soft-ignoring MediaItem '%s' (ID %d) as AniList ID %d is tracked as Season %d of parent series ID %d.",
+                            item.title,
+                            item.id,
+                            item.anilist_id,
+                            parent_season.season_number,
+                            parent_season.media_item_id,
+                        )
                     item.status = MediaStatus.IGNORED
                     for s in item.seasons:
                         s.status = SeasonStatus.IGNORED
@@ -670,7 +689,7 @@ async def _sync_items(
                 elif is_new or not item.seasons:
                     await enrich_anime_metadata(session, item)
                 else:
-                    logger.info(
+                    logger.debug(
                         "    ⏩ Skipping AniList hierarchy enrichment for existing anime '%s' with established seasons.",
                         item.title,
                     )
@@ -1289,6 +1308,7 @@ async def enrich_anime_metadata(session: AsyncSession, item: MediaItem) -> None:
     )
 
     original_anilist_id = item.anilist_id
+    original_simkl_id = item.simkl_id
     if not original_anilist_id:
         return
     hierarchy_data = await anilist.get_anime_root_and_hierarchy(original_anilist_id)
@@ -1325,7 +1345,10 @@ async def enrich_anime_metadata(session: AsyncSession, item: MediaItem) -> None:
                 await session.flush()
                 return
 
-        if root_node.get("id") != original_anilist_id:
+        was_out_of_order = bool(
+            root_node.get("id") and root_node.get("id") != original_anilist_id
+        )
+        if was_out_of_order:
             logger.info(
                 "    🔄 Out-of-order sequel detected. Updating MediaItem '%s' to root franchise metadata.",
                 item.title,
@@ -1371,6 +1394,7 @@ async def enrich_anime_metadata(session: AsyncSession, item: MediaItem) -> None:
             is_season_future = is_future_or_tba(s_air_date, start_year, now) or (
                 item.status == MediaStatus.FUTURE
             )
+            node_id = anilist_node.get("id")
             is_monitored = True if s_num == 1 else False
 
             existing_season_stmt = select(Season).where(
@@ -1380,8 +1404,13 @@ async def enrich_anime_metadata(session: AsyncSession, item: MediaItem) -> None:
             existing_season = (
                 (await session.execute(existing_season_stmt)).scalars().first()
             )
+            season_title = anilist_node.get("title", {})
+            resolved_title = (
+                season_title.get("english")
+                or season_title.get("romaji")
+                or season_title.get("native")
+            )
             if not existing_season:
-                season_title = anilist_node.get("title", {})
                 season_obj = Season(
                     media_item_id=item.id,
                     season_number=s_num,
@@ -1391,10 +1420,11 @@ async def enrich_anime_metadata(session: AsyncSession, item: MediaItem) -> None:
                     monitored=is_monitored,
                     episode_count=ep_count,
                     air_date=s_air_date,
-                    anilist_id=anilist_node.get("id"),
-                    title=season_title.get("english")
-                    or season_title.get("romaji")
-                    or season_title.get("native"),
+                    anilist_id=node_id,
+                    simkl_id=original_simkl_id
+                    if (was_out_of_order and node_id == original_anilist_id)
+                    else None,
+                    title=resolved_title,
                     status=SeasonStatus.FUTURE
                     if is_season_future
                     else (
@@ -1423,8 +1453,22 @@ async def enrich_anime_metadata(session: AsyncSession, item: MediaItem) -> None:
                         )
                         session.add(new_ep)
             else:
-                if not existing_season.anilist_id:
-                    existing_season.anilist_id = anilist_node.get("id")
+                if node_id:
+                    existing_season.anilist_id = node_id
+                if resolved_title and not existing_season.title:
+                    existing_season.title = resolved_title
+                if was_out_of_order:
+                    if (
+                        node_id == original_anilist_id
+                        and original_simkl_id
+                        and not existing_season.simkl_id
+                    ):
+                        existing_season.simkl_id = original_simkl_id
+                    elif (
+                        node_id != original_anilist_id
+                        and existing_season.simkl_id == original_simkl_id
+                    ):
+                        existing_season.simkl_id = None
                 existing_season.watch_order = watch_order
                 existing_season.type_number = type_number
                 existing_season.entry_type = entry_type

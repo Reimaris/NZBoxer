@@ -43,7 +43,7 @@
             const container = document.getElementById("modal-container");
             if (container) container.innerHTML = "";
             if (this.hasPushedInSession) {
-                window.location.reload();
+                window.dispatchEvent(new CustomEvent("nzboxer:switch-card", { detail: { card: "active_pushes" } }));
             }
         },
         selectAllUnpushed() {

@@ -1,7 +1,7 @@
 <!-- Provider Modal (v3.0.0) -->
 {% set cfg = provider.config if provider else {} %}
-<div class="fixed inset-0 bg-black bg-opacity-70 z-[100] flex items-center justify-center p-4 animate-fade-in" id="provider-modal-overlay">
-    <div class="bg-[#1e1e24] border border-[#3f3f46] rounded-xl shadow-2xl w-full max-w-3xl overflow-hidden flex flex-col max-h-[90vh]"
+<div class="nzb-modal-backdrop fixed inset-0 bg-black bg-opacity-70 z-[100] flex items-center justify-center p-4 animate-fade-in" id="provider-modal-overlay">
+    <div class="nzb-modal-dialog nzb-modal-dialog-lg bg-[#1e1e24] border border-[#3f3f46] rounded-xl shadow-2xl w-full max-w-3xl overflow-hidden flex flex-col max-h-[90vh]"
          x-data="{
              isEdit: {{ 'true' if provider else 'false' }},
              step: {{ 2 if provider else 1 }},

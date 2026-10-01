@@ -253,6 +253,8 @@ async def search_raw(
 async def _execute_search(url: str, params: dict[str, Any]) -> list[dict[str, Any]]:
     """Execute the HTTP request to the indexer API and normalize results."""
     await _limiter.wait()
+    req_preview = httpx.Request("GET", url, params=params)
+    logger.info("    🔍 Indexer Search URL: %s", req_preview.url)
     async with httpx.AsyncClient(
         headers={"User-Agent": DEFAULT_USER_AGENT}, timeout=20.0
     ) as client:
@@ -334,6 +336,7 @@ async def _execute_search(url: str, params: dict[str, Any]) -> list[dict[str, An
                 flat["size"] = int(flat["size"]) if flat["size"] else 0
                 normalized.append(flat)
 
+            logger.info("    📦 Indexer returned %d raw result(s).", len(normalized))
             return normalized
         except httpx.HTTPStatusError as e:
             status_code = e.response.status_code

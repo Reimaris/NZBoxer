@@ -683,9 +683,10 @@ async def manual_search(
 
 
 @app.post("/items/{item_id}/reset-metadata")
-async def reset_anime_metadata_endpoint(item_id: int):
+async def reset_anime_metadata_endpoint(request: Request, item_id: int):
     """Rebuilds anime metadata cleanly from AniList, purges phantom episodes, and resets backoff counters."""
     from app.core.automation import reset_anime_metadata
+    from app.core.push_engine import get_push_modal_context
     from app.db.database import async_session_factory
     from app.db.models import MediaItem, MediaType
 
@@ -698,6 +699,14 @@ async def reset_anime_metadata_endpoint(item_id: int):
             return HTMLResponse(content="Invalid Item", status_code=400)
 
         await reset_anime_metadata(session, item_id)
+        if request.headers.get("HX-Request") == "true":
+            ctx = await get_push_modal_context(session, item_id)
+            if ctx is not None:
+                return templates.TemplateResponse(
+                    request=request,
+                    name="modals/push_modal.html",
+                    context=ctx,
+                )
 
     return HTMLResponse(
         content="<script>window.location.reload();</script>",
@@ -757,6 +766,7 @@ async def change_type_endpoint(
 
     from sqlalchemy.orm import selectinload
 
+    from app.core.push_engine import get_push_modal_context
     from app.db.database import async_session_factory
     from app.db.models import MediaItem, MediaType, Season
 
@@ -852,6 +862,15 @@ async def change_type_endpoint(
                         await bg_session.commit()
 
             background_tasks.add_task(_bg_enrich)
+
+        if request.headers.get("HX-Request") == "true":
+            ctx = await get_push_modal_context(session, item_id)
+            if ctx is not None:
+                return templates.TemplateResponse(
+                    request=request,
+                    name="modals/push_modal.html",
+                    context=ctx,
+                )
 
     return RedirectResponse(url=request.headers.get("referer", "/"), status_code=303)
 
@@ -1483,60 +1502,73 @@ async def delete_notification(notification_id: int) -> HTMLResponse:
     )
 
 
+@app.post("/api/settings/discord/test")
 @app.post("/api/notifications/test/discord")
 @app.post("/settings/notification/discord/test")
 async def test_discord_notification(request: Request) -> Response:
     """Send a test rich Discord Embed to verify the configured or provided Discord Webhook URL."""
     from sqlalchemy import select
 
+    from app.config import reload_settings_from_db
     from app.db.models import SystemSettings
     from app.services import discord
 
     payload = await _parse_request_payload(request)
-    webhook_url = str(payload.get("discord_webhook_url") or "").strip()
+    provided_url = str(payload.get("discord_webhook_url") or "").strip()
+    webhook_url = provided_url
 
     async with async_session_factory() as session:
+        stmt = select(SystemSettings).where(SystemSettings.id == 1)
+        db_settings = (await session.execute(stmt)).scalars().first()
         if not webhook_url:
-            stmt = select(SystemSettings).where(SystemSettings.id == 1)
-            db_settings = (await session.execute(stmt)).scalars().first()
             if db_settings and db_settings.discord_webhook_url:
                 webhook_url = db_settings.discord_webhook_url.strip()
             elif settings.discord_webhook_url:
                 webhook_url = settings.discord_webhook_url.strip()
 
-    if not webhook_url:
-        if request.headers.get("HX-Request") == "true":
-            return HTMLResponse(
-                content='<span class="text-xs text-red-400">Please provide a Discord Webhook URL first.</span>',
+        if not webhook_url:
+            if request.headers.get("HX-Request") == "true":
+                return HTMLResponse(
+                    content='<div class="p-3 bg-red-900/30 border border-red-500/40 rounded-lg text-xs text-red-300 font-medium">Please enter a Discord Webhook URL first.</div>',
+                    status_code=200,
+                )
+            return JSONResponse(
+                {"ok": False, "error": "Discord Webhook URL is not configured"},
                 status_code=400,
             )
-        return JSONResponse(
-            {"ok": False, "error": "Discord Webhook URL is not configured"},
-            status_code=400,
-        )
 
-    embed = discord.build_discord_embed(
-        event_type="completed",
-        media_title="NZBoxer Test Notification",
-        media_year=2026,
-        target_label="Test Connection",
-        release_name="NZBoxer.v3.0.0.2160p.WEB-DL.DDP5.1.Atmos.H.265",
-        resolution="2160p",
-        source="WEB-DL",
-        video_codec="H.265",
-        audio_codec="Atmos",
-        language="en",
-        status_reason="Discord Webhook integration verified!",
-    )
-    ok = await discord.send_discord_webhook(webhook_url, embed=embed)
+        embed = discord.build_discord_embed(
+            event_type="completed",
+            media_title="NZBoxer Test Notification",
+            media_year=2026,
+            target_label="Test Connection",
+            release_name="NZBoxer.v3.0.0.2160p.WEB-DL.DDP5.1.Atmos.H.265",
+            resolution="2160p",
+            source="WEB-DL",
+            video_codec="H.265",
+            audio_codec="Atmos",
+            language="en",
+            status_reason="Discord Webhook integration verified!",
+        )
+        ok = await discord.send_discord_webhook(webhook_url, embed=embed)
+        if ok and provided_url:
+            if not db_settings:
+                db_settings = SystemSettings(id=1)
+                session.add(db_settings)
+            db_settings.discord_webhook_url = provided_url
+            db_settings.discord_enabled = True
+            await session.commit()
+            await reload_settings_from_db(session)
+
     if request.headers.get("HX-Request") == "true":
         if ok:
             return HTMLResponse(
-                content='<span class="text-xs text-emerald-400">Discord test notification sent!</span>'
+                content='<div class="p-3 bg-emerald-900/30 border border-emerald-500/40 rounded-lg text-xs text-emerald-300 font-medium">Discord test notification sent &amp; webhook saved!</div>',
+                status_code=200,
             )
         return HTMLResponse(
-            content='<span class="text-xs text-red-400">Discord webhook delivery failed.</span>',
-            status_code=400,
+            content='<div class="p-3 bg-red-900/30 border border-red-500/40 rounded-lg text-xs text-red-300 font-medium">Discord webhook delivery failed — please check the Webhook URL.</div>',
+            status_code=200,
         )
     return JSONResponse(
         {"ok": ok, "channel": "discord"},
@@ -2578,12 +2610,25 @@ async def api_get_active_pushes(request: Request) -> Response:
     from app.core.transfer_poller import (
         count_downloading_entities,
         get_active_pushes,
+        run_transfer_poller_tick,
         transfer_poller,
     )
+    from app.services import torbox
 
     async with async_session_factory() as session:
-        pushes = await get_active_pushes(session)
         downloading_count = await count_downloading_entities(session)
+        if downloading_count > 0:
+            try:
+                live_downloads = await torbox.get_usenet_downloads(
+                    bypass_cache=False, session=session
+                )
+                await run_transfer_poller_tick(
+                    session, pre_fetched_downloads=live_downloads
+                )
+                downloading_count = await count_downloading_entities(session)
+            except Exception as exc:
+                logger.debug("Live active pushes refresh skipped: %s", exc)
+        pushes = await get_active_pushes(session)
 
     accept = (request.headers.get("accept") or "").lower()
     is_hx = request.headers.get("HX-Request") == "true"
@@ -2613,7 +2658,12 @@ async def api_get_active_pushes(request: Request) -> Response:
 @app.post("/api/pushes/{history_id}/dismiss")
 async def api_dismiss_failed_push(history_id: int, request: Request) -> Response:
     """Dismiss a failed manual-pick row from Active Pushes and revert its entity to SEARCHING."""
-    from app.core.transfer_poller import dismiss_failed_push, get_active_pushes
+    from app.core.transfer_poller import (
+        count_downloading_entities,
+        dismiss_failed_push,
+        get_active_pushes,
+        transfer_poller,
+    )
 
     async with async_session_factory() as session:
         ok = await dismiss_failed_push(session, history_id)
@@ -2622,6 +2672,7 @@ async def api_dismiss_failed_push(history_id: int, request: Request) -> Response
                 status_code=404, content={"ok": False, "error": "Push row not found"}
             )
         pushes = await get_active_pushes(session)
+        downloading_count = await count_downloading_entities(session)
 
     if request.headers.get("HX-Request") == "true":
         partial_tpl = Path("templates/partials/active_pushes_table.html")
@@ -2629,7 +2680,11 @@ async def api_dismiss_failed_push(history_id: int, request: Request) -> Response
             return templates.TemplateResponse(
                 request=request,
                 name="partials/active_pushes_table.html",
-                context={"active_pushes": pushes},
+                context={
+                    "active_pushes": pushes,
+                    "downloading_count": downloading_count,
+                    "poller_awake": transfer_poller.is_awake,
+                },
             )
         return HTMLResponse(content="", status_code=200)
 
@@ -2643,7 +2698,12 @@ async def api_dismiss_failed_push(history_id: int, request: Request) -> Response
 @app.delete("/api/pushes/{history_id}")
 async def api_cancel_active_push(history_id: int, request: Request) -> Response:
     """Cancel and delete an active transfer on TorBox and remove it from Active Pushes."""
-    from app.core.transfer_poller import cancel_active_push, get_active_pushes
+    from app.core.transfer_poller import (
+        cancel_active_push,
+        count_downloading_entities,
+        get_active_pushes,
+        transfer_poller,
+    )
 
     async with async_session_factory() as session:
         ok = await cancel_active_push(session, history_id)
@@ -2652,6 +2712,7 @@ async def api_cancel_active_push(history_id: int, request: Request) -> Response:
                 status_code=404, content={"ok": False, "error": "Push row not found"}
             )
         pushes = await get_active_pushes(session)
+        downloading_count = await count_downloading_entities(session)
 
     if request.headers.get("HX-Request") == "true":
         partial_tpl = Path("templates/partials/active_pushes_table.html")
@@ -2659,7 +2720,11 @@ async def api_cancel_active_push(history_id: int, request: Request) -> Response:
             return templates.TemplateResponse(
                 request=request,
                 name="partials/active_pushes_table.html",
-                context={"active_pushes": pushes},
+                context={
+                    "active_pushes": pushes,
+                    "downloading_count": downloading_count,
+                    "poller_awake": transfer_poller.is_awake,
+                },
             )
         return HTMLResponse(content="", status_code=200)
 
