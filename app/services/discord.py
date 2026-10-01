@@ -11,7 +11,10 @@ governed by the 4 per-event boolean flags on `SystemSettings`:
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import re
+from collections.abc import Sequence
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
@@ -24,7 +27,7 @@ from app.services import telegram
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
-    from app.db.models import Episode, MediaItem, Season
+    from app.db.models import DownloadHistory, Episode, MediaItem, Season
 
 logger = logging.getLogger(__name__)
 
@@ -182,12 +185,36 @@ def build_discord_embed(
     return embed
 
 
+def _extract_discord_retry_after(resp: Any) -> float:
+    """Extract retry_after duration in seconds from a Discord HTTP 429 response."""
+    retry_val: float | None = None
+    try:
+        data = resp.json()
+        if isinstance(data, dict) and data.get("retry_after") is not None:
+            retry_val = float(data["retry_after"])
+    except Exception:
+        pass
+
+    if retry_val is None:
+        headers = getattr(resp, "headers", None) or {}
+        raw_hdr = headers.get("Retry-After") or headers.get("retry-after")
+        if raw_hdr is not None:
+            try:
+                retry_val = float(raw_hdr)
+            except (TypeError, ValueError):
+                retry_val = None
+
+    if retry_val is None or retry_val <= 0:
+        retry_val = 2.0
+    return min(retry_val, 15.0)
+
+
 async def send_discord_webhook(
     webhook_url: str | None,
     embed: dict[str, Any] | None = None,
     content: str | None = None,
 ) -> bool:
-    """Send a rich embed or message to a Discord Webhook URL.
+    """Send a rich embed or message to a Discord Webhook URL with HTTP 429 backoff retry.
 
     Returns True on HTTP 2xx (200/204), or False on invalid URL / HTTP error.
     """
@@ -205,14 +232,26 @@ async def send_discord_webhook(
     if not content and not embed:
         return False
 
+    max_attempts = 3
     try:
         async with httpx.AsyncClient(
             timeout=10.0, headers={"User-Agent": DEFAULT_USER_AGENT}
         ) as client:
-            resp = await client.post(clean_url, json=payload)
-            resp.raise_for_status()
-            logger.debug("Discord webhook delivered successfully.")
-            return True
+            for attempt in range(1, max_attempts + 1):
+                resp = await client.post(clean_url, json=payload)
+                if getattr(resp, "status_code", None) == 429 and attempt < max_attempts:
+                    retry_after = _extract_discord_retry_after(resp)
+                    logger.warning(
+                        "Discord webhook rate-limited (HTTP 429). Retrying in %.2fs (attempt %d/%d).",
+                        retry_after,
+                        attempt,
+                        max_attempts,
+                    )
+                    await asyncio.sleep(retry_after)
+                    continue
+                resp.raise_for_status()
+                logger.debug("Discord webhook delivered successfully.")
+                return True
     except httpx.HTTPStatusError as exc:
         logger.error(
             "Discord webhook failed with HTTP %d: %s",
@@ -226,6 +265,7 @@ async def send_discord_webhook(
     except Exception as exc:
         logger.error("Unexpected error while sending Discord webhook: %s", exc)
         return False
+    return False
 
 
 def format_telegram_event_message(
@@ -378,3 +418,196 @@ async def dispatch_notification_event(
         "telegram_sent": telegram_sent,
         "discord_sent": discord_sent,
     }
+
+
+def _contiguous_runs(sorted_nums: list[int]) -> list[tuple[int, int]]:
+    """Group a sorted list of unique integers into contiguous (start, end) ranges."""
+    if not sorted_nums:
+        return []
+    runs: list[tuple[int, int]] = []
+    start = prev = sorted_nums[0]
+    for n in sorted_nums[1:]:
+        if n == prev + 1:
+            prev = n
+        else:
+            runs.append((start, prev))
+            start = prev = n
+    runs.append((start, prev))
+    return runs
+
+
+def format_batch_target_summary(
+    histories: Sequence[DownloadHistory],
+    item: MediaItem | None = None,
+) -> str:
+    """Format a compact target range summary for 1 or more DownloadHistory rows of a show."""
+    if not histories:
+        return "Movie"
+
+    if len(histories) == 1:
+        h = histories[0]
+        snap_lbl = getattr(h, "target_label", None)
+        if snap_lbl:
+            return str(snap_lbl)
+        return format_target_label(
+            item=item or getattr(h, "media_item", None),
+            season=getattr(h, "season", None),
+            episode=getattr(h, "episode", None),
+        )
+
+    eps_by_season: dict[int, set[int]] = {}
+    pack_labels: list[str] = []
+
+    for h in histories:
+        ep_obj = getattr(h, "episode", None)
+        s_obj = getattr(h, "season", None)
+        snap_lbl = getattr(h, "target_label", None)
+
+        if ep_obj is not None:
+            ep_num = int(ep_obj.episode_number)
+            parent_s = s_obj or getattr(ep_obj, "season", None)
+            s_num = (
+                int(parent_s.type_number or parent_s.season_number)
+                if parent_s is not None
+                else 1
+            )
+            eps_by_season.setdefault(s_num, set()).add(ep_num)
+            continue
+
+        if snap_lbl:
+            m_snap = re.match(r"^S(\d+)E(\d+)$", str(snap_lbl).strip(), re.IGNORECASE)
+            if m_snap:
+                eps_by_season.setdefault(int(m_snap.group(1)), set()).add(
+                    int(m_snap.group(2))
+                )
+                continue
+
+        if getattr(h, "episode_id", None) is not None:
+            m_title = re.search(r"(?i)S(\d+)\s*E(\d+)", str(h.nzb_title or ""))
+            if m_title:
+                eps_by_season.setdefault(int(m_title.group(1)), set()).add(
+                    int(m_title.group(2))
+                )
+                continue
+
+        lbl = (
+            str(snap_lbl)
+            if snap_lbl
+            else format_target_label(
+                item=item or getattr(h, "media_item", None),
+                season=s_obj,
+                episode=None,
+            )
+        )
+        if lbl not in pack_labels:
+            pack_labels.append(lbl)
+
+    season_parts: list[str] = []
+    total_eps = 0
+    for s_num in sorted(eps_by_season.keys()):
+        sorted_eps = sorted(eps_by_season[s_num])
+        total_eps += len(sorted_eps)
+        runs = _contiguous_runs(sorted_eps)
+        run_strs: list[str] = []
+        for idx, (r_start, r_end) in enumerate(runs):
+            if idx == 0:
+                if r_start == r_end:
+                    run_strs.append(f"S{s_num:02d}E{r_start:02d}")
+                else:
+                    run_strs.append(
+                        f"S{s_num:02d}E{r_start:02d}–S{s_num:02d}E{r_end:02d}"
+                    )
+            else:
+                if r_start == r_end:
+                    run_strs.append(f"E{r_start:02d}")
+                else:
+                    run_strs.append(f"E{r_start:02d}–E{r_end:02d}")
+        season_parts.append(", ".join(run_strs))
+
+    combined_parts = pack_labels + season_parts
+    summary = ", ".join(combined_parts) if combined_parts else "Movie"
+    if total_eps > 1:
+        return f"{summary} ({total_eps} Episodes)"
+    return summary
+
+
+async def dispatch_batch_notification_event(
+    session: AsyncSession | None,
+    *,
+    event_type: str,
+    histories: Sequence[DownloadHistory],
+    item: MediaItem | None = None,
+    reason: str | None = None,
+) -> dict[str, Any]:
+    """Dispatch a single consolidated show-level notification for a batch of DownloadHistory rows."""
+    if not histories:
+        return {
+            "dispatched": False,
+            "telegram_sent": 0,
+            "discord_sent": False,
+            "reason": "Empty batch",
+        }
+
+    first = histories[0]
+    parent_item = item or getattr(first, "media_item", None)
+    media_title = (
+        (parent_item.title if parent_item is not None else None)
+        or getattr(first, "media_title", None)
+        or "Unknown Title"
+    )
+    media_year = (
+        parent_item.year
+        if parent_item is not None
+        else getattr(first, "media_year", None)
+    )
+    poster_url = (
+        parent_item.poster_url
+        if parent_item is not None
+        else getattr(first, "poster_url", None)
+    )
+
+    target_label = format_batch_target_summary(histories, item=parent_item)
+    if len(histories) == 1:
+        release_name = first.nzb_title
+    else:
+        release_name = (
+            f"{len(histories)} releases ({first.nzb_title} + {len(histories) - 1} more)"
+        )
+
+    norm_event = (event_type or "completed").strip().lower()
+    if reason:
+        effective_reason = reason
+    elif norm_event in ("completed", "ready_on_torbox"):
+        effective_reason = "Ready on TorBox (Verified Playable Video)"
+    elif norm_event == "auto_advance":
+        effective_reason = "Auto-Advance Season Expansion triggered"
+    elif norm_event in ("failure", "failed"):
+        effective_reason = "One or more transfers failed on TorBox."
+    else:
+        effective_reason = (
+            "Auto-Push Best dispatched to TorBox"
+            if (first.push_mode or "auto") == "auto"
+            else "Manual Pick dispatched to TorBox"
+        )
+
+    total_auto_replaced = sum(
+        int(getattr(h, "auto_replaced_count", 0) or 0) for h in histories
+    )
+    if total_auto_replaced > 0 and "auto-replaced" not in effective_reason.lower():
+        effective_reason = f"{effective_reason} • Auto-replaced {total_auto_replaced} failed transfer(s) during acquisition."
+
+    return await dispatch_notification_event(
+        session=session,
+        event_type=norm_event,
+        media_title=media_title,
+        media_year=media_year,
+        target_label=target_label,
+        release_name=release_name,
+        resolution=first.resolution,
+        source=first.source,
+        video_codec=first.video_codec,
+        audio_codec=first.audio_codec,
+        language=first.grabbed_language,
+        status_reason=effective_reason,
+        poster_url=poster_url,
+    )

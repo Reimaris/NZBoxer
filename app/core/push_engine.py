@@ -540,7 +540,6 @@ async def _dispatch_candidate_list_to_torbox(
 ) -> DownloadHistory | None:
     """Iterate through scored candidates, verify Layer 2 NZB fake check, and dispatch to TorBox."""
     from app.db.grab_tracker import increment_today_grab_count
-    from app.services import discord
 
     is_movie = episode is None and (
         season is None or getattr(season, "entry_type", "season") == "movie"
@@ -578,7 +577,7 @@ async def _dispatch_candidate_list_to_torbox(
                     reason=err_msg,
                 )
                 session.add(bl)
-                await session.flush()
+                await session.commit()
                 continue
 
         torbox_result = await torbox.send_nzb_file(
@@ -602,10 +601,9 @@ async def _dispatch_candidate_list_to_torbox(
             str(torbox_result.get("id")) if torbox_result.get("id") else None
         )
 
+        superseded_torbox_ids: list[str] = []
         if reset_fail_count:
             from sqlalchemy import and_, or_
-
-            from app.core.transfer_poller import _delete_and_purge_torbox_transfer
 
             if target_season_id is None and target_episode_id is None:
                 prior_stmt = select(DownloadHistory).where(
@@ -635,8 +633,9 @@ async def _dispatch_candidate_list_to_torbox(
             prior_rows = (await session.execute(prior_stmt)).scalars().all()
             for pr in prior_rows:
                 if pr.torbox_id and str(pr.torbox_id) != str(new_torbox_id or ""):
-                    await _delete_and_purge_torbox_transfer(session, pr.torbox_id)
+                    superseded_torbox_ids.append(str(pr.torbox_id))
                 pr.is_dismissed = True
+                pr.notification_sent = True
 
         history = DownloadHistory(
             media_item_id=item.id,
@@ -660,7 +659,13 @@ async def _dispatch_candidate_list_to_torbox(
             is_fallback=bool(cand.get("is_fallback", False)),
             grabbed_language=cand.get("matched_language"),
             push_mode=push_mode,
+            notification_sent=False,
         )
+        history.media_item = item
+        if season is not None:
+            history.season = season
+        if episode is not None:
+            history.episode = episode
         session.add(history)
 
         if episode is not None:
@@ -690,39 +695,18 @@ async def _dispatch_candidate_list_to_torbox(
                 item.fail_count = 0
             item.last_error = None
 
-        await session.flush()
+        await session.commit()
+
+        if superseded_torbox_ids:
+            from app.core.transfer_poller import _delete_and_purge_torbox_transfer
+
+            for old_tid in superseded_torbox_ids:
+                await _delete_and_purge_torbox_transfer(session, old_tid)
+            await session.commit()
 
         from app.core.transfer_poller import wake_transfer_poller
 
         wake_transfer_poller()
-
-        target_lbl = discord.format_target_label(
-            item=item, season=season, episode=episode
-        )
-        default_reason = (
-            "Auto-Advance Season Expansion triggered"
-            if event_type == "auto_advance"
-            else (
-                "Auto-Push Best dispatched to TorBox"
-                if push_mode == "auto"
-                else "Manual Pick dispatched to TorBox"
-            )
-        )
-        await discord.dispatch_notification_event(
-            session=session,
-            event_type=event_type,
-            media_title=item.title,
-            media_year=item.year,
-            target_label=target_lbl,
-            release_name=title,
-            resolution=history.resolution,
-            source=history.source,
-            video_codec=history.video_codec,
-            audio_codec=history.audio_codec,
-            language=history.grabbed_language,
-            status_reason=status_reason or default_reason,
-            poster_url=item.poster_url,
-        )
         return history
 
     return None
@@ -782,7 +766,7 @@ async def _verify_layer2_in_memory(
                 reason=err_msg,
             )
             session.add(bl)
-            await session.flush()
+            await session.commit()
             continue
 
         cand["_prefetched_nzb"] = (nzb_bytes, filename)
@@ -1216,6 +1200,17 @@ async def advance_season_buffer(
             continue
         break
 
+    if dispatched:
+        from app.services.discord import dispatch_batch_notification_event
+
+        await session.commit()
+        await dispatch_batch_notification_event(
+            session,
+            event_type="auto_advance",
+            histories=dispatched,
+            item=item,
+        )
+
     return dispatched
 
 
@@ -1445,6 +1440,8 @@ async def execute_auto_push(
     payload: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Execute Auto-Push Best (`push_mode = 'auto'`) for a MediaItem and its selected seasons/episodes."""
+    from app.services.discord import dispatch_batch_notification_event
+
     payload = payload or {}
     stmt = (
         select(MediaItem)
@@ -1458,8 +1455,9 @@ async def execute_auto_push(
     if item is None:
         return {"pushed": False, "error": "MediaItem not found", "status_code": 404}
 
-    # 1. Persist sticky search preferences on the MediaItem
+    # 1. Persist sticky search preferences on the MediaItem and commit immediately before network I/O
     await persist_sticky_preferences(session, item, payload)
+    await session.commit()
 
     # 2. Resolve effective scoring config
     effective_cfg = await resolve_effective_search_config(session, item, payload)
@@ -1482,11 +1480,14 @@ async def execute_auto_push(
 
     dispatched_histories: list[DownloadHistory] = []
     pushed_seasons: list[Season] = []
-    any_candidates_found: bool = False  # True if any search returned ≥1 scored valid release
+    any_candidates_found: bool = (
+        False  # True if any search returned ≥1 scored valid release
+    )
 
     # Case 1: Standalone Movie (or movie item with no seasons)
     if item.media_type == MediaType.MOVIE and not season_ids and not episode_ids:
         item.fail_count = 0
+        await session.commit()
         raw_movie_results = await _query_movie_across_indexers(session, item)
         movie_partitioned = _score_and_partition_candidates(
             raw_results=raw_movie_results,
@@ -1515,6 +1516,14 @@ async def execute_auto_push(
         )
         if hist is not None:
             dispatched_histories.append(hist)
+        await session.commit()
+        if dispatched_histories:
+            await dispatch_batch_notification_event(
+                session,
+                event_type="push_initiated",
+                histories=dispatched_histories,
+                item=item,
+            )
 
     # Case 2: Series / Anime selected seasons (or default to first monitored/searching season if none specified)
     else:
@@ -1543,6 +1552,7 @@ async def execute_auto_push(
             season.fail_count = 0
             for ep in season.episodes:
                 ep.fail_count = 0
+            await session.commit()
             s_hists = await _push_single_season_or_movie_entry(
                 session=session,
                 item=item,
@@ -1570,6 +1580,7 @@ async def execute_auto_push(
                 if parent_s.id in covered_season_ids:
                     continue
                 ep_obj.fail_count = 0
+                await session.commit()
                 raw_ep_results = await _query_show_across_indexers(
                     session,
                     item,
@@ -1604,6 +1615,15 @@ async def execute_auto_push(
                 )
                 if ep_hist is not None:
                     dispatched_histories.append(ep_hist)
+
+        await session.commit()
+        if dispatched_histories:
+            await dispatch_batch_notification_event(
+                session,
+                event_type="push_initiated",
+                histories=list(dispatched_histories),
+                item=item,
+            )
 
         # Season Expansion & Movie Bridge Lookahead when auto_advance_seasons is ON
         if auto_advance_seasons and pushed_seasons:
@@ -1659,6 +1679,7 @@ async def execute_manual_search(
         return {"error": "MediaItem not found", "status_code": 404}
 
     await persist_sticky_preferences(session, item, payload)
+    await session.commit()
     effective_cfg = await resolve_effective_search_config(session, item, payload)
     allow_season_packs, _ = normalize_season_pack_flags(
         effective_cfg.get("allow_season_packs", False),
@@ -1853,6 +1874,8 @@ async def execute_manual_grab(
     payload: dict[str, Any],
 ) -> dict[str, Any]:
     """Dispatch a manually selected release from the Push Modal to TorBox with `push_mode = 'manual'`."""
+    from app.services.discord import dispatch_batch_notification_event
+
     stmt = (
         select(MediaItem)
         .where(MediaItem.id == item_id)
@@ -1904,6 +1927,7 @@ async def execute_manual_grab(
             ep.fail_count = 0
     else:
         item.fail_count = 0
+    await session.commit()
 
     parsed = parse_release_name(title)
     candidate = {
@@ -1947,6 +1971,14 @@ async def execute_manual_grab(
             if isinstance(val, bool)
             else str(val).strip().lower() in ("1", "true", "yes", "on")
         )
+        await session.commit()
+
+    await dispatch_batch_notification_event(
+        session,
+        event_type="push_initiated",
+        histories=[hist],
+        item=item,
+    )
 
     adv_hists: list[DownloadHistory] = []
     if (

@@ -412,6 +412,8 @@ async def init_db(database_url: str) -> None:
                 "ALTER TABLE download_history ADD COLUMN eta_seconds INTEGER;",
                 "ALTER TABLE download_history ADD COLUMN status_detail VARCHAR(200);",
                 "ALTER TABLE download_history ADD COLUMN is_dismissed BOOLEAN NOT NULL DEFAULT 0;",
+                "ALTER TABLE download_history ADD COLUMN notification_sent BOOLEAN NOT NULL DEFAULT 0;",
+                "ALTER TABLE download_history ADD COLUMN auto_replaced_count INTEGER NOT NULL DEFAULT 0;",
                 # SystemSettings Discord webhook & per-event notification columns
                 "ALTER TABLE system_settings ADD COLUMN discord_webhook_url VARCHAR(500);",
                 "ALTER TABLE system_settings ADD COLUMN discord_enabled BOOLEAN NOT NULL DEFAULT 0;",
@@ -430,6 +432,8 @@ async def init_db(database_url: str) -> None:
                 # Enforce two-checkbox season pack invariant (!allow_season_packs => !prefer_season_packs)
                 "UPDATE search_presets SET prefer_season_packs = 0 WHERE allow_season_packs = 0 AND prefer_season_packs = 1;",
                 "UPDATE media_items SET prefer_season_packs = 0 WHERE allow_season_packs = 0 AND prefer_season_packs = 1;",
+                # Backfill existing terminal DownloadHistory rows to notification_sent = 1
+                "UPDATE download_history SET notification_sent = 1 WHERE status_detail IN ('completed', 'failed', 'deleted', 'replaced', 'canceled') OR LOWER(COALESCE(status_detail, '')) LIKE 'failed%';",
             ]
             for sql_stmt in v3_migrations:
                 try:

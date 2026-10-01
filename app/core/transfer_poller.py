@@ -22,6 +22,7 @@ Responsibilities:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
@@ -54,6 +55,8 @@ logger = logging.getLogger(__name__)
 
 UNPACK_GRACE_PERIOD_SECONDS = 900
 NOT_FOUND_GRACE_PERIOD_SECONDS = 900
+
+_poller_lock = asyncio.Lock()
 
 
 class TransferPollerState:
@@ -169,6 +172,7 @@ async def _delete_and_purge_torbox_transfer(
     await session.execute(
         delete(SeenTorboxDownload).where(SeenTorboxDownload.torbox_id == str(torbox_id))
     )
+    await session.commit()
 
 
 async def _auto_replace_failed_push(
@@ -238,7 +242,7 @@ async def _auto_replace_failed_push(
             for ep in season.episodes:
                 if ep.status == EpisodeStatus.DOWNLOADING:
                     ep.status = EpisodeStatus.SEARCHING
-            await session.flush()
+            await session.commit()
 
         hists = await _push_single_season_or_movie_entry(
             session=session,
@@ -322,23 +326,195 @@ def _match_torbox_transfer(
     return str(tb_item.get("download_state") or "downloading"), tb_item
 
 
+def _is_history_terminal(status_detail: str | None) -> bool:
+    detail = (status_detail or "").strip().lower()
+    return detail in (
+        "completed",
+        "deleted",
+        "replaced",
+        "canceled",
+    ) or detail.startswith("failed")
+
+
+def _sync_season_status_from_episodes(season: Season | None) -> None:
+    """Update Season.status when an Episode finishes if no Season Pack is actively downloading."""
+    if season is None or season.status != SeasonStatus.DOWNLOADING:
+        return
+    # Check if there is an active season-pack DownloadHistory (episode_id is None)
+    has_active_pack = any(
+        not h.is_dismissed
+        and h.episode_id is None
+        and not _is_history_terminal(h.status_detail)
+        for h in getattr(season, "download_history", []) or []
+    )
+    if has_active_pack:
+        return
+
+    eps = getattr(season, "episodes", []) or []
+    if any(ep.status == EpisodeStatus.DOWNLOADING for ep in eps):
+        return
+
+    non_future_eps = [ep for ep in eps if ep.status != EpisodeStatus.FUTURE]
+    if non_future_eps and all(
+        ep.status in (EpisodeStatus.COMPLETED, EpisodeStatus.DOWNLOADED)
+        for ep in non_future_eps
+    ):
+        season.status = SeasonStatus.COMPLETED
+    elif any(ep.status == EpisodeStatus.FAILED for ep in eps):
+        season.status = SeasonStatus.FAILED
+
+
+async def _count_active_transfers_for_item(
+    session: AsyncSession, media_item_id: int
+) -> int:
+    """Count active non-terminal transfers for a specific MediaItem."""
+    stmt = (
+        select(DownloadHistory)
+        .where(
+            DownloadHistory.media_item_id == media_item_id,
+            DownloadHistory.is_dismissed.is_(False),
+        )
+        .options(
+            selectinload(DownloadHistory.media_item),
+            selectinload(DownloadHistory.season),
+            selectinload(DownloadHistory.episode),
+        )
+    )
+    rows = (await session.execute(stmt)).scalars().all()
+    active = 0
+    for h in rows:
+        if _is_history_terminal(h.status_detail):
+            continue
+        if h.episode is not None:
+            if h.episode.status == EpisodeStatus.DOWNLOADING:
+                active += 1
+        elif h.season is not None:
+            if h.season.status == SeasonStatus.DOWNLOADING:
+                active += 1
+        elif h.media_item is not None:
+            if h.media_item.status == MediaStatus.DOWNLOADING:
+                active += 1
+    return active
+
+
+def _build_failure_reason_for_history(
+    history: DownloadHistory, sh_max_retries: int
+) -> str:
+    detail = (history.status_detail or "").strip()
+    raw_reason = (
+        detail[len("failed: ") :].strip()
+        if detail.lower().startswith("failed:")
+        else (detail or "TorBox transfer failed")
+    )
+    push_mode = (history.push_mode or "auto").strip().lower()
+    if push_mode == "manual":
+        return f"Manual pick failed ({raw_reason}). Click Re-Search & Pick in Active Pushes."
+
+    target: Any = history.episode or history.season or history.media_item
+    fail_count = int(getattr(target, "fail_count", 0) or 0) if target is not None else 0
+    if fail_count > sh_max_retries:
+        return (
+            f"Auto-push failed ({raw_reason}) and max replacement attempts "
+            f"({sh_max_retries}) were exhausted."
+        )
+    return f"Push failed ({raw_reason}) and no replacement candidates were found."
+
+
+async def _dispatch_settled_show_notifications(
+    session: AsyncSession,
+    affected_items: dict[int, MediaItem],
+    sh_max_retries: int,
+) -> None:
+    """For each affected MediaItem that now has 0 active downloading transfers,
+    dispatch at most 1 consolidated Ready on TorBox and/or 1 consolidated Failure notification.
+    """
+    for item_id, item in affected_items.items():
+        remaining_for_item = await _count_active_transfers_for_item(session, item_id)
+        if remaining_for_item > 0:
+            continue
+
+        stmt = (
+            select(DownloadHistory)
+            .where(
+                DownloadHistory.media_item_id == item_id,
+                DownloadHistory.is_dismissed.is_(False),
+                DownloadHistory.notification_sent.is_(False),
+            )
+            .options(
+                selectinload(DownloadHistory.media_item),
+                selectinload(DownloadHistory.season),
+                selectinload(DownloadHistory.episode).selectinload(Episode.season),
+            )
+            .order_by(DownloadHistory.id.asc())
+        )
+        unnotified_rows = list((await session.execute(stmt)).scalars().all())
+        if not unnotified_rows:
+            continue
+
+        completed_rows = [
+            h
+            for h in unnotified_rows
+            if (h.status_detail or "").strip().lower() == "completed"
+        ]
+        failed_rows = [
+            h
+            for h in unnotified_rows
+            if (h.status_detail or "").strip().lower().startswith("failed")
+        ]
+        if not completed_rows and not failed_rows:
+            continue
+
+        # Commit notification_sent = True BEFORE outbound webhook HTTP calls
+        for h in completed_rows + failed_rows:
+            h.notification_sent = True
+        await session.commit()
+
+        if completed_rows:
+            await discord.dispatch_batch_notification_event(
+                session=session,
+                event_type="completed",
+                histories=completed_rows,
+                item=item,
+                reason="Ready on TorBox (Verified Playable Video)",
+            )
+
+        if failed_rows:
+            if len(failed_rows) == 1:
+                fail_reason = _build_failure_reason_for_history(
+                    failed_rows[0], sh_max_retries=sh_max_retries
+                )
+            else:
+                first_reason = _build_failure_reason_for_history(
+                    failed_rows[0], sh_max_retries=sh_max_retries
+                )
+                fail_reason = f"{len(failed_rows)} transfers failed ({first_reason})"
+            await discord.dispatch_batch_notification_event(
+                session=session,
+                event_type="failure",
+                histories=failed_rows,
+                item=item,
+                reason=fail_reason,
+            )
+
+
 async def run_transfer_poller_tick(
     session: AsyncSession | None = None,
     pre_fetched_downloads: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Execute a single tick of the Auto-Wake / Auto-Sleep Transfer Poller.
 
-    If zero entities are currently in `DOWNLOADING` status, makes zero TorBox API calls
-    and immediately puts the poller to sleep.
+    Guarded by `_poller_lock` so concurrent invocations from the 8s HTMX active-pushes
+    endpoint and the 20s APScheduler job never overlap.
     """
-    if session is None:
-        async with async_session_factory() as owned_session:
-            return await _run_transfer_poller_tick_with_session(
-                owned_session, pre_fetched_downloads=pre_fetched_downloads
-            )
-    return await _run_transfer_poller_tick_with_session(
-        session, pre_fetched_downloads=pre_fetched_downloads
-    )
+    async with _poller_lock:
+        if session is None:
+            async with async_session_factory() as owned_session:
+                return await _run_transfer_poller_tick_with_session(
+                    owned_session, pre_fetched_downloads=pre_fetched_downloads
+                )
+        return await _run_transfer_poller_tick_with_session(
+            session, pre_fetched_downloads=pre_fetched_downloads
+        )
 
 
 async def _run_transfer_poller_tick_with_session(
@@ -427,6 +603,7 @@ async def _run_transfer_poller_tick_with_session(
                 .options(
                     selectinload(Episode.download_history),
                     selectinload(Episode.season).selectinload(Season.episodes),
+                    selectinload(Episode.season).selectinload(Season.download_history),
                     selectinload(Episode.season)
                     .selectinload(Season.media_item)
                     .selectinload(MediaItem.provider),
@@ -451,6 +628,14 @@ async def _run_transfer_poller_tick_with_session(
         ]
     ] = []
 
+    def _sent_at_utc(h: DownloadHistory) -> datetime:
+        dt = h.torbox_sent_at
+        if dt is None:
+            return datetime.min.replace(tzinfo=timezone.utc)
+        if dt.tzinfo is None:
+            return dt.replace(tzinfo=timezone.utc)
+        return dt
+
     def _latest_history(
         histories: list[DownloadHistory],
         require_episode_none: bool = False,
@@ -465,7 +650,7 @@ async def _run_transfer_poller_tick_with_session(
         return max(
             candidates,
             key=lambda h: (
-                h.torbox_sent_at or datetime.min.replace(tzinfo=timezone.utc),
+                _sent_at_utc(h),
                 h.id or 0,
             ),
         )
@@ -486,8 +671,12 @@ async def _run_transfer_poller_tick_with_session(
             targets_to_evaluate.append((e, hist, e.season.media_item, e.season, e))
 
     now_utc = datetime.now(timezone.utc)
+    affected_items: dict[int, MediaItem] = {}
 
     for target, history, item, season, episode in targets_to_evaluate:
+        if item.id is not None:
+            affected_items[item.id] = item
+
         raw_status, tb_item = _match_torbox_transfer(history, tb_map)
         status_lower = raw_status.lower()
 
@@ -564,17 +753,7 @@ async def _run_transfer_poller_tick_with_session(
                 target.status = EpisodeStatus.COMPLETED
                 target.fail_count = 0
                 target.last_error = None
-                if season is not None:
-                    non_future_eps = [
-                        ep
-                        for ep in season.episodes
-                        if ep.status != EpisodeStatus.FUTURE
-                    ]
-                    if non_future_eps and all(
-                        ep.status in (EpisodeStatus.COMPLETED, EpisodeStatus.DOWNLOADED)
-                        for ep in non_future_eps
-                    ):
-                        season.status = SeasonStatus.COMPLETED
+                _sync_season_status_from_episodes(season)
             elif isinstance(target, Season):
                 target.status = SeasonStatus.COMPLETED
                 target.fail_count = 0
@@ -588,25 +767,6 @@ async def _run_transfer_poller_tick_with_session(
                 target.status = MediaStatus.COMPLETED
                 target.fail_count = 0
                 target.last_error = None
-
-            target_lbl = discord.format_target_label(
-                item=item, season=season, episode=episode
-            )
-            await discord.dispatch_notification_event(
-                session=session,
-                event_type="completed",
-                media_title=item.title,
-                media_year=item.year,
-                target_label=target_lbl,
-                release_name=history.nzb_title,
-                resolution=history.resolution,
-                source=history.source,
-                video_codec=history.video_codec,
-                audio_codec=history.audio_codec,
-                language=history.grabbed_language,
-                status_reason="Ready on TorBox (Verified Playable Video)",
-                poster_url=item.poster_url,
-            )
             continue
 
         # 2. Check Stalled Timeout or Terminal Failure States
@@ -648,6 +808,13 @@ async def _run_transfer_poller_tick_with_session(
 
     await session.commit()
 
+    # Dispatch show-level batch notifications for any show/movie whose active transfers have all settled
+    await _dispatch_settled_show_notifications(
+        session=session,
+        affected_items=affected_items,
+        sh_max_retries=sh_max_retries,
+    )
+
     remaining_active = await count_downloading_entities(session)
     if remaining_active == 0:
         transfer_poller.sleep()
@@ -683,13 +850,12 @@ async def _handle_transfer_failure(
         reason=reason,
     )
     session.add(bl)
-    await session.flush()
+    # Commit blacklist and failure log before outbound TorBox delete HTTP call
+    await session.commit()
 
     await _delete_and_purge_torbox_transfer(session, history.torbox_id, tb_item)
 
-    target_lbl = discord.format_target_label(item=item, season=season, episode=episode)
     push_mode = (history.push_mode or "auto").strip().lower()
-    failed_release_title = history.nzb_title
 
     if push_mode == "manual":
         # Manual Pick Failure: do NOT auto-replace; mark entity FAILED and keep row in Active Pushes
@@ -701,6 +867,7 @@ async def _handle_transfer_failure(
         if isinstance(target, Episode):
             target.status = EpisodeStatus.FAILED
             target.last_error = reason
+            _sync_season_status_from_episodes(season)
         elif isinstance(target, Season):
             target.status = SeasonStatus.FAILED
             target.last_error = reason
@@ -708,27 +875,13 @@ async def _handle_transfer_failure(
             target.status = MediaStatus.FAILED
             target.last_error = reason
 
-        await session.flush()
-        await discord.dispatch_notification_event(
-            session=session,
-            event_type="failure",
-            media_title=item.title,
-            media_year=item.year,
-            target_label=target_lbl,
-            release_name=failed_release_title,
-            resolution=history.resolution,
-            source=history.source,
-            video_codec=history.video_codec,
-            audio_codec=history.audio_codec,
-            language=history.grabbed_language,
-            status_reason=f"Manual pick failed ({reason}). Click Re-Search & Pick in Active Pushes.",
-            poster_url=item.poster_url,
-        )
+        await session.commit()
         return
 
     # Auto-Push Failure (`push_mode == "auto"`): increment target.fail_count and check retry budget
+    prev_auto_replaced = int(getattr(history, "auto_replaced_count", 0) or 0)
     target.fail_count = int(target.fail_count or 0) + 1
-    await session.flush()
+    await session.commit()
 
     replacement_hist: DownloadHistory | None = None
     if target.fail_count <= sh_max_retries:
@@ -737,31 +890,15 @@ async def _handle_transfer_failure(
         )
 
     if replacement_hist is not None:
+        replacement_hist.auto_replaced_count = prev_auto_replaced + 1
         await session.delete(history)
-        await session.flush()
-        await discord.dispatch_notification_event(
-            session=session,
-            event_type="auto_replaced",
-            media_title=item.title,
-            media_year=item.year,
-            target_label=target_lbl,
-            release_name=replacement_hist.nzb_title,
-            resolution=replacement_hist.resolution,
-            source=replacement_hist.source,
-            video_codec=replacement_hist.video_codec,
-            audio_codec=replacement_hist.audio_codec,
-            language=replacement_hist.grabbed_language,
-            status_reason=(
-                f"Auto-replaced failed release ({failed_release_title}) with next-best candidate "
-                f"(attempt {target.fail_count}/{sh_max_retries})."
-            ),
-            poster_url=item.poster_url,
-        )
+        await session.commit()
+        # Intermediate auto_replaced notifications are intentionally suppressed;
+        # the final settled notification will summarize any auto-replacements.
         return
 
     # Budget exhausted (`target.fail_count > sh_max_retries`) or zero replacement candidates found:
-    # Stop auto-replacing, transition target to FAILED, keep history row in Active Pushes (`is_dismissed = False`),
-    # and dispatch a failure notification.
+    # Stop auto-replacing, transition target to FAILED, keep history row in Active Pushes (`is_dismissed = False`).
     history.download_speed_bytes = 0
     history.eta_seconds = None
     history.status_detail = f"failed: {reason}"
@@ -770,6 +907,7 @@ async def _handle_transfer_failure(
     if isinstance(target, Episode):
         target.status = EpisodeStatus.FAILED
         target.last_error = reason
+        _sync_season_status_from_episodes(season)
     elif isinstance(target, Season):
         target.status = SeasonStatus.FAILED
         target.last_error = reason
@@ -781,28 +919,7 @@ async def _handle_transfer_failure(
         target.status = MediaStatus.FAILED
         target.last_error = reason
 
-    await session.flush()
-
-    failure_reason_msg = (
-        f"Auto-push failed ({reason}) and max replacement attempts ({sh_max_retries}) were exhausted."
-        if target.fail_count > sh_max_retries
-        else f"Push failed ({reason}) and no replacement candidates were found."
-    )
-    await discord.dispatch_notification_event(
-        session=session,
-        event_type="failure",
-        media_title=item.title,
-        media_year=item.year,
-        target_label=target_lbl,
-        release_name=failed_release_title,
-        resolution=history.resolution,
-        source=history.source,
-        video_codec=history.video_codec,
-        audio_codec=history.audio_codec,
-        language=history.grabbed_language,
-        status_reason=failure_reason_msg,
-        poster_url=item.poster_url,
-    )
+    await session.commit()
 
 
 def _format_speed_and_eta(speed_bytes: int, eta_seconds: int | None) -> str:

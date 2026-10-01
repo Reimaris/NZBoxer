@@ -1105,6 +1105,12 @@ class DownloadHistory(Base):
     is_dismissed: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="0"
     )
+    notification_sent: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="0"
+    )
+    auto_replaced_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
 
     # --- Audit timestamps ---
     created_at: Mapped[datetime] = mapped_column(
