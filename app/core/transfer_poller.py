@@ -223,6 +223,7 @@ async def _auto_replace_failed_push(
             episode=episode,
             push_mode="auto",
             event_type="push_initiated",
+            reset_fail_count=False,
         )
 
     if season is not None:
@@ -255,6 +256,7 @@ async def _auto_replace_failed_push(
                 episode=None,
                 push_mode="auto",
                 event_type="push_initiated",
+                reset_fail_count=False,
             )
 
         effective_s_num = int(season.type_number or season.season_number)
@@ -284,6 +286,7 @@ async def _auto_replace_failed_push(
             episode=None,
             push_mode="auto",
             event_type="push_initiated",
+            reset_fail_count=False,
         )
 
     # Standalone Movie
@@ -309,6 +312,7 @@ async def _auto_replace_failed_push(
         episode=None,
         push_mode="auto",
         event_type="push_initiated",
+        reset_fail_count=False,
     )
 
 
@@ -410,6 +414,11 @@ async def _run_transfer_poller_tick_with_session(
         .first()
     )
     download_timeout_hours = sys_settings.download_timeout_hours if sys_settings else 24
+    sh_max_retries = (
+        sys_settings.sh_max_retries
+        if sys_settings and sys_settings.sh_max_retries is not None
+        else 3
+    )
 
     # Load active downloading Movies, Seasons, and Episodes
     movies = (
@@ -578,6 +587,7 @@ async def _run_transfer_poller_tick_with_session(
                         reason="TorBox failed to extract archive (only RARs/PAR2)",
                         error_type="unextracted_archive",
                         log_msg=f"TorBox failed to extract archive (only RARs/PAR2): {fake_reason}",
+                        sh_max_retries=sh_max_retries,
                     )
                     continue
 
@@ -666,6 +676,7 @@ async def _run_transfer_poller_tick_with_session(
                 reason=reason,
                 error_type="torbox_error",
                 log_msg=log_msg,
+                sh_max_retries=sh_max_retries,
             )
             continue
 
@@ -697,8 +708,9 @@ async def _handle_transfer_failure(
     reason: str,
     error_type: str,
     log_msg: str,
+    sh_max_retries: int = 3,
 ) -> None:
-    """Execute Split Failure Recovery (`auto` vs `manual`) for a failed TorBox transfer."""
+    """Execute Split Failure Recovery (`auto` vs `manual`) with bounded retry budget (`sh_max_retries`)."""
     log_failure(session, target, error_type, log_msg)
 
     bl = BlacklistedRelease(
@@ -751,20 +763,19 @@ async def _handle_transfer_failure(
         )
         return
 
-    # Auto-Push Failure (`push_mode == "auto"`): delete failed history row and auto-push #2 candidate
-    await session.delete(history)
-    if isinstance(target, Episode):
-        target.status = EpisodeStatus.SEARCHING
-    elif isinstance(target, Season):
-        target.status = SeasonStatus.SEARCHING
-    else:
-        target.status = MediaStatus.SEARCHING
+    # Auto-Push Failure (`push_mode == "auto"`): increment target.fail_count and check retry budget
+    target.fail_count = int(target.fail_count or 0) + 1
     await session.flush()
 
-    replacement_hist = await _auto_replace_failed_push(
-        session, item=item, season=season, episode=episode
-    )
+    replacement_hist: DownloadHistory | None = None
+    if target.fail_count <= sh_max_retries:
+        replacement_hist = await _auto_replace_failed_push(
+            session, item=item, season=season, episode=episode
+        )
+
     if replacement_hist is not None:
+        await session.delete(history)
+        await session.flush()
         await discord.dispatch_notification_event(
             session=session,
             event_type="auto_replaced",
@@ -777,20 +788,58 @@ async def _handle_transfer_failure(
             video_codec=replacement_hist.video_codec,
             audio_codec=replacement_hist.audio_codec,
             language=replacement_hist.grabbed_language,
-            status_reason=f"Auto-replaced failed release ({failed_release_title}) with next-best candidate.",
+            status_reason=(
+                f"Auto-replaced failed release ({failed_release_title}) with next-best candidate "
+                f"(attempt {target.fail_count}/{sh_max_retries})."
+            ),
             poster_url=item.poster_url,
         )
+        return
+
+    # Budget exhausted (`target.fail_count > sh_max_retries`) or zero replacement candidates found:
+    # Stop auto-replacing, transition target to FAILED, keep history row in Active Pushes (`is_dismissed = False`),
+    # and dispatch a failure notification.
+    history.download_speed_bytes = 0
+    history.eta_seconds = None
+    history.status_detail = f"failed: {reason}"
+    history.is_dismissed = False
+
+    if isinstance(target, Episode):
+        target.status = EpisodeStatus.FAILED
+        target.last_error = reason
+    elif isinstance(target, Season):
+        target.status = SeasonStatus.FAILED
+        target.last_error = reason
+        for ep in target.episodes:
+            if ep.status == EpisodeStatus.DOWNLOADING:
+                ep.status = EpisodeStatus.FAILED
+                ep.last_error = reason
     else:
-        await discord.dispatch_notification_event(
-            session=session,
-            event_type="failure",
-            media_title=item.title,
-            media_year=item.year,
-            target_label=target_lbl,
-            release_name=failed_release_title,
-            status_reason=f"Push failed ({reason}) and no replacement candidates were found.",
-            poster_url=item.poster_url,
-        )
+        target.status = MediaStatus.FAILED
+        target.last_error = reason
+
+    await session.flush()
+
+    failure_reason_msg = (
+        f"Auto-push failed ({reason}) and max replacement attempts ({sh_max_retries}) were exhausted."
+        if target.fail_count > sh_max_retries
+        else f"Push failed ({reason}) and no replacement candidates were found."
+    )
+    await discord.dispatch_notification_event(
+        session=session,
+        event_type="failure",
+        media_title=item.title,
+        media_year=item.year,
+        target_label=target_lbl,
+        release_name=failed_release_title,
+        resolution=history.resolution,
+        source=history.source,
+        video_codec=history.video_codec,
+        audio_codec=history.audio_codec,
+        language=history.grabbed_language,
+        status_reason=failure_reason_msg,
+        poster_url=item.poster_url,
+    )
 
 
 def _format_speed_and_eta(speed_bytes: int, eta_seconds: int | None) -> str:
@@ -812,7 +861,7 @@ def _format_speed_and_eta(speed_bytes: int, eta_seconds: int | None) -> str:
 
 
 async def get_active_pushes(session: AsyncSession) -> list[dict[str, Any]]:
-    """Return flat list of active transfers (`DOWNLOADING`) and unacknowledged failed manual picks (`FAILED` & `is_dismissed == False`)."""
+    """Return flat list of active transfers (`DOWNLOADING`) and unacknowledged failed pushes (`FAILED` & `is_dismissed == False`)."""
     stmt = (
         select(DownloadHistory)
         .where(DownloadHistory.is_dismissed.is_(False))
@@ -844,14 +893,14 @@ async def get_active_pushes(session: AsyncSession) -> list[dict[str, Any]]:
             entity_status = item.status.value
 
         detail_lower = (h.status_detail or "").lower()
-        is_failed_manual = h.push_mode == "manual" and (
-            entity_status == "failed" or detail_lower.startswith("failed")
-        )
+        is_failed = entity_status == "failed" or detail_lower.startswith("failed")
         is_active_downloading = (
-            entity_status == "downloading" and detail_lower != "completed"
+            entity_status == "downloading"
+            and detail_lower != "completed"
+            and not detail_lower.startswith("failed")
         )
 
-        if not (is_active_downloading or is_failed_manual):
+        if not (is_active_downloading or is_failed):
             continue
 
         target_key = (item.id, h.season_id, h.episode_id)
@@ -872,8 +921,12 @@ async def get_active_pushes(session: AsyncSession) -> list[dict[str, Any]]:
             )
         )
 
-        if is_failed_manual:
-            status_badge = "Failed (Manual Pick)"
+        if is_failed:
+            status_badge = (
+                "Failed (Manual Pick)"
+                if h.push_mode == "manual"
+                else "Failed (Auto-Push)"
+            )
         elif detail_lower == "unpacking":
             status_badge = "Unpacking"
         elif detail_lower == "verifying":
@@ -903,7 +956,7 @@ async def get_active_pushes(session: AsyncSession) -> list[dict[str, Any]]:
                 "status": status_badge,
                 "status_detail": h.status_detail,
                 "push_mode": h.push_mode,
-                "is_failed": is_failed_manual,
+                "is_failed": is_failed,
             }
         )
 

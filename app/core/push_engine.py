@@ -490,6 +490,7 @@ async def _dispatch_candidate_list_to_torbox(
     push_mode: str = "auto",
     event_type: str = "push_initiated",
     status_reason: str | None = None,
+    reset_fail_count: bool = True,
 ) -> DownloadHistory | None:
     """Iterate through scored candidates, verify Layer 2 NZB fake check, and dispatch to TorBox."""
     from app.db.grab_tracker import increment_today_grab_count
@@ -541,10 +542,31 @@ async def _dispatch_candidate_list_to_torbox(
         parsed = cand.get("parsed")
         score_res = cand.get("score_res")
 
+        target_season_id = (
+            season.id if season else (episode.season_id if episode else None)
+        )
+        target_episode_id = episode.id if episode else None
+
+        if reset_fail_count:
+            prior_failed_stmt = select(DownloadHistory).where(
+                DownloadHistory.media_item_id == item.id,
+                DownloadHistory.season_id == target_season_id
+                if target_season_id is not None
+                else DownloadHistory.season_id.is_(None),
+                DownloadHistory.episode_id == target_episode_id
+                if target_episode_id is not None
+                else DownloadHistory.episode_id.is_(None),
+                DownloadHistory.is_dismissed.is_(False),
+            )
+            prior_rows = (await session.execute(prior_failed_stmt)).scalars().all()
+            for pr in prior_rows:
+                if (pr.status_detail or "").lower().startswith("failed"):
+                    pr.is_dismissed = True
+
         history = DownloadHistory(
             media_item_id=item.id,
-            season_id=season.id if season else (episode.season_id if episode else None),
-            episode_id=episode.id if episode else None,
+            season_id=target_season_id,
+            episode_id=target_episode_id,
             nzb_title=title,
             nzb_guid=guid,
             score=cand.get("score"),
@@ -568,20 +590,24 @@ async def _dispatch_candidate_list_to_torbox(
 
         if episode is not None:
             episode.status = EpisodeStatus.DOWNLOADING
-            episode.fail_count = 0
+            if reset_fail_count:
+                episode.fail_count = 0
             episode.last_error = None
         elif season is not None:
             season.status = SeasonStatus.DOWNLOADING
-            season.fail_count = 0
+            if reset_fail_count:
+                season.fail_count = 0
             season.last_error = None
             for ep in season.episodes:
                 if ep.status != EpisodeStatus.FUTURE:
                     ep.status = EpisodeStatus.DOWNLOADING
-                    ep.fail_count = 0
+                    if reset_fail_count:
+                        ep.fail_count = 0
                     ep.last_error = None
         else:
             item.status = MediaStatus.DOWNLOADING
-            item.fail_count = 0
+            if reset_fail_count:
+                item.fail_count = 0
             item.last_error = None
 
         await session.flush()
@@ -1118,6 +1144,7 @@ async def execute_auto_push(
 
     # Case 1: Standalone Movie (or movie item with no seasons)
     if item.media_type == MediaType.MOVIE and not season_ids and not episode_ids:
+        item.fail_count = 0
         raw_movie_results = await _query_movie_across_indexers(session, item)
         movie_partitioned = _score_and_partition_candidates(
             raw_results=raw_movie_results,
@@ -1140,6 +1167,7 @@ async def execute_auto_push(
             episode=None,
             push_mode="auto",
             event_type="push_initiated",
+            reset_fail_count=True,
         )
         if hist is not None:
             dispatched_histories.append(hist)
@@ -1167,6 +1195,9 @@ async def execute_auto_push(
         )
         covered_season_ids: set[int] = set()
         for season in selected_seasons:
+            season.fail_count = 0
+            for ep in season.episodes:
+                ep.fail_count = 0
             s_hists = await _push_single_season_or_movie_entry(
                 session=session,
                 item=item,
@@ -1190,6 +1221,7 @@ async def execute_auto_push(
                 parent_s, ep_obj = eps_by_id[eid]
                 if parent_s.id in covered_season_ids:
                     continue
+                ep_obj.fail_count = 0
                 raw_ep_results = await _query_show_across_indexers(
                     session,
                     item,
@@ -1493,6 +1525,15 @@ async def execute_manual_grab(
         except (TypeError, ValueError):
             pass
 
+    if episode_obj is not None:
+        episode_obj.fail_count = 0
+    elif season_obj is not None:
+        season_obj.fail_count = 0
+        for ep in season_obj.episodes:
+            ep.fail_count = 0
+    else:
+        item.fail_count = 0
+
     parsed = parse_release_name(title)
     candidate = {
         "guid": guid,
@@ -1514,6 +1555,7 @@ async def execute_manual_grab(
         season=season_obj,
         episode=episode_obj,
         push_mode="manual",
+        reset_fail_count=True,
     )
     if hist is None:
         await session.commit()

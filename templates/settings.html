@@ -675,32 +675,34 @@
                 </div>
             </div>
 
-            <!-- Card 2: Stalled Download Timeout, Self-Healing & TorBox Rescan -->
+            <!-- Card 2: TorBox Transfer Poller & Failure Recovery -->
             <div class="bg-[#1e1e24] border border-[#3f3f46] rounded-xl shadow-lg">
                 <div class="bg-[#2a2a32] rounded-t-xl border-b border-[#3f3f46] px-6 py-4 flex items-center justify-between">
-                    <h2 class="text-lg font-semibold text-white">Active Push Monitoring & Self-Healing</h2>
+                    <h2 class="text-lg font-semibold text-white">TorBox Transfer Poller &amp; Failure Recovery</h2>
                 </div>
                 <div class="p-6 space-y-6">
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div>
-                            <label class="block text-xs font-semibold uppercase text-[#d1d5db] mb-1">Stalled Download Timeout (Hours)</label>
+                            <label class="block text-xs font-semibold uppercase text-[#d1d5db] mb-1">Stalled Transfer Timeout</label>
                             <select name="download_timeout_hours" class="w-full bg-[#111115] border border-[#3f3f46] rounded-lg p-2.5 text-white">
                                 <option value="6" {% if db_settings and db_settings.download_timeout_hours == 6 %}selected{% endif %}>6 hours</option>
                                 <option value="12" {% if db_settings and db_settings.download_timeout_hours == 12 %}selected{% endif %}>12 hours</option>
                                 <option value="24" {% if not db_settings or db_settings.download_timeout_hours == 24 %}selected{% endif %}>24 hours (Default)</option>
                                 <option value="48" {% if db_settings and db_settings.download_timeout_hours == 48 %}selected{% endif %}>48 hours</option>
                             </select>
+                            <p class="text-[#71717a] text-xs mt-1">Abort and blacklist active TorBox transfers that make zero completion progress past this duration.</p>
                         </div>
                         <div>
-                            <label class="block text-xs font-semibold uppercase text-[#d1d5db] mb-1">Max Auto-Replace Retries</label>
-                            <input type="number" name="sh_max_retries" value="{{ db_settings.sh_max_retries if db_settings else '3' }}" class="w-full bg-[#111115] border border-[#3f3f46] rounded-lg p-2.5 text-white font-mono text-center">
+                            <label class="block text-xs font-semibold uppercase text-[#d1d5db] mb-1">Max Auto-Push Replacement Attempts</label>
+                            <input type="number" name="sh_max_retries" min="0" value="{{ db_settings.sh_max_retries if db_settings else '3' }}" class="w-full bg-[#111115] border border-[#3f3f46] rounded-lg p-2.5 text-white font-mono text-center">
+                            <p class="text-[#71717a] text-xs mt-1">Maximum times NZBoxer will auto-push the next-best indexer candidate when an Auto-Push fails on TorBox before marking it Failed.</p>
                         </div>
                     </div>
 
                     <div class="pt-4 border-t border-[#3f3f46] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                         <div>
-                            <h3 class="text-white font-semibold text-sm">Rescan TorBox Downloads</h3>
-                            <p class="text-[#71717a] text-xs">Invalidate local TorBox cache and reconcile active/completed Usenet downloads immediately.</p>
+                            <h3 class="text-white font-semibold text-sm">Sync External TorBox Library</h3>
+                            <p class="text-[#71717a] text-xs">Scan TorBox cloud downloads and mark matching watchlist items as Completed.</p>
                         </div>
                         <div id="rescan-torbox-container" class="flex items-center gap-3 shrink-0">
                             <button type="button"
@@ -708,7 +710,7 @@
                                     hx-target="#rescan-torbox-container"
                                     hx-swap="innerHTML"
                                     class="bg-[#2a2a32] hover:bg-[#3f3f46] text-white border border-[#3f3f46] text-xs font-semibold px-4 py-2 rounded-lg">
-                                Rescan TorBox Downloads
+                                Sync TorBox Library
                             </button>
                         </div>
                     </div>
