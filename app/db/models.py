@@ -334,6 +334,12 @@ class SearchPreset(Base):
     audio_quality_mode: Mapped[str] = mapped_column(
         String(20), nullable=False, default="best", server_default="best"
     )
+    allow_season_packs: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="0"
+    )
+    prefer_season_packs: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="0"
+    )
     custom_config_json: Mapped[str] = mapped_column(
         Text, nullable=False, default="{}", server_default="{}"
     )
@@ -360,6 +366,7 @@ class SearchPreset(Base):
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize preset to a JSON-compatible dictionary."""
+        allow_sp = bool(self.allow_season_packs)
         return {
             "id": self.id,
             "name": self.name,
@@ -368,6 +375,10 @@ class SearchPreset(Base):
             "fallback_language": self.fallback_language,
             "video_quality_mode": self.video_quality_mode,
             "audio_quality_mode": self.audio_quality_mode,
+            "allow_season_packs": allow_sp,
+            "prefer_season_packs": bool(self.prefer_season_packs)
+            if allow_sp
+            else False,
             "custom_config_json": self.custom_config_json or "{}",
             "custom_config": self.custom_config,
             "created_at": self.created_at.isoformat() if self.created_at else None,
@@ -446,8 +457,11 @@ class MediaItem(Base):
     custom_search_config_json: Mapped[str | None] = mapped_column(
         Text, nullable=True, default=None
     )
+    allow_season_packs: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="0"
+    )
     prefer_season_packs: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, default=True, server_default="1"
+        Boolean, nullable=False, default=False, server_default="0"
     )
     auto_advance_seasons: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="0"

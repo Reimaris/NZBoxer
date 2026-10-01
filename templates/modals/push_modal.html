@@ -9,7 +9,8 @@
         fallbackLanguage: '{{ effective_config.fallback_language or 'none' }}',
         videoQualityMode: '{{ effective_config.video_quality_mode or 'best' }}',
         audioQualityMode: '{{ effective_config.audio_quality_mode or 'best' }}',
-        preferSeasonPacks: {{ 'true' if effective_config.prefer_season_packs else 'false' }},
+        allowSeasonPacks: {{ 'true' if effective_config.allow_season_packs else 'false' }},
+        preferSeasonPacks: {{ 'true' if (effective_config.allow_season_packs and effective_config.prefer_season_packs) else 'false' }},
         autoAdvanceSeasons: {{ 'true' if effective_config.auto_advance_seasons else 'false' }},
         resolutions: {{ (effective_config.custom_config.get('resolutions') or []) | tojson }},
         sources: {{ (effective_config.custom_config.get('sources') or []) | tojson }},
@@ -43,6 +44,8 @@
             this.fallbackLanguage = found.fallback_language || 'none';
             this.videoQualityMode = found.video_quality_mode || 'best';
             this.audioQualityMode = found.audio_quality_mode || 'best';
+            this.allowSeasonPacks = !!found.allow_season_packs;
+            this.preferSeasonPacks = this.allowSeasonPacks ? !!found.prefer_season_packs : false;
             const cfg = found.custom_config || {};
             this.resolutions = cfg.resolutions || [];
             this.sources = cfg.sources || [];
@@ -73,7 +76,8 @@
                 fallback_language: this.fallbackLanguage,
                 video_quality_mode: this.videoQualityMode,
                 audio_quality_mode: this.audioQualityMode,
-                prefer_season_packs: this.preferSeasonPacks,
+                allow_season_packs: this.allowSeasonPacks,
+                prefer_season_packs: this.allowSeasonPacks ? this.preferSeasonPacks : false,
                 auto_advance_seasons: this.autoAdvanceSeasons,
                 season_ids: this.selectedSeasons,
                 episode_ids: this.selectedEpisodes,
@@ -111,6 +115,8 @@
                     fallback_language: saved.fallback_language || 'none',
                     video_quality_mode: saved.video_quality_mode,
                     audio_quality_mode: saved.audio_quality_mode,
+                    allow_season_packs: !!saved.allow_season_packs,
+                    prefer_season_packs: saved.allow_season_packs ? !!saved.prefer_season_packs : false,
                     custom_config: saved.custom_config || {}
                 });
                 this.selectedPresetId = String(saved.id);
@@ -269,8 +275,21 @@
 
                     <!-- Sticky Pack & Auto-Advance Toggles -->
                     <div class="flex flex-wrap items-center gap-4">
-                        <label class="inline-flex items-center gap-2 cursor-pointer text-xs text-slate-300">
-                            <input type="checkbox" x-model="preferSeasonPacks" class="rounded bg-slate-800 border-slate-600 text-indigo-500 focus:ring-indigo-500">
+                        <label class="inline-flex items-center gap-2 cursor-pointer text-xs text-slate-300"
+                               title="Allow Season Packs (when checked alone, score decides between Season Pack vs. Episodes)">
+                            <input type="checkbox"
+                                   x-model="allowSeasonPacks"
+                                   @change="if (!allowSeasonPacks) preferSeasonPacks = false"
+                                   class="rounded bg-slate-800 border-slate-600 text-indigo-500 focus:ring-indigo-500">
+                            <span class="font-medium">Allow Season Pack</span>
+                        </label>
+                        <label class="inline-flex items-center gap-2 text-xs transition"
+                               :class="allowSeasonPacks ? 'cursor-pointer text-slate-300' : 'cursor-not-allowed text-slate-500 opacity-60'"
+                               title="Always grab a valid Season Pack if present, regardless of score (requires Allow Season Pack)">
+                            <input type="checkbox"
+                                   x-model="preferSeasonPacks"
+                                   :disabled="!allowSeasonPacks"
+                                   class="rounded bg-slate-800 border-slate-600 text-indigo-500 focus:ring-indigo-500 disabled:opacity-50">
                             <span class="font-medium">Prefer Season Pack</span>
                         </label>
                         <label class="inline-flex items-center gap-2 cursor-pointer text-xs text-slate-300">

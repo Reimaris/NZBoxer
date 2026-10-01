@@ -390,10 +390,14 @@ async def init_db(database_url: str) -> None:
 
             # --- v3.0.0 Schema Migrations ---
             v3_migrations = [
+                # SearchPreset two-checkbox season pack columns (ADR-078)
+                "ALTER TABLE search_presets ADD COLUMN allow_season_packs BOOLEAN NOT NULL DEFAULT 0;",
+                "ALTER TABLE search_presets ADD COLUMN prefer_season_packs BOOLEAN NOT NULL DEFAULT 0;",
                 # MediaItem sticky & Simkl watch progress columns
                 "ALTER TABLE media_items ADD COLUMN preset_id INTEGER REFERENCES search_presets(id) ON DELETE SET NULL;",
                 "ALTER TABLE media_items ADD COLUMN custom_search_config_json TEXT;",
-                "ALTER TABLE media_items ADD COLUMN prefer_season_packs BOOLEAN NOT NULL DEFAULT 1;",
+                "ALTER TABLE media_items ADD COLUMN allow_season_packs BOOLEAN NOT NULL DEFAULT 0;",
+                "ALTER TABLE media_items ADD COLUMN prefer_season_packs BOOLEAN NOT NULL DEFAULT 0;",
                 "ALTER TABLE media_items ADD COLUMN auto_advance_seasons BOOLEAN NOT NULL DEFAULT 0;",
                 "ALTER TABLE media_items ADD COLUMN last_watched_order_simkl INTEGER NOT NULL DEFAULT 0;",
                 "ALTER TABLE media_items ADD COLUMN simkl_watched_completed BOOLEAN NOT NULL DEFAULT 0;",
@@ -423,6 +427,9 @@ async def init_db(database_url: str) -> None:
                 "UPDATE episodes SET status = 'SEARCHING' WHERE status IN ('MANUAL_GRAB', 'manual_grab');",
                 # Clean up orphaned v2 print media failure logs
                 "DELETE FROM failure_logs WHERE media_item_id IS NULL;",
+                # Enforce two-checkbox season pack invariant (!allow_season_packs => !prefer_season_packs)
+                "UPDATE search_presets SET prefer_season_packs = 0 WHERE allow_season_packs = 0 AND prefer_season_packs = 1;",
+                "UPDATE media_items SET prefer_season_packs = 0 WHERE allow_season_packs = 0 AND prefer_season_packs = 1;",
             ]
             for sql_stmt in v3_migrations:
                 try:
@@ -591,6 +598,8 @@ async def init_db(database_url: str) -> None:
                         fallback_language=None,
                         video_quality_mode="best",
                         audio_quality_mode="best",
+                        allow_season_packs=False,
+                        prefer_season_packs=False,
                         custom_config_json="{}",
                     )
                     session.add(default_preset)

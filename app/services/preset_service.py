@@ -51,6 +51,18 @@ def _normalize_bool(val: Any, default: bool = False) -> bool:
     return str(val).strip().lower() in ("1", "true", "yes", "on")
 
 
+def normalize_season_pack_flags(
+    allow: Any,
+    prefer: Any,
+    default_allow: bool = False,
+    default_prefer: bool = False,
+) -> tuple[bool, bool]:
+    """Normalize (allow_season_packs, prefer_season_packs) enforcing !allow => !prefer."""
+    allow_bool = _normalize_bool(allow, default_allow)
+    prefer_bool = _normalize_bool(prefer, default_prefer) if allow_bool else False
+    return allow_bool, prefer_bool
+
+
 def extract_custom_config_json(payload: dict[str, Any]) -> str:
     """Extract and normalize custom_config_json from a JSON or form payload."""
     raw_cfg = payload.get("custom_config_json")
@@ -123,6 +135,12 @@ async def create_preset(session: AsyncSession, payload: dict[str, Any]) -> Searc
     fallback_language = _normalize_language(payload.get("fallback_language"), None)
     video_quality_mode = _normalize_mode(payload.get("video_quality_mode"))
     audio_quality_mode = _normalize_mode(payload.get("audio_quality_mode"))
+    allow_season_packs, prefer_season_packs = normalize_season_pack_flags(
+        payload.get("allow_season_packs"),
+        payload.get("prefer_season_packs"),
+        default_allow=False,
+        default_prefer=False,
+    )
     custom_config_json = extract_custom_config_json(payload)
     requested_default = _normalize_bool(payload.get("is_default"), False)
 
@@ -144,6 +162,8 @@ async def create_preset(session: AsyncSession, payload: dict[str, Any]) -> Searc
         existing_same_name.fallback_language = fallback_language
         existing_same_name.video_quality_mode = video_quality_mode
         existing_same_name.audio_quality_mode = audio_quality_mode
+        existing_same_name.allow_season_packs = allow_season_packs
+        existing_same_name.prefer_season_packs = prefer_season_packs
         existing_same_name.custom_config_json = custom_config_json
         await session.flush()
         return existing_same_name
@@ -158,6 +178,8 @@ async def create_preset(session: AsyncSession, payload: dict[str, Any]) -> Searc
         fallback_language=fallback_language,
         video_quality_mode=video_quality_mode,
         audio_quality_mode=audio_quality_mode,
+        allow_season_packs=allow_season_packs,
+        prefer_season_packs=prefer_season_packs,
         custom_config_json=custom_config_json,
     )
     session.add(preset)
@@ -190,6 +212,16 @@ async def update_preset(
         preset.video_quality_mode = _normalize_mode(payload.get("video_quality_mode"))
     if "audio_quality_mode" in payload:
         preset.audio_quality_mode = _normalize_mode(payload.get("audio_quality_mode"))
+
+    if "allow_season_packs" in payload or "prefer_season_packs" in payload:
+        allow_sp, prefer_sp = normalize_season_pack_flags(
+            payload.get("allow_season_packs", preset.allow_season_packs),
+            payload.get("prefer_season_packs", preset.prefer_season_packs),
+            default_allow=bool(preset.allow_season_packs),
+            default_prefer=bool(preset.prefer_season_packs),
+        )
+        preset.allow_season_packs = allow_sp
+        preset.prefer_season_packs = prefer_sp
 
     if (
         "custom_config_json" in payload
@@ -265,10 +297,12 @@ async def save_inline_preset(
             if item is not None:
                 item.preset_id = preset.id
                 item.custom_search_config_json = None
-                if "prefer_season_packs" in payload:
-                    item.prefer_season_packs = _normalize_bool(
-                        payload.get("prefer_season_packs"), True
-                    )
+                item.allow_season_packs = bool(preset.allow_season_packs)
+                item.prefer_season_packs = (
+                    bool(preset.prefer_season_packs)
+                    if item.allow_season_packs
+                    else False
+                )
                 if "auto_advance_seasons" in payload:
                     item.auto_advance_seasons = _normalize_bool(
                         payload.get("auto_advance_seasons"), False
@@ -307,10 +341,15 @@ async def update_item_sticky_search_config(
         else:
             item.custom_search_config_json = str(raw_custom)
 
-    if "prefer_season_packs" in payload and payload["prefer_season_packs"] is not None:
-        item.prefer_season_packs = _normalize_bool(
-            payload.get("prefer_season_packs"), True
+    if "allow_season_packs" in payload or "prefer_season_packs" in payload:
+        allow_sp, prefer_sp = normalize_season_pack_flags(
+            payload.get("allow_season_packs", item.allow_season_packs),
+            payload.get("prefer_season_packs", item.prefer_season_packs),
+            default_allow=bool(item.allow_season_packs),
+            default_prefer=bool(item.prefer_season_packs),
         )
+        item.allow_season_packs = allow_sp
+        item.prefer_season_packs = prefer_sp
 
     if (
         "auto_advance_seasons" in payload

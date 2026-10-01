@@ -13,6 +13,8 @@
          presetFallbackLang: 'none',
          presetVideoMode: 'best',
          presetAudioMode: 'best',
+         presetAllowSeasonPacks: false,
+         presetPreferSeasonPacks: false,
          presetResolutions: [],
          presetSources: [],
          presetCodecs: [],
@@ -53,6 +55,8 @@
              this.presetFallbackLang = 'none';
              this.presetVideoMode = 'best';
              this.presetAudioMode = 'best';
+             this.presetAllowSeasonPacks = false;
+             this.presetPreferSeasonPacks = false;
              this.presetResolutions = [];
              this.presetSources = [];
              this.presetCodecs = [];
@@ -71,6 +75,8 @@
              this.presetFallbackLang = p.fallback_language || 'none';
              this.presetVideoMode = p.video_quality_mode || 'best';
              this.presetAudioMode = p.audio_quality_mode || 'best';
+             this.presetAllowSeasonPacks = !!p.allow_season_packs;
+             this.presetPreferSeasonPacks = this.presetAllowSeasonPacks ? !!p.prefer_season_packs : false;
              const cfg = p.custom_config || {};
              this.presetResolutions = cfg.resolutions || [];
              this.presetSources = cfg.sources || [];
@@ -95,6 +101,8 @@
                  fallback_language: this.presetFallbackLang,
                  video_quality_mode: this.presetVideoMode,
                  audio_quality_mode: this.presetAudioMode,
+                 allow_season_packs: this.presetAllowSeasonPacks,
+                 prefer_season_packs: this.presetAllowSeasonPacks ? this.presetPreferSeasonPacks : false,
                  custom_config: {
                      resolutions: this.presetResolutions,
                      sources: this.presetSources,
@@ -396,6 +404,8 @@
                                         "fallback_language": preset.fallback_language or "none",
                                         "video_quality_mode": preset.video_quality_mode,
                                         "audio_quality_mode": preset.audio_quality_mode,
+                                        "allow_season_packs": preset.allow_season_packs,
+                                        "prefer_season_packs": preset.prefer_season_packs if preset.allow_season_packs else False,
                                         "custom_config": preset.custom_config
                                     } | tojson }})'
                                     class="px-2 py-1 text-xs rounded bg-[#2a2a32] hover:bg-[#3f3f46] text-gray-300">Edit</button>
@@ -405,6 +415,7 @@
                     <div class="text-xs text-[#a1a1aa] space-y-1">
                         <div>Primary Language: <span class="text-white font-semibold uppercase">{{ preset.primary_language }}</span> • Fallback: <span class="text-white font-semibold uppercase">{{ preset.fallback_language or 'None' }}</span></div>
                         <div>Video Mode: <span class="text-emerald-400 font-semibold uppercase">{{ preset.video_quality_mode }}</span> • Audio Mode: <span class="text-indigo-400 font-semibold uppercase">{{ preset.audio_quality_mode }}</span></div>
+                        <div>Season Packs: <span class="text-white font-semibold">{% if preset.allow_season_packs and preset.prefer_season_packs %}Prefer Pack{% elif preset.allow_season_packs %}Score Decides{% else %}Episodes Only (Off){% endif %}</span></div>
                     </div>
                 </div>
                 {% if not preset.is_default %}
@@ -453,6 +464,27 @@
                         <option value="it">Italian (it)</option>
                     </select>
                 </div>
+            </div>
+
+            <!-- Two-Checkbox Season Pack Acquisition Matrix -->
+            <div class="p-3.5 rounded-xl bg-[#111115] border border-[#3f3f46] flex flex-wrap items-center gap-6">
+                <label class="inline-flex items-center gap-2 cursor-pointer text-xs text-white">
+                    <input type="checkbox"
+                           x-model="presetAllowSeasonPacks"
+                           @change="if (!presetAllowSeasonPacks) presetPreferSeasonPacks = false"
+                           class="accent-[#d40060]">
+                    <span class="font-semibold">Allow Season Pack</span>
+                    <span class="text-[#a1a1aa] text-[11px]">(Score decides between Season Pack &amp; Episodes)</span>
+                </label>
+                <label class="inline-flex items-center gap-2 text-xs transition"
+                       :class="presetAllowSeasonPacks ? 'cursor-pointer text-white' : 'cursor-not-allowed text-[#71717a] opacity-60'">
+                    <input type="checkbox"
+                           x-model="presetPreferSeasonPacks"
+                           :disabled="!presetAllowSeasonPacks"
+                           class="accent-[#d40060] disabled:opacity-50">
+                    <span class="font-semibold">Prefer Season Pack</span>
+                    <span class="text-[#a1a1aa] text-[11px]">(Always grab Season Pack if available)</span>
+                </label>
             </div>
 
             <!-- Video Quality Best vs Custom -->

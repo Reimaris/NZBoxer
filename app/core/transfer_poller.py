@@ -178,9 +178,12 @@ async def _auto_replace_failed_push(
     episode: Episode | None = None,
 ) -> DownloadHistory | None:
     """Search and push the next-best non-blacklisted release candidate for a failed Auto-Push."""
+    from sqlalchemy import inspect as sa_inspect
+
     from app.core.push_engine import (
         _dispatch_candidate_list_to_torbox,
         _load_blacklisted_sets,
+        _push_single_season_or_movie_entry,
         _query_movie_across_indexers,
         _query_show_across_indexers,
         _score_and_partition_candidates,
@@ -228,66 +231,26 @@ async def _auto_replace_failed_push(
 
     if season is not None:
         entry_type = getattr(season, "entry_type", "season") or "season"
-        if entry_type == "movie":
-            raw_results = await _query_movie_across_indexers(
-                session,
-                item,
-                title_override=season.title or item.title,
-                use_external_ids=False,
-            )
-            partitioned = _score_and_partition_candidates(
-                raw_results=raw_results,
-                blacklisted_guids=blacklisted_guids,
-                blacklisted_titles=blacklisted_titles,
-                expected_title=season.title or item.title,
-                expected_year=season.air_date.year if season.air_date else None,
-                expected_alt_title=item.title,
-                expected_season=None,
-                expected_episode=None,
-                expected_season_title=season.title,
-                runtime_minutes=item.runtime_minutes,
-                effective_cfg=effective_cfg,
-            )
-            return await _dispatch_candidate_list_to_torbox(
-                session,
-                partitioned["all_valid"],
-                item=item,
-                season=season,
-                episode=None,
-                push_mode="auto",
-                event_type="push_initiated",
-                reset_fail_count=False,
-            )
+        if entry_type != "movie":
+            if "episodes" in sa_inspect(season).unloaded:
+                await session.refresh(season, ["episodes"])
+            # Revert episodes that were marked DOWNLOADING solely by the failed Season Pack
+            for ep in season.episodes:
+                if ep.status == EpisodeStatus.DOWNLOADING:
+                    ep.status = EpisodeStatus.SEARCHING
+            await session.flush()
 
-        effective_s_num = int(season.type_number or season.season_number)
-        raw_results = await _query_show_across_indexers(
-            session, item, season_number=effective_s_num, episode_number=None
-        )
-        partitioned = _score_and_partition_candidates(
-            raw_results=raw_results,
-            blacklisted_guids=blacklisted_guids,
-            blacklisted_titles=blacklisted_titles,
-            expected_title=item.title,
-            expected_year=None,
-            expected_alt_title=item.alt_title,
-            expected_season=effective_s_num,
-            expected_episode=None,
-            expected_season_title=(
-                season.title if season.title and season.title != item.title else None
-            ),
-            runtime_minutes=None,
-            effective_cfg=effective_cfg,
-        )
-        return await _dispatch_candidate_list_to_torbox(
-            session,
-            partitioned["all_valid"],
+        hists = await _push_single_season_or_movie_entry(
+            session=session,
             item=item,
             season=season,
-            episode=None,
-            push_mode="auto",
-            event_type="push_initiated",
+            effective_cfg=effective_cfg,
+            blacklisted_guids=blacklisted_guids,
+            blacklisted_titles=blacklisted_titles,
+            is_auto_advance=False,
             reset_fail_count=False,
         )
+        return hists[0] if hists else None
 
     # Standalone Movie
     raw_results = await _query_movie_across_indexers(session, item)

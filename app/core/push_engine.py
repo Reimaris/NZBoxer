@@ -48,6 +48,7 @@ from app.services.preset_service import (
     get_default_preset,
     get_preset,
     list_presets,
+    normalize_season_pack_flags,
     update_item_sticky_search_config,
 )
 from app.services.provider_service import get_active_indexers
@@ -159,14 +160,22 @@ async def resolve_effective_search_config(
         except Exception:
             pass
 
-    prefer_season_packs = bool(item.prefer_season_packs)
-    if "prefer_season_packs" in payload and payload["prefer_season_packs"] is not None:
-        val = payload["prefer_season_packs"]
-        prefer_season_packs = (
-            val
-            if isinstance(val, bool)
-            else str(val).strip().lower() in ("1", "true", "yes", "on")
-        )
+    base_allow = bool(getattr(item, "allow_season_packs", False))
+    base_prefer = bool(getattr(item, "prefer_season_packs", False))
+    if (
+        not base_allow
+        and preset is not None
+        and ("preset_id" in payload or item.preset_id is not None)
+    ):
+        base_allow = bool(getattr(preset, "allow_season_packs", False))
+        base_prefer = bool(getattr(preset, "prefer_season_packs", False))
+
+    allow_season_packs, prefer_season_packs = normalize_season_pack_flags(
+        payload.get("allow_season_packs", base_allow),
+        payload.get("prefer_season_packs", base_prefer),
+        default_allow=base_allow,
+        default_prefer=base_prefer,
+    )
 
     auto_advance_seasons = bool(item.auto_advance_seasons)
     if (
@@ -187,6 +196,7 @@ async def resolve_effective_search_config(
         "video_quality_mode": video_quality_mode,
         "audio_quality_mode": audio_quality_mode,
         "custom_config": custom_config,
+        "allow_season_packs": allow_season_packs,
         "prefer_season_packs": prefer_season_packs,
         "auto_advance_seasons": auto_advance_seasons,
     }
@@ -199,6 +209,8 @@ async def persist_sticky_preferences(
     sticky_payload: dict[str, Any] = {}
     if "preset_id" in payload:
         sticky_payload["preset_id"] = payload["preset_id"]
+    if "allow_season_packs" in payload:
+        sticky_payload["allow_season_packs"] = payload["allow_season_packs"]
     if "prefer_season_packs" in payload:
         sticky_payload["prefer_season_packs"] = payload["prefer_season_packs"]
     if "auto_advance_seasons" in payload:
@@ -504,30 +516,36 @@ async def _dispatch_candidate_list_to_torbox(
     for cand in candidates:
         guid = cand["guid"]
         title = cand["title"]
-        try:
-            nzb_bytes, filename = await treasure_maps.fetch_nzb_bytes(
-                guid,
-                api_url=cand.get("indexer_url"),
-                api_key=cand.get("indexer_key"),
-                session=session,
-            )
-        except Exception as exc:
-            logger.warning("Failed fetching NZB bytes for '%s': %s", title, exc)
-            continue
+        prefetched = cand.get("_prefetched_nzb")
+        if prefetched is not None:
+            nzb_bytes, filename = prefetched
+        else:
+            try:
+                nzb_bytes, filename = await treasure_maps.fetch_nzb_bytes(
+                    guid,
+                    api_url=cand.get("indexer_url"),
+                    api_key=cand.get("indexer_key"),
+                    session=session,
+                )
+            except Exception as exc:
+                logger.warning("Failed fetching NZB bytes for '%s': %s", title, exc)
+                continue
 
-        is_fake, fake_reason = is_nzb_content_fake(nzb_bytes, media_type=media_type_str)
-        if is_fake:
-            err_msg = f"NZB flagged as fake/executable: {fake_reason}"
-            logger.warning("Rejected fake NZB '%s': %s", title, err_msg)
-            bl = BlacklistedRelease(
-                media_item_id=item.id,
-                nzb_guid=guid,
-                nzb_title=title,
-                reason=err_msg,
+            is_fake, fake_reason = is_nzb_content_fake(
+                nzb_bytes, media_type=media_type_str
             )
-            session.add(bl)
-            await session.flush()
-            continue
+            if is_fake:
+                err_msg = f"NZB flagged as fake/executable: {fake_reason}"
+                logger.warning("Rejected fake NZB '%s': %s", title, err_msg)
+                bl = BlacklistedRelease(
+                    media_item_id=item.id,
+                    nzb_guid=guid,
+                    nzb_title=title,
+                    reason=err_msg,
+                )
+                session.add(bl)
+                await session.flush()
+                continue
 
         torbox_result = await torbox.send_nzb_file(
             nzb_bytes, filename=filename, session=session, is_manual=True
@@ -660,6 +678,56 @@ async def _load_blacklisted_sets(
     return guids, titles
 
 
+def _candidate_beats_pack(ep_cand: dict[str, Any], pack_cand: dict[str, Any]) -> bool:
+    """Return True strictly when ep_cand outranks pack_cand by language tier first, then score.
+    Ties return False so Season Packs win on equal quality."""
+    ep_primary = not bool(ep_cand.get("is_fallback", False))
+    pack_primary = not bool(pack_cand.get("is_fallback", False))
+    if ep_primary != pack_primary:
+        return ep_primary
+    return float(ep_cand.get("score") or 0.0) > float(pack_cand.get("score") or 0.0)
+
+
+async def _verify_layer2_in_memory(
+    session: AsyncSession,
+    candidates: list[dict[str, Any]],
+    item: MediaItem,
+    media_type_str: str = "episode",
+) -> dict[str, Any] | None:
+    """Fetch NZB bytes and run Layer 2 fake detection in memory without uploading to TorBox."""
+    for cand in candidates:
+        guid = cand["guid"]
+        title = cand["title"]
+        try:
+            nzb_bytes, filename = await treasure_maps.fetch_nzb_bytes(
+                guid,
+                api_url=cand.get("indexer_url"),
+                api_key=cand.get("indexer_key"),
+                session=session,
+            )
+        except Exception as exc:
+            logger.warning("Failed fetching NZB bytes for '%s': %s", title, exc)
+            continue
+
+        is_fake, fake_reason = is_nzb_content_fake(nzb_bytes, media_type=media_type_str)
+        if is_fake:
+            err_msg = f"NZB flagged as fake/executable: {fake_reason}"
+            logger.warning("Rejected fake NZB '%s': %s", title, err_msg)
+            bl = BlacklistedRelease(
+                media_item_id=item.id,
+                nzb_guid=guid,
+                nzb_title=title,
+                reason=err_msg,
+            )
+            session.add(bl)
+            await session.flush()
+            continue
+
+        cand["_prefetched_nzb"] = (nzb_bytes, filename)
+        return cand
+    return None
+
+
 async def _push_single_season_or_movie_entry(
     session: AsyncSession,
     item: MediaItem,
@@ -668,13 +736,17 @@ async def _push_single_season_or_movie_entry(
     blacklisted_guids: set[str],
     blacklisted_titles: set[str],
     is_auto_advance: bool = False,
+    reset_fail_count: bool = True,
 ) -> list[DownloadHistory]:
     """Search, score, and push a single chronological Season or Franchise Movie entry."""
     from sqlalchemy import inspect as sa_inspect
 
     ev_type = "auto_advance" if is_auto_advance else "push_initiated"
     entry_type = getattr(season, "entry_type", "season") or "season"
-    prefer_season_packs = bool(effective_cfg.get("prefer_season_packs", True))
+    allow_season_packs, prefer_season_packs = normalize_season_pack_flags(
+        effective_cfg.get("allow_season_packs", False),
+        effective_cfg.get("prefer_season_packs", False),
+    )
     dispatched: list[DownloadHistory] = []
 
     if entry_type == "movie":
@@ -705,6 +777,7 @@ async def _push_single_season_or_movie_entry(
             episode=None,
             push_mode="auto",
             event_type=ev_type,
+            reset_fail_count=reset_fail_count,
         )
         if hist is not None:
             dispatched.append(hist)
@@ -722,7 +795,33 @@ async def _push_single_season_or_movie_entry(
     if "episodes" in sa_inspect(season).unloaded:
         await session.refresh(season, ["episodes"])
 
-    if prefer_season_packs:
+    expected_season_title = (
+        season.title if season.title and season.title != item.title else None
+    )
+    sorted_eps = sorted(season.episodes, key=lambda e: e.episode_number)
+    has_acquired_episodes = any(
+        ep.status
+        in (
+            EpisodeStatus.DOWNLOADED,
+            EpisodeStatus.COMPLETED,
+            EpisodeStatus.DOWNLOADING,
+        )
+        for ep in sorted_eps
+    )
+    missing_released_eps = [
+        ep
+        for ep in sorted_eps
+        if ep.status
+        not in (
+            EpisodeStatus.DOWNLOADED,
+            EpisodeStatus.COMPLETED,
+            EpisodeStatus.DOWNLOADING,
+            EpisodeStatus.FUTURE,
+        )
+    ]
+
+    # State 3: Prefer Season Pack (allow_season_packs=True, prefer_season_packs=True)
+    if allow_season_packs and prefer_season_packs:
         raw_pack_results = await _query_show_across_indexers(
             session, item, season_number=effective_s_num, episode_number=None
         )
@@ -735,9 +834,7 @@ async def _push_single_season_or_movie_entry(
             expected_alt_title=item.alt_title,
             expected_season=effective_s_num,
             expected_episode=None,
-            expected_season_title=(
-                season.title if season.title and season.title != item.title else None
-            ),
+            expected_season_title=expected_season_title,
             runtime_minutes=None,
             effective_cfg=effective_cfg,
         )
@@ -749,21 +846,179 @@ async def _push_single_season_or_movie_entry(
             episode=None,
             push_mode="auto",
             event_type=ev_type,
+            reset_fail_count=reset_fail_count,
         )
         if hist is not None:
             dispatched.append(hist)
             return dispatched
 
-    # Pack-to-Episode Fallback (or when prefer_season_packs is False)
-    sorted_eps = sorted(season.episodes, key=lambda e: e.episode_number)
-    for ep in sorted_eps:
-        if ep.status in (
-            EpisodeStatus.DOWNLOADED,
-            EpisodeStatus.COMPLETED,
-            EpisodeStatus.DOWNLOADING,
-            EpisodeStatus.FUTURE,
-        ):
-            continue
+    # State 2: Score Decides (allow_season_packs=True, prefer_season_packs=False)
+    elif allow_season_packs and not prefer_season_packs and not has_acquired_episodes:
+        raw_pack_results = await _query_show_across_indexers(
+            session, item, season_number=effective_s_num, episode_number=None
+        )
+        pack_partitioned = _score_and_partition_candidates(
+            raw_results=raw_pack_results,
+            blacklisted_guids=blacklisted_guids,
+            blacklisted_titles=blacklisted_titles,
+            expected_title=item.title,
+            expected_year=None,
+            expected_alt_title=item.alt_title,
+            expected_season=effective_s_num,
+            expected_episode=None,
+            expected_season_title=expected_season_title,
+            runtime_minutes=None,
+            effective_cfg=effective_cfg,
+        )
+        pack_candidates = pack_partitioned["all_valid"]
+
+        if pack_candidates and not missing_released_eps:
+            hist = await _dispatch_candidate_list_to_torbox(
+                session,
+                pack_candidates,
+                item=item,
+                season=season,
+                episode=None,
+                push_mode="auto",
+                event_type=ev_type,
+                reset_fail_count=reset_fail_count,
+            )
+            if hist is not None:
+                dispatched.append(hist)
+            return dispatched
+
+        if pack_candidates and missing_released_eps:
+            best_pack = pack_candidates[0]
+            first_ep = missing_released_eps[0]
+            raw_e01_results = await _query_show_across_indexers(
+                session,
+                item,
+                season_number=effective_s_num,
+                episode_number=first_ep.episode_number,
+            )
+            e01_partitioned = _score_and_partition_candidates(
+                raw_results=raw_e01_results,
+                blacklisted_guids=blacklisted_guids,
+                blacklisted_titles=blacklisted_titles,
+                expected_title=item.title,
+                expected_year=None,
+                expected_alt_title=item.alt_title,
+                expected_season=effective_s_num,
+                expected_episode=first_ep.episode_number,
+                expected_season_title=expected_season_title,
+                runtime_minutes=None,
+                effective_cfg=effective_cfg,
+            )
+            e01_candidates = e01_partitioned["all_valid"]
+
+            # Case 2a: Pack wins or ties on E01 probe -> dispatch Pack immediately without querying E02..En
+            if not e01_candidates or not _candidate_beats_pack(
+                e01_candidates[0], best_pack
+            ):
+                hist = await _dispatch_candidate_list_to_torbox(
+                    session,
+                    pack_candidates,
+                    item=item,
+                    season=season,
+                    episode=None,
+                    push_mode="auto",
+                    event_type=ev_type,
+                    reset_fail_count=reset_fail_count,
+                )
+                if hist is not None:
+                    dispatched.append(hist)
+                    return dispatched
+
+            # Case 2b: E01 beats Pack -> Pre-flight resolve all remaining episodes in memory before any TorBox upload
+            ep_candidate_lists: list[tuple[Episode, list[dict[str, Any]]]] = [
+                (first_ep, e01_candidates)
+            ]
+            abort_to_pack = False
+
+            for ep in missing_released_eps[1:]:
+                raw_ep_results = await _query_show_across_indexers(
+                    session,
+                    item,
+                    season_number=effective_s_num,
+                    episode_number=ep.episode_number,
+                )
+                ep_part = _score_and_partition_candidates(
+                    raw_results=raw_ep_results,
+                    blacklisted_guids=blacklisted_guids,
+                    blacklisted_titles=blacklisted_titles,
+                    expected_title=item.title,
+                    expected_year=None,
+                    expected_alt_title=item.alt_title,
+                    expected_season=effective_s_num,
+                    expected_episode=ep.episode_number,
+                    expected_season_title=expected_season_title,
+                    runtime_minutes=None,
+                    effective_cfg=effective_cfg,
+                )
+                cands = ep_part["all_valid"]
+                if not cands:
+                    abort_to_pack = True
+                    break
+                ep_candidate_lists.append((ep, cands))
+
+            if not abort_to_pack:
+                top_cands = [cands[0] for _, cands in ep_candidate_lists]
+                pack_is_primary = not bool(best_pack.get("is_fallback", False))
+                any_ep_fallback = any(
+                    bool(c.get("is_fallback", False)) for c in top_cands
+                )
+                avg_ep_score = sum(
+                    float(c.get("score") or 0.0) for c in top_cands
+                ) / len(top_cands)
+                pack_score = float(best_pack.get("score") or 0.0)
+                if (pack_is_primary and any_ep_fallback) or (
+                    avg_ep_score <= pack_score
+                ):
+                    abort_to_pack = True
+
+            verified_ep_candidates: list[tuple[Episode, dict[str, Any]]] = []
+            if not abort_to_pack:
+                for ep, cands in ep_candidate_lists:
+                    verified_cand = await _verify_layer2_in_memory(
+                        session, cands, item=item, media_type_str="episode"
+                    )
+                    if verified_cand is None:
+                        abort_to_pack = True
+                        break
+                    verified_ep_candidates.append((ep, verified_cand))
+
+            if abort_to_pack:
+                hist = await _dispatch_candidate_list_to_torbox(
+                    session,
+                    pack_candidates,
+                    item=item,
+                    season=season,
+                    episode=None,
+                    push_mode="auto",
+                    event_type=ev_type,
+                    reset_fail_count=reset_fail_count,
+                )
+                if hist is not None:
+                    dispatched.append(hist)
+                    return dispatched
+            else:
+                for ep, verified_cand in verified_ep_candidates:
+                    ep_hist = await _dispatch_candidate_list_to_torbox(
+                        session,
+                        [verified_cand],
+                        item=item,
+                        season=season,
+                        episode=ep,
+                        push_mode="auto",
+                        event_type=ev_type,
+                        reset_fail_count=reset_fail_count,
+                    )
+                    if ep_hist is not None:
+                        dispatched.append(ep_hist)
+                return dispatched
+
+    # State 1 (allow_season_packs=False) or Pack-to-Episode Fallback (when no valid Season Pack exists)
+    for ep in missing_released_eps:
         raw_ep_results = await _query_show_across_indexers(
             session,
             item,
@@ -779,9 +1034,7 @@ async def _push_single_season_or_movie_entry(
             expected_alt_title=item.alt_title,
             expected_season=effective_s_num,
             expected_episode=ep.episode_number,
-            expected_season_title=(
-                season.title if season.title and season.title != item.title else None
-            ),
+            expected_season_title=expected_season_title,
             runtime_minutes=None,
             effective_cfg=effective_cfg,
         )
@@ -793,6 +1046,7 @@ async def _push_single_season_or_movie_entry(
             episode=ep,
             push_mode="auto",
             event_type=ev_type,
+            reset_fail_count=reset_fail_count,
         )
         if ep_hist is not None:
             dispatched.append(ep_hist)
@@ -1300,7 +1554,12 @@ async def execute_manual_search(
     if item is None:
         return {"error": "MediaItem not found", "status_code": 404}
 
+    await persist_sticky_preferences(session, item, payload)
     effective_cfg = await resolve_effective_search_config(session, item, payload)
+    allow_season_packs, _ = normalize_season_pack_flags(
+        effective_cfg.get("allow_season_packs", False),
+        effective_cfg.get("prefer_season_packs", False),
+    )
     blacklisted_guids, blacklisted_titles = await _load_blacklisted_sets(
         session, item.id
     )
@@ -1372,7 +1631,7 @@ async def execute_manual_search(
                     runtime_minutes=item.runtime_minutes,
                     effective_cfg=effective_cfg,
                 )
-            else:
+            elif allow_season_packs:
                 raw_res = await _query_show_across_indexers(
                     session,
                     item,
@@ -1396,6 +1655,13 @@ async def execute_manual_search(
                     runtime_minutes=None,
                     effective_cfg=effective_cfg,
                 )
+            else:
+                partitioned = {
+                    "primary": [],
+                    "fallback": [],
+                    "mismatched": [],
+                    "all_valid": [],
+                }
 
             for tier_key, target_list in (
                 ("primary", pack_primary),
@@ -1463,6 +1729,7 @@ async def execute_manual_search(
                 }
             )
 
+    await session.commit()
     return {
         "item_id": item.id,
         "pack_or_movie_releases": {
@@ -1632,6 +1899,10 @@ async def get_push_modal_context(
             "fallback_language": p.fallback_language or "none",
             "video_quality_mode": p.video_quality_mode,
             "audio_quality_mode": p.audio_quality_mode,
+            "allow_season_packs": bool(p.allow_season_packs),
+            "prefer_season_packs": bool(p.prefer_season_packs)
+            if bool(p.allow_season_packs)
+            else False,
             "custom_config": p.custom_config,
         }
         for p in presets
