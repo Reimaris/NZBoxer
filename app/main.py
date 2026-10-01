@@ -367,6 +367,7 @@ async def dashboard(request: Request, background_tasks: BackgroundTasks):
             "movies_wanted": movie_stats["wanted"],
             "series_wanted": series_stats["wanted"],
             "anime_wanted": anime_stats["wanted"],
+            "history_items": history_video,
             "history_movie_items": history_movie_items,
             "history_series_items": history_series_items,
             "history_anime_items": history_anime_items,
@@ -2092,7 +2093,13 @@ async def history_dashboard(request: Request):
             )
         )
         video_items = (await session.execute(video_stmt)).scalars().all()
-        history_video = [i for i in video_items if i.is_fully_completed]
+        history_video = sorted(
+            [i for i in video_items if i.is_fully_completed],
+            key=lambda x: (
+                x.updated_at.timestamp() if getattr(x, "updated_at", None) else 0.0
+            ),
+            reverse=True,
+        )
 
         movie_items = [
             i
@@ -2111,6 +2118,7 @@ async def history_dashboard(request: Request):
         request=request,
         name="history_dashboard.html",
         context={
+            "history_items": history_video,
             "movie_items": movie_items,
             "series_items": series_items,
             "anime_items": anime_items,

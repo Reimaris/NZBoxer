@@ -24,7 +24,6 @@ function initVideoDashboard() {
     return {
         activeCard: startCard,
         tab: ['movie', 'show', 'anime'].includes(startCard) ? startCard : 'movie',
-        historyTab: 'movies',
         search: '',
         historySearch: '',
         showStatus: false,
@@ -323,50 +322,33 @@ document.addEventListener('alpine:init', () => {
     <div x-show="['movie', 'show', 'anime'].includes(activeCard)"
          class="bg-[#24242b] border border-[#3f3f46] rounded-lg shadow overflow-hidden">
 
-        <!-- Toolbar: Category Indicator, Search Filter & Status Legend -->
+        <!-- Toolbar: Left-Aligned Search Filter & Right-Aligned Status Legend -->
         <div class="p-4 border-b border-[#3f3f46] flex flex-col md:flex-row justify-between items-center gap-4">
-            <div class="flex gap-2 bg-[#1e1e24] p-1 rounded-lg border border-[#3f3f46]">
-                <button @click="setCard('movie')" :class="{'bg-[#d40060] text-white': tab === 'movie', 'text-[#a1a1aa] hover:text-white': tab !== 'movie'}" class="px-4 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-2">
-                    <span>🎬 Movies</span>
-                    <span x-show="search.trim().length > 0 && getTabCount('movie') > 0" x-text="`(${getTabCount('movie')})`" class="bg-black/40 text-xs px-1.5 py-0.5 rounded-full font-bold ml-0.5"></span>
-                </button>
-                <button @click="setCard('show')" :class="{'bg-[#d40060] text-white': tab === 'show', 'text-[#a1a1aa] hover:text-white': tab !== 'show'}" class="px-4 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-2">
-                    <span>📺 Series</span>
-                    <span x-show="search.trim().length > 0 && getTabCount('show') > 0" x-text="`(${getTabCount('show')})`" class="bg-black/40 text-xs px-1.5 py-0.5 rounded-full font-bold ml-0.5"></span>
-                </button>
-                <button @click="setCard('anime')" :class="{'bg-[#d40060] text-white': tab === 'anime', 'text-[#a1a1aa] hover:text-white': tab !== 'anime'}" class="px-4 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-2">
-                    <span>😊 Anime</span>
-                    <span x-show="search.trim().length > 0 && getTabCount('anime') > 0" x-text="`(${getTabCount('anime')})`" class="bg-black/40 text-xs px-1.5 py-0.5 rounded-full font-bold ml-0.5"></span>
-                </button>
+            <div class="relative w-full md:w-72">
+                <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-[#a1a1aa]">
+                    <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                </div>
+                <input type="text" x-model="search" placeholder="Filter watchlist..." class="w-full bg-[#1e1e24] border border-[#3f3f46] focus:border-[#d40060] rounded-md pl-9 pr-4 py-2 text-white focus:outline-none transition-colors text-sm">
             </div>
 
-            <div class="flex items-center gap-4 w-full md:w-auto">
-                <div class="relative w-full md:w-64">
-                    <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-[#a1a1aa]">
-                        <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
-                    </div>
-                    <input type="text" x-model="search" placeholder="Filter watchlist..." class="w-full bg-[#1e1e24] border border-[#3f3f46] focus:border-[#d40060] rounded-md pl-9 pr-4 py-2 text-white focus:outline-none transition-colors text-sm">
-                </div>
-
-                <div class="relative hidden md:block">
-                    <button @click="showStatus = !showStatus" class="flex items-center gap-2 hover:text-white transition-colors cursor-pointer text-[#a1a1aa] text-sm focus:outline-none shrink-0 whitespace-nowrap">
-                        <svg class="w-4 h-4 shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"></path></svg>
-                        <span>Status Legend</span>
-                    </button>
-                    <div x-show="showStatus" @click.away="showStatus = false" style="display: none;" x-transition class="absolute top-full right-0 mt-2 w-80 bg-[#2a2a32] border border-[#3f3f46] rounded-lg shadow-xl p-4 z-10 text-xs text-gray-300">
-                        <div class="space-y-3">
-                            <div class="flex items-start gap-3">
-                                <span class="bg-amber-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider shrink-0 w-20 text-center">IN PROGRESS</span>
-                                <span>Currently downloading on TorBox, failed needing attention, or partially downloaded multi-season show.</span>
-                            </div>
-                            <div class="flex items-start gap-3">
-                                <span class="bg-[#d40060] text-white text-[10px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider shrink-0 w-20 text-center">WANTED</span>
-                                <span>Released and ready for on-demand Search / Push to TorBox.</span>
-                            </div>
-                            <div class="flex items-start gap-3">
-                                <span class="bg-blue-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider shrink-0 w-20 text-center">FUTURE / TBA</span>
-                                <span>Upcoming release or unannounced release date (TBA).</span>
-                            </div>
+            <div class="relative hidden md:block">
+                <button @click="showStatus = !showStatus" class="flex items-center gap-2 hover:text-white transition-colors cursor-pointer text-[#a1a1aa] text-sm focus:outline-none shrink-0 whitespace-nowrap">
+                    <svg class="w-4 h-4 shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"></path></svg>
+                    <span>Status Legend</span>
+                </button>
+                <div x-show="showStatus" @click.away="showStatus = false" style="display: none;" x-transition class="absolute top-full right-0 mt-2 w-80 bg-[#2a2a32] border border-[#3f3f46] rounded-lg shadow-xl p-4 z-10 text-xs text-gray-300">
+                    <div class="space-y-3">
+                        <div class="flex items-start gap-3">
+                            <span class="bg-amber-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider shrink-0 w-20 text-center">IN PROGRESS</span>
+                            <span>Currently downloading on TorBox, failed needing attention, or partially downloaded multi-season show.</span>
+                        </div>
+                        <div class="flex items-start gap-3">
+                            <span class="bg-[#d40060] text-white text-[10px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider shrink-0 w-20 text-center">WANTED</span>
+                            <span>Released and ready for on-demand Search / Push to TorBox.</span>
+                        </div>
+                        <div class="flex items-start gap-3">
+                            <span class="bg-blue-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider shrink-0 w-20 text-center">FUTURE / TBA</span>
+                            <span>Upcoming release or unannounced release date (TBA).</span>
                         </div>
                     </div>
                 </div>
@@ -377,7 +359,7 @@ document.addEventListener('alpine:init', () => {
         {% macro render_v3_table_header() %}
         <thead class="bg-[#1e1e24] text-[#a1a1aa] font-semibold text-xs uppercase tracking-wider border-b border-[#3f3f46]">
             <tr>
-                <th class="px-6 py-3.5 cursor-pointer select-none group hover:text-white transition-colors" @click="sortBy('title')" title="Sort by Title">
+                <th class="px-6 py-3.5 w-full min-w-[260px] text-left cursor-pointer select-none group hover:text-white transition-colors" @click="sortBy('title')" title="Sort by Title">
                     <div class="flex items-center gap-1.5">
                         <span>Title</span>
                         <span class="text-[10px] transition-colors" :class="sortCol === 'title' ? 'text-[#d40060]' : 'text-[#52525b] group-hover:text-[#a1a1aa]'">
@@ -387,7 +369,7 @@ document.addEventListener('alpine:init', () => {
                         </span>
                     </div>
                 </th>
-                <th class="px-6 py-3.5 cursor-pointer select-none group hover:text-white transition-colors" @click="sortBy('profile')" title="Sort by Profile">
+                <th class="px-6 py-3.5 w-px whitespace-nowrap text-left cursor-pointer select-none group hover:text-white transition-colors" @click="sortBy('profile')" title="Sort by Profile">
                     <div class="flex items-center gap-1.5">
                         <span>Profile</span>
                         <span class="text-[10px] transition-colors" :class="sortCol === 'profile' ? 'text-[#d40060]' : 'text-[#52525b] group-hover:text-[#a1a1aa]'">
@@ -397,7 +379,7 @@ document.addEventListener('alpine:init', () => {
                         </span>
                     </div>
                 </th>
-                <th class="px-6 py-3.5 cursor-pointer select-none group hover:text-white transition-colors" @click="sortBy('release-date')" title="Sort by Release Date">
+                <th class="px-6 py-3.5 w-px whitespace-nowrap text-left cursor-pointer select-none group hover:text-white transition-colors" @click="sortBy('release-date')" title="Sort by Release Date">
                     <div class="flex items-center gap-1.5">
                         <span>Release Date</span>
                         <span class="text-[10px] transition-colors" :class="sortCol === 'release-date' ? 'text-[#d40060]' : 'text-[#52525b] group-hover:text-[#a1a1aa]'">
@@ -407,7 +389,7 @@ document.addEventListener('alpine:init', () => {
                         </span>
                     </div>
                 </th>
-                <th class="px-6 py-3.5 cursor-pointer select-none group hover:text-white transition-colors" @click="sortBy('status-rank')" title="Sort by Status & Progress">
+                <th class="px-6 py-3.5 w-px whitespace-nowrap text-left cursor-pointer select-none group hover:text-white transition-colors" @click="sortBy('status-rank')" title="Sort by Status & Progress">
                     <div class="flex items-center gap-1.5">
                         <span>Status &amp; Progress</span>
                         <span class="text-[10px] transition-colors" :class="sortCol === 'status-rank' ? 'text-[#d40060]' : 'text-[#52525b] group-hover:text-[#a1a1aa]'">
@@ -417,7 +399,7 @@ document.addEventListener('alpine:init', () => {
                         </span>
                     </div>
                 </th>
-                <th class="px-6 py-3.5 text-right whitespace-nowrap w-1">Actions</th>
+                <th class="px-6 py-3.5 text-right w-px whitespace-nowrap">Actions</th>
             </tr>
         </thead>
         {% endmacro %}
@@ -425,12 +407,13 @@ document.addEventListener('alpine:init', () => {
         <!-- 5-Column Row Macro -->
         {% macro render_v3_item_row(item) %}
         {% set display_category = 'anime' if (item.media_type.value == 'movie' and item.is_anime_movie) else item.media_type.value %}
+        {% set profile_name = item.provider.name if item.provider is defined and item.provider else 'SIMKL' %}
         <tr class="hover:bg-[#2a2a32] transition-colors group"
             data-sortable="true"
             data-tier="{{ item.status_tier }}"
             data-title="{{ (item.title or '') | lower }}"
             data-type="{% if item.media_type.value == 'movie' and item.is_anime_movie %}anime movie{% elif item.media_type.value == 'movie' %}movie{% elif item.media_type.value == 'anime' %}anime{% elif item.media_type.value == 'show' %}series{% endif %}"
-            data-profile="simkl"
+            data-profile="{{ profile_name | lower }}"
             data-year="{{ item.year or '' }}"
             data-release-date="{{ item.release_date.strftime('%Y-%m-%d') if item.release_date else '' }}"
             data-status-rank="{% if item.status.value == 'failed' or item.status.value == 'manual_grab' %}1{% elif item.status.value == 'downloading' %}2{% elif item.status.value == 'searching' or item.status.value == 'pending' %}3{% elif item.status.value == 'future' %}4{% elif item.status.value == 'downloaded' %}5{% elif item.status.value == 'completed' %}6{% else %}7{% endif %}"
@@ -439,7 +422,7 @@ document.addEventListener('alpine:init', () => {
             style="display: none;">
 
             <!-- Col 1: Title & External Badges -->
-            <td class="px-6 py-4 max-w-[280px] md:max-w-sm break-words">
+            <td class="px-6 py-4 w-full min-w-[260px] break-words">
                 <div class="block">
                     <div class="flex items-center gap-2">
                         <button type="button"
@@ -453,8 +436,8 @@ document.addEventListener('alpine:init', () => {
                         <span class="text-xs text-[#a1a1aa]">({{ item.year }})</span>
                         {% endif %}
                     </div>
-                    {% if item.alt_title %}
-                    <div class="text-xs text-[#a1a1aa] mt-0.5">{{ item.alt_title }}</div>
+                    {% if item.alt_title and item.alt_title | lower != item.title | lower %}
+                    <div class="text-[11px] text-slate-400 italic mt-0.5">{{ item.alt_title }}</div>
                     {% endif %}
                     <div class="flex flex-wrap gap-1.5 mt-2 text-[10px] font-bold">
                         {% if item.simkl_id %}
@@ -474,12 +457,12 @@ document.addEventListener('alpine:init', () => {
             </td>
 
             <!-- Col 2: Profile -->
-            <td class="px-6 py-4 whitespace-nowrap">
-                <span class="bg-[#3f3f46] text-gray-200 text-xs font-bold px-2.5 py-1 rounded uppercase">SIMKL</span>
+            <td class="px-6 py-4 w-px whitespace-nowrap">
+                <span class="bg-[#3f3f46] text-gray-200 text-xs font-bold px-2.5 py-1 rounded uppercase">{{ profile_name }}</span>
             </td>
 
             <!-- Col 3: Release Date (Date or TBA) -->
-            <td class="px-6 py-4 text-gray-300 whitespace-nowrap">
+            <td class="px-6 py-4 text-gray-300 w-px whitespace-nowrap">
                 {% if item.release_date %}
                     <div>{{ item.release_date.strftime('%Y-%m-%d') }}</div>
                     <div class="text-[#a1a1aa] text-xs mt-0.5">{{ item.release_date | relative_date }}</div>
@@ -494,7 +477,7 @@ document.addEventListener('alpine:init', () => {
             </td>
 
             <!-- Col 4: Status & Progress (Including Dual Progress Pills for Anime) -->
-            <td class="px-6 py-4 whitespace-nowrap">
+            <td class="px-6 py-4 w-px whitespace-nowrap">
                 <div class="flex flex-col gap-1.5 items-start">
                     <div class="flex flex-wrap items-center gap-1.5">
                         {% if item.status.value == 'downloading' %}
@@ -527,7 +510,7 @@ document.addEventListener('alpine:init', () => {
             </td>
 
             <!-- Col 5: Actions (Search / Push + Delete) -->
-            <td class="px-6 py-4 text-right whitespace-nowrap w-1">
+            <td class="px-6 py-4 text-right w-px whitespace-nowrap">
                 <div class="flex justify-end items-center gap-2">
                     <button type="button"
                             hx-get="/api/items/{{ item.id }}/push-modal"
@@ -634,24 +617,12 @@ document.addEventListener('alpine:init', () => {
     </div>
 
     <!-- =================================================================== -->
-    <!-- CARD 4 VIEW: HISTORY (MOVIES | SERIES | ANIME SUB-TABS & 5 COLUMNS) -->
+    <!-- CARD 4 VIEW: HISTORY (UNIFIED 6-COLUMN ARCHIVE TABLE)               -->
     <!-- =================================================================== -->
     <div x-show="activeCard === 'history'" style="display: none;"
          class="bg-[#24242b] border border-[#3f3f46] rounded-lg shadow overflow-hidden">
         <div class="p-4 border-b border-[#3f3f46] bg-[#1e1e24] flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-            <div class="flex flex-wrap gap-2">
-                <button @click="historyTab = 'movies'" :class="historyTab === 'movies' ? 'bg-[#d40060] text-white shadow' : 'bg-[#2a2a32] text-[#a1a1aa] hover:text-white'" class="px-4 py-1.5 rounded-md text-sm font-medium transition-colors">
-                    Movies <span class="ml-1 opacity-75 text-xs">({{ history_movie_items | default([]) | length }})</span>
-                </button>
-                <button @click="historyTab = 'series'" :class="historyTab === 'series' ? 'bg-[#d40060] text-white shadow' : 'bg-[#2a2a32] text-[#a1a1aa] hover:text-white'" class="px-4 py-1.5 rounded-md text-sm font-medium transition-colors">
-                    Series <span class="ml-1 opacity-75 text-xs">({{ history_series_items | default([]) | length }})</span>
-                </button>
-                <button @click="historyTab = 'anime'" :class="historyTab === 'anime' ? 'bg-[#d40060] text-white shadow' : 'bg-[#2a2a32] text-[#a1a1aa] hover:text-white'" class="px-4 py-1.5 rounded-md text-sm font-medium transition-colors">
-                    Anime <span class="ml-1 opacity-75 text-xs">({{ history_anime_items | default([]) | length }})</span>
-                </button>
-            </div>
-
-            <div class="relative w-full sm:w-64">
+            <div class="relative w-full sm:w-72">
                 <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-[#a1a1aa]">
                     <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
                 </div>
@@ -659,28 +630,68 @@ document.addEventListener('alpine:init', () => {
             </div>
         </div>
 
-        {% macro render_history_row(item, cat_tab) %}
+        {% macro render_history_row(item) %}
+        {% set is_anime_cat = (item.media_type.value == 'anime' or (item.media_type.value == 'movie' and item.is_anime_movie)) %}
+        {% set type_label = 'ANIME' if is_anime_cat else ('SERIES' if item.media_type.value == 'show' else 'MOVIE') %}
+        {% set sort_type = 'anime' if is_anime_cat else ('series' if item.media_type.value == 'show' else 'movie') %}
+        {% set profile_name = item.provider.name if item.provider is defined and item.provider else 'SIMKL' %}
+        {% set archived_dt = item.completed_at if (item.completed_at is defined and item.completed_at) else (item.updated_at if (item.updated_at is defined and item.updated_at) else none) %}
         <tr class="hover:bg-[#2a2a32] transition-colors"
             data-sortable="true"
-            data-title="{{ item.title | lower }}"
-            data-profile="simkl"
-            data-archived-at="{{ item.updated_at.isoformat() if item.updated_at is defined and item.updated_at else '' }}"
-            x-show="historyTab === '{{ cat_tab }}' && ('{{ item.title|replace('\'', '\\\'') }}'.toLowerCase().includes(historySearch.toLowerCase()))">
-            <td class="px-6 py-4">
-                <div class="flex items-center gap-2">
-                    <span class="font-bold text-white">{{ item.title }}</span>
-                    {% if item.year %}
-                    <span class="text-xs text-[#a1a1aa]">({{ item.year }})</span>
+            data-title="{{ (item.title or '') | lower }}"
+            data-type="{{ sort_type }}"
+            data-profile="{{ profile_name | lower }}"
+            data-archived-at="{{ archived_dt.isoformat() if archived_dt else '' }}"
+            x-show="historySearch.trim() === '' || '{{ item.title|replace('\'', '\\\'') }}'.toLowerCase().includes(historySearch.toLowerCase()) || '{{ (item.alt_title or '')|replace('\'', '\\\'') }}'.toLowerCase().includes(historySearch.toLowerCase()) || '{{ type_label | lower }}'.includes(historySearch.toLowerCase()) || '{{ profile_name | lower }}'.includes(historySearch.toLowerCase())">
+            <td class="px-6 py-4 w-full min-w-[260px] break-words">
+                <div class="block">
+                    <div class="flex items-center gap-2">
+                        <button type="button"
+                                hx-get="/api/items/{{ item.id }}/push-modal"
+                                hx-target="#modal-container"
+                                hx-swap="innerHTML"
+                                class="font-bold text-white hover:text-[#d40060] transition-colors text-left">
+                            {{ item.title }}
+                        </button>
+                        {% if item.year %}
+                        <span class="text-xs text-[#a1a1aa]">({{ item.year }})</span>
+                        {% endif %}
+                    </div>
+                    {% if item.alt_title and item.alt_title | lower != item.title | lower %}
+                    <div class="text-[11px] text-slate-400 italic mt-0.5">{{ item.alt_title }}</div>
                     {% endif %}
+                    <div class="flex flex-wrap gap-1.5 mt-2 text-[10px] font-bold">
+                        {% if item.simkl_id %}
+                        <a href="https://simkl.com/{{ 'movies' if item.media_type.value == 'movie' else ('anime' if item.media_type.value == 'anime' else 'shows') }}/{{ item.simkl_id }}" target="_blank" class="bg-[#2a2a32] text-gray-400 hover:text-white px-2 py-0.5 rounded border border-[#3f3f46] transition-colors">SIMKL</a>
+                        {% endif %}
+                        {% if item.tmdb_id %}
+                        <a href="https://themoviedb.org/{{ 'movie' if item.media_type.value == 'movie' else 'tv' }}/{{ item.tmdb_id }}" target="_blank" class="bg-[#2a2a32] text-blue-400 hover:text-white px-2 py-0.5 rounded border border-[#3f3f46] transition-colors">TMDB</a>
+                        {% endif %}
+                        {% if item.imdb_id %}
+                        <a href="https://imdb.com/title/{{ item.imdb_id }}" target="_blank" class="bg-[#2a2a32] text-yellow-500 hover:text-white px-2 py-0.5 rounded border border-[#3f3f46] transition-colors">IMDB</a>
+                        {% endif %}
+                        {% if item.anilist_id %}
+                        <a href="https://anilist.co/anime/{{ item.anilist_id }}" target="_blank" class="bg-[#2a2a32] text-cyan-400 hover:text-white px-2 py-0.5 rounded border border-[#3f3f46] transition-colors">ANILIST</a>
+                        {% endif %}
+                    </div>
                 </div>
             </td>
-            <td class="px-6 py-4 whitespace-nowrap">
-                <span class="bg-[#3f3f46] text-gray-200 text-xs font-bold px-2.5 py-1 rounded uppercase">SIMKL</span>
+            <td class="px-6 py-4 w-px whitespace-nowrap">
+                {% if is_anime_cat %}
+                <span class="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded bg-pink-500/10 text-pink-400 border border-pink-500/20">ANIME</span>
+                {% elif item.media_type.value == 'show' %}
+                <span class="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded bg-purple-500/10 text-purple-400 border border-purple-500/20">SERIES</span>
+                {% else %}
+                <span class="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded bg-blue-500/10 text-blue-400 border border-blue-500/20">MOVIE</span>
+                {% endif %}
             </td>
-            <td class="px-6 py-4 text-gray-400 text-xs font-mono whitespace-nowrap">
-                {{ item.updated_at.strftime('%Y-%m-%d %H:%M:%S') if item.updated_at is defined and item.updated_at else '—' }}
+            <td class="px-6 py-4 w-px whitespace-nowrap">
+                <span class="bg-[#3f3f46] text-gray-200 text-xs font-bold px-2.5 py-1 rounded uppercase">{{ profile_name }}</span>
             </td>
-            <td class="px-6 py-4 whitespace-nowrap">
+            <td class="px-6 py-4 text-gray-400 text-xs font-mono w-px whitespace-nowrap">
+                {{ archived_dt.strftime('%Y-%m-%d %H:%M:%S') if archived_dt else '—' }}
+            </td>
+            <td class="px-6 py-4 w-px whitespace-nowrap">
                 <div class="flex flex-wrap items-center gap-1.5">
                     <span class="bg-emerald-600 text-white text-[11px] font-bold px-2 py-0.5 rounded uppercase tracking-wider">DONE</span>
                     {% for pill in item.progress_pills %}
@@ -688,7 +699,7 @@ document.addEventListener('alpine:init', () => {
                     {% endfor %}
                 </div>
             </td>
-            <td class="px-6 py-4 text-right whitespace-nowrap w-1">
+            <td class="px-6 py-4 text-right w-px whitespace-nowrap">
                 <div class="flex justify-end items-center gap-2">
                     <button type="button"
                             hx-get="/api/items/{{ item.id }}/push-modal"
@@ -710,41 +721,46 @@ document.addEventListener('alpine:init', () => {
         </tr>
         {% endmacro %}
 
+        {% set unified_history = history_items if history_items is defined else ((history_movie_items | default([])) + (history_series_items | default([])) + (history_anime_items | default([]))) %}
         <div class="overflow-x-auto">
             <table class="min-w-full divide-y divide-[#3f3f46]">
                 <thead class="bg-[#1e1e24]">
                     <tr>
-                        <th scope="col" @click="sortHistoryBy('title')" class="px-6 py-3.5 text-left text-xs font-semibold text-[#a1a1aa] uppercase tracking-wider cursor-pointer hover:text-white select-none">
+                        <th scope="col" @click="sortHistoryBy('title')" class="px-6 py-3.5 w-full min-w-[260px] text-left text-xs font-semibold text-[#a1a1aa] uppercase tracking-wider cursor-pointer hover:text-white select-none">
                             <div class="flex items-center gap-1">
                                 <span>Title</span>
                                 <span x-show="historySortCol === 'title'" x-text="historySortDir === 'asc' ? '▲' : '▼'" class="text-[#d40060] font-bold text-xs"></span>
                             </div>
                         </th>
-                        <th scope="col" @click="sortHistoryBy('profile')" class="px-6 py-3.5 text-left text-xs font-semibold text-[#a1a1aa] uppercase tracking-wider cursor-pointer hover:text-white select-none">
+                        <th scope="col" @click="sortHistoryBy('type')" class="px-6 py-3.5 w-px whitespace-nowrap text-left text-xs font-semibold text-[#a1a1aa] uppercase tracking-wider cursor-pointer hover:text-white select-none">
+                            <div class="flex items-center gap-1">
+                                <span>Type</span>
+                                <span x-show="historySortCol === 'type'" x-text="historySortDir === 'asc' ? '▲' : '▼'" class="text-[#d40060] font-bold text-xs"></span>
+                            </div>
+                        </th>
+                        <th scope="col" @click="sortHistoryBy('profile')" class="px-6 py-3.5 w-px whitespace-nowrap text-left text-xs font-semibold text-[#a1a1aa] uppercase tracking-wider cursor-pointer hover:text-white select-none">
                             <div class="flex items-center gap-1">
                                 <span>Profile</span>
                                 <span x-show="historySortCol === 'profile'" x-text="historySortDir === 'asc' ? '▲' : '▼'" class="text-[#d40060] font-bold text-xs"></span>
                             </div>
                         </th>
-                        <th scope="col" @click="sortHistoryBy('archived-at')" class="px-6 py-3.5 text-left text-xs font-semibold text-[#a1a1aa] uppercase tracking-wider cursor-pointer hover:text-white select-none">
+                        <th scope="col" @click="sortHistoryBy('archived-at')" class="px-6 py-3.5 w-px whitespace-nowrap text-left text-xs font-semibold text-[#a1a1aa] uppercase tracking-wider cursor-pointer hover:text-white select-none">
                             <div class="flex items-center gap-1">
                                 <span>Archived At</span>
                                 <span x-show="historySortCol === 'archived-at'" x-text="historySortDir === 'asc' ? '▲' : '▼'" class="text-[#d40060] font-bold text-xs"></span>
                             </div>
                         </th>
-                        <th scope="col" class="px-6 py-3.5 text-left text-xs font-semibold text-[#a1a1aa] uppercase tracking-wider">Status</th>
-                        <th scope="col" class="px-6 py-3.5 text-right text-xs font-semibold text-[#a1a1aa] uppercase tracking-wider whitespace-nowrap w-1">Actions</th>
+                        <th scope="col" class="px-6 py-3.5 w-px whitespace-nowrap text-left text-xs font-semibold text-[#a1a1aa] uppercase tracking-wider">Status</th>
+                        <th scope="col" class="px-6 py-3.5 w-px whitespace-nowrap text-right text-xs font-semibold text-[#a1a1aa] uppercase tracking-wider">Actions</th>
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-[#3f3f46] bg-[#24242b]" id="dashboard-history-table-body">
-                    {% for item in history_movie_items | default([]) %}
-                        {{ render_history_row(item, 'movies') }}
-                    {% endfor %}
-                    {% for item in history_series_items | default([]) %}
-                        {{ render_history_row(item, 'series') }}
-                    {% endfor %}
-                    {% for item in history_anime_items | default([]) %}
-                        {{ render_history_row(item, 'anime') }}
+                    {% for item in unified_history %}
+                        {{ render_history_row(item) }}
+                    {% else %}
+                    <tr>
+                        <td colspan="6" class="px-6 py-8 text-center text-sm text-[#a1a1aa] italic">No archived media items yet.</td>
+                    </tr>
                     {% endfor %}
                 </tbody>
             </table>
