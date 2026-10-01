@@ -63,6 +63,17 @@ function initVideoDashboard() {
             const url = new URL(window.location);
             url.searchParams.set('tab', this.activeCard);
             window.history.replaceState({}, '', url);
+            // Handle post-push card switch from push modal (avoids full page reload)
+            window.addEventListener('nzboxer:switch-card', (ev) => {
+                const card = ev.detail && ev.detail.card;
+                if (card) {
+                    this.setCard(card);
+                    this.$nextTick(() => {
+                        const el = document.getElementById('active-pushes-container');
+                        if (el && window.htmx) htmx.trigger(el, 'load');
+                    });
+                }
+            });
         },
         applySearchPreset(presetId) {
             if (!presetId) return;
@@ -842,7 +853,7 @@ document.addEventListener('alpine:init', () => {
 
         <div id="active-pushes-container"
              hx-get="/api/pushes/active"
-             hx-trigger="every 5s[activeCard === 'active_pushes']"
+             hx-trigger="load, every 8s[activeCard === 'active_pushes']"
              hx-swap="innerHTML">
             {% include "partials/active_pushes_table.html" %}
         </div>

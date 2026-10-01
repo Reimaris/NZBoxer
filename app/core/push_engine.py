@@ -260,7 +260,7 @@ def _score_and_partition_candidates(
     expected_season_title: str | None,
     runtime_minutes: int | None,
     effective_cfg: dict[str, Any],
-) -> dict[str, list[dict[str, Any]]]:
+) -> dict[str, Any]:
     """Score raw indexer results and partition them into primary, fallback, mismatched, and all_valid."""
     primary_list: list[dict[str, Any]] = []
     fallback_list: list[dict[str, Any]] = []
@@ -367,11 +367,45 @@ def _score_and_partition_candidates(
     mismatched_list.sort(key=lambda x: x["score"], reverse=True)
 
     all_valid = primary_list + fallback_list
+
+    target_lbl = expected_title or "Media"
+    if expected_season is not None and expected_episode is not None:
+        target_lbl = (
+            f"{target_lbl} S{int(expected_season):02d}E{int(expected_episode):02d}"
+        )
+    elif expected_season is not None:
+        target_lbl = f"{target_lbl} S{int(expected_season):02d} (Pack)"
+
+    if all_valid:
+        logger.info(
+            "    🏆 Top %d releases for %s:",
+            min(5, len(all_valid)),
+            target_lbl,
+        )
+        for i, c in enumerate(all_valid[:5]):
+            tier_lbl = "Fallback" if c.get("is_fallback") else "Primary"
+            logger.info(
+                "       %d. [%.1f] (%s) %s",
+                i + 1,
+                c["score"],
+                tier_lbl,
+                c["title"],
+            )
+    else:
+        logger.info(
+            "    ❌ No matching releases for %s (raw=%d, lang_mismatch=%d).",
+            target_lbl,
+            len(raw_results),
+            len(mismatched_list),
+        )
+
     return {
         "primary": primary_list,
         "fallback": fallback_list,
         "mismatched": mismatched_list,
         "all_valid": all_valid,
+        "had_candidates": len(all_valid) > 0,
+        "had_raw_results": len(raw_results) > 0,
     }
 
 
@@ -564,22 +598,45 @@ async def _dispatch_candidate_list_to_torbox(
             season.id if season else (episode.season_id if episode else None)
         )
         target_episode_id = episode.id if episode else None
+        new_torbox_id = (
+            str(torbox_result.get("id")) if torbox_result.get("id") else None
+        )
 
         if reset_fail_count:
-            prior_failed_stmt = select(DownloadHistory).where(
-                DownloadHistory.media_item_id == item.id,
-                DownloadHistory.season_id == target_season_id
-                if target_season_id is not None
-                else DownloadHistory.season_id.is_(None),
-                DownloadHistory.episode_id == target_episode_id
-                if target_episode_id is not None
-                else DownloadHistory.episode_id.is_(None),
-                DownloadHistory.is_dismissed.is_(False),
-            )
-            prior_rows = (await session.execute(prior_failed_stmt)).scalars().all()
+            from sqlalchemy import and_, or_
+
+            from app.core.transfer_poller import _delete_and_purge_torbox_transfer
+
+            if target_season_id is None and target_episode_id is None:
+                prior_stmt = select(DownloadHistory).where(
+                    DownloadHistory.media_item_id == item.id,
+                    DownloadHistory.season_id.is_(None),
+                    DownloadHistory.episode_id.is_(None),
+                    DownloadHistory.is_dismissed.is_(False),
+                )
+            elif target_episode_id is None:
+                prior_stmt = select(DownloadHistory).where(
+                    DownloadHistory.media_item_id == item.id,
+                    DownloadHistory.season_id == target_season_id,
+                    DownloadHistory.is_dismissed.is_(False),
+                )
+            else:
+                prior_stmt = select(DownloadHistory).where(
+                    DownloadHistory.media_item_id == item.id,
+                    DownloadHistory.is_dismissed.is_(False),
+                    or_(
+                        DownloadHistory.episode_id == target_episode_id,
+                        and_(
+                            DownloadHistory.season_id == target_season_id,
+                            DownloadHistory.episode_id.is_(None),
+                        ),
+                    ),
+                )
+            prior_rows = (await session.execute(prior_stmt)).scalars().all()
             for pr in prior_rows:
-                if (pr.status_detail or "").lower().startswith("failed"):
-                    pr.is_dismissed = True
+                if pr.torbox_id and str(pr.torbox_id) != str(new_torbox_id or ""):
+                    await _delete_and_purge_torbox_transfer(session, pr.torbox_id)
+                pr.is_dismissed = True
 
         history = DownloadHistory(
             media_item_id=item.id,
@@ -598,7 +655,7 @@ async def _dispatch_candidate_list_to_torbox(
             torbox_hash=str(torbox_result.get("hash"))
             if torbox_result.get("hash")
             else None,
-            torbox_id=str(torbox_result.get("id")) if torbox_result.get("id") else None,
+            torbox_id=new_torbox_id,
             torbox_sent_at=datetime.now(timezone.utc),
             is_fallback=bool(cand.get("is_fallback", False)),
             grabbed_language=cand.get("matched_language"),
@@ -611,6 +668,11 @@ async def _dispatch_candidate_list_to_torbox(
             if reset_fail_count:
                 episode.fail_count = 0
             episode.last_error = None
+            if season is not None and season.status in (
+                SeasonStatus.COMPLETED,
+                SeasonStatus.DOWNLOADED,
+            ):
+                season.status = SeasonStatus.DOWNLOADING
         elif season is not None:
             season.status = SeasonStatus.DOWNLOADING
             if reset_fail_count:
@@ -737,8 +799,15 @@ async def _push_single_season_or_movie_entry(
     blacklisted_titles: set[str],
     is_auto_advance: bool = False,
     reset_fail_count: bool = True,
+    _candidates_found_acc: list[bool] | None = None,
 ) -> list[DownloadHistory]:
-    """Search, score, and push a single chronological Season or Franchise Movie entry."""
+    """Search, score, and push a single chronological Season or Franchise Movie entry.
+
+    Args:
+        _candidates_found_acc: Optional mutable list; if provided, ``True`` is appended
+            whenever at least one scored valid candidate is found, allowing the caller to
+            distinguish "nothing on indexers" from "releases found but TorBox skipped all".
+    """
     from sqlalchemy import inspect as sa_inspect
 
     ev_type = "auto_advance" if is_auto_advance else "push_initiated"
@@ -769,6 +838,8 @@ async def _push_single_season_or_movie_entry(
             runtime_minutes=item.runtime_minutes,
             effective_cfg=effective_cfg,
         )
+        if partitioned["had_candidates"] and _candidates_found_acc is not None:
+            _candidates_found_acc.append(True)
         hist = await _dispatch_candidate_list_to_torbox(
             session,
             partitioned["all_valid"],
@@ -820,6 +891,14 @@ async def _push_single_season_or_movie_entry(
         )
     ]
 
+    # When a user explicitly selects an already-COMPLETED/DOWNLOADED season in the Push Modal,
+    # re-search and re-push all released episodes (or a Season Pack) of that season.
+    if not is_auto_advance and reset_fail_count and not missing_released_eps:
+        missing_released_eps = [
+            ep for ep in sorted_eps if ep.status != EpisodeStatus.FUTURE
+        ]
+        has_acquired_episodes = False
+
     # State 3: Prefer Season Pack (allow_season_packs=True, prefer_season_packs=True)
     if allow_season_packs and prefer_season_packs:
         raw_pack_results = await _query_show_across_indexers(
@@ -838,6 +917,8 @@ async def _push_single_season_or_movie_entry(
             runtime_minutes=None,
             effective_cfg=effective_cfg,
         )
+        if pack_partitioned["had_candidates"] and _candidates_found_acc is not None:
+            _candidates_found_acc.append(True)
         hist = await _dispatch_candidate_list_to_torbox(
             session,
             pack_partitioned["all_valid"],
@@ -871,6 +952,8 @@ async def _push_single_season_or_movie_entry(
             effective_cfg=effective_cfg,
         )
         pack_candidates = pack_partitioned["all_valid"]
+        if pack_partitioned["had_candidates"] and _candidates_found_acc is not None:
+            _candidates_found_acc.append(True)
 
         if pack_candidates and not missing_released_eps:
             hist = await _dispatch_candidate_list_to_torbox(
@@ -1038,6 +1121,8 @@ async def _push_single_season_or_movie_entry(
             runtime_minutes=None,
             effective_cfg=effective_cfg,
         )
+        if ep_partitioned["had_candidates"] and _candidates_found_acc is not None:
+            _candidates_found_acc.append(True)
         ep_hist = await _dispatch_candidate_list_to_torbox(
             session,
             ep_partitioned["all_valid"],
@@ -1395,6 +1480,7 @@ async def execute_auto_push(
 
     dispatched_histories: list[DownloadHistory] = []
     pushed_seasons: list[Season] = []
+    any_candidates_found: bool = False  # True if any search returned ≥1 scored valid release
 
     # Case 1: Standalone Movie (or movie item with no seasons)
     if item.media_type == MediaType.MOVIE and not season_ids and not episode_ids:
@@ -1413,6 +1499,8 @@ async def execute_auto_push(
             runtime_minutes=item.runtime_minutes,
             effective_cfg=effective_cfg,
         )
+        if movie_partitioned["had_candidates"]:
+            any_candidates_found = True
         hist = await _dispatch_candidate_list_to_torbox(
             session,
             movie_partitioned["all_valid"],
@@ -1448,6 +1536,7 @@ async def execute_auto_push(
             key=lambda s: s.watch_order,
         )
         covered_season_ids: set[int] = set()
+        candidates_found_acc: list[bool] = []
         for season in selected_seasons:
             season.fail_count = 0
             for ep in season.episodes:
@@ -1460,11 +1549,14 @@ async def execute_auto_push(
                 blacklisted_guids=blacklisted_guids,
                 blacklisted_titles=blacklisted_titles,
                 is_auto_advance=False,
+                _candidates_found_acc=candidates_found_acc,
             )
             if s_hists:
                 dispatched_histories.extend(s_hists)
                 pushed_seasons.append(season)
             covered_season_ids.add(season.id)
+        if candidates_found_acc:
+            any_candidates_found = True
 
         # Case 3: Explicitly selected individual episodes not already covered by a season push
         if episode_ids:
@@ -1525,12 +1617,22 @@ async def execute_auto_push(
             dispatched_histories.extend(adv_hists)
 
     await session.commit()
+    pushed = len(dispatched_histories) > 0
+    no_release_reason: str | None = None
+    if not pushed:
+        if any_candidates_found:
+            # Indexers returned scored releases but TorBox rejected / NZB fetch failed for all
+            no_release_reason = "candidates_not_dispatched"
+        else:
+            # Indexers returned zero scored releases (nothing found or all filtered by scorer)
+            no_release_reason = "no_indexer_results"
     return {
-        "pushed": len(dispatched_histories) > 0,
+        "pushed": pushed,
         "push_mode": "auto",
         "dispatched_count": len(dispatched_histories),
         "history_ids": [h.id for h in dispatched_histories],
         "guids": [h.nzb_guid for h in dispatched_histories],
+        "no_release_reason": no_release_reason,
         "status_code": 200,
     }
 
@@ -1908,13 +2010,31 @@ async def get_push_modal_context(
         for p in presets
     ]
 
+    unpushed_season_ids = [
+        s.id
+        for s in entries
+        if s.status
+        not in (
+            SeasonStatus.COMPLETED,
+            SeasonStatus.DOWNLOADED,
+            SeasonStatus.DOWNLOADING,
+            SeasonStatus.FUTURE,
+        )
+    ]
+    default_selected_season_ids = (
+        [unpushed_season_ids[0]] if unpushed_season_ids else []
+    )
+
     return {
         "item": item,
         "entries": entries,
         "presets": presets,
+        "presets_data": presets_data,
         "presets_json": json.dumps(presets_data),
         "effective_config": effective_cfg,
         "effective_config_json": json.dumps(effective_cfg),
         "default_min_size_gb": default_min_gb,
         "default_max_size_gb": default_max_gb,
+        "unpushed_season_ids": unpushed_season_ids,
+        "default_selected_season_ids": default_selected_season_ids,
     }
