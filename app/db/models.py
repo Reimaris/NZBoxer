@@ -517,7 +517,8 @@ class MediaItem(Base):
     download_history: Mapped[list[DownloadHistory]] = relationship(
         "DownloadHistory",
         back_populates="media_item",
-        cascade="all, delete-orphan",
+        cascade="save-update, merge",
+        passive_deletes=True,
         lazy="selectin",
     )
 
@@ -821,7 +822,8 @@ class Season(Base):
     download_history: Mapped[list[DownloadHistory]] = relationship(
         "DownloadHistory",
         back_populates="season",
-        cascade="all, delete-orphan",
+        cascade="save-update, merge",
+        passive_deletes=True,
         lazy="selectin",
     )
 
@@ -938,7 +940,8 @@ class Episode(Base):
     download_history: Mapped[list[DownloadHistory]] = relationship(
         "DownloadHistory",
         back_populates="episode",
-        cascade="all, delete-orphan",
+        cascade="save-update, merge",
+        passive_deletes=True,
         lazy="selectin",
     )
 
@@ -1002,31 +1005,11 @@ class Episode(Base):
 
 
 class DownloadHistory(Base):
-    """Records every NZB that has been sent to TorBox.
+    """Records every NZB that has been sent to TorBox (Push History Ledger).
 
-    Used by the upgrade logic to compare new candidates against what has
-    already been downloaded. A new NZB is only sent if its score exceeds
-    the current best score by at least the configured ``upgrade_threshold``.
-
-    Attributes:
-        id:             Auto-incremented primary key.
-        media_item_id:  FK → MediaItem.id (always set).
-        season_id:      FK → Season.id (set for series downloads, None for movies).
-        nzb_title:      Original raw NZB release name (for audit / re-parsing).
-        nzb_guid:       Unique identifier from the Newznab indexer.
-        score:          The computed score at time of download decision.
-        size_bytes:     Reported file size in bytes.
-        resolution:     Parsed resolution string (e.g. '1080p').
-        video_codec:    Parsed video codec string (e.g. 'h265').
-        audio_codec:    Parsed audio codec string.
-        source:         Parsed source string (e.g. 'Blu-ray').
-        release_group:  Parsed release group name.
-        torbox_hash:    Hash or ID returned by TorBox after successful upload.
-        torbox_sent_at: Timestamp when the NZB was sent to TorBox.
-        created_at:     Row creation timestamp.
-
-        media_item:     Back-reference to parent MediaItem.
-        season:         Back-reference to parent Season (if applicable).
+    Stores nullable foreign keys to MediaItem/Season/Episode and denormalized
+    snapshot columns so push history survives Simkl watchlist pruning or manual
+    MediaItem deletion.
     """
 
     __tablename__ = "download_history"
@@ -1034,22 +1017,36 @@ class DownloadHistory(Base):
     # --- Primary key ---
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
 
-    # --- Foreign keys ---
-    media_item_id: Mapped[int] = mapped_column(
+    # --- Foreign keys (nullable with SET NULL so history survives MediaItem deletion) ---
+    media_item_id: Mapped[int | None] = mapped_column(
         Integer,
-        ForeignKey("media_items.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
-    )
-    season_id: Mapped[int | None] = mapped_column(
-        Integer, ForeignKey("seasons.id", ondelete="CASCADE"), nullable=True, index=True
-    )
-    episode_id: Mapped[int | None] = mapped_column(
-        Integer,
-        ForeignKey("episodes.id", ondelete="CASCADE"),
+        ForeignKey("media_items.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )
+    season_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("seasons.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    episode_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("episodes.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
+    # --- Denormalized Media Snapshot (ADR-082) ---
+    media_title: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    media_year: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    media_type_label: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    target_label: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    poster_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    simkl_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    tmdb_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    imdb_id: Mapped[str | None] = mapped_column(String(20), nullable=True, index=True)
+    anilist_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
 
     # --- NZB metadata ---
     nzb_title: Mapped[str] = mapped_column(String(1000), nullable=False)
@@ -1118,7 +1115,7 @@ class DownloadHistory(Base):
     )
 
     # --- Relationships ---
-    media_item: Mapped[MediaItem] = relationship(
+    media_item: Mapped[MediaItem | None] = relationship(
         "MediaItem", back_populates="download_history"
     )
     season: Mapped[Season | None] = relationship(

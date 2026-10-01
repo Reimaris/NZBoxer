@@ -225,6 +225,8 @@ async def adopt_torbox_downloads_for_video(session) -> None:
             if best_item.download_state in ("downloading", "queued", "processing"):
                 new_status = MediaStatus.DOWNLOADING
 
+            from app.core.push_engine import populate_history_snapshot
+
             movie.status = new_status
             dh = DownloadHistory(
                 media_item_id=movie.id,
@@ -238,6 +240,7 @@ async def adopt_torbox_downloads_for_video(session) -> None:
                 torbox_id=best_item.torbox_id,
                 torbox_sent_at=datetime.now(timezone.utc),
             )
+            populate_history_snapshot(dh, movie)
             session.add(dh)
             changed = True
 
@@ -279,6 +282,8 @@ async def adopt_torbox_downloads_for_video(session) -> None:
                 best_parsed = parsed
 
         if best_item and best_parsed:
+            from app.core.push_engine import populate_history_snapshot
+
             is_completed = best_score >= target_score
             new_season_status = (
                 SeasonStatus.COMPLETED if is_completed else SeasonStatus.DOWNLOADED
@@ -311,6 +316,7 @@ async def adopt_torbox_downloads_for_video(session) -> None:
                 torbox_id=best_item.torbox_id,
                 torbox_sent_at=datetime.now(timezone.utc),
             )
+            populate_history_snapshot(dh, season.media_item, season=season)
             session.add(dh)
             changed = True
 
@@ -354,6 +360,8 @@ async def adopt_torbox_downloads_for_video(session) -> None:
                 best_parsed = parsed
 
         if best_item and best_parsed:
+            from app.core.push_engine import populate_history_snapshot
+
             is_completed = best_score >= target_score
             new_episode_status = (
                 EpisodeStatus.COMPLETED if is_completed else EpisodeStatus.DOWNLOADED
@@ -375,6 +383,9 @@ async def adopt_torbox_downloads_for_video(session) -> None:
                 source=best_parsed.source,
                 torbox_id=best_item.torbox_id,
                 torbox_sent_at=datetime.now(timezone.utc),
+            )
+            populate_history_snapshot(
+                dh, episode.season.media_item, season=episode.season, episode=episode
             )
             session.add(dh)
             changed = True
@@ -451,6 +462,8 @@ async def match_and_adopt_target_from_cache(session, target) -> bool:
                 best_parsed = parsed
 
         if best_item and best_parsed:
+            from app.core.push_engine import populate_history_snapshot
+
             is_completed = best_score >= target_score
             new_status = (
                 MediaStatus.COMPLETED if is_completed else MediaStatus.DOWNLOADED
@@ -471,6 +484,7 @@ async def match_and_adopt_target_from_cache(session, target) -> bool:
                 torbox_id=best_item.torbox_id,
                 torbox_sent_at=datetime.now(timezone.utc),
             )
+            populate_history_snapshot(dh, target)
             session.add(dh)
             changed = True
 
@@ -528,6 +542,8 @@ async def match_and_adopt_target_from_cache(session, target) -> bool:
                     best_parsed = parsed
 
             if best_item and best_parsed:
+                from app.core.push_engine import populate_history_snapshot
+
                 is_completed = best_score >= target_score
                 new_season_status = (
                     SeasonStatus.COMPLETED if is_completed else SeasonStatus.DOWNLOADED
@@ -559,6 +575,7 @@ async def match_and_adopt_target_from_cache(session, target) -> bool:
                     torbox_id=best_item.torbox_id,
                     torbox_sent_at=datetime.now(timezone.utc),
                 )
+                populate_history_snapshot(dh, target, season=season)
                 session.add(dh)
                 changed = True
 
@@ -604,6 +621,8 @@ async def match_and_adopt_target_from_cache(session, target) -> bool:
                             best_parsed_ep = parsed
 
                     if best_item_ep and best_parsed_ep:
+                        from app.core.push_engine import populate_history_snapshot
+
                         is_completed = best_score_ep >= target_score
                         new_episode_status = (
                             EpisodeStatus.COMPLETED
@@ -632,6 +651,7 @@ async def match_and_adopt_target_from_cache(session, target) -> bool:
                             torbox_id=best_item_ep.torbox_id,
                             torbox_sent_at=datetime.now(timezone.utc),
                         )
+                        populate_history_snapshot(dh, target, season=season, episode=ep)
                         session.add(dh)
                         changed = True
 

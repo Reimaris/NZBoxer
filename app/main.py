@@ -242,9 +242,11 @@ async def dashboard(request: Request, background_tasks: BackgroundTasks):
                 selectinload(MediaItem.provider),
             )
         )
+        from app.db.models import MediaStatus
+
         result = await session.execute(stmt)
         all_items = result.scalars().all()
-        items = [i for i in all_items if not i.is_fully_completed]
+        items = [i for i in all_items if i.status != MediaStatus.IGNORED]
         history_video = sorted(
             [i for i in all_items if i.is_fully_completed],
             key=lambda x: (
@@ -877,13 +879,15 @@ async def change_type_endpoint(
 
 @app.delete("/items/{item_id}")
 async def delete_item(item_id: int):
-    """Delete an item entirely from the database."""
+    """Delete an item from the watchlist while preserving detached DownloadHistory snapshots."""
+    from app.core.push_engine import detach_item_download_history
     from app.db.database import async_session_factory
     from app.db.models import MediaItem
 
     async with async_session_factory() as session:
         item = await session.get(MediaItem, item_id)
         if item:
+            await detach_item_download_history(session, item)
             await session.delete(item)
             await session.commit()
             return HTMLResponse(

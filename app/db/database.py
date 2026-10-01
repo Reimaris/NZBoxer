@@ -405,7 +405,7 @@ async def init_db(database_url: str) -> None:
                 "ALTER TABLE seasons ADD COLUMN entry_type VARCHAR(20) NOT NULL DEFAULT 'season';",
                 "ALTER TABLE seasons ADD COLUMN watch_order INTEGER NOT NULL DEFAULT 1;",
                 "ALTER TABLE seasons ADD COLUMN type_number INTEGER NOT NULL DEFAULT 1;",
-                # DownloadHistory live transfer & push mode columns
+                # DownloadHistory live transfer, push mode, and denormalized snapshot columns (ADR-082)
                 "ALTER TABLE download_history ADD COLUMN push_mode VARCHAR(20) NOT NULL DEFAULT 'auto';",
                 "ALTER TABLE download_history ADD COLUMN progress_pct FLOAT NOT NULL DEFAULT 0.0;",
                 "ALTER TABLE download_history ADD COLUMN download_speed_bytes BIGINT NOT NULL DEFAULT 0;",
@@ -414,6 +414,15 @@ async def init_db(database_url: str) -> None:
                 "ALTER TABLE download_history ADD COLUMN is_dismissed BOOLEAN NOT NULL DEFAULT 0;",
                 "ALTER TABLE download_history ADD COLUMN notification_sent BOOLEAN NOT NULL DEFAULT 0;",
                 "ALTER TABLE download_history ADD COLUMN auto_replaced_count INTEGER NOT NULL DEFAULT 0;",
+                "ALTER TABLE download_history ADD COLUMN media_title VARCHAR(500);",
+                "ALTER TABLE download_history ADD COLUMN media_year INTEGER;",
+                "ALTER TABLE download_history ADD COLUMN media_type_label VARCHAR(30);",
+                "ALTER TABLE download_history ADD COLUMN target_label VARCHAR(200);",
+                "ALTER TABLE download_history ADD COLUMN poster_url VARCHAR(1000);",
+                "ALTER TABLE download_history ADD COLUMN simkl_id INTEGER;",
+                "ALTER TABLE download_history ADD COLUMN tmdb_id INTEGER;",
+                "ALTER TABLE download_history ADD COLUMN imdb_id VARCHAR(20);",
+                "ALTER TABLE download_history ADD COLUMN anilist_id INTEGER;",
                 # SystemSettings Discord webhook & per-event notification columns
                 "ALTER TABLE system_settings ADD COLUMN discord_webhook_url VARCHAR(500);",
                 "ALTER TABLE system_settings ADD COLUMN discord_enabled BOOLEAN NOT NULL DEFAULT 0;",
@@ -440,6 +449,192 @@ async def init_db(database_url: str) -> None:
                     await session.execute(__import__("sqlalchemy").text(sql_stmt))
                 except Exception:
                     pass
+
+            # --- Rebuild download_history if media_item_id is still NOT NULL or ON DELETE CASCADE (ADR-082) ---
+            try:
+                from sqlalchemy import text as sa_text
+
+                ti_rows = (
+                    await session.execute(
+                        sa_text("PRAGMA table_info(download_history)")
+                    )
+                ).fetchall()
+                fk_rows = (
+                    await session.execute(
+                        sa_text("PRAGMA foreign_key_list(download_history)")
+                    )
+                ).fetchall()
+                needs_rebuild = any(
+                    r[1] == "media_item_id" and int(r[3] or 0) == 1 for r in ti_rows
+                ) or any(str(r[6] or "").upper() == "CASCADE" for r in fk_rows)
+
+                if needs_rebuild:
+                    await session.commit()
+                    await session.execute(sa_text("PRAGMA foreign_keys=OFF;"))
+                    await session.execute(
+                        sa_text("DROP TABLE IF EXISTS download_history_v3_new;")
+                    )
+                    await session.execute(
+                        sa_text(
+                            """
+                            CREATE TABLE download_history_v3_new (
+                                id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+                                media_item_id INTEGER REFERENCES media_items(id) ON DELETE SET NULL,
+                                season_id INTEGER REFERENCES seasons(id) ON DELETE SET NULL,
+                                episode_id INTEGER REFERENCES episodes(id) ON DELETE SET NULL,
+                                media_title VARCHAR(500),
+                                media_year INTEGER,
+                                media_type_label VARCHAR(30),
+                                target_label VARCHAR(200),
+                                poster_url VARCHAR(1000),
+                                simkl_id INTEGER,
+                                tmdb_id INTEGER,
+                                imdb_id VARCHAR(20),
+                                anilist_id INTEGER,
+                                nzb_title VARCHAR(1000) NOT NULL,
+                                nzb_guid VARCHAR(500),
+                                score FLOAT,
+                                size_bytes INTEGER,
+                                resolution VARCHAR(20),
+                                video_codec VARCHAR(50),
+                                audio_codec VARCHAR(100),
+                                source VARCHAR(100),
+                                release_group VARCHAR(100),
+                                bitrate_mbps FLOAT,
+                                torbox_hash VARCHAR(200),
+                                torbox_id VARCHAR(200),
+                                torbox_sent_at DATETIME,
+                                is_fallback BOOLEAN NOT NULL DEFAULT 0,
+                                grabbed_language VARCHAR(50),
+                                push_mode VARCHAR(20) NOT NULL DEFAULT 'auto',
+                                progress_pct FLOAT NOT NULL DEFAULT 0.0,
+                                download_speed_bytes BIGINT NOT NULL DEFAULT 0,
+                                eta_seconds INTEGER,
+                                status_detail VARCHAR(200),
+                                is_dismissed BOOLEAN NOT NULL DEFAULT 0,
+                                notification_sent BOOLEAN NOT NULL DEFAULT 0,
+                                auto_replaced_count INTEGER NOT NULL DEFAULT 0,
+                                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+                            );
+                            """
+                        )
+                    )
+                    target_cols = [
+                        "id",
+                        "media_item_id",
+                        "season_id",
+                        "episode_id",
+                        "media_title",
+                        "media_year",
+                        "media_type_label",
+                        "target_label",
+                        "poster_url",
+                        "simkl_id",
+                        "tmdb_id",
+                        "imdb_id",
+                        "anilist_id",
+                        "nzb_title",
+                        "nzb_guid",
+                        "score",
+                        "size_bytes",
+                        "resolution",
+                        "video_codec",
+                        "audio_codec",
+                        "source",
+                        "release_group",
+                        "bitrate_mbps",
+                        "torbox_hash",
+                        "torbox_id",
+                        "torbox_sent_at",
+                        "is_fallback",
+                        "grabbed_language",
+                        "push_mode",
+                        "progress_pct",
+                        "download_speed_bytes",
+                        "eta_seconds",
+                        "status_detail",
+                        "is_dismissed",
+                        "notification_sent",
+                        "auto_replaced_count",
+                        "created_at",
+                    ]
+                    existing_col_names = {r[1] for r in ti_rows}
+                    shared_cols = [c for c in target_cols if c in existing_col_names]
+                    cols_csv = ", ".join(shared_cols)
+                    await session.execute(
+                        sa_text(
+                            f"INSERT INTO download_history_v3_new ({cols_csv}) "
+                            f"SELECT {cols_csv} FROM download_history;"
+                        )
+                    )
+                    await session.execute(sa_text("DROP TABLE download_history;"))
+                    await session.execute(
+                        sa_text(
+                            "ALTER TABLE download_history_v3_new RENAME TO download_history;"
+                        )
+                    )
+                    for idx_col in (
+                        "media_item_id",
+                        "season_id",
+                        "episode_id",
+                        "simkl_id",
+                        "tmdb_id",
+                        "imdb_id",
+                        "anilist_id",
+                        "nzb_guid",
+                        "torbox_hash",
+                        "torbox_id",
+                    ):
+                        await session.execute(
+                            sa_text(
+                                f"CREATE INDEX IF NOT EXISTS ix_download_history_{idx_col} "
+                                f"ON download_history ({idx_col});"
+                            )
+                        )
+                    await session.commit()
+                    await session.execute(sa_text("PRAGMA foreign_keys=ON;"))
+                    logger.info(
+                        "Rebuilt download_history table with nullable foreign keys (ON DELETE SET NULL)."
+                    )
+            except Exception as e:
+                logger.warning("Error rebuilding download_history table: %s", e)
+
+            # --- Backfill denormalized snapshot fields on existing DownloadHistory rows (ADR-082) ---
+            try:
+                from sqlalchemy import select
+                from sqlalchemy.orm import selectinload
+
+                from app.core.push_engine import populate_history_snapshot
+                from app.db.models import DownloadHistory
+
+                unpopulated_stmt = (
+                    select(DownloadHistory)
+                    .where(
+                        DownloadHistory.media_item_id.isnot(None),
+                        DownloadHistory.media_title.is_(None),
+                    )
+                    .options(
+                        selectinload(DownloadHistory.media_item),
+                        selectinload(DownloadHistory.season),
+                        selectinload(DownloadHistory.episode),
+                    )
+                )
+                unpopulated_rows = (
+                    (await session.execute(unpopulated_stmt)).scalars().all()
+                )
+                for dh in unpopulated_rows:
+                    if dh.media_item is not None:
+                        populate_history_snapshot(
+                            dh,
+                            dh.media_item,
+                            season=dh.season,
+                            episode=dh.episode,
+                            only_missing=True,
+                        )
+                if unpopulated_rows:
+                    await session.commit()
+            except Exception as e:
+                logger.warning("Error backfilling download_history snapshots: %s", e)
 
             # Backfill existing seasons watch_order and type_number from season_number
             try:

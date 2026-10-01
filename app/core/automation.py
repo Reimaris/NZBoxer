@@ -340,6 +340,106 @@ async def _fetch_simkl_category_with_retry(
         raise
 
 
+def _extract_active_simkl_ids(raw_items: list[dict[str, Any]]) -> set[int]:
+    """Extract all integer Simkl IDs from a Simkl watchlist payload."""
+    active_ids: set[int] = set()
+    for item_data in raw_items:
+        media_obj = (
+            item_data.get("movie") or item_data.get("show") or item_data.get("anime")
+        )
+        if not isinstance(media_obj, dict):
+            continue
+        raw_sid = (media_obj.get("ids") or {}).get("simkl")
+        if raw_sid is not None:
+            try:
+                active_ids.add(int(raw_sid))
+            except (TypeError, ValueError):
+                pass
+    return active_ids
+
+
+def _item_has_active_downloading_entity(item: MediaItem) -> bool:
+    """Return True if the MediaItem or any of its child Seasons/Episodes is currently DOWNLOADING."""
+    if item.status == MediaStatus.DOWNLOADING:
+        return True
+    for s in item.seasons or []:
+        if s.status == SeasonStatus.DOWNLOADING:
+            return True
+        for ep in s.episodes or []:
+            if ep.status == EpisodeStatus.DOWNLOADING:
+                return True
+    return False
+
+
+async def _prune_completed_or_dropped_simkl_items(
+    session: AsyncSession,
+    provider_id: int,
+    active_simkl_ids: set[int],
+    *,
+    sync_movies: bool,
+    sync_series: bool,
+    sync_anime: bool,
+) -> int:
+    """Prune local Simkl MediaItems absent from Simkl plantowatch + watching after detaching their DownloadHistory."""
+    from app.core.push_engine import detach_item_download_history
+
+    stmt = (
+        select(MediaItem)
+        .where(MediaItem.provider_id == provider_id)
+        .options(
+            selectinload(MediaItem.seasons).selectinload(Season.episodes),
+        )
+    )
+    local_items = (await session.execute(stmt)).scalars().all()
+    pruned_count = 0
+
+    for item in local_items:
+        if item.media_type == MediaType.SHOW and not sync_series:
+            continue
+        if item.media_type == MediaType.ANIME and not sync_anime:
+            continue
+        if item.media_type == MediaType.MOVIE:
+            is_anime_m = bool(getattr(item, "is_anime_movie", False))
+            if is_anime_m and not (sync_anime or sync_movies):
+                continue
+            if not is_anime_m and not sync_movies:
+                continue
+
+        item_simkl_ids: set[int] = set()
+        if item.simkl_id:
+            item_simkl_ids.add(int(item.simkl_id))
+        for s in item.seasons or []:
+            if s.simkl_id:
+                item_simkl_ids.add(int(s.simkl_id))
+
+        if not item_simkl_ids:
+            continue
+        if item_simkl_ids & active_simkl_ids:
+            continue
+        if _item_has_active_downloading_entity(item):
+            logger.info(
+                "    ⏳ Deferring Simkl prune for '%s' (ID %d) because a transfer is actively DOWNLOADING.",
+                item.title,
+                item.id,
+            )
+            continue
+
+        item_title = item.title
+        item_simkl = item.simkl_id
+        await detach_item_download_history(session, item)
+        await session.delete(item)
+        pruned_count += 1
+        logger.info(
+            "    🗑️ Pruned completed/dropped Simkl watchlist item '%s' (Simkl ID %s); push history preserved.",
+            item_title,
+            item_simkl,
+        )
+
+    if pruned_count > 0:
+        await session.flush()
+    return pruned_count
+
+
 async def sync_all_providers() -> None:
     """Sync watchlists and libraries from all configured providers (Simkl, etc.)."""
     import json
@@ -385,6 +485,7 @@ async def sync_all_providers() -> None:
                     sync_movies = bool(cfg.get("sync_movies", True))
                     sync_series = bool(cfg.get("sync_series", True))
                     sync_anime = bool(cfg.get("sync_anime", True))
+                    active_simkl_ids: set[int] = set()
 
                     if sync_movies:
                         (
@@ -398,6 +499,7 @@ async def sync_all_providers() -> None:
                             client_id,
                             access_token,
                         )
+                        active_simkl_ids.update(_extract_active_simkl_ids(movies))
                         await _sync_items(session, movies, MediaType.MOVIE, provider.id)
 
                     if sync_series:
@@ -412,6 +514,7 @@ async def sync_all_providers() -> None:
                             client_id,
                             access_token,
                         )
+                        active_simkl_ids.update(_extract_active_simkl_ids(shows))
                         await _sync_items(session, shows, MediaType.SHOW, provider.id)
 
                     if sync_anime:
@@ -426,8 +529,18 @@ async def sync_all_providers() -> None:
                             client_id,
                             access_token,
                         )
+                        active_simkl_ids.update(_extract_active_simkl_ids(anime))
                         await _sync_items(session, anime, MediaType.ANIME, provider.id)
                         await consolidate_standalone_anime_sequels(session)
+
+                    await _prune_completed_or_dropped_simkl_items(
+                        session,
+                        provider.id,
+                        active_simkl_ids,
+                        sync_movies=sync_movies,
+                        sync_series=sync_series,
+                        sync_anime=sync_anime,
+                    )
 
                     cfg = provider.simkl_config
                     cfg["last_synced_at"] = datetime.now(timezone.utc).isoformat()
@@ -1968,13 +2081,18 @@ async def reset_anime_metadata(session: AsyncSession, item_id: int) -> MediaItem
 
 def classify_v3_status_tier(item: MediaItem) -> str:
     """Classify an active MediaItem into one of the 3 v3.0.0 dashboard horizontal sections:
-    - 'in_progress'   (Section 1: Active / Partially Downloaded)
+    - 'in_progress'   (Section 1: Active / In Progress & Downloaded Watchlist Items)
     - 'ready_to_push' (Section 2: Ready to Push / Wanted & Unpushed)
     - 'upcoming'      (Section 3: Upcoming / Future & TBA)
     """
     from sqlalchemy import inspect as sa_inspect
 
-    if item.status in (MediaStatus.DOWNLOADING, MediaStatus.FAILED):
+    if item.status in (
+        MediaStatus.DOWNLOADING,
+        MediaStatus.FAILED,
+        MediaStatus.DOWNLOADED,
+        MediaStatus.COMPLETED,
+    ):
         return "in_progress"
 
     seasons: list[Season] = []
@@ -1983,11 +2101,21 @@ def classify_v3_status_tier(item: MediaItem) -> str:
 
     if seasons:
         for s in seasons:
-            if s.status in (SeasonStatus.DOWNLOADING, SeasonStatus.FAILED):
+            if s.status in (
+                SeasonStatus.DOWNLOADING,
+                SeasonStatus.FAILED,
+                SeasonStatus.DOWNLOADED,
+                SeasonStatus.COMPLETED,
+            ):
                 return "in_progress"
             if "episodes" not in sa_inspect(s).unloaded:
                 for ep in s.episodes or []:
-                    if ep.status in (EpisodeStatus.DOWNLOADING, EpisodeStatus.FAILED):
+                    if ep.status in (
+                        EpisodeStatus.DOWNLOADING,
+                        EpisodeStatus.FAILED,
+                        EpisodeStatus.DOWNLOADED,
+                        EpisodeStatus.COMPLETED,
+                    ):
                         return "in_progress"
 
         if (item.downloaded_seasons + item.downloaded_movies) > 0:

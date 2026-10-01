@@ -82,6 +82,100 @@ def _parse_int_list(val: Any) -> list[int]:
     return []
 
 
+def build_history_media_type_label(item: MediaItem) -> str:
+    """Return normalized media_type_label ('movie', 'series', 'anime', or 'anime-movie') for DownloadHistory."""
+    if item.media_type == MediaType.MOVIE:
+        return (
+            "anime-movie" if bool(getattr(item, "is_anime_movie", False)) else "movie"
+        )
+    if item.media_type == MediaType.ANIME:
+        return "anime"
+    return "series"
+
+
+def build_history_target_label(
+    item: MediaItem | None,
+    season: Season | None = None,
+    episode: Episode | None = None,
+) -> str:
+    """Return human-readable target_label ('Movie', 'Season X Pack', 'Movie X' / season title, or 'SXXEYY')."""
+    if episode is not None and season is not None:
+        s_num = int(season.type_number or season.season_number or 1)
+        return f"S{s_num:02d}E{int(episode.episode_number):02d}"
+    if episode is not None:
+        return f"E{int(episode.episode_number):02d}"
+    if season is not None:
+        entry_type = getattr(season, "entry_type", "season") or "season"
+        s_num = int(season.type_number or season.season_number or 1)
+        if entry_type == "movie":
+            return season.title or f"Movie {s_num}"
+        return f"Season {s_num} Pack"
+    return "Movie"
+
+
+def populate_history_snapshot(
+    history: DownloadHistory,
+    item: MediaItem,
+    season: Season | None = None,
+    episode: Episode | None = None,
+    *,
+    only_missing: bool = False,
+) -> None:
+    """Populate denormalized media snapshot fields on a DownloadHistory instance."""
+    m_type_label = build_history_media_type_label(item)
+    t_label = build_history_target_label(item, season, episode)
+    s_simkl = getattr(season, "simkl_id", None) if season is not None else None
+    s_anilist = getattr(season, "anilist_id", None) if season is not None else None
+
+    if not only_missing or not history.media_title:
+        history.media_title = item.title
+    if not only_missing or history.media_year is None:
+        history.media_year = item.year
+    if not only_missing or not history.media_type_label:
+        history.media_type_label = m_type_label
+    if not only_missing or not history.target_label:
+        history.target_label = t_label
+    if not only_missing or not history.poster_url:
+        history.poster_url = item.poster_url
+    if not only_missing or history.simkl_id is None:
+        history.simkl_id = item.simkl_id or s_simkl
+    if not only_missing or history.tmdb_id is None:
+        history.tmdb_id = item.tmdb_id
+    if not only_missing or not history.imdb_id:
+        history.imdb_id = item.imdb_id
+    if not only_missing or history.anilist_id is None:
+        history.anilist_id = item.anilist_id or s_anilist
+
+
+async def detach_item_download_history(session: AsyncSession, item: MediaItem) -> None:
+    """Snapshot and detach all DownloadHistory rows linked to a MediaItem before deleting the item."""
+    stmt = (
+        select(DownloadHistory)
+        .where(DownloadHistory.media_item_id == item.id)
+        .options(
+            selectinload(DownloadHistory.season),
+            selectinload(DownloadHistory.episode),
+        )
+    )
+    rows = (await session.execute(stmt)).scalars().all()
+    for dh in rows:
+        populate_history_snapshot(
+            dh,
+            item,
+            season=dh.season,
+            episode=dh.episode,
+            only_missing=True,
+        )
+        dh.media_item_id = None
+        dh.season_id = None
+        dh.episode_id = None
+        dh.media_item = None
+        dh.season = None
+        dh.episode = None
+    if rows:
+        await session.flush()
+
+
 async def resolve_effective_search_config(
     session: AsyncSession,
     item: MediaItem,
@@ -666,6 +760,7 @@ async def _dispatch_candidate_list_to_torbox(
             history.season = season
         if episode is not None:
             history.episode = episode
+        populate_history_snapshot(history, item, season=season, episode=episode)
         session.add(history)
 
         if episode is not None:
