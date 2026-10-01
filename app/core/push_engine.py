@@ -728,6 +728,7 @@ async def _dispatch_candidate_list_to_torbox(
             for pr in prior_rows:
                 if pr.torbox_id and str(pr.torbox_id) != str(new_torbox_id or ""):
                     superseded_torbox_ids.append(str(pr.torbox_id))
+                pr.status_detail = "replaced"
                 pr.is_dismissed = True
                 pr.notification_sent = True
 

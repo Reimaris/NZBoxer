@@ -547,6 +547,9 @@ async def _run_transfer_poller_tick_with_session(
         if d.get("id") is not None:
             tb_map[str(d["id"])] = d
 
+    if tb_map:
+        await reconcile_completed_history_with_torbox(session, set(tb_map.keys()))
+
     sys_settings = (
         (await session.execute(select(SystemSettings).where(SystemSettings.id == 1)))
         .scalars()
@@ -643,7 +646,10 @@ async def _run_transfer_poller_tick_with_session(
         candidates = [
             h
             for h in histories
-            if not h.is_dismissed and (not require_episode_none or h.episode_id is None)
+            if not h.is_dismissed
+            and (h.status_detail or "").strip().lower()
+            not in ("replaced", "canceled", "deleted")
+            and (not require_episode_none or h.episode_id is None)
         ]
         if not candidates:
             return None
@@ -891,7 +897,11 @@ async def _handle_transfer_failure(
 
     if replacement_hist is not None:
         replacement_hist.auto_replaced_count = prev_auto_replaced + 1
-        await session.delete(history)
+        history.status_detail = "replaced"
+        history.is_dismissed = True
+        history.notification_sent = True
+        history.download_speed_bytes = 0
+        history.eta_seconds = None
         await session.commit()
         # Intermediate auto_replaced notifications are intentionally suppressed;
         # the final settled notification will summarize any auto-replacements.
@@ -976,7 +986,7 @@ async def get_active_pushes(session: AsyncSession) -> list[dict[str, Any]]:
         is_failed = entity_status == "failed" or detail_lower.startswith("failed")
         is_active_downloading = (
             entity_status == "downloading"
-            and detail_lower != "completed"
+            and detail_lower not in ("completed", "replaced", "canceled", "deleted")
             and not detail_lower.startswith("failed")
         )
 
@@ -1074,12 +1084,14 @@ async def dismiss_failed_push(session: AsyncSession, history_id: int) -> bool:
 
 
 async def cancel_active_push(session: AsyncSession, history_id: int) -> bool:
-    """Cancel and delete an active transfer on TorBox, dismiss its history row, and revert entity to SEARCHING."""
+    """Cancel and delete an active transfer on TorBox, mark its history row 'canceled', and revert entity to SEARCHING."""
     stmt = (
         select(DownloadHistory)
         .where(DownloadHistory.id == history_id)
         .options(
-            selectinload(DownloadHistory.media_item),
+            selectinload(DownloadHistory.media_item)
+            .selectinload(MediaItem.seasons)
+            .selectinload(Season.episodes),
             selectinload(DownloadHistory.season).selectinload(Season.episodes),
             selectinload(DownloadHistory.episode),
         )
@@ -1088,8 +1100,7 @@ async def cancel_active_push(session: AsyncSession, history_id: int) -> bool:
     if history is None:
         return False
 
-    if history.torbox_id:
-        await _delete_and_purge_torbox_transfer(session, history.torbox_id)
+    old_torbox_id = history.torbox_id
 
     if history.episode is not None:
         history.episode.status = EpisodeStatus.SEARCHING
@@ -1101,10 +1112,466 @@ async def cancel_active_push(session: AsyncSession, history_id: int) -> bool:
     elif history.media_item is not None:
         history.media_item.status = MediaStatus.SEARCHING
 
-    await session.delete(history)
+    history.status_detail = "canceled"
+    history.is_dismissed = True
+    history.notification_sent = True
+    history.progress_pct = 0.0
+    history.download_speed_bytes = 0
+    history.eta_seconds = None
+
+    if history.media_item is not None and (
+        history.season is not None or history.episode is not None
+    ):
+        await _recalculate_parent_status(session, history.media_item)
+
     await session.commit()
+
+    if old_torbox_id:
+        await _delete_and_purge_torbox_transfer(session, old_torbox_id)
 
     remaining = await count_downloading_entities(session)
     if remaining == 0:
         transfer_poller.sleep()
     return True
+
+
+async def reconcile_completed_history_with_torbox(
+    session: AsyncSession,
+    live_torbox_ids: set[str],
+) -> int:
+    """Passively reconcile completed DownloadHistory rows against live TorBox transfer IDs.
+
+    Marks missing rows as status_detail='deleted' without altering MediaItem, Season, or Episode status.
+    """
+    stmt = select(DownloadHistory).where(
+        DownloadHistory.status_detail == "completed",
+        DownloadHistory.torbox_id.is_not(None),
+    )
+    rows = (await session.execute(stmt)).scalars().all()
+    updated = 0
+    for row in rows:
+        if row.torbox_id and str(row.torbox_id) not in live_torbox_ids:
+            row.status_detail = "deleted"
+            updated += 1
+    if updated > 0:
+        await session.commit()
+    return updated
+
+
+async def _recalculate_parent_status(
+    session: AsyncSession,
+    item: MediaItem | None,
+) -> None:
+    """Recalculate parent MediaItem status from its child Seasons and Episodes."""
+    if item is None or item.id is None:
+        return
+
+    seasons = (
+        (
+            await session.execute(
+                select(Season)
+                .where(Season.media_item_id == item.id)
+                .options(selectinload(Season.episodes))
+            )
+        )
+        .scalars()
+        .all()
+    )
+    if not seasons:
+        return
+
+    any_downloading = False
+    any_completed = False
+
+    for s in seasons:
+        if s.status == SeasonStatus.DOWNLOADING:
+            any_downloading = True
+        elif s.status in (SeasonStatus.COMPLETED, SeasonStatus.DOWNLOADED):
+            any_completed = True
+
+        for ep in s.episodes or []:
+            if ep.status == EpisodeStatus.DOWNLOADING:
+                any_downloading = True
+            elif ep.status in (EpisodeStatus.COMPLETED, EpisodeStatus.DOWNLOADED):
+                any_completed = True
+
+    if any_downloading:
+        item.status = MediaStatus.DOWNLOADING
+    elif any_completed:
+        item.status = MediaStatus.COMPLETED
+    else:
+        item.status = MediaStatus.SEARCHING
+        item.fail_count = 0
+        item.last_error = None
+        if hasattr(item, "completed_at"):
+            setattr(item, "completed_at", None)
+
+
+async def manual_delete_from_torbox(
+    session: AsyncSession,
+    *,
+    history_id: int | None = None,
+    item_id: int | None = None,
+    season_id: int | None = None,
+    episode_id: int | None = None,
+) -> dict[str, Any]:
+    """Delete transfer(s) from TorBox, mark DownloadHistory 'deleted', reset target entities to SEARCHING, and recalculate parent MediaItem status."""
+    from sqlalchemy import or_
+
+    history_row: DownloadHistory | None = None
+    if history_id is not None:
+        history_row = (
+            (
+                await session.execute(
+                    select(DownloadHistory)
+                    .where(DownloadHistory.id == history_id)
+                    .options(
+                        selectinload(DownloadHistory.media_item),
+                        selectinload(DownloadHistory.season).selectinload(
+                            Season.episodes
+                        ),
+                        selectinload(DownloadHistory.episode),
+                    )
+                )
+            )
+            .scalars()
+            .first()
+        )
+        if history_row is None:
+            return {"status": "not_found", "deleted_torbox_ids": []}
+        if item_id is None:
+            item_id = history_row.media_item_id
+        if season_id is None:
+            season_id = history_row.season_id
+        if episode_id is None:
+            episode_id = history_row.episode_id
+
+    item: MediaItem | None = None
+    if item_id is not None:
+        item = (
+            (
+                await session.execute(
+                    select(MediaItem)
+                    .where(MediaItem.id == item_id)
+                    .options(
+                        selectinload(MediaItem.seasons).selectinload(Season.episodes),
+                    )
+                )
+            )
+            .scalars()
+            .first()
+        )
+
+    season: Season | None = None
+    if season_id is not None:
+        season = (
+            (
+                await session.execute(
+                    select(Season)
+                    .where(Season.id == season_id)
+                    .options(
+                        selectinload(Season.episodes),
+                        selectinload(Season.media_item),
+                    )
+                )
+            )
+            .scalars()
+            .first()
+        )
+        if item is None and season is not None:
+            item = season.media_item
+
+    episode: Episode | None = None
+    if episode_id is not None:
+        episode = (
+            (
+                await session.execute(
+                    select(Episode)
+                    .where(Episode.id == episode_id)
+                    .options(
+                        selectinload(Episode.season).selectinload(Season.episodes),
+                        selectinload(Episode.season).selectinload(Season.media_item),
+                    )
+                )
+            )
+            .scalars()
+            .first()
+        )
+        if season is None and episode is not None:
+            season = episode.season
+        if item is None and season is not None:
+            item = season.media_item
+
+    # Collect matching DownloadHistory rows to mark 'deleted' and extract torbox_ids
+    matching_histories: list[DownloadHistory] = []
+    if history_row is not None:
+        matching_histories.append(history_row)
+
+    if episode_id is not None:
+        ep_hists = (
+            (
+                await session.execute(
+                    select(DownloadHistory).where(
+                        DownloadHistory.episode_id == episode_id
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        for h in ep_hists:
+            if all(existing.id != h.id for existing in matching_histories):
+                matching_histories.append(h)
+    elif season_id is not None:
+        ep_ids = [
+            ep.id for ep in (season.episodes if season else []) if ep.id is not None
+        ]
+        if ep_ids:
+            s_stmt = select(DownloadHistory).where(
+                or_(
+                    DownloadHistory.season_id == season_id,
+                    DownloadHistory.episode_id.in_(ep_ids),
+                )
+            )
+        else:
+            s_stmt = select(DownloadHistory).where(
+                DownloadHistory.season_id == season_id
+            )
+        s_hists = (await session.execute(s_stmt)).scalars().all()
+        for h in s_hists:
+            if all(existing.id != h.id for existing in matching_histories):
+                matching_histories.append(h)
+    elif item_id is not None:
+        i_stmt = select(DownloadHistory).where(
+            DownloadHistory.media_item_id == item_id,
+            DownloadHistory.season_id.is_(None),
+            DownloadHistory.episode_id.is_(None),
+        )
+        i_hists = (await session.execute(i_stmt)).scalars().all()
+        for h in i_hists:
+            if all(existing.id != h.id for existing in matching_histories):
+                matching_histories.append(h)
+
+    torbox_ids_to_delete: list[str] = []
+    for h in matching_histories:
+        detail_low = (h.status_detail or "").strip().lower()
+        if h.id == history_id or detail_low not in ("replaced", "canceled"):
+            if h.id == history_id or detail_low != "deleted":
+                if h.torbox_id and str(h.torbox_id) not in torbox_ids_to_delete:
+                    torbox_ids_to_delete.append(str(h.torbox_id))
+            h.status_detail = "deleted"
+            h.is_dismissed = True
+            h.notification_sent = True
+            h.download_speed_bytes = 0
+            h.eta_seconds = None
+
+    # Reset target entities to SEARCHING (WANTED)
+    if episode is not None:
+        episode.status = EpisodeStatus.SEARCHING
+        episode.fail_count = 0
+        episode.last_error = None
+        if hasattr(episode, "torbox_id"):
+            setattr(episode, "torbox_id", None)
+        if season is not None and season.status in (
+            SeasonStatus.COMPLETED,
+            SeasonStatus.DOWNLOADED,
+        ):
+            season.status = SeasonStatus.SEARCHING
+        await _recalculate_parent_status(session, item)
+    elif season is not None:
+        season.status = SeasonStatus.SEARCHING
+        season.fail_count = 0
+        season.last_error = None
+        if hasattr(season, "torbox_id"):
+            setattr(season, "torbox_id", None)
+        for ep in season.episodes or []:
+            if ep.status != EpisodeStatus.FUTURE:
+                ep.status = EpisodeStatus.SEARCHING
+                ep.fail_count = 0
+                ep.last_error = None
+                if hasattr(ep, "torbox_id"):
+                    setattr(ep, "torbox_id", None)
+        await _recalculate_parent_status(session, item)
+    elif item is not None:
+        item.status = MediaStatus.SEARCHING
+        item.fail_count = 0
+        item.last_error = None
+        if hasattr(item, "torbox_id"):
+            setattr(item, "torbox_id", None)
+        if hasattr(item, "completed_at"):
+            setattr(item, "completed_at", None)
+
+    await session.commit()
+
+    for tb_id in torbox_ids_to_delete:
+        await _delete_and_purge_torbox_transfer(session, tb_id)
+
+    remaining = await count_downloading_entities(session)
+    if remaining == 0:
+        transfer_poller.sleep()
+
+    return {
+        "status": "ok",
+        "deleted_torbox_ids": torbox_ids_to_delete,
+        "item_id": item.id if item else item_id,
+    }
+
+
+async def get_push_history_ledger(session: AsyncSession) -> list[dict[str, Any]]:
+    """Query DownloadHistory ordered by COALESCE(torbox_sent_at, created_at) DESC, id DESC for Card 4 Push History Ledger."""
+    stmt = (
+        select(DownloadHistory)
+        .options(
+            selectinload(DownloadHistory.media_item),
+            selectinload(DownloadHistory.season),
+            selectinload(DownloadHistory.episode),
+        )
+        .order_by(
+            func.coalesce(
+                DownloadHistory.torbox_sent_at, DownloadHistory.created_at
+            ).desc(),
+            DownloadHistory.id.desc(),
+        )
+    )
+    rows = (await session.execute(stmt)).scalars().all()
+    ledger: list[dict[str, Any]] = []
+
+    for h in rows:
+        item = h.media_item
+        season = h.season
+        episode = h.episode
+
+        # Title & Target
+        if item is not None:
+            media_title = item.title
+            media_year = item.year
+            alt_title = item.alt_title
+            poster_url = item.poster_url or h.poster_url
+            simkl_id = item.simkl_id or h.simkl_id
+            tmdb_id = item.tmdb_id or h.tmdb_id
+            imdb_id = item.imdb_id or h.imdb_id
+            anilist_id = item.anilist_id or h.anilist_id
+            target_label = discord.format_target_label(
+                item=item, season=season, episode=episode
+            )
+            if item.media_type == MediaType.ANIME or getattr(
+                item, "is_anime_movie", False
+            ):
+                type_label = "ANIME"
+                category_key = "anime"
+            elif item.media_type == MediaType.SHOW:
+                type_label = "SERIES"
+                category_key = "show"
+            else:
+                type_label = "MOVIE"
+                category_key = "movie"
+            is_detached = False
+        else:
+            media_title = h.media_title or h.nzb_title
+            media_year = h.media_year
+            alt_title = None
+            poster_url = h.poster_url
+            simkl_id = h.simkl_id
+            tmdb_id = h.tmdb_id
+            imdb_id = h.imdb_id
+            anilist_id = h.anilist_id
+            target_label = h.target_label or "Movie"
+            raw_type = (h.media_type_label or "MOVIE").upper()
+            if "ANIME" in raw_type:
+                type_label = "ANIME"
+                category_key = "anime"
+            elif "SERIES" in raw_type or "SHOW" in raw_type:
+                type_label = "SERIES"
+                category_key = "show"
+            else:
+                type_label = "MOVIE"
+                category_key = "movie"
+            is_detached = True
+
+        # Status badge classification
+        detail_raw = (h.status_detail or "").strip()
+        detail_low = detail_raw.lower()
+        if detail_low == "deleted":
+            torbox_status = "DELETED"
+            status_key = "deleted"
+            failure_reason = None
+        elif detail_low == "replaced":
+            torbox_status = "REPLACED"
+            status_key = "replaced"
+            failure_reason = None
+        elif detail_low == "canceled":
+            torbox_status = "CANCELED"
+            status_key = "canceled"
+            failure_reason = None
+        elif detail_low.startswith("failed"):
+            torbox_status = "FAILED"
+            status_key = "failed"
+            failure_reason = (
+                detail_raw[len("failed:") :].strip()
+                if ":" in detail_raw
+                else detail_raw
+            )
+        elif detail_low in (
+            "downloading",
+            "queued",
+            "processing",
+            "unpacking",
+            "verifying",
+        ):
+            torbox_status = detail_low.upper()
+            status_key = "downloading"
+            failure_reason = None
+        else:
+            torbox_status = "READY ON TORBOX"
+            status_key = "completed"
+            failure_reason = None
+
+        pushed_dt = h.torbox_sent_at or h.created_at
+        pushed_ts = pushed_dt.timestamp() if pushed_dt else 0.0
+        pushed_str = pushed_dt.strftime("%Y-%m-%d %H:%M") if pushed_dt else "—"
+
+        size_gb = (
+            f"{h.size_bytes / (1024**3):.1f} GB"
+            if h.size_bytes and h.size_bytes > 0
+            else None
+        )
+
+        ledger.append(
+            {
+                "id": h.id,
+                "media_item_id": h.media_item_id,
+                "season_id": h.season_id,
+                "episode_id": h.episode_id,
+                "media_title": media_title,
+                "media_year": media_year,
+                "alt_title": alt_title,
+                "poster_url": poster_url,
+                "target_label": target_label,
+                "type_label": type_label,
+                "category_key": category_key,
+                "is_detached": is_detached,
+                "simkl_id": simkl_id,
+                "tmdb_id": tmdb_id,
+                "imdb_id": imdb_id,
+                "anilist_id": anilist_id,
+                "nzb_title": h.nzb_title,
+                "resolution": h.resolution,
+                "source": h.source,
+                "video_codec": h.video_codec,
+                "audio_codec": h.audio_codec,
+                "grabbed_language": h.grabbed_language,
+                "size_gb": size_gb,
+                "score": int(h.score) if h.score is not None else None,
+                "pushed_at_str": pushed_str,
+                "pushed_at_ts": pushed_ts,
+                "torbox_id": h.torbox_id,
+                "status_detail": h.status_detail,
+                "torbox_status": torbox_status,
+                "status_key": status_key,
+                "failure_reason": failure_reason,
+                "can_delete_torbox": status_key == "completed" and bool(h.torbox_id),
+                "can_repush": h.media_item_id is not None,
+            }
+        )
+
+    return ledger

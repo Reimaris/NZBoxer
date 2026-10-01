@@ -42,7 +42,7 @@ function initVideoDashboard() {
         showStatus: false,
         sortCol: 'title',
         sortDir: 'asc',
-        historySortCol: 'archived-at',
+        historySortCol: 'pushed-at',
         historySortDir: 'desc',
         items: rawItems,
         presets: rawPresets,
@@ -191,7 +191,7 @@ function initVideoDashboard() {
                 this.historySortDir = this.historySortDir === 'asc' ? 'desc' : 'asc';
             } else {
                 this.historySortCol = col;
-                this.historySortDir = col === 'archived-at' ? 'desc' : 'asc';
+                this.historySortDir = (col === 'pushed-at' || col === 'archived-at') ? 'desc' : 'asc';
             }
             this.applyHistorySort();
         },
@@ -312,6 +312,7 @@ document.addEventListener('alpine:init', () => {
         </div>
 
         <!-- Card 4: History -->
+        {% set ledger_rows = push_history_ledger | default([]) %}
         <div @click="setCard('history')"
              :class="activeCard === 'history' ? 'translate-y-2 ring-2 ring-emerald-500 shadow-xl shadow-emerald-950/40' : 'hover:-translate-y-0.5 opacity-90 hover:opacity-100'"
              class="bg-[#24242b] border border-[#3f3f46] rounded-xl overflow-hidden flex flex-col cursor-pointer transition-all duration-300 ease-out select-none">
@@ -320,20 +321,20 @@ document.addEventListener('alpine:init', () => {
                     <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
                     <h2 class="text-sm font-bold tracking-wider uppercase">History</h2>
                 </div>
-                <span class="text-xs font-bold text-white bg-black/35 px-2 py-0.5 rounded-md border border-white/10">{{ history_total | default(0) }}</span>
+                <span class="text-xs font-bold text-white bg-black/35 px-2 py-0.5 rounded-md border border-white/10">{{ ledger_rows | length }}</span>
             </div>
             <div class="grid grid-cols-3 divide-x divide-[#3f3f46] bg-[#1e1e24] flex-1 text-center py-2.5">
                 <div>
                     <div class="text-[10px] text-[#a1a1aa] uppercase font-semibold">Movies</div>
-                    <div class="text-base font-bold text-emerald-400">{{ history_movie_items | default([]) | length }}</div>
+                    <div class="text-base font-bold text-emerald-400">{{ ledger_rows | selectattr('category_key', 'equalto', 'movie') | list | length }}</div>
                 </div>
                 <div>
                     <div class="text-[10px] text-[#a1a1aa] uppercase font-semibold">Series</div>
-                    <div class="text-base font-bold text-emerald-400">{{ history_series_items | default([]) | length }}</div>
+                    <div class="text-base font-bold text-emerald-400">{{ ledger_rows | selectattr('category_key', 'equalto', 'show') | list | length }}</div>
                 </div>
                 <div>
                     <div class="text-[10px] text-[#a1a1aa] uppercase font-semibold">Anime</div>
-                    <div class="text-base font-bold text-emerald-400">{{ history_anime_items | default([]) | length }}</div>
+                    <div class="text-base font-bold text-emerald-400">{{ ledger_rows | selectattr('category_key', 'equalto', 'anime') | list | length }}</div>
                 </div>
             </div>
         </div>
@@ -682,118 +683,26 @@ document.addEventListener('alpine:init', () => {
     </div>
 
     <!-- =================================================================== -->
-    <!-- CARD 4 VIEW: HISTORY (UNIFIED 6-COLUMN ARCHIVE TABLE)               -->
+    <!-- CARD 4 VIEW: HISTORY (6-COLUMN PUSH HISTORY LEDGER)                 -->
     <!-- =================================================================== -->
     <div x-show="activeCard === 'history'" style="display: none;"
          class="bg-[#24242b] border border-[#3f3f46] rounded-lg shadow overflow-hidden">
         <div class="p-4 border-b border-[#3f3f46] bg-[#1e1e24] flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-            <div class="relative w-full sm:w-72">
+            <div class="relative w-full sm:w-80">
                 <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-[#a1a1aa]">
                     <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
                 </div>
-                <input x-model="historySearch" type="text" placeholder="Search archive..." class="w-full bg-[#2a2a32] border border-[#3f3f46] focus:border-[#d40060] rounded-md pl-9 pr-3 py-2 text-white text-sm focus:outline-none">
+                <input x-model="historySearch" type="text" placeholder="Search push history ledger..." class="w-full bg-[#2a2a32] border border-[#3f3f46] focus:border-[#d40060] rounded-md pl-9 pr-3 py-2 text-white text-sm focus:outline-none">
             </div>
         </div>
 
-        {% macro render_history_row(item) %}
-        {% set is_anime_cat = (item.media_type.value == 'anime' or (item.media_type.value == 'movie' and item.is_anime_movie)) %}
-        {% set type_label = 'ANIME' if is_anime_cat else ('SERIES' if item.media_type.value == 'show' else 'MOVIE') %}
-        {% set sort_type = 'anime' if is_anime_cat else ('series' if item.media_type.value == 'show' else 'movie') %}
-        {% set profile_name = item.provider.name if item.provider is defined and item.provider else 'SIMKL' %}
-        {% set archived_dt = item.completed_at if (item.completed_at is defined and item.completed_at) else (item.updated_at if (item.updated_at is defined and item.updated_at) else none) %}
-        <tr class="hover:bg-[#2a2a32] transition-colors"
-            data-sortable="true"
-            data-title="{{ (item.title or '') | lower }}"
-            data-type="{{ sort_type }}"
-            data-profile="{{ profile_name | lower }}"
-            data-archived-at="{{ archived_dt.isoformat() if archived_dt else '' }}"
-            x-show="historySearch.trim() === '' || '{{ item.title|replace('\'', '\\\'') }}'.toLowerCase().includes(historySearch.toLowerCase()) || '{{ (item.alt_title or '')|replace('\'', '\\\'') }}'.toLowerCase().includes(historySearch.toLowerCase()) || '{{ type_label | lower }}'.includes(historySearch.toLowerCase()) || '{{ profile_name | lower }}'.includes(historySearch.toLowerCase())">
-            <td class="px-6 py-4 w-full min-w-[260px] break-words">
-                <div class="block">
-                    <div class="flex items-center gap-2">
-                        <button type="button"
-                                hx-get="/api/items/{{ item.id }}/push-modal"
-                                hx-target="#modal-container"
-                                hx-swap="innerHTML"
-                                class="font-bold text-white hover:text-[#d40060] transition-colors text-left">
-                            {{ item.title }}
-                        </button>
-                        {% if item.year %}
-                        <span class="text-xs text-[#a1a1aa]">({{ item.year }})</span>
-                        {% endif %}
-                    </div>
-                    {% if item.alt_title and item.alt_title | lower != item.title | lower %}
-                    <div class="text-[11px] text-slate-400 italic mt-0.5">{{ item.alt_title }}</div>
-                    {% endif %}
-                    <div class="flex flex-wrap gap-1.5 mt-2 text-[10px] font-bold">
-                        {% if item.simkl_id %}
-                        <a href="https://simkl.com/{{ 'movies' if item.media_type.value == 'movie' else ('anime' if item.media_type.value == 'anime' else 'shows') }}/{{ item.simkl_id }}" target="_blank" class="bg-[#2a2a32] text-gray-400 hover:text-white px-2 py-0.5 rounded border border-[#3f3f46] transition-colors">SIMKL</a>
-                        {% endif %}
-                        {% if item.tmdb_id %}
-                        <a href="https://themoviedb.org/{{ 'movie' if item.media_type.value == 'movie' else 'tv' }}/{{ item.tmdb_id }}" target="_blank" class="bg-[#2a2a32] text-blue-400 hover:text-white px-2 py-0.5 rounded border border-[#3f3f46] transition-colors">TMDB</a>
-                        {% endif %}
-                        {% if item.imdb_id %}
-                        <a href="https://imdb.com/title/{{ item.imdb_id }}" target="_blank" class="bg-[#2a2a32] text-yellow-500 hover:text-white px-2 py-0.5 rounded border border-[#3f3f46] transition-colors">IMDB</a>
-                        {% endif %}
-                        {% if item.anilist_id %}
-                        <a href="https://anilist.co/anime/{{ item.anilist_id }}" target="_blank" class="bg-[#2a2a32] text-cyan-400 hover:text-white px-2 py-0.5 rounded border border-[#3f3f46] transition-colors">ANILIST</a>
-                        {% endif %}
-                    </div>
-                </div>
-            </td>
-            <td class="px-6 py-4 w-px whitespace-nowrap">
-                {% if is_anime_cat %}
-                <span class="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded bg-pink-500/10 text-pink-400 border border-pink-500/20">ANIME</span>
-                {% elif item.media_type.value == 'show' %}
-                <span class="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded bg-purple-500/10 text-purple-400 border border-purple-500/20">SERIES</span>
-                {% else %}
-                <span class="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded bg-blue-500/10 text-blue-400 border border-blue-500/20">MOVIE</span>
-                {% endif %}
-            </td>
-            <td class="px-6 py-4 w-px whitespace-nowrap">
-                <span class="bg-[#3f3f46] text-gray-200 text-xs font-bold px-2.5 py-1 rounded uppercase">{{ profile_name }}</span>
-            </td>
-            <td class="px-6 py-4 text-gray-400 text-xs font-mono w-px whitespace-nowrap">
-                {{ archived_dt.strftime('%Y-%m-%d %H:%M:%S') if archived_dt else '—' }}
-            </td>
-            <td class="px-6 py-4 w-px whitespace-nowrap">
-                <div class="flex flex-wrap items-center gap-1.5">
-                    <span class="bg-emerald-600 text-white text-[11px] font-bold px-2 py-0.5 rounded uppercase tracking-wider">DONE</span>
-                    {% for pill in item.progress_pills %}
-                    <span class="bg-[#1e1e24] text-gray-200 border border-[#3f3f46] text-[10px] font-bold px-2 py-0.5 rounded">{{ pill }}</span>
-                    {% endfor %}
-                </div>
-            </td>
-            <td class="px-6 py-4 text-right w-px whitespace-nowrap">
-                <div class="flex justify-end items-center gap-2">
-                    <button type="button"
-                            hx-get="/api/items/{{ item.id }}/push-modal"
-                            hx-target="#modal-container"
-                            hx-swap="innerHTML"
-                            class="bg-[#2a2a32] hover:bg-[#d40060] text-gray-200 hover:text-white border border-[#3f3f46] text-xs font-semibold px-3 py-1.5 rounded-md transition-colors flex items-center gap-1.5">
-                        <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
-                        <span>Re-Push</span>
-                    </button>
-                    <button hx-delete="/items/{{ item.id }}"
-                            hx-target="closest tr"
-                            hx-swap="outerHTML"
-                            hx-confirm="Delete this archived item?"
-                            class="bg-transparent border border-red-800 text-red-500 hover:bg-red-600 hover:text-white transition-colors p-1.5 rounded-md">
-                        <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
-                    </button>
-                </div>
-            </td>
-        </tr>
-        {% endmacro %}
-
-        {% set unified_history = history_items if history_items is defined else ((history_movie_items | default([])) + (history_series_items | default([])) + (history_anime_items | default([]))) %}
         <div class="overflow-x-auto">
             <table class="min-w-full divide-y divide-[#3f3f46]">
                 <thead class="bg-[#1e1e24]">
                     <tr>
                         <th scope="col" @click="sortHistoryBy('title')" class="px-6 py-3.5 w-full min-w-[260px] text-left text-xs font-semibold text-[#a1a1aa] uppercase tracking-wider cursor-pointer hover:text-white select-none">
                             <div class="flex items-center gap-1">
-                                <span>Title</span>
+                                <span>Title &amp; Target</span>
                                 <span x-show="historySortCol === 'title'" x-text="historySortDir === 'asc' ? '▲' : '▼'" class="text-[#d40060] font-bold text-xs"></span>
                             </div>
                         </th>
@@ -803,28 +712,173 @@ document.addEventListener('alpine:init', () => {
                                 <span x-show="historySortCol === 'type'" x-text="historySortDir === 'asc' ? '▲' : '▼'" class="text-[#d40060] font-bold text-xs"></span>
                             </div>
                         </th>
-                        <th scope="col" @click="sortHistoryBy('profile')" class="px-6 py-3.5 w-px whitespace-nowrap text-left text-xs font-semibold text-[#a1a1aa] uppercase tracking-wider cursor-pointer hover:text-white select-none">
+                        <th scope="col" @click="sortHistoryBy('release')" class="px-6 py-3.5 w-px whitespace-nowrap text-left text-xs font-semibold text-[#a1a1aa] uppercase tracking-wider cursor-pointer hover:text-white select-none">
                             <div class="flex items-center gap-1">
-                                <span>Profile</span>
-                                <span x-show="historySortCol === 'profile'" x-text="historySortDir === 'asc' ? '▲' : '▼'" class="text-[#d40060] font-bold text-xs"></span>
+                                <span>Release &amp; Quality</span>
+                                <span x-show="historySortCol === 'release'" x-text="historySortDir === 'asc' ? '▲' : '▼'" class="text-[#d40060] font-bold text-xs"></span>
                             </div>
                         </th>
-                        <th scope="col" @click="sortHistoryBy('archived-at')" class="px-6 py-3.5 w-px whitespace-nowrap text-left text-xs font-semibold text-[#a1a1aa] uppercase tracking-wider cursor-pointer hover:text-white select-none">
+                        <th scope="col" @click="sortHistoryBy('pushed-at')" class="px-6 py-3.5 w-px whitespace-nowrap text-left text-xs font-semibold text-[#a1a1aa] uppercase tracking-wider cursor-pointer hover:text-white select-none">
                             <div class="flex items-center gap-1">
-                                <span>Archived At</span>
-                                <span x-show="historySortCol === 'archived-at'" x-text="historySortDir === 'asc' ? '▲' : '▼'" class="text-[#d40060] font-bold text-xs"></span>
+                                <span>Pushed At</span>
+                                <span x-show="historySortCol === 'pushed-at'" x-text="historySortDir === 'asc' ? '▲' : '▼'" class="text-[#d40060] font-bold text-xs"></span>
                             </div>
                         </th>
-                        <th scope="col" class="px-6 py-3.5 w-px whitespace-nowrap text-left text-xs font-semibold text-[#a1a1aa] uppercase tracking-wider">Status</th>
+                        <th scope="col" @click="sortHistoryBy('status')" class="px-6 py-3.5 w-px whitespace-nowrap text-left text-xs font-semibold text-[#a1a1aa] uppercase tracking-wider cursor-pointer hover:text-white select-none">
+                            <div class="flex items-center gap-1">
+                                <span>TorBox Status</span>
+                                <span x-show="historySortCol === 'status'" x-text="historySortDir === 'asc' ? '▲' : '▼'" class="text-[#d40060] font-bold text-xs"></span>
+                            </div>
+                        </th>
                         <th scope="col" class="px-6 py-3.5 w-px whitespace-nowrap text-right text-xs font-semibold text-[#a1a1aa] uppercase tracking-wider">Actions</th>
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-[#3f3f46] bg-[#24242b]" id="dashboard-history-table-body">
-                    {% for item in unified_history %}
-                        {{ render_history_row(item) }}
+                    {% for h in (push_history_ledger | default([])) %}
+                    <tr class="hover:bg-[#2a2a32] transition-colors"
+                        data-sortable="true"
+                        data-title="{{ (h.media_title or '') | lower }} {{ (h.target_label or '') | lower }}"
+                        data-type="{{ (h.type_label or '') | lower }}"
+                        data-release="{{ (h.nzb_title or '') | lower }}"
+                        data-pushed-at="{{ h.pushed_at_str or '' }}"
+                        data-status="{{ (h.torbox_status or '') | lower }}"
+                        x-show="historySearch.trim() === '' || '{{ (h.media_title or '')|replace('\'', '\\\'') }}'.toLowerCase().includes(historySearch.toLowerCase()) || '{{ (h.alt_title or '')|replace('\'', '\\\'') }}'.toLowerCase().includes(historySearch.toLowerCase()) || '{{ (h.nzb_title or '')|replace('\'', '\\\'') }}'.toLowerCase().includes(historySearch.toLowerCase()) || '{{ (h.target_label or '')|replace('\'', '\\\'') }}'.toLowerCase().includes(historySearch.toLowerCase()) || '{{ (h.type_label or '') | lower }}'.includes(historySearch.toLowerCase()) || '{{ (h.torbox_status or '') | lower }}'.includes(historySearch.toLowerCase())">
+                        <!-- Col 1: Title & Target -->
+                        <td class="px-6 py-4 w-full min-w-[260px] break-words">
+                            <div class="block">
+                                <div class="flex flex-wrap items-center gap-2">
+                                    {% if h.media_item_id %}
+                                    <button type="button"
+                                            hx-get="/api/items/{{ h.media_item_id }}/push-modal"
+                                            hx-target="#modal-container"
+                                            hx-swap="innerHTML"
+                                            class="font-bold text-white hover:text-[#d40060] transition-colors text-left">
+                                        {{ h.media_title }}
+                                    </button>
+                                    {% else %}
+                                    <span class="font-bold text-gray-200">{{ h.media_title }}</span>
+                                    {% endif %}
+                                    {% if h.media_year %}
+                                    <span class="text-xs text-[#a1a1aa]">({{ h.media_year }})</span>
+                                    {% endif %}
+                                    {% if h.target_label %}
+                                    <span class="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded bg-[#1e1e24] text-gray-300 border border-[#3f3f46]">{{ h.target_label }}</span>
+                                    {% endif %}
+                                    {% if h.is_detached %}
+                                    <span class="px-1.5 py-0.5 text-[10px] font-semibold rounded bg-zinc-500/15 text-zinc-400 border border-zinc-500/30">Pruned from Simkl</span>
+                                    {% endif %}
+                                </div>
+                                {% if h.alt_title and h.alt_title | lower != h.media_title | lower %}
+                                <div class="text-[11px] text-slate-400 italic mt-0.5">{{ h.alt_title }}</div>
+                                {% endif %}
+                                <div class="flex flex-wrap gap-1.5 mt-2 text-[10px] font-bold">
+                                    {% if h.simkl_id %}
+                                    <a href="https://simkl.com/{{ 'movies' if h.category_key == 'movie' else ('anime' if h.category_key == 'anime' else 'shows') }}/{{ h.simkl_id }}" target="_blank" class="bg-[#2a2a32] text-gray-400 hover:text-white px-2 py-0.5 rounded border border-[#3f3f46] transition-colors">SIMKL</a>
+                                    {% endif %}
+                                    {% if h.tmdb_id %}
+                                    <a href="https://themoviedb.org/{{ 'movie' if h.category_key == 'movie' else 'tv' }}/{{ h.tmdb_id }}" target="_blank" class="bg-[#2a2a32] text-blue-400 hover:text-white px-2 py-0.5 rounded border border-[#3f3f46] transition-colors">TMDB</a>
+                                    {% endif %}
+                                    {% if h.imdb_id %}
+                                    <a href="https://imdb.com/title/{{ h.imdb_id }}" target="_blank" class="bg-[#2a2a32] text-yellow-500 hover:text-white px-2 py-0.5 rounded border border-[#3f3f46] transition-colors">IMDB</a>
+                                    {% endif %}
+                                    {% if h.anilist_id %}
+                                    <a href="https://anilist.co/anime/{{ h.anilist_id }}" target="_blank" class="bg-[#2a2a32] text-cyan-400 hover:text-white px-2 py-0.5 rounded border border-[#3f3f46] transition-colors">ANILIST</a>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </td>
+                        <!-- Col 2: Type -->
+                        <td class="px-6 py-4 w-px whitespace-nowrap">
+                            {% if h.type_label == 'ANIME' %}
+                            <span class="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded bg-pink-500/10 text-pink-400 border border-pink-500/20">ANIME</span>
+                            {% elif h.type_label == 'SERIES' %}
+                            <span class="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded bg-purple-500/10 text-purple-400 border border-purple-500/20">SERIES</span>
+                            {% else %}
+                            <span class="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded bg-blue-500/10 text-blue-400 border border-blue-500/20">MOVIE</span>
+                            {% endif %}
+                        </td>
+                        <!-- Col 3: Release & Quality -->
+                        <td class="px-6 py-4 min-w-[220px] max-w-[380px]">
+                            <div class="text-xs font-mono text-gray-200 truncate" title="{{ h.nzb_title }}">{{ h.nzb_title }}</div>
+                            <div class="flex flex-wrap items-center gap-1.5 mt-1.5">
+                                {% if h.resolution %}
+                                <span class="px-1.5 py-0.5 text-[10px] font-bold uppercase rounded bg-indigo-500/15 text-indigo-300 border border-indigo-500/30">{{ h.resolution }}</span>
+                                {% endif %}
+                                {% if h.source %}
+                                <span class="px-1.5 py-0.5 text-[10px] font-bold uppercase rounded bg-slate-500/15 text-slate-300 border border-slate-500/30">{{ h.source }}</span>
+                                {% endif %}
+                                {% if h.video_codec %}
+                                <span class="px-1.5 py-0.5 text-[10px] font-bold uppercase rounded bg-slate-500/15 text-slate-300 border border-slate-500/30">{{ h.video_codec }}</span>
+                                {% endif %}
+                                {% if h.grabbed_language %}
+                                <span class="px-1.5 py-0.5 text-[10px] font-bold uppercase rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">{{ h.grabbed_language }}</span>
+                                {% endif %}
+                                {% if h.size_gb %}
+                                <span class="px-1.5 py-0.5 text-[10px] font-mono rounded bg-[#1e1e24] text-gray-400 border border-[#3f3f46]">{{ h.size_gb }}</span>
+                                {% endif %}
+                            </div>
+                        </td>
+                        <!-- Col 4: Pushed At -->
+                        <td class="px-6 py-4 text-gray-400 text-xs font-mono w-px whitespace-nowrap">
+                            {{ h.pushed_at_str }}
+                        </td>
+                        <!-- Col 5: TorBox Status -->
+                        <td class="px-6 py-4 w-px whitespace-nowrap" id="ledger-status-{{ h.id }}">
+                            {% if h.status_key == 'completed' %}
+                            <span class="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">READY ON TORBOX</span>
+                            {% elif h.status_key == 'deleted' %}
+                            <span class="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded bg-zinc-500/15 text-zinc-400 border border-zinc-500/30">DELETED</span>
+                            {% elif h.status_key == 'replaced' %}
+                            <span class="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded bg-amber-500/15 text-amber-400 border border-amber-500/30">REPLACED</span>
+                            {% elif h.status_key == 'failed' %}
+                            <span class="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded bg-red-500/15 text-red-400 border border-red-500/30" {% if h.failure_reason %}title="{{ h.failure_reason }}"{% endif %}>FAILED</span>
+                            {% elif h.status_key == 'canceled' %}
+                            <span class="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded bg-orange-500/15 text-orange-400 border border-orange-500/30">CANCELED</span>
+                            {% else %}
+                            <span class="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded bg-cyan-500/15 text-cyan-400 border border-cyan-500/30">{{ h.torbox_status }}</span>
+                            {% endif %}
+                        </td>
+                        <!-- Col 6: Actions -->
+                        <td class="px-6 py-4 text-right w-px whitespace-nowrap">
+                            <div class="flex justify-end items-center gap-2">
+                                {% if h.can_delete_torbox %}
+                                <button type="button"
+                                        hx-post="/api/history/{{ h.id }}/delete-torbox"
+                                        hx-target="#ledger-status-{{ h.id }}"
+                                        hx-swap="innerHTML"
+                                        hx-confirm="Delete this transfer from TorBox and reset target to Ready to Push?"
+                                        hx-on::after-request="if(event.detail.successful) this.remove()"
+                                        class="bg-red-500/10 hover:bg-red-600 text-red-400 hover:text-white border border-red-500/30 text-xs font-semibold px-2.5 py-1.5 rounded-md transition-colors flex items-center gap-1"
+                                        title="Delete from TorBox and reset target to Ready to Push">
+                                    <span>Delete from TorBox</span>
+                                </button>
+                                {% endif %}
+                                {% if h.can_repush %}
+                                <button type="button"
+                                        hx-get="/api/items/{{ h.media_item_id }}/push-modal"
+                                        hx-target="#modal-container"
+                                        hx-swap="innerHTML"
+                                        class="bg-[#2a2a32] hover:bg-[#d40060] text-gray-200 hover:text-white border border-[#3f3f46] text-xs font-semibold px-3 py-1.5 rounded-md transition-colors flex items-center gap-1.5">
+                                    <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                                    <span>Re-Push</span>
+                                </button>
+                                {% endif %}
+                                <button type="button"
+                                        hx-delete="/api/history/{{ h.id }}"
+                                        hx-target="closest tr"
+                                        hx-swap="outerHTML"
+                                        hx-confirm="Delete this history entry from the ledger?"
+                                        title="Delete Entry"
+                                        class="bg-transparent border border-red-800 text-red-500 hover:bg-red-600 hover:text-white transition-colors px-2 py-1.5 rounded-md text-xs font-semibold flex items-center gap-1">
+                                    <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                                    <span class="sr-only">Delete Entry</span>
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
                     {% else %}
                     <tr>
-                        <td colspan="6" class="px-6 py-8 text-center text-sm text-[#a1a1aa] italic">No archived media items yet.</td>
+                        <td colspan="6" class="px-6 py-8 text-center text-sm text-[#a1a1aa] italic">No push history entries recorded yet.</td>
                     </tr>
                     {% endfor %}
                 </tbody>

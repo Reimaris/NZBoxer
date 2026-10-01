@@ -333,6 +333,16 @@ async def dashboard(request: Request, background_tasks: BackgroundTasks):
         series_stats = _build_cat_stats(series_items, history_series_items)
         anime_stats = _build_cat_stats(anime_items, history_anime_items)
 
+        from app.core.transfer_poller import (
+            count_downloading_entities,
+            get_active_pushes,
+            get_push_history_ledger,
+            transfer_poller,
+        )
+
+        # Card 4: Push History Ledger
+        push_history_ledger = await get_push_history_ledger(session)
+
         # Card 5: Active Pushes
         active_pushes = await get_active_pushes(session)
         downloading_count = await count_downloading_entities(session)
@@ -377,7 +387,8 @@ async def dashboard(request: Request, background_tasks: BackgroundTasks):
             "history_movie_items": history_movie_items,
             "history_series_items": history_series_items,
             "history_anime_items": history_anime_items,
-            "history_total": len(history_video),
+            "push_history_ledger": push_history_ledger,
+            "history_total": len(push_history_ledger),
             "active_pushes": active_pushes,
             "active_pushes_count": len(active_pushes),
             "downloading_count": downloading_count,
@@ -2139,6 +2150,7 @@ async def rescan_torbox_cache():
         adopt_torbox_downloads_for_video,
         sync_torbox_cache,
     )
+    from app.core.transfer_poller import reconcile_completed_history_with_torbox
     from app.db.database import async_session_factory
     from app.services import torbox
 
@@ -2150,6 +2162,12 @@ async def rescan_torbox_cache():
             if raw_downloads is not None:
                 await sync_torbox_cache(session, raw_downloads, force_rescan=True)
                 await adopt_torbox_downloads_for_video(session)
+                live_ids = {
+                    str(d["id"])
+                    for d in raw_downloads
+                    if isinstance(d, dict) and d.get("id") is not None
+                }
+                await reconcile_completed_history_with_torbox(session, live_ids)
                 return HTMLResponse(
                     content='<span class="text-green-500 font-medium text-sm flex items-center gap-1.5"><svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>Rescan complete! Reload to see changes.</span>'
                 )
@@ -2745,4 +2763,125 @@ async def api_trigger_transfer_poller_tick() -> Response:
 
     async with async_session_factory() as session:
         res = await run_transfer_poller_tick(session)
+    return JSONResponse(status_code=200, content=res)
+
+
+# ---------------------------------------------------------------------------
+# Card 4: Push History Ledger & Dual-Mode TorBox Deletion API (v3.0.0)
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/history")
+async def api_get_push_history(request: Request) -> Response:
+    """Return the Push History Ledger (DownloadHistory rows) ordered by most recent push."""
+    from sqlalchemy import select
+
+    from app.core.transfer_poller import (
+        get_push_history_ledger,
+        reconcile_completed_history_with_torbox,
+    )
+    from app.db.models import SeenTorboxDownload
+
+    async with async_session_factory() as session:
+        seen_rows = (await session.execute(select(SeenTorboxDownload))).scalars().all()
+        if seen_rows:
+            live_ids = {str(r.torbox_id) for r in seen_rows if r.torbox_id is not None}
+            await reconcile_completed_history_with_torbox(session, live_ids)
+        ledger = await get_push_history_ledger(session)
+
+    return JSONResponse(
+        status_code=200,
+        content={"history": ledger, "total": len(ledger)},
+    )
+
+
+@app.post("/api/history/{history_id}/delete-torbox")
+async def api_history_delete_torbox(history_id: int, request: Request) -> Response:
+    """Delete transfer from TorBox via Push History Ledger row, mark row 'deleted', reset target to SEARCHING, and recalculate parent status."""
+    from app.core.transfer_poller import manual_delete_from_torbox
+
+    async with async_session_factory() as session:
+        res = await manual_delete_from_torbox(session, history_id=history_id)
+        if res.get("status") == "not_found":
+            return JSONResponse(
+                status_code=404,
+                content={"status": "not_found", "error": "History entry not found"},
+            )
+
+    if request.headers.get("HX-Request") == "true":
+        return HTMLResponse(
+            content='<span class="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded bg-zinc-500/15 text-zinc-400 border border-zinc-500/30">DELETED</span>',
+            status_code=200,
+            headers={"HX-Trigger": "refreshDashboard"},
+        )
+
+    return JSONResponse(status_code=200, content=res)
+
+
+@app.delete("/api/history/{history_id}")
+async def api_delete_history_entry(history_id: int, request: Request) -> Response:
+    """Delete a DownloadHistory ledger row from SQLite without affecting TorBox or MediaItem status."""
+    from app.db.models import DownloadHistory
+
+    async with async_session_factory() as session:
+        row = await session.get(DownloadHistory, history_id)
+        if row is None:
+            return JSONResponse(
+                status_code=404,
+                content={"deleted": False, "error": "History entry not found"},
+            )
+        await session.delete(row)
+        await session.commit()
+
+    if request.headers.get("HX-Request") == "true":
+        return HTMLResponse(content="", status_code=200)
+
+    return JSONResponse(status_code=200, content={"deleted": True, "id": history_id})
+
+
+@app.post("/api/items/{item_id}/delete-torbox")
+async def api_item_delete_torbox(
+    item_id: int,
+    request: Request,
+    season_id: int | None = None,
+    episode_id: int | None = None,
+) -> Response:
+    """Delete transfer from TorBox for a Movie, Season/Franchise Movie, or Episode from the Push Modal."""
+    from app.core.push_engine import get_push_modal_context
+    from app.core.transfer_poller import manual_delete_from_torbox
+
+    payload = await _parse_request_payload(request)
+    if season_id is None and payload.get("season_id") is not None:
+        try:
+            season_id = int(payload["season_id"])
+        except (TypeError, ValueError):
+            season_id = None
+    if episode_id is None and payload.get("episode_id") is not None:
+        try:
+            episode_id = int(payload["episode_id"])
+        except (TypeError, ValueError):
+            episode_id = None
+
+    async with async_session_factory() as session:
+        res = await manual_delete_from_torbox(
+            session,
+            item_id=item_id,
+            season_id=season_id,
+            episode_id=episode_id,
+        )
+        if request.headers.get("HX-Request") == "true":
+            ctx = await get_push_modal_context(session, item_id)
+            if ctx is not None:
+                return templates.TemplateResponse(
+                    request=request,
+                    name="modals/push_modal.html",
+                    context=ctx,
+                    headers={"HX-Trigger": "refreshDashboard"},
+                )
+            return HTMLResponse(
+                content="",
+                status_code=200,
+                headers={"HX-Trigger": "refreshDashboard"},
+            )
+
     return JSONResponse(status_code=200, content=res)
