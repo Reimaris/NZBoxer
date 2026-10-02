@@ -620,8 +620,9 @@ async def _sync_items(
                 status=MediaStatus.PENDING,
             )
             session.add(item)
-            # Need to flush to get item.id for seasons
-            await session.flush()
+            # Commit (not just flush) to get item.id AND release the SQLite write lock
+            # before any slow outbound AniList/TMDB HTTP calls that follow.
+            await session.commit()
             is_new = True
         else:
             is_new = False
@@ -679,6 +680,8 @@ async def _sync_items(
                         if parent_season.status != SeasonStatus.FUTURE:
                             parent_season.status = SeasonStatus.SEARCHING
                 elif is_new or not item.seasons:
+                    # Commit any pending dirty state before slow AniList API calls
+                    await session.commit()
                     await enrich_anime_metadata(session, item)
                 else:
                     logger.debug(
@@ -711,6 +714,8 @@ async def _sync_items(
             or not item.release_date
             or (not item.seasons and item.media_type != MediaType.MOVIE)
         ):
+            # Commit any pending dirty state before slow TMDB HTTP calls to release the write lock.
+            await session.commit()
             details = None
             if tmdb_id:
                 if media_type == MediaType.SHOW:
