@@ -7,9 +7,10 @@ ENV PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
-# Install system dependencies if required (mostly for sqlite/gcc if needed, but slim has sqlite3)
+# Install system dependencies (sqlite3 + gosu for unprivileged volume ownership drop)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     sqlite3 \
+    gosu \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy and install Python dependencies
@@ -19,18 +20,14 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the rest of the application
 COPY . .
 
-# Create a data directory for the SQLite database and create a non-root user
-RUN mkdir -p /app/data && \
-    mkdir -p /app/config && \
+# Create data/config directories and non-root user (UID 1000)
+RUN mkdir -p /app/data /app/config/logs && \
     useradd -u 1000 -m -s /bin/bash appuser && \
     chown -R appuser:appuser /app && \
     chmod -R 775 /app/config /app/data
 
-# Switch to non-root user
-USER appuser
-
 # Expose port
 EXPOSE 8000
 
-# Start the FastAPI application
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Ensure mounted volumes are owned by appuser and drop privileges via gosu
+CMD ["sh", "-c", "mkdir -p /app/config/logs /app/data && chown -R appuser:appuser /app/config /app/data && exec gosu appuser uvicorn app.main:app --host 0.0.0.0 --port 8000"]

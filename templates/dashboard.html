@@ -74,6 +74,52 @@ function initVideoDashboard() {
                     });
                 }
             });
+            // Handle HTMX HX-Trigger: refreshDashboard to live-refresh tables & counters
+            const handleRefreshDashboard = async () => {
+                try {
+                    const res = await fetch(window.location.pathname + window.location.search, {
+                        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+                    });
+                    if (!res.ok) return;
+                    const htmlText = await res.text();
+                    const doc = new DOMParser().parseFromString(htmlText, 'text/html');
+                    const swapIds = [
+                        'video-table-body-in-progress',
+                        'video-table-body-ready-to-push',
+                        'video-table-body-upcoming',
+                        'dashboard-history-table-body',
+                        'deck-card-count-movie',
+                        'deck-card-count-show',
+                        'deck-card-count-anime',
+                        'deck-card-count-history',
+                        'deck-card-count-active',
+                        'card-active-pushes-total',
+                        'card-active-pushes-downloading',
+                        'card-active-pushes-poller'
+                    ];
+                    swapIds.forEach(id => {
+                        const cur = document.getElementById(id);
+                        const next = doc.getElementById(id);
+                        if (cur && next) {
+                            cur.innerHTML = next.innerHTML;
+                            if (window.htmx) htmx.process(cur);
+                        }
+                    });
+                    const payloadEl = doc.getElementById('video-items-payload');
+                    const curPayloadEl = document.getElementById('video-items-payload');
+                    if (payloadEl && payloadEl.textContent) {
+                        if (curPayloadEl) curPayloadEl.textContent = payloadEl.textContent;
+                        this.items = JSON.parse(payloadEl.textContent);
+                    }
+                    this.$nextTick(() => {
+                        this.applySort();
+                        this.applyHistorySort();
+                    });
+                } catch (err) {
+                    console.error('Failed to refresh dashboard:', err);
+                }
+            };
+            document.body.addEventListener('refreshDashboard', handleRefreshDashboard);
         },
         applySearchPreset(presetId) {
             if (!presetId) return;
@@ -228,7 +274,7 @@ document.addEventListener('alpine:init', () => {
     <!-- 6-Card Interactive Top Deck -->
     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4 mb-8">
         <!-- Card 1: Movies -->
-        <div @click="setCard('movie')"
+        <div id="deck-card-count-movie" @click="setCard('movie')"
              :class="activeCard === 'movie' ? 'translate-y-2 ring-2 ring-[#d40060] shadow-xl shadow-pink-950/40' : 'hover:-translate-y-0.5 opacity-90 hover:opacity-100'"
              class="bg-[#24242b] border border-[#3f3f46] rounded-xl overflow-hidden flex flex-col cursor-pointer transition-all duration-300 ease-out select-none">
             <div class="bg-gradient-to-r from-[#d40060] to-[#9d0047] px-3.5 py-2.5 flex items-center justify-between">
@@ -256,7 +302,7 @@ document.addEventListener('alpine:init', () => {
         </div>
 
         <!-- Card 2: Series -->
-        <div @click="setCard('show')"
+        <div id="deck-card-count-show" @click="setCard('show')"
              :class="activeCard === 'show' ? 'translate-y-2 ring-2 ring-purple-500 shadow-xl shadow-purple-950/40' : 'hover:-translate-y-0.5 opacity-90 hover:opacity-100'"
              class="bg-[#24242b] border border-[#3f3f46] rounded-xl overflow-hidden flex flex-col cursor-pointer transition-all duration-300 ease-out select-none">
             <div class="bg-gradient-to-r from-purple-600 to-purple-800 px-3.5 py-2.5 flex items-center justify-between">
@@ -284,7 +330,7 @@ document.addEventListener('alpine:init', () => {
         </div>
 
         <!-- Card 3: Anime -->
-        <div @click="setCard('anime')"
+        <div id="deck-card-count-anime" @click="setCard('anime')"
              :class="activeCard === 'anime' ? 'translate-y-2 ring-2 ring-amber-500 shadow-xl shadow-amber-950/40' : 'hover:-translate-y-0.5 opacity-90 hover:opacity-100'"
              class="bg-[#24242b] border border-[#3f3f46] rounded-xl overflow-hidden flex flex-col cursor-pointer transition-all duration-300 ease-out select-none">
             <div class="bg-gradient-to-r from-amber-500 to-amber-600 px-3.5 py-2.5 flex items-center justify-between">
@@ -313,7 +359,7 @@ document.addEventListener('alpine:init', () => {
 
         <!-- Card 4: History -->
         {% set ledger_rows = push_history_ledger | default([]) %}
-        <div @click="setCard('history')"
+        <div id="deck-card-count-history" @click="setCard('history')"
              :class="activeCard === 'history' ? 'translate-y-2 ring-2 ring-emerald-500 shadow-xl shadow-emerald-950/40' : 'hover:-translate-y-0.5 opacity-90 hover:opacity-100'"
              class="bg-[#24242b] border border-[#3f3f46] rounded-xl overflow-hidden flex flex-col cursor-pointer transition-all duration-300 ease-out select-none">
             <div class="bg-gradient-to-r from-emerald-600 to-teal-700 px-3.5 py-2.5 flex items-center justify-between">
@@ -340,7 +386,7 @@ document.addEventListener('alpine:init', () => {
         </div>
 
         <!-- Card 5: Active Pushes -->
-        <div @click="setCard('active_pushes')"
+        <div id="deck-card-count-active" @click="setCard('active_pushes')"
              :class="activeCard === 'active_pushes' ? 'translate-y-2 ring-2 ring-cyan-500 shadow-xl shadow-cyan-950/40' : 'hover:-translate-y-0.5 opacity-90 hover:opacity-100'"
              class="bg-[#24242b] border border-[#3f3f46] rounded-xl overflow-hidden flex flex-col cursor-pointer transition-all duration-300 ease-out select-none">
             <div class="bg-gradient-to-r from-cyan-600 to-blue-700 px-3.5 py-2.5 flex items-center justify-between">
@@ -406,10 +452,10 @@ document.addEventListener('alpine:init', () => {
                     <div class="space-y-3">
                         <div class="flex items-start gap-3">
                             <span class="bg-amber-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider shrink-0 w-20 text-center">IN PROGRESS</span>
-                            <span>Currently downloading on TorBox, failed needing attention, or partially downloaded multi-season show.</span>
+                            <span>Currently downloading on TorBox, failed needing attention, or partially/fully downloaded on TorBox.</span>
                         </div>
                         <div class="flex items-start gap-3">
-                            <span class="bg-[#d40060] text-white text-[10px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider shrink-0 w-20 text-center">WANTED</span>
+                            <span class="bg-[#d40060] text-white text-[10px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider shrink-0 w-20 text-center">READY</span>
                             <span>Released and ready for on-demand Search / Push to TorBox.</span>
                         </div>
                         <div class="flex items-start gap-3">
@@ -474,6 +520,7 @@ document.addEventListener('alpine:init', () => {
         {% macro render_v3_item_row(item) %}
         {% set display_category = 'anime' if (item.media_type.value == 'movie' and item.is_anime_movie) else item.media_type.value %}
         {% set profile_name = item.provider.name if item.provider is defined and item.provider else 'SIMKL' %}
+        {% set eff_date = item.effective_release_date %}
         <tr class="hover:bg-[#2a2a32] transition-colors group"
             data-sortable="true"
             data-tier="{{ item.status_tier }}"
@@ -481,43 +528,52 @@ document.addEventListener('alpine:init', () => {
             data-type="{% if item.media_type.value == 'movie' and item.is_anime_movie %}anime movie{% elif item.media_type.value == 'movie' %}movie{% elif item.media_type.value == 'anime' %}anime{% elif item.media_type.value == 'show' %}series{% endif %}"
             data-profile="{{ profile_name | lower }}"
             data-year="{{ item.year or '' }}"
-            data-release-date="{{ item.release_date.strftime('%Y-%m-%d') if item.release_date else '' }}"
+            data-release-date="{{ eff_date.strftime('%Y-%m-%d') if eff_date else '' }}"
             data-status-rank="{% if item.status.value == 'failed' or item.status.value == 'manual_grab' %}1{% elif item.status.value == 'downloading' %}2{% elif item.status.value == 'searching' or item.status.value == 'pending' %}3{% elif item.status.value == 'future' %}4{% elif item.status.value == 'downloaded' %}5{% elif item.status.value == 'completed' %}6{% else %}7{% endif %}"
             data-last-checked="{{ item.updated_at.strftime('%Y-%m-%d %H:%M:%S') if item.updated_at else '' }}"
             x-show="tab === '{{ display_category }}' && ('{{ item.title|replace('\'', '\\\'') }}'.toLowerCase().includes(search.toLowerCase()) || ('{{ item.alt_title|replace('\'', '\\\'') if item.alt_title else '' }}'.toLowerCase().includes(search.toLowerCase())) || '{{ item.tvdb_id or '' }}'.includes(search) || '{{ item.tmdb_id or '' }}'.includes(search) || '{{ item.imdb_id or '' }}'.includes(search) || '{{ item.simkl_id or '' }}'.includes(search) || '{{ item.anilist_id or '' }}'.includes(search))"
             style="display: none;">
 
-            <!-- Col 1: Title & External Badges -->
+            <!-- Col 1: Poster Thumbnail, Title & External Badges -->
             <td class="px-6 py-4 w-full min-w-[260px] break-words">
-                <div class="block">
-                    <div class="flex items-center gap-2">
-                        <button type="button"
-                                hx-get="/api/items/{{ item.id }}/push-modal"
-                                hx-target="#modal-container"
-                                hx-swap="innerHTML"
-                                class="font-bold text-white hover:text-[#d40060] transition-colors text-left">
-                            {{ item.title }}
-                        </button>
-                        {% if item.year %}
-                        <span class="text-xs text-[#a1a1aa]">({{ item.year }})</span>
+                <div class="flex items-start gap-3">
+                    <div class="w-10 h-14 rounded bg-[#18181c] border border-[#3f3f46] overflow-hidden shrink-0 flex items-center justify-center">
+                        {% if item.poster_url %}
+                        <img src="{{ item.poster_url }}" alt="" loading="lazy" class="w-full h-full object-cover">
+                        {% else %}
+                        <svg class="w-4 h-4 text-[#52525b]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 4v16M17 4v16M3 8h4m10 0h4M3 12h18M3 16h4m10 0h4M4 20h16a1 1 0 001-1V5a1 1 0 00-1-1H4a1 1 0 00-1 1v14a1 1 0 001 1z"></path></svg>
                         {% endif %}
                     </div>
-                    {% if item.alt_title and item.alt_title | lower != item.title | lower %}
-                    <div class="text-[11px] text-slate-400 italic mt-0.5">{{ item.alt_title }}</div>
-                    {% endif %}
-                    <div class="flex flex-wrap gap-1.5 mt-2 text-[10px] font-bold">
-                        {% if item.simkl_id %}
-                        <a href="https://simkl.com/{{ 'movies' if item.media_type.value == 'movie' else ('anime' if item.media_type.value == 'anime' else 'shows') }}/{{ item.simkl_id }}" target="_blank" class="bg-[#2a2a32] text-gray-400 hover:text-white px-2 py-0.5 rounded border border-[#3f3f46] transition-colors">SIMKL</a>
+                    <div class="min-w-0 flex-1">
+                        <div class="flex items-center gap-2 flex-wrap">
+                            <button type="button"
+                                    hx-get="/api/items/{{ item.id }}/push-modal"
+                                    hx-target="#modal-container"
+                                    hx-swap="innerHTML"
+                                    class="font-bold text-white hover:text-[#d40060] transition-colors text-left">
+                                {{ item.title }}
+                            </button>
+                            {% if item.year %}
+                            <span class="text-xs text-[#a1a1aa]">({{ item.year }})</span>
+                            {% endif %}
+                        </div>
+                        {% if item.alt_title and item.alt_title | lower != item.title | lower %}
+                        <div class="text-[11px] text-slate-400 italic mt-0.5">{{ item.alt_title }}</div>
                         {% endif %}
-                        {% if item.tmdb_id %}
-                        <a href="https://themoviedb.org/{{ 'movie' if item.media_type.value == 'movie' else 'tv' }}/{{ item.tmdb_id }}" target="_blank" class="bg-[#2a2a32] text-blue-400 hover:text-white px-2 py-0.5 rounded border border-[#3f3f46] transition-colors">TMDB</a>
-                        {% endif %}
-                        {% if item.imdb_id %}
-                        <a href="https://imdb.com/title/{{ item.imdb_id }}" target="_blank" class="bg-[#2a2a32] text-yellow-500 hover:text-white px-2 py-0.5 rounded border border-[#3f3f46] transition-colors">IMDB</a>
-                        {% endif %}
-                        {% if item.anilist_id %}
-                        <a href="https://anilist.co/anime/{{ item.anilist_id }}" target="_blank" class="bg-[#2a2a32] text-cyan-400 hover:text-white px-2 py-0.5 rounded border border-[#3f3f46] transition-colors">ANILIST</a>
-                        {% endif %}
+                        <div class="flex flex-wrap gap-1.5 mt-2 text-[10px] font-bold">
+                            {% if item.simkl_id %}
+                            <a href="https://simkl.com/{{ 'movies' if (item.media_type.value == 'movie' and not item.is_anime_movie) else ('anime' if (item.media_type.value == 'anime' or item.is_anime_movie) else 'tv') }}/{{ item.simkl_id }}" target="_blank" rel="noopener noreferrer" class="bg-[#2a2a32] text-gray-400 hover:text-white px-2 py-0.5 rounded border border-[#3f3f46] transition-colors">SIMKL</a>
+                            {% endif %}
+                            {% if item.tmdb_id %}
+                            <a href="https://themoviedb.org/{{ 'movie' if item.media_type.value == 'movie' else 'tv' }}/{{ item.tmdb_id }}" target="_blank" rel="noopener noreferrer" class="bg-[#2a2a32] text-blue-400 hover:text-white px-2 py-0.5 rounded border border-[#3f3f46] transition-colors">TMDB</a>
+                            {% endif %}
+                            {% if item.imdb_id %}
+                            <a href="https://imdb.com/title/{{ item.imdb_id }}" target="_blank" rel="noopener noreferrer" class="bg-[#2a2a32] text-yellow-500 hover:text-white px-2 py-0.5 rounded border border-[#3f3f46] transition-colors">IMDB</a>
+                            {% endif %}
+                            {% if item.anilist_id %}
+                            <a href="https://anilist.co/anime/{{ item.anilist_id }}" target="_blank" rel="noopener noreferrer" class="bg-[#2a2a32] text-cyan-400 hover:text-white px-2 py-0.5 rounded border border-[#3f3f46] transition-colors">ANILIST</a>
+                            {% endif %}
+                        </div>
                     </div>
                 </div>
             </td>
@@ -529,9 +585,9 @@ document.addEventListener('alpine:init', () => {
 
             <!-- Col 3: Release Date (Date or TBA) -->
             <td class="px-6 py-4 text-gray-300 w-px whitespace-nowrap">
-                {% if item.release_date %}
-                    <div>{{ item.release_date.strftime('%Y-%m-%d') }}</div>
-                    <div class="text-[#a1a1aa] text-xs mt-0.5">{{ item.release_date | relative_date }}</div>
+                {% if eff_date %}
+                    <div>{{ eff_date.strftime('%Y-%m-%d') }}</div>
+                    <div class="text-[#a1a1aa] text-xs mt-0.5">{{ eff_date | relative_date }}</div>
                 {% else %}
                     <div class="flex items-center gap-1.5">
                         <span class="bg-indigo-950/80 text-indigo-300 border border-indigo-700/50 text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wider">TBA</span>
@@ -542,20 +598,18 @@ document.addEventListener('alpine:init', () => {
                 {% endif %}
             </td>
 
-            <!-- Col 4: Status & Progress (Including Dual Progress Pills for Anime) -->
+            <!-- Col 4: Status & Progress (Vertical Stack without WANTED) -->
             <td class="px-6 py-4 w-px whitespace-nowrap">
-                <div class="flex flex-col gap-1.5 items-start">
-                    <div class="flex flex-wrap items-center gap-1.5">
+                <div class="flex flex-col items-start gap-1">
+                    {% if item.status_tier == 'upcoming' or item.status.value == 'future' or item.is_tba %}
+                        <span class="bg-blue-600 text-white text-[11px] font-bold px-2 py-0.5 rounded uppercase tracking-wider shadow-sm">FUTURE</span>
+                    {% else %}
                         {% if item.status.value == 'downloading' %}
                             <span class="bg-cyan-600 animate-pulse text-white text-[11px] font-bold px-2 py-0.5 rounded uppercase tracking-wider shadow-sm">DOWNLOADING</span>
                         {% elif item.status.value == 'failed' %}
                             <span class="bg-red-600 text-white text-[11px] font-bold px-2 py-0.5 rounded uppercase tracking-wider shadow-sm">FAILED</span>
                         {% elif item.status.value == 'downloaded' or item.status.value == 'completed' %}
                             <span class="bg-emerald-600 text-white text-[11px] font-bold px-2 py-0.5 rounded uppercase tracking-wider shadow-sm">DONE</span>
-                        {% elif item.status.value == 'future' or item.is_tba %}
-                            <span class="bg-blue-600 text-white text-[11px] font-bold px-2 py-0.5 rounded uppercase tracking-wider shadow-sm">FUTURE</span>
-                        {% else %}
-                            <span class="bg-[#d40060] text-white text-[11px] font-bold px-2 py-0.5 rounded uppercase tracking-wider shadow-sm">WANTED</span>
                         {% endif %}
 
                         {% for pill in item.progress_pills %}
@@ -563,7 +617,7 @@ document.addEventListener('alpine:init', () => {
                                 {{ pill }}
                             </span>
                         {% endfor %}
-                    </div>
+                    {% endif %}
 
                     {% if item.is_fallback %}
                     <span class="bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[10px] font-semibold px-2 py-0.5 rounded uppercase tracking-wider w-fit">Fallback Language</span>
@@ -683,7 +737,7 @@ document.addEventListener('alpine:init', () => {
     </div>
 
     <!-- =================================================================== -->
-    <!-- CARD 4 VIEW: HISTORY (6-COLUMN PUSH HISTORY LEDGER)                 -->
+    <!-- CARD 4 VIEW: HISTORY (5-COLUMN PUSH HISTORY LEDGER)                 -->
     <!-- =================================================================== -->
     <div x-show="activeCard === 'history'" style="display: none;"
          class="bg-[#24242b] border border-[#3f3f46] rounded-lg shadow overflow-hidden">
@@ -700,37 +754,31 @@ document.addEventListener('alpine:init', () => {
             <table class="min-w-full divide-y divide-[#3f3f46]">
                 <thead class="bg-[#1e1e24]">
                     <tr>
-                        <th scope="col" @click="sortHistoryBy('title')" class="px-6 py-3.5 w-full min-w-[260px] text-left text-xs font-semibold text-[#a1a1aa] uppercase tracking-wider cursor-pointer hover:text-white select-none">
+                        <th scope="col" @click="sortHistoryBy('title')" class="px-4 py-3.5 w-full min-w-[260px] text-left text-xs font-semibold text-[#a1a1aa] uppercase tracking-wider cursor-pointer hover:text-white select-none">
                             <div class="flex items-center gap-1">
                                 <span>Title &amp; Target</span>
                                 <span x-show="historySortCol === 'title'" x-text="historySortDir === 'asc' ? '▲' : '▼'" class="text-[#d40060] font-bold text-xs"></span>
                             </div>
                         </th>
-                        <th scope="col" @click="sortHistoryBy('type')" class="px-6 py-3.5 w-px whitespace-nowrap text-left text-xs font-semibold text-[#a1a1aa] uppercase tracking-wider cursor-pointer hover:text-white select-none">
-                            <div class="flex items-center gap-1">
-                                <span>Type</span>
-                                <span x-show="historySortCol === 'type'" x-text="historySortDir === 'asc' ? '▲' : '▼'" class="text-[#d40060] font-bold text-xs"></span>
-                            </div>
-                        </th>
-                        <th scope="col" @click="sortHistoryBy('release')" class="px-6 py-3.5 w-px whitespace-nowrap text-left text-xs font-semibold text-[#a1a1aa] uppercase tracking-wider cursor-pointer hover:text-white select-none">
+                        <th scope="col" @click="sortHistoryBy('release')" class="px-4 py-3.5 w-px whitespace-nowrap text-left text-xs font-semibold text-[#a1a1aa] uppercase tracking-wider cursor-pointer hover:text-white select-none">
                             <div class="flex items-center gap-1">
                                 <span>Release &amp; Quality</span>
                                 <span x-show="historySortCol === 'release'" x-text="historySortDir === 'asc' ? '▲' : '▼'" class="text-[#d40060] font-bold text-xs"></span>
                             </div>
                         </th>
-                        <th scope="col" @click="sortHistoryBy('pushed-at')" class="px-6 py-3.5 w-px whitespace-nowrap text-left text-xs font-semibold text-[#a1a1aa] uppercase tracking-wider cursor-pointer hover:text-white select-none">
+                        <th scope="col" @click="sortHistoryBy('pushed-at')" class="px-4 py-3.5 w-px whitespace-nowrap text-left text-xs font-semibold text-[#a1a1aa] uppercase tracking-wider cursor-pointer hover:text-white select-none">
                             <div class="flex items-center gap-1">
                                 <span>Pushed At</span>
                                 <span x-show="historySortCol === 'pushed-at'" x-text="historySortDir === 'asc' ? '▲' : '▼'" class="text-[#d40060] font-bold text-xs"></span>
                             </div>
                         </th>
-                        <th scope="col" @click="sortHistoryBy('status')" class="px-6 py-3.5 w-px whitespace-nowrap text-left text-xs font-semibold text-[#a1a1aa] uppercase tracking-wider cursor-pointer hover:text-white select-none">
+                        <th scope="col" @click="sortHistoryBy('status')" class="px-4 py-3.5 w-px whitespace-nowrap text-left text-xs font-semibold text-[#a1a1aa] uppercase tracking-wider cursor-pointer hover:text-white select-none">
                             <div class="flex items-center gap-1">
                                 <span>TorBox Status</span>
                                 <span x-show="historySortCol === 'status'" x-text="historySortDir === 'asc' ? '▲' : '▼'" class="text-[#d40060] font-bold text-xs"></span>
                             </div>
                         </th>
-                        <th scope="col" class="px-6 py-3.5 w-px whitespace-nowrap text-right text-xs font-semibold text-[#a1a1aa] uppercase tracking-wider">Actions</th>
+                        <th scope="col" class="px-4 py-3.5 w-px whitespace-nowrap text-right text-xs font-semibold text-[#a1a1aa] uppercase tracking-wider">Actions</th>
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-[#3f3f46] bg-[#24242b]" id="dashboard-history-table-body">
@@ -743,62 +791,68 @@ document.addEventListener('alpine:init', () => {
                         data-pushed-at="{{ h.pushed_at_str or '' }}"
                         data-status="{{ (h.torbox_status or '') | lower }}"
                         x-show="historySearch.trim() === '' || '{{ (h.media_title or '')|replace('\'', '\\\'') }}'.toLowerCase().includes(historySearch.toLowerCase()) || '{{ (h.alt_title or '')|replace('\'', '\\\'') }}'.toLowerCase().includes(historySearch.toLowerCase()) || '{{ (h.nzb_title or '')|replace('\'', '\\\'') }}'.toLowerCase().includes(historySearch.toLowerCase()) || '{{ (h.target_label or '')|replace('\'', '\\\'') }}'.toLowerCase().includes(historySearch.toLowerCase()) || '{{ (h.type_label or '') | lower }}'.includes(historySearch.toLowerCase()) || '{{ (h.torbox_status or '') | lower }}'.includes(historySearch.toLowerCase())">
-                        <!-- Col 1: Title & Target -->
-                        <td class="px-6 py-4 w-full min-w-[260px] break-words">
-                            <div class="block">
-                                <div class="flex flex-wrap items-center gap-2">
-                                    {% if h.media_item_id %}
-                                    <button type="button"
-                                            hx-get="/api/items/{{ h.media_item_id }}/push-modal"
-                                            hx-target="#modal-container"
-                                            hx-swap="innerHTML"
-                                            class="font-bold text-white hover:text-[#d40060] transition-colors text-left">
-                                        {{ h.media_title }}
-                                    </button>
+                        <!-- Col 1: Poster Thumbnail, Title, Target & Type Badge -->
+                        <td class="px-4 py-3.5 w-full min-w-[260px] break-words">
+                            <div class="flex items-start gap-3">
+                                <div class="w-10 h-14 rounded bg-[#18181c] border border-[#3f3f46] overflow-hidden shrink-0 flex items-center justify-center">
+                                    {% if h.poster_url %}
+                                    <img src="{{ h.poster_url }}" alt="" loading="lazy" class="w-full h-full object-cover">
                                     {% else %}
-                                    <span class="font-bold text-gray-200">{{ h.media_title }}</span>
-                                    {% endif %}
-                                    {% if h.media_year %}
-                                    <span class="text-xs text-[#a1a1aa]">({{ h.media_year }})</span>
-                                    {% endif %}
-                                    {% if h.target_label %}
-                                    <span class="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded bg-[#1e1e24] text-gray-300 border border-[#3f3f46]">{{ h.target_label }}</span>
-                                    {% endif %}
-                                    {% if h.is_detached %}
-                                    <span class="px-1.5 py-0.5 text-[10px] font-semibold rounded bg-zinc-500/15 text-zinc-400 border border-zinc-500/30">Pruned from Simkl</span>
+                                    <svg class="w-4 h-4 text-[#52525b]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 4v16M17 4v16M3 8h4m10 0h4M3 12h18M3 16h4m10 0h4M4 20h16a1 1 0 001-1V5a1 1 0 00-1-1H4a1 1 0 00-1 1v14a1 1 0 001 1z"></path></svg>
                                     {% endif %}
                                 </div>
-                                {% if h.alt_title and h.alt_title | lower != h.media_title | lower %}
-                                <div class="text-[11px] text-slate-400 italic mt-0.5">{{ h.alt_title }}</div>
-                                {% endif %}
-                                <div class="flex flex-wrap gap-1.5 mt-2 text-[10px] font-bold">
-                                    {% if h.simkl_id %}
-                                    <a href="https://simkl.com/{{ 'movies' if h.category_key == 'movie' else ('anime' if h.category_key == 'anime' else 'shows') }}/{{ h.simkl_id }}" target="_blank" class="bg-[#2a2a32] text-gray-400 hover:text-white px-2 py-0.5 rounded border border-[#3f3f46] transition-colors">SIMKL</a>
+                                <div class="min-w-0 flex-1">
+                                    <div class="flex flex-wrap items-center gap-1.5">
+                                        {% if h.media_item_id %}
+                                        <button type="button"
+                                                hx-get="/api/items/{{ h.media_item_id }}/push-modal"
+                                                hx-target="#modal-container"
+                                                hx-swap="innerHTML"
+                                                class="font-bold text-white hover:text-[#d40060] transition-colors text-left">
+                                            {{ h.media_title }}
+                                        </button>
+                                        {% else %}
+                                        <span class="font-bold text-gray-200">{{ h.media_title }}</span>
+                                        {% endif %}
+                                        {% if h.media_year %}
+                                        <span class="text-xs text-[#a1a1aa]">({{ h.media_year }})</span>
+                                        {% endif %}
+                                        {% if h.target_label %}
+                                        <span class="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded bg-[#1e1e24] text-gray-300 border border-[#3f3f46]">{{ h.target_label }}</span>
+                                        {% endif %}
+                                        {% if h.type_label == 'ANIME' %}
+                                        <span class="px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded bg-pink-500/10 text-pink-400 border border-pink-500/20">ANIME</span>
+                                        {% elif h.type_label == 'SERIES' %}
+                                        <span class="px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded bg-purple-500/10 text-purple-400 border border-purple-500/20">SERIES</span>
+                                        {% else %}
+                                        <span class="px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded bg-blue-500/10 text-blue-400 border border-blue-500/20">MOVIE</span>
+                                        {% endif %}
+                                        {% if h.is_detached %}
+                                        <span class="px-1.5 py-0.5 text-[10px] font-semibold rounded bg-zinc-500/15 text-zinc-400 border border-zinc-500/30">Pruned from Simkl</span>
+                                        {% endif %}
+                                    </div>
+                                    {% if h.alt_title and h.alt_title | lower != h.media_title | lower %}
+                                    <div class="text-[11px] text-slate-400 italic mt-0.5">{{ h.alt_title }}</div>
                                     {% endif %}
-                                    {% if h.tmdb_id %}
-                                    <a href="https://themoviedb.org/{{ 'movie' if h.category_key == 'movie' else 'tv' }}/{{ h.tmdb_id }}" target="_blank" class="bg-[#2a2a32] text-blue-400 hover:text-white px-2 py-0.5 rounded border border-[#3f3f46] transition-colors">TMDB</a>
-                                    {% endif %}
-                                    {% if h.imdb_id %}
-                                    <a href="https://imdb.com/title/{{ h.imdb_id }}" target="_blank" class="bg-[#2a2a32] text-yellow-500 hover:text-white px-2 py-0.5 rounded border border-[#3f3f46] transition-colors">IMDB</a>
-                                    {% endif %}
-                                    {% if h.anilist_id %}
-                                    <a href="https://anilist.co/anime/{{ h.anilist_id }}" target="_blank" class="bg-[#2a2a32] text-cyan-400 hover:text-white px-2 py-0.5 rounded border border-[#3f3f46] transition-colors">ANILIST</a>
-                                    {% endif %}
+                                    <div class="flex flex-wrap gap-1.5 mt-2 text-[10px] font-bold">
+                                        {% if h.simkl_id %}
+                                        <a href="https://simkl.com/{{ 'movies' if h.category_key == 'movie' else ('anime' if h.category_key == 'anime' else 'tv') }}/{{ h.simkl_id }}" target="_blank" rel="noopener noreferrer" class="bg-[#2a2a32] text-gray-400 hover:text-white px-2 py-0.5 rounded border border-[#3f3f46] transition-colors">SIMKL</a>
+                                        {% endif %}
+                                        {% if h.tmdb_id %}
+                                        <a href="https://themoviedb.org/{{ 'movie' if h.category_key == 'movie' else 'tv' }}/{{ h.tmdb_id }}" target="_blank" rel="noopener noreferrer" class="bg-[#2a2a32] text-blue-400 hover:text-white px-2 py-0.5 rounded border border-[#3f3f46] transition-colors">TMDB</a>
+                                        {% endif %}
+                                        {% if h.imdb_id %}
+                                        <a href="https://imdb.com/title/{{ h.imdb_id }}" target="_blank" rel="noopener noreferrer" class="bg-[#2a2a32] text-yellow-500 hover:text-white px-2 py-0.5 rounded border border-[#3f3f46] transition-colors">IMDB</a>
+                                        {% endif %}
+                                        {% if h.anilist_id %}
+                                        <a href="https://anilist.co/anime/{{ h.anilist_id }}" target="_blank" rel="noopener noreferrer" class="bg-[#2a2a32] text-cyan-400 hover:text-white px-2 py-0.5 rounded border border-[#3f3f46] transition-colors">ANILIST</a>
+                                        {% endif %}
+                                    </div>
                                 </div>
                             </div>
                         </td>
-                        <!-- Col 2: Type -->
-                        <td class="px-6 py-4 w-px whitespace-nowrap">
-                            {% if h.type_label == 'ANIME' %}
-                            <span class="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded bg-pink-500/10 text-pink-400 border border-pink-500/20">ANIME</span>
-                            {% elif h.type_label == 'SERIES' %}
-                            <span class="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded bg-purple-500/10 text-purple-400 border border-purple-500/20">SERIES</span>
-                            {% else %}
-                            <span class="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded bg-blue-500/10 text-blue-400 border border-blue-500/20">MOVIE</span>
-                            {% endif %}
-                        </td>
-                        <!-- Col 3: Release & Quality -->
-                        <td class="px-6 py-4 min-w-[220px] max-w-[380px]">
+                        <!-- Col 2: Release & Quality -->
+                        <td class="px-4 py-3.5 min-w-[220px] max-w-[380px]">
                             <div class="text-xs font-mono text-gray-200 truncate" title="{{ h.nzb_title }}">{{ h.nzb_title }}</div>
                             {% set pills = h.feature_pills if h.feature_pills is defined else [] %}
                             {% set cap = 6 %}
@@ -814,12 +868,12 @@ document.addEventListener('alpine:init', () => {
                                 {% endif %}
                             </div>
                         </td>
-                        <!-- Col 4: Pushed At -->
-                        <td class="px-6 py-4 text-gray-400 text-xs font-mono w-px whitespace-nowrap">
+                        <!-- Col 3: Pushed At -->
+                        <td class="px-4 py-3.5 text-gray-400 text-xs font-mono w-px whitespace-nowrap">
                             {{ h.pushed_at_str }}
                         </td>
-                        <!-- Col 5: TorBox Status -->
-                        <td class="px-6 py-4 w-px whitespace-nowrap" id="ledger-status-{{ h.id }}">
+                        <!-- Col 4: TorBox Status -->
+                        <td class="px-4 py-3.5 w-px whitespace-nowrap" id="ledger-status-{{ h.id }}">
                             {% if h.status_key == 'completed' %}
                             <span class="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">READY ON TORBOX</span>
                             {% elif h.status_key == 'deleted' %}
@@ -834,47 +888,49 @@ document.addEventListener('alpine:init', () => {
                             <span class="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded bg-cyan-500/15 text-cyan-400 border border-cyan-500/30">{{ h.torbox_status }}</span>
                             {% endif %}
                         </td>
-                        <!-- Col 6: Actions -->
-                        <td class="px-6 py-4 text-right w-px whitespace-nowrap">
-                            <div class="flex justify-end items-center gap-2">
+                        <!-- Col 5: Actions (Compact Icon-Only Re-Push + Two-Stage Smart Trash) -->
+                        <td class="px-4 py-3.5 text-right w-px whitespace-nowrap">
+                            <div class="flex justify-end items-center gap-1.5">
+                                {% if h.can_repush %}
+                                <button type="button"
+                                        hx-get="/api/items/{{ h.media_item_id }}/push-modal"
+                                        hx-target="#modal-container"
+                                        hx-swap="innerHTML"
+                                        title="Re-Push / Open Push Modal"
+                                        class="p-1.5 bg-[#2a2a32] hover:bg-[#d40060] text-gray-200 hover:text-white border border-[#3f3f46] rounded-md transition-colors flex items-center justify-center">
+                                    <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                                    <span class="sr-only">Re-Push</span>
+                                </button>
+                                {% endif %}
                                 {% if h.can_delete_torbox %}
                                 <button type="button"
                                         hx-post="/api/history/{{ h.id }}/delete-torbox"
                                         hx-target="#ledger-status-{{ h.id }}"
                                         hx-swap="innerHTML"
                                         hx-confirm="Delete this transfer from TorBox and reset target to Ready to Push?"
-                                        hx-on::after-request="if(event.detail.successful) this.remove()"
-                                        class="bg-red-500/10 hover:bg-red-600 text-red-400 hover:text-white border border-red-500/30 text-xs font-semibold px-2.5 py-1.5 rounded-md transition-colors flex items-center gap-1"
-                                        title="Delete from TorBox and reset target to Ready to Push">
-                                    <span>Delete from TorBox</span>
+                                        title="Delete from TorBox"
+                                        class="p-1.5 bg-red-500/10 hover:bg-red-600 text-red-400 hover:text-white border border-red-500/30 rounded-md transition-colors flex items-center justify-center">
+                                    <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                                    <span class="sr-only">Delete from TorBox</span>
                                 </button>
-                                {% endif %}
-                                {% if h.can_repush %}
-                                <button type="button"
-                                        hx-get="/api/items/{{ h.media_item_id }}/push-modal"
-                                        hx-target="#modal-container"
-                                        hx-swap="innerHTML"
-                                        class="bg-[#2a2a32] hover:bg-[#d40060] text-gray-200 hover:text-white border border-[#3f3f46] text-xs font-semibold px-3 py-1.5 rounded-md transition-colors flex items-center gap-1.5">
-                                    <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
-                                    <span>Re-Push</span>
-                                </button>
-                                {% endif %}
+                                {% else %}
                                 <button type="button"
                                         hx-delete="/api/history/{{ h.id }}"
                                         hx-target="closest tr"
                                         hx-swap="outerHTML"
-                                        hx-confirm="Delete this history entry from the ledger?"
-                                        title="Delete Entry"
-                                        class="bg-transparent border border-red-800 text-red-500 hover:bg-red-600 hover:text-white transition-colors px-2 py-1.5 rounded-md text-xs font-semibold flex items-center gap-1">
+                                        hx-confirm="Remove this entry from the history ledger?"
+                                        title="Remove History Entry"
+                                        class="p-1.5 bg-transparent border border-red-800 text-red-500 hover:bg-red-600 hover:text-white rounded-md transition-colors flex items-center justify-center">
                                     <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
                                     <span class="sr-only">Delete Entry</span>
                                 </button>
+                                {% endif %}
                             </div>
                         </td>
                     </tr>
                     {% else %}
                     <tr>
-                        <td colspan="6" class="px-6 py-8 text-center text-sm text-[#a1a1aa] italic">No push history entries recorded yet.</td>
+                        <td colspan="5" class="px-4 py-8 text-center text-sm text-[#a1a1aa] italic">No push history entries recorded yet.</td>
                     </tr>
                     {% endfor %}
                 </tbody>

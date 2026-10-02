@@ -20,7 +20,7 @@
 
 **NZBoxer** bridges your **Simkl** watchlist, **TMDB** & **AniList** metadata, **Newznab** Usenet indexers, and **TorBox** into a single lightweight web application.
 
-Unlike traditional automation stacks that poll indexers 24/7 and download everything in the background before you are ready to watch, NZBoxer is built around an **on-demand workflow**:
+NZBoxer is built around an **on-demand workflow**:
 - It keeps your **Movies**, **TV Series**, and **Anime** synchronized with Simkl and tracks exact digital release dates, episode air dates, and chronological anime watch orders.
 - It performs **zero background indexer polling** while idle—preserving your indexer API limits and TorBox storage until you actually want to push a movie, season, or episode.
 - When you decide to push a title, NZBoxer searches your configured indexers, filters out fakes, scores releases against your quality and language rules, sends the NZB to TorBox, monitors the transfer to completion, and automatically replaces dead downloads if a release fails.
@@ -30,15 +30,15 @@ Unlike traditional automation stacks that poll indexers 24/7 and download everyt
 ## How It Works
 
 ### 1. Watchlist Sync & Metadata Enrichment
-- **Simkl Integration:** Connects to your Simkl account (via OAuth2 PIN linking) and syncs your *Plan to Watch* and *Watching* lists across Movies, TV Shows, and Anime.
+- **Simkl Integration:** Connects to your Simkl account (via OAuth 2.0 Device Flow) and syncs your *Plan to Watch* and *Watching* lists across Movies, TV Shows, and Anime.
 - **Release Date Tracking (TMDB):** Enriches Movies and Series with digital/physical release dates and season/episode air dates so you always know whether a title is actually available or still upcoming.
 - **Chronological Anime Franchises (AniList):** Automatically groups standalone anime sequel entries and canon franchise movies under a single parent entry in chronological watch order, while keeping your Simkl watch progress aligned.
 - **Automatic Cleanup:** When you mark an item as *Completed* or drop it on Simkl, NZBoxer automatically removes it from your active watchlist views on the next sync while preserving your permanent push history.
 
 ### 2. On-Demand Search, Scoring & Push
 - **One-Click Auto-Push:** Push an entire movie, one or more seasons, or specific episodes with a single click. For series and anime, you can choose whether to allow season packs, prefer season packs over individual episodes (with automatic episode fallback if no pack is available), and optionally auto-advance to the next season when the current one finishes.
-- **Manual Release Picker:** Prefer to choose the exact release yourself? Run an interactive search directly from the item modal or the standalone Manual Search view to inspect scored candidates, language tags, file sizes, and rejection reasons before grabbing.
-- **Customizable Scoring & Presets:** Configure global scoring weights for resolution (`2160p`, `1080p`, `720p`), sources (`BluRay`, `WEB-DL`, `Remux`), HDR (`Dolby Vision`, `HDR10+`, `HDR10`), video/audio codecs (`HEVC`, `AV1`, `Atmos`, `TrueHD`, `DTS-HD`), primary/fallback languages, and preferred/unwanted keywords—or save reusable **Search Presets** for different types of media.
+- **Manual Release Picker:** Prefer to choose the exact release yourself? Run an interactive search directly from the item modal or the standalone Manual Search view to inspect scored candidates, 4-tier quality feature pills, language tags, file sizes, and rejection reasons before grabbing.
+- **Built-In Scoring & Search Presets:** Combines a built-in release scoring matrix (evaluating resolution, source, HDR/Dolby Vision, video/audio codecs, Atmos, bitrate, and primary/fallback language hierarchy) with reusable **Search Presets** and per-push quality, language, size, and keyword overrides.
 
 ### 3. Live Transfer Monitoring, Auto-Recovery & Notifications
 - **Auto-Waking Transfer Poller:** As soon as a push is dispatched to TorBox, NZBoxer wakes its transfer monitor to track live download progress, speed, and ETA. Once all active transfers finish, the poller goes back to sleep automatically.
@@ -52,7 +52,7 @@ Unlike traditional automation stacks that poll indexers 24/7 and download everyt
 
 - **Docker & Docker Compose** (recommended) or **Python 3.12+**
 - Accounts / API Keys for:
-  - [Simkl](https://simkl.com/) (Client ID + interactive OAuth2 PIN login in the UI)
+  - [Simkl](https://simkl.com/) (Client ID + interactive OAuth 2.0 Device Flow login in the UI)
   - [TMDB](https://www.themoviedb.org/) (API Key for movie & TV metadata)
   - At least one **Newznab-compatible Usenet Indexer**
   - [TorBox](https://torbox.app/) (API Key for Usenet cloud downloads)
@@ -66,13 +66,25 @@ Unlike traditional automation stacks that poll indexers 24/7 and download everyt
 
 The easiest way to run NZBoxer is with the pre-built Docker image from the GitHub Container Registry (`ghcr.io/reimaris/nzboxer:latest`).
 
-> [!IMPORTANT]
-> Because the container runs as an unprivileged non-root user (`UID 1000`), create the `config` directory on your host **before** starting the container so it is owned by your user rather than `root`.
+Create a `compose.yaml` file:
+
+```yaml
+services:
+  nzboxer:
+    image: ghcr.io/reimaris/nzboxer:latest
+    container_name: nzboxer
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./config:/app/config
+    environment:
+      - TZ=UTC
+```
+
+Then start the container:
 
 ```bash
-git clone https://github.com/Reimaris/NZBoxer.git
-cd NZBoxer
-mkdir config
 docker compose up -d
 ```
 

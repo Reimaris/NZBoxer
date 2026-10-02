@@ -54,7 +54,7 @@
                                     <div class="text-xs text-[#a1a1aa]">Watchlist Integration</div>
                                 </div>
                             </div>
-                            <p class="text-xs text-[#71717a] mt-1">Sync movies, TV shows, and anime watchlists with PIN authentication and configurable sync interval.</p>
+                            <p class="text-xs text-[#71717a] mt-1">Sync movies, TV shows, and anime watchlists via OAuth 2.0 Device Flow (AUTH V2) with auto-refreshing tokens and watch-progress season expansion.</p>
                         </button>
                     </div>
                 </div>
@@ -71,7 +71,7 @@
                                     <div class="text-xs text-[#a1a1aa]">The Movie Database</div>
                                 </div>
                             </div>
-                            <p class="text-xs text-[#71717a] mt-1">Core metadata engine for movie and TV show identification, posters, and details.</p>
+                            <p class="text-xs text-[#71717a] mt-1">Movie and TV series metadata, season/episode air dates, and poster artwork (v3 API key required).</p>
                         </button>
                         <button type="button" @click="selectProvider('anilist', 'metadata', 'AniList')" class="bg-[#111115] hover:bg-[#2a2a32] border border-[#3f3f46] hover:border-amber-400 rounded-xl p-4 text-left transition-all group flex flex-col justify-between">
                             <div class="flex items-center gap-3 mb-2">
@@ -81,7 +81,7 @@
                                     <div class="text-xs text-[#a1a1aa]">Anime Metadata</div>
                                 </div>
                             </div>
-                            <p class="text-xs text-[#71717a] mt-1">Japanese animation metadata, sequel chains, and chronological season structure.</p>
+                            <p class="text-xs text-[#71717a] mt-1">Public GraphQL anime metadata, chronological sequel chains, and episode air dates. Works automatically without credentials.</p>
                         </button>
                     </div>
                 </div>
@@ -95,10 +95,10 @@
                                 <div class="w-10 h-10 rounded-lg bg-purple-500/20 text-purple-400 flex items-center justify-center font-bold text-lg">TB</div>
                                 <div>
                                     <div class="font-bold text-white group-hover:text-purple-400 transition-colors">TorBox</div>
-                                    <div class="text-xs text-[#a1a1aa]">Debrid & Usenet Client</div>
+                                    <div class="text-xs text-[#a1a1aa]">Debrid &amp; Usenet Client</div>
                                 </div>
                             </div>
-                            <p class="text-xs text-[#71717a] mt-1">Cloud Usenet downloader client for queuing, caching, and streaming NZB downloads.</p>
+                            <p class="text-xs text-[#71717a] mt-1">Cloud Usenet downloader for multipart NZB uploads, active transfer polling, and Layer 3 video verification.</p>
                         </button>
                     </div>
                 </div>
@@ -107,15 +107,15 @@
                 <div class="space-y-3">
                     <h3 class="text-xs font-bold text-blue-400 uppercase tracking-wider">Indexer Providers</h3>
                     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        <button type="button" @click="selectProvider('treasure_maps', 'indexer', 'TreasureMaps')" class="bg-[#111115] hover:bg-[#2a2a32] border border-[#3f3f46] hover:border-blue-400 rounded-xl p-4 text-left transition-all group flex flex-col justify-between">
+                        <button type="button" @click="selectProvider('treasure_maps', 'indexer', 'Newznab Indexer')" class="bg-[#111115] hover:bg-[#2a2a32] border border-[#3f3f46] hover:border-blue-400 rounded-xl p-4 text-left transition-all group flex flex-col justify-between">
                             <div class="flex items-center gap-3 mb-2">
-                                <div class="w-10 h-10 rounded-lg bg-blue-500/20 text-blue-400 flex items-center justify-center font-bold text-lg">TM</div>
+                                <div class="w-10 h-10 rounded-lg bg-blue-500/20 text-blue-400 flex items-center justify-center font-bold text-xs">NZB</div>
                                 <div>
-                                    <div class="font-bold text-white group-hover:text-blue-400 transition-colors">TreasureMaps</div>
-                                    <div class="text-xs text-[#a1a1aa]">Newznab Usenet Indexer</div>
+                                    <div class="font-bold text-white group-hover:text-blue-400 transition-colors">Newznab Indexer</div>
+                                    <div class="text-xs text-[#a1a1aa]">Usenet Indexer (Newznab API)</div>
                                 </div>
                             </div>
-                            <p class="text-xs text-[#71717a] mt-1">Newznab Usenet indexer with priority-ordered search cascade.</p>
+                            <p class="text-xs text-[#71717a] mt-1">Compatible with any Newznab-standard Usenet indexer (NZBGeek, NzbPlanet, DrunkenSlug, SceneNZBs, TreasureMaps, etc.) evaluated in priority order.</p>
                         </button>
                     </div>
                 </div>
@@ -161,7 +161,7 @@
                         </div>
                     </fieldset>
 
-                    <!-- TREASUREMAPS / NEWZNAB INDEXER CONFIGURATION -->
+                    <!-- NEWZNAB INDEXER CONFIGURATION -->
                     <fieldset :disabled="providerType !== 'treasure_maps'" x-show="providerType === 'treasure_maps'" class="border-0 p-0 m-0 space-y-6">
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                             <div class="flex flex-col">
@@ -178,7 +178,7 @@
                             </div>
                             <div class="flex flex-col col-span-1 md:col-span-2">
                                 <label class="h-6 text-[#d1d5db] font-medium mb-1 flex items-center">Indexer Endpoint / API Base URL <span class="text-red-500 ml-1">*</span></label>
-                                <input type="text" name="api_url" value="{{ provider.api_url if provider and provider.api_url else 'https://treasuremaps.net/api' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors font-mono" placeholder="https://treasuremaps.net/api">
+                                <input type="text" name="api_url" value="{{ provider.api_url if provider and provider.api_url else '' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors font-mono" placeholder="https://api.your-indexer.com/api">
                             </div>
                         </div>
 
@@ -294,6 +294,9 @@
 
                     <!-- ANILIST CONFIGURATION -->
                     <fieldset :disabled="providerType !== 'anilist'" x-show="providerType === 'anilist'" class="border-0 p-0 m-0 space-y-6">
+                        <div class="bg-[#111115] border border-[#3f3f46] rounded-xl p-4 text-xs text-[#a1a1aa] leading-relaxed">
+                            AniList uses the public GraphQL API for anime metadata, chronological sequel chains, and episode air dates — <strong class="text-white">no API key or credentials are required</strong>. Username and Access Token below are completely optional.
+                        </div>
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                             <div class="flex flex-col">
                                 <label class="h-6 text-[#d1d5db] font-medium mb-1 flex items-center">AniList Username (Optional)</label>

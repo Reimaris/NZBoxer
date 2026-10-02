@@ -582,7 +582,9 @@ class MediaItem(Base):
 
     @property
     def progress_pills(self) -> list[str]:
-        """Formatted progress pills for Series and Anime (e.g. ['1/2 Seasons', '1/2 Movies'])."""
+        """Formatted progress pills for Series and Anime (e.g. ['1/2 Seasons', '1/2 Movies', 'S02 - E 2/4'])."""
+        from sqlalchemy import inspect as sa_inspect
+
         pills: list[str] = []
         t_seasons = self.total_seasons
         if t_seasons > 0:
@@ -592,6 +594,37 @@ class MediaItem(Base):
         if t_movies > 0:
             m_label = "Movie" if t_movies == 1 else "Movies"
             pills.append(f"{self.downloaded_movies}/{t_movies} {m_label}")
+
+        if "seasons" not in sa_inspect(self).unloaded and self.seasons:
+            non_special_seasons = [
+                s
+                for s in self.seasons
+                if s.season_number > 0 and getattr(s, "entry_type", "season") != "movie"
+            ]
+            non_special_seasons.sort(
+                key=lambda s: (
+                    int(getattr(s, "watch_order", None) or s.season_number),
+                    int(s.season_number),
+                )
+            )
+            for s in non_special_seasons:
+                if s.status in (SeasonStatus.DOWNLOADED, SeasonStatus.COMPLETED):
+                    continue
+                if "episodes" in sa_inspect(s).unloaded or not s.episodes:
+                    continue
+                released_eps = [
+                    ep for ep in s.episodes if ep.status != EpisodeStatus.FUTURE
+                ]
+                total_eps = len(released_eps) or (s.episode_count or len(s.episodes))
+                dl_eps = sum(
+                    1
+                    for ep in s.episodes
+                    if ep.status in (EpisodeStatus.DOWNLOADED, EpisodeStatus.COMPLETED)
+                )
+                if 0 < dl_eps < total_eps:
+                    s_num = int(getattr(s, "type_number", None) or s.season_number)
+                    pills.append(f"S{s_num:02d} - E {dl_eps}/{total_eps}")
+
         return pills
 
     @property
@@ -709,36 +742,25 @@ class MediaItem(Base):
     @property
     def is_fully_completed(self) -> bool:
         """Returns True if the item requires no further automated actions (History)."""
-        from app.config import scoring_config
-
-        target_score = scoring_config.get("cutoffs", {}).get("target_score", 8000)
-
-        if self.status in [MediaStatus.COMPLETED, MediaStatus.IGNORED]:
+        if self.status in [
+            MediaStatus.COMPLETED,
+            MediaStatus.DOWNLOADED,
+            MediaStatus.IGNORED,
+        ]:
             return True
 
-        if self.media_type == MediaType.MOVIE:
-            if (
-                self.status == MediaStatus.DOWNLOADED
-                and self.best_score is not None
-                and self.best_score >= target_score
-            ):
-                return True
-            return False
-
-        elif self.media_type in (MediaType.SHOW, MediaType.ANIME):
+        if self.media_type in (MediaType.SHOW, MediaType.ANIME):
             if not self.seasons or (self.total_seasons + self.total_movies) == 0:
                 return False
 
             for season in self.seasons:
                 if season.season_number == 0:
                     continue
-                if season.status in [SeasonStatus.COMPLETED, SeasonStatus.IGNORED]:
-                    continue
-                if (
-                    season.status == SeasonStatus.DOWNLOADED
-                    and season.best_score is not None
-                    and season.best_score >= target_score
-                ):
+                if season.status in [
+                    SeasonStatus.COMPLETED,
+                    SeasonStatus.DOWNLOADED,
+                    SeasonStatus.IGNORED,
+                ]:
                     continue
                 return False
             return True

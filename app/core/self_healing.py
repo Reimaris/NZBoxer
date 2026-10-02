@@ -150,7 +150,6 @@ async def adopt_torbox_downloads_for_video(session) -> None:
     from sqlalchemy import select
     from sqlalchemy.orm import selectinload
 
-    from app.config import scoring_config
     from app.core.parser import parse_release_name
     from app.core.scorer import score_release
     from app.db.models import (
@@ -164,8 +163,6 @@ async def adopt_torbox_downloads_for_video(session) -> None:
         SeasonStatus,
         SeenTorboxDownload,
     )
-
-    target_score = scoring_config.get("cutoffs", {}).get("target_score", 8000)
 
     # 1. Fetch active cached video downloads
     stmt_td = select(SeenTorboxDownload).where(
@@ -218,12 +215,11 @@ async def adopt_torbox_downloads_for_video(session) -> None:
                 best_parsed = parsed
 
         if best_item and best_parsed:
-            is_completed = best_score >= target_score
             new_status = (
-                MediaStatus.COMPLETED if is_completed else MediaStatus.DOWNLOADED
+                MediaStatus.DOWNLOADING
+                if best_item.download_state in ("downloading", "queued", "processing")
+                else MediaStatus.COMPLETED
             )
-            if best_item.download_state in ("downloading", "queued", "processing"):
-                new_status = MediaStatus.DOWNLOADING
 
             from app.core.push_engine import populate_history_snapshot
 
@@ -284,18 +280,17 @@ async def adopt_torbox_downloads_for_video(session) -> None:
         if best_item and best_parsed:
             from app.core.push_engine import populate_history_snapshot
 
-            is_completed = best_score >= target_score
             new_season_status = (
-                SeasonStatus.COMPLETED if is_completed else SeasonStatus.DOWNLOADED
+                SeasonStatus.DOWNLOADING
+                if best_item.download_state in ("downloading", "queued", "processing")
+                else SeasonStatus.COMPLETED
             )
-            if best_item.download_state in ("downloading", "queued", "processing"):
-                new_season_status = SeasonStatus.DOWNLOADING
 
             season.status = new_season_status
 
             # Cascade to episodes
             ep_status = (
-                EpisodeStatus.DOWNLOADED
+                EpisodeStatus.COMPLETED
                 if new_season_status != SeasonStatus.DOWNLOADING
                 else EpisodeStatus.DOWNLOADING
             )
@@ -362,12 +357,11 @@ async def adopt_torbox_downloads_for_video(session) -> None:
         if best_item and best_parsed:
             from app.core.push_engine import populate_history_snapshot
 
-            is_completed = best_score >= target_score
             new_episode_status = (
-                EpisodeStatus.COMPLETED if is_completed else EpisodeStatus.DOWNLOADED
+                EpisodeStatus.DOWNLOADING
+                if best_item.download_state in ("downloading", "queued", "processing")
+                else EpisodeStatus.COMPLETED
             )
-            if best_item.download_state in ("downloading", "queued", "processing"):
-                new_episode_status = EpisodeStatus.DOWNLOADING
 
             episode.status = new_episode_status
             dh = DownloadHistory(
@@ -404,7 +398,6 @@ async def match_and_adopt_target_from_cache(session, target) -> bool:
     from sqlalchemy import select
     from sqlalchemy.orm import selectinload
 
-    from app.config import scoring_config
     from app.core.parser import parse_release_name
     from app.core.scorer import score_release
     from app.db.models import (
@@ -419,7 +412,6 @@ async def match_and_adopt_target_from_cache(session, target) -> bool:
     )
 
     await session.commit()
-    target_score = scoring_config.get("cutoffs", {}).get("target_score", 8000)
 
     import re
 
@@ -464,12 +456,11 @@ async def match_and_adopt_target_from_cache(session, target) -> bool:
         if best_item and best_parsed:
             from app.core.push_engine import populate_history_snapshot
 
-            is_completed = best_score >= target_score
             new_status = (
-                MediaStatus.COMPLETED if is_completed else MediaStatus.DOWNLOADED
+                MediaStatus.DOWNLOADING
+                if best_item.download_state in ("downloading", "queued", "processing")
+                else MediaStatus.COMPLETED
             )
-            if best_item.download_state in ("downloading", "queued", "processing"):
-                new_status = MediaStatus.DOWNLOADING
 
             target.status = new_status
             dh = DownloadHistory(
@@ -544,17 +535,17 @@ async def match_and_adopt_target_from_cache(session, target) -> bool:
             if best_item and best_parsed:
                 from app.core.push_engine import populate_history_snapshot
 
-                is_completed = best_score >= target_score
                 new_season_status = (
-                    SeasonStatus.COMPLETED if is_completed else SeasonStatus.DOWNLOADED
+                    SeasonStatus.DOWNLOADING
+                    if best_item.download_state
+                    in ("downloading", "queued", "processing")
+                    else SeasonStatus.COMPLETED
                 )
-                if best_item.download_state in ("downloading", "queued", "processing"):
-                    new_season_status = SeasonStatus.DOWNLOADING
 
                 season.status = new_season_status
 
                 ep_status = (
-                    EpisodeStatus.DOWNLOADED
+                    EpisodeStatus.COMPLETED
                     if new_season_status != SeasonStatus.DOWNLOADING
                     else EpisodeStatus.DOWNLOADING
                 )
@@ -623,18 +614,16 @@ async def match_and_adopt_target_from_cache(session, target) -> bool:
                     if best_item_ep and best_parsed_ep:
                         from app.core.push_engine import populate_history_snapshot
 
-                        is_completed = best_score_ep >= target_score
                         new_episode_status = (
-                            EpisodeStatus.COMPLETED
-                            if is_completed
-                            else EpisodeStatus.DOWNLOADED
+                            EpisodeStatus.DOWNLOADING
+                            if best_item_ep.download_state
+                            in (
+                                "downloading",
+                                "queued",
+                                "processing",
+                            )
+                            else EpisodeStatus.COMPLETED
                         )
-                        if best_item_ep.download_state in (
-                            "downloading",
-                            "queued",
-                            "processing",
-                        ):
-                            new_episode_status = EpisodeStatus.DOWNLOADING
 
                         ep.status = new_episode_status
                         dh = DownloadHistory(
