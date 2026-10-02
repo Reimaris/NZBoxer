@@ -2184,66 +2184,6 @@ async def rescan_torbox_cache():
             )
 
 
-@app.get("/history", response_class=HTMLResponse)
-async def history_dashboard(request: Request):
-    """Dashboard displaying fully completed media items (History Archive)."""
-    from sqlalchemy import select
-    from sqlalchemy.orm import selectinload
-
-    from app.db.database import async_session_factory
-    from app.db.models import (
-        MediaItem,
-        MediaType,
-        Season,
-    )
-
-    async with async_session_factory() as session:
-        # Fetch Video Media
-        video_stmt = (
-            select(MediaItem)
-            .order_by(MediaItem.updated_at.desc())
-            .options(
-                selectinload(MediaItem.seasons).selectinload(Season.episodes),
-                selectinload(MediaItem.seasons).selectinload(Season.download_history),
-                selectinload(MediaItem.failure_logs),
-                selectinload(MediaItem.download_history),
-                selectinload(MediaItem.provider),
-            )
-        )
-        video_items = (await session.execute(video_stmt)).scalars().all()
-        history_video = sorted(
-            [i for i in video_items if i.is_fully_completed],
-            key=lambda x: (
-                x.updated_at.timestamp() if getattr(x, "updated_at", None) else 0.0
-            ),
-            reverse=True,
-        )
-
-        movie_items = [
-            i
-            for i in history_video
-            if i.media_type == MediaType.MOVIE
-            and not getattr(i, "is_anime_movie", False)
-        ]
-        series_items = [i for i in history_video if i.media_type == MediaType.SHOW]
-        anime_items = [
-            i
-            for i in history_video
-            if i.media_type == MediaType.ANIME or getattr(i, "is_anime_movie", False)
-        ]
-
-    return templates.TemplateResponse(
-        request=request,
-        name="history_dashboard.html",
-        context={
-            "history_items": history_video,
-            "movie_items": movie_items,
-            "series_items": series_items,
-            "anime_items": anime_items,
-        },
-    )
-
-
 @app.get("/api/blacklist")
 async def get_blacklist():
     """Retrieve all blacklisted releases."""
