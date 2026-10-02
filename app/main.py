@@ -426,7 +426,7 @@ async def manual_search(
 
     from sqlalchemy import select
 
-    from app.core.parser import parse_release_name
+    from app.core.parser import build_release_feature_pills, parse_release_name
     from app.core.scorer import score_release
     from app.db.database import async_session_factory
     from app.db.models import SystemSettings
@@ -608,10 +608,20 @@ async def manual_search(
         fallback_language if fallback_language not in ("none", "any", "") else None
     )
 
+    seen_guids: set[str] = set()
+    seen_titles: set[str] = set()
+
     for item in raw_results:
-        title = item.get("title", "")
+        title = str(item.get("title") or "")
         if not title:
             continue
+        guid_or_link = str(item.get("guid") or item.get("link") or "")
+        norm_title = title.strip().lower()
+        if (guid_or_link and guid_or_link in seen_guids) or norm_title in seen_titles:
+            continue
+        if guid_or_link:
+            seen_guids.add(guid_or_link)
+        seen_titles.add(norm_title)
 
         parsed = parse_release_name(title)
 
@@ -633,9 +643,10 @@ async def manual_search(
         if not check_audio_tier(audio_tier, parsed.audio_codec, title):
             continue
 
+        size_bytes = int(item.get("size") or item.get("size_bytes") or 0)
         sr = score_release(
             parsed,
-            size_bytes=item.get("size", 0),
+            size_bytes=size_bytes,
             age_days=0,
             primary_language=prim_lang,
             fallback_language=fall_lang,
@@ -646,7 +657,7 @@ async def manual_search(
             if sr.reject_reason and "Language mismatch" in sr.reject_reason:
                 sr_mismatch = score_release(
                     parsed,
-                    size_bytes=item.get("size", 0),
+                    size_bytes=size_bytes,
                     age_days=0,
                     primary_language=None,
                     fallback_language=None,
@@ -656,6 +667,15 @@ async def manual_search(
                 item["parsed"] = parsed
                 item["is_mismatch"] = True
                 item["reject_reason"] = sr.reject_reason
+                item["feature_pills"] = build_release_feature_pills(
+                    parsed=parsed,
+                    score=sr_mismatch.score,
+                    size_bytes=size_bytes,
+                    is_fallback=False,
+                    is_mismatch=True,
+                    matched_language=sr_mismatch.matched_language,
+                    api_language=item.get("api_language"),
+                )
                 mismatched_results.append(item)
             continue
 
@@ -663,6 +683,15 @@ async def manual_search(
         item["parsed"] = parsed
         item["is_primary"] = sr.is_primary
         item["is_fallback"] = sr.is_fallback
+        item["feature_pills"] = build_release_feature_pills(
+            parsed=parsed,
+            score=sr.score,
+            size_bytes=size_bytes,
+            is_fallback=bool(sr.is_fallback),
+            is_mismatch=False,
+            matched_language=sr.matched_language,
+            api_language=item.get("api_language"),
+        )
         if sr.is_fallback:
             fallback_results.append(item)
         else:

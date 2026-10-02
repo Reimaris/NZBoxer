@@ -39,6 +39,19 @@
         episodeAccordions: [],
         openAccordions: {},
         showMismatchedPacks: false,
+        showMismatchedEp: {},
+        visiblePills(pills, cap = 8) {
+            if (!pills || !Array.isArray(pills)) return [];
+            return pills.length > cap ? pills.slice(0, cap - 1) : pills;
+        },
+        overflowCount(pills, cap = 8) {
+            if (!pills || !Array.isArray(pills)) return 0;
+            return pills.length > cap ? pills.length - (cap - 1) : 0;
+        },
+        overflowTooltip(pills, cap = 8) {
+            if (!pills || !Array.isArray(pills) || pills.length <= cap) return "";
+            return "Remaining: " + pills.slice(cap - 1).map(p => p.label).join(", ");
+        },
         closeModal() {
             const container = document.getElementById("modal-container");
             if (container) container.innerHTML = "";
@@ -222,7 +235,7 @@
             const data = await resp.json();
             if (resp.ok && data.pushed) {
                 this.hasPushedInSession = true;
-                this.statusMessage = `Grabbed & pushed "${rel.title}" to TorBox!`;
+                this.statusMessage = "Grabbed & pushed \"" + rel.title + "\" to TorBox!";
             } else {
                 this.statusError = data.error || "Failed to grab release.";
             }
@@ -241,7 +254,7 @@
                     style="position: absolute; top: 1rem; right: 1rem;"
                     @click="closeModal()"
                     title="Close Modal">
-                <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg width="20" height="20" class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
                 </svg>
             </button>
@@ -263,9 +276,11 @@
                     {% if item.year %}
                     <span class="px-2 py-0.5 text-xs font-semibold rounded-md bg-[#1e1e24] text-[#d1d5db] border border-[#3f3f46]">{{ item.year }}</span>
                     {% endif %}
-                    <span class="px-2.5 py-0.5 text-xs font-bold uppercase rounded-full bg-[#d40060]/20 text-pink-300 border border-[#d40060]/40">
-                        {{ item.status.value }}
+                    {% if item.status.value in ('completed', 'downloaded', 'downloading', 'future', 'failed') %}
+                    <span class="px-2.5 py-0.5 text-xs font-bold uppercase rounded-full {% if item.status.value in ('completed', 'downloaded') %}bg-emerald-500/20 text-emerald-400 border border-emerald-500/30{% elif item.status.value == 'downloading' %}bg-cyan-500/20 text-cyan-300 border border-cyan-500/30{% elif item.status.value == 'future' %}bg-blue-500/20 text-blue-300 border border-blue-500/30{% else %}bg-red-500/20 text-red-400 border border-red-500/30{% endif %}">
+                        {{ 'DOWNLOADED' if item.status.value in ('completed', 'downloaded') else item.status.value|upper }}
                     </span>
+                    {% endif %}
                 </div>
 
                 {% if item.overview %}
@@ -297,7 +312,7 @@
                           class="inline-flex">
                         <button type="submit"
                                 class="px-2.5 py-1 rounded-lg bg-[#1e1e24] hover:bg-[#3f3f46] border border-[#3f3f46] text-xs text-[#d1d5db] hover:text-white flex items-center gap-1.5 transition">
-                            <svg class="w-3.5 h-3.5 shrink-0 text-[#d40060]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                            <svg width="16" height="16" class="w-4 h-4 shrink-0 text-[#d40060]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
                             <span>Reset Metadata / AniList</span>
                         </button>
                     </form>
@@ -392,9 +407,11 @@
                             </label>
 
                             <div class="flex items-center gap-2 shrink-0">
-                                <span class="px-2.5 py-0.5 text-[10px] font-bold uppercase rounded-full {% if entry.status.value in ('completed', 'downloaded') %}bg-emerald-500/20 text-emerald-400 border border-emerald-500/30{% elif entry.status.value == 'downloading' %}bg-cyan-500/20 text-cyan-300 border border-cyan-500/30{% elif entry.status.value == 'searching' %}bg-[#d40060]/20 text-pink-300 border border-[#d40060]/40{% elif entry.status.value == 'failed' %}bg-red-500/20 text-red-400 border border-red-500/30{% elif entry.status.value == 'future' %}bg-blue-500/20 text-blue-300 border border-blue-500/30{% else %}bg-amber-500/15 text-amber-300 border border-amber-500/30{% endif %}">
-                                    {{ entry.status.value }}
+                                {% if entry.status.value in ('completed', 'downloaded', 'downloading', 'future', 'failed') %}
+                                <span class="px-2.5 py-0.5 text-[10px] font-bold uppercase rounded-full {% if entry.status.value in ('completed', 'downloaded') %}bg-emerald-500/20 text-emerald-400 border border-emerald-500/30{% elif entry.status.value == 'downloading' %}bg-cyan-500/20 text-cyan-300 border border-cyan-500/30{% elif entry.status.value == 'failed' %}bg-red-500/20 text-red-400 border border-red-500/30{% elif entry.status.value == 'future' %}bg-blue-500/20 text-blue-300 border border-blue-500/30{% endif %}">
+                                    {{ 'DOWNLOADED' if entry.status.value in ('completed', 'downloaded') else entry.status.value|upper }}
                                 </span>
+                                {% endif %}
                                 {% if entry.status.value in ('completed', 'downloaded') %}
                                 <button type="button"
                                         hx-post="/api/items/{{ item.id }}/delete-torbox?season_id={{ entry.id }}"
@@ -416,7 +433,7 @@
                         </div>
 
                         {% if entry.episodes %}
-                        <div x-show="expandedSeasons[{{ entry.id }}]" x-cloak class="mt-3 pt-3 border-t border-[#3f3f46] grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2">
+                        <div x-show="expandedSeasons[{{ entry.id }}]" x-cloak class="mt-3 pt-3 border-t border-[#3f3f46] grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
                             {% for ep in entry.episodes %}
                             <div class="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg bg-[#111115] border border-[#3f3f46] text-xs hover:border-[#d40060] transition">
                                 <label class="flex items-center gap-2 min-w-0 cursor-pointer flex-1">
@@ -426,19 +443,23 @@
                                            class="accent-[#d40060] shrink-0">
                                     <span class="font-mono font-semibold text-white">E{{ "%02d"|format(ep.episode_number) }}</span>
                                 </label>
-                                <div class="flex items-center gap-1 shrink-0">
-                                    <span class="px-2 py-0.5 text-[10px] font-bold uppercase rounded-full shrink-0 {% if ep.status.value in ('completed', 'downloaded') %}bg-emerald-500/20 text-emerald-400 border border-emerald-500/30{% elif ep.status.value == 'downloading' %}bg-cyan-500/20 text-cyan-300 border border-cyan-500/30{% elif ep.status.value == 'searching' %}bg-[#d40060]/20 text-pink-300 border border-[#d40060]/40{% elif ep.status.value == 'failed' %}bg-red-500/20 text-red-400 border border-red-500/30{% elif ep.status.value == 'future' %}bg-blue-500/20 text-blue-300 border border-blue-500/30{% else %}bg-amber-500/15 text-amber-300 border border-amber-500/30{% endif %}">
-                                        {{ ep.status.value }}
+                                <div class="flex items-center gap-1.5 shrink-0">
+                                    {% if ep.status.value in ('completed', 'downloaded', 'downloading', 'future', 'failed') %}
+                                    <span class="px-2 py-0.5 text-[10px] font-bold uppercase rounded-full shrink-0 {% if ep.status.value in ('completed', 'downloaded') %}bg-emerald-500/20 text-emerald-400 border border-emerald-500/30{% elif ep.status.value == 'downloading' %}bg-cyan-500/20 text-cyan-300 border border-cyan-500/30{% elif ep.status.value == 'failed' %}bg-red-500/20 text-red-400 border border-red-500/30{% elif ep.status.value == 'future' %}bg-blue-500/20 text-blue-300 border border-blue-500/30{% endif %}">
+                                        {{ 'DOWNLOADED' if ep.status.value in ('completed', 'downloaded') else ep.status.value|upper }}
                                     </span>
+                                    {% endif %}
                                     {% if ep.status.value in ('completed', 'downloaded') %}
                                     <button type="button"
                                             hx-post="/api/items/{{ item.id }}/delete-torbox?season_id={{ entry.id }}&episode_id={{ ep.id }}"
                                             hx-target="#modal-container"
                                             hx-swap="innerHTML"
                                             hx-confirm="Delete episode E{{ '%02d'|format(ep.episode_number) }} from TorBox and reset to Ready to Push?"
-                                            class="text-[10px] font-semibold text-red-400 hover:text-white bg-red-500/10 hover:bg-red-600 border border-red-500/30 px-1.5 py-0.5 rounded transition shrink-0"
-                                            title="Delete from TorBox">
-                                        Delete from TorBox
+                                            class="p-1 rounded bg-red-500/15 hover:bg-red-500/25 border border-red-500/30 text-red-400 hover:text-red-300 transition shrink-0"
+                                            title="Delete episode E{{ '%02d'|format(ep.episode_number) }} from TorBox">
+                                        <svg width="12" height="12" class="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                                        </svg>
                                     </button>
                                     {% endif %}
                                 </div>
@@ -674,11 +695,17 @@
                         <template x-for="rel in packReleases.primary" :key="rel.guid">
                             <div class="flex items-center justify-between gap-3 p-2.5 rounded-lg bg-[#1e1e24] border border-[#3f3f46] hover:border-[#d40060]/60">
                                 <div class="min-w-0 flex-1">
-                                    <div class="text-xs font-medium text-white truncate" x-text="rel.title"></div>
-                                    <div class="text-[11px] text-[#a1a1aa] flex items-center gap-2 mt-0.5">
-                                        <span class="text-[#d40060] font-semibold" x-text="'Score: ' + rel.score"></span>
-                                        <span x-text="rel.resolution || ''"></span>
-                                        <span x-text="rel.source || ''"></span>
+                                    <div class="text-xs font-medium text-white truncate" :title="rel.title" x-text="rel.title"></div>
+                                    <div class="flex flex-nowrap items-center gap-1.5 mt-1.5 overflow-hidden">
+                                        <template x-for="(pill, pIdx) in visiblePills(rel.feature_pills, 8)" :key="pIdx">
+                                            <span class="px-2 py-0.5 text-[10px] font-semibold rounded border whitespace-nowrap shrink-0"
+                                                  :class="pill.css"
+                                                  x-text="pill.label"></span>
+                                        </template>
+                                        <span x-show="overflowCount(rel.feature_pills, 8) > 0"
+                                              class="px-2 py-0.5 text-[10px] font-semibold rounded border bg-zinc-700/60 text-zinc-200 border-zinc-500/40 whitespace-nowrap shrink-0 cursor-help"
+                                              :title="overflowTooltip(rel.feature_pills, 8)"
+                                              x-text="'+' + overflowCount(rel.feature_pills, 8)"></span>
                                     </div>
                                 </div>
                                 <button type="button"
@@ -696,9 +723,17 @@
                         <template x-for="rel in packReleases.fallback" :key="rel.guid">
                             <div class="flex items-center justify-between gap-3 p-2.5 rounded-lg bg-[#1e1e24] border border-amber-500/30">
                                 <div class="min-w-0 flex-1">
-                                    <div class="text-xs font-medium text-white truncate" x-text="rel.title"></div>
-                                    <div class="text-[11px] text-amber-300/80 flex items-center gap-2 mt-0.5">
-                                        <span x-text="'Fallback (' + (rel.matched_language || 'fallback') + ') • Score: ' + rel.score"></span>
+                                    <div class="text-xs font-medium text-white truncate" :title="rel.title" x-text="rel.title"></div>
+                                    <div class="flex flex-nowrap items-center gap-1.5 mt-1.5 overflow-hidden">
+                                        <template x-for="(pill, pIdx) in visiblePills(rel.feature_pills, 8)" :key="pIdx">
+                                            <span class="px-2 py-0.5 text-[10px] font-semibold rounded border whitespace-nowrap shrink-0"
+                                                  :class="pill.css"
+                                                  x-text="pill.label"></span>
+                                        </template>
+                                        <span x-show="overflowCount(rel.feature_pills, 8) > 0"
+                                              class="px-2 py-0.5 text-[10px] font-semibold rounded border bg-zinc-700/60 text-zinc-200 border-zinc-500/40 whitespace-nowrap shrink-0 cursor-help"
+                                              :title="overflowTooltip(rel.feature_pills, 8)"
+                                              x-text="'+' + overflowCount(rel.feature_pills, 8)"></span>
                                     </div>
                                 </div>
                                 <button type="button"
@@ -720,7 +755,20 @@
                         <div x-show="showMismatchedPacks" x-cloak class="mt-2 space-y-1.5">
                             <template x-for="rel in packReleases.mismatched" :key="rel.guid">
                                 <div class="flex items-center justify-between gap-3 p-2 rounded-lg bg-[#1e1e24]/60 border border-red-500/20">
-                                    <span class="text-xs text-[#a1a1aa] truncate" x-text="rel.title"></span>
+                                    <div class="min-w-0 flex-1">
+                                        <div class="text-xs text-[#d1d5db] truncate" :title="rel.title" x-text="rel.title"></div>
+                                        <div class="flex flex-nowrap items-center gap-1.5 mt-1 overflow-hidden">
+                                            <template x-for="(pill, pIdx) in visiblePills(rel.feature_pills, 8)" :key="pIdx">
+                                                <span class="px-2 py-0.5 text-[10px] font-semibold rounded border whitespace-nowrap shrink-0"
+                                                      :class="pill.css"
+                                                      x-text="pill.label"></span>
+                                            </template>
+                                            <span x-show="overflowCount(rel.feature_pills, 8) > 0"
+                                                  class="px-2 py-0.5 text-[10px] font-semibold rounded border bg-zinc-700/60 text-zinc-200 border-zinc-500/40 whitespace-nowrap shrink-0 cursor-help"
+                                                  :title="overflowTooltip(rel.feature_pills, 8)"
+                                                  x-text="'+' + overflowCount(rel.feature_pills, 8)"></span>
+                                        </div>
+                                    </div>
                                     <button type="button"
                                             @click="grabCandidate(rel, selectedSeasons.length === 1 ? selectedSeasons[0] : null, null)"
                                             class="px-2.5 py-1 rounded bg-[#2a2a32] hover:bg-[#3f3f46] text-xs text-white shrink-0">
@@ -742,22 +790,99 @@
                                     class="w-full px-3.5 py-2 flex items-center justify-between text-left hover:bg-[#2a2a32]">
                                 <span class="text-xs font-semibold text-white"
                                       x-text="'S' + String(acc.season_number).padStart(2, '0') + 'E' + String(acc.episode_number).padStart(2, '0')"></span>
-                                <span class="text-[11px] text-[#a1a1aa]" x-text="(acc.releases ? acc.releases.length : 0) + ' candidate(s)'"></span>
+                                <span class="text-[11px] text-[#a1a1aa]"
+                                      x-text="((acc.primary ? acc.primary.length : 0) + (acc.fallback ? acc.fallback.length : 0)) + ' match(es)' + ((acc.mismatched && acc.mismatched.length > 0) ? ' • ' + acc.mismatched.length + ' mismatched' : '')"></span>
                             </button>
-                            <div x-show="openAccordions[acc.episode_id]" x-cloak class="p-3 border-t border-[#3f3f46] space-y-1.5">
-                                <template x-for="rel in acc.releases" :key="rel.guid">
-                                    <div class="flex items-center justify-between gap-3 p-2 rounded bg-[#111115] border border-[#3f3f46]">
-                                        <div class="min-w-0 flex-1">
-                                            <div class="text-xs text-white truncate" x-text="rel.title"></div>
-                                            <div class="text-[10px] text-[#a1a1aa]" x-text="'Score: ' + rel.score"></div>
+                            <div x-show="openAccordions[acc.episode_id]" x-cloak class="p-3 border-t border-[#3f3f46] space-y-2.5">
+                                <!-- Primary Language Matches -->
+                                <div class="space-y-1.5" x-show="acc.primary && acc.primary.length > 0">
+                                    <div class="text-[10px] font-semibold uppercase text-emerald-400">Primary Language Matches</div>
+                                    <template x-for="rel in acc.primary" :key="rel.guid">
+                                        <div class="flex items-center justify-between gap-3 p-2 rounded bg-[#111115] border border-[#3f3f46] hover:border-[#d40060]/60">
+                                            <div class="min-w-0 flex-1">
+                                                <div class="text-xs text-white truncate" :title="rel.title" x-text="rel.title"></div>
+                                                <div class="flex flex-nowrap items-center gap-1.5 mt-1 overflow-hidden">
+                                                    <template x-for="(pill, pIdx) in visiblePills(rel.feature_pills, 8)" :key="pIdx">
+                                                        <span class="px-2 py-0.5 text-[10px] font-semibold rounded border whitespace-nowrap shrink-0"
+                                                              :class="pill.css"
+                                                              x-text="pill.label"></span>
+                                                    </template>
+                                                    <span x-show="overflowCount(rel.feature_pills, 8) > 0"
+                                                          class="px-2 py-0.5 text-[10px] font-semibold rounded border bg-zinc-700/60 text-zinc-200 border-zinc-500/40 whitespace-nowrap shrink-0 cursor-help"
+                                                          :title="overflowTooltip(rel.feature_pills, 8)"
+                                                          x-text="'+' + overflowCount(rel.feature_pills, 8)"></span>
+                                                </div>
+                                            </div>
+                                            <button type="button"
+                                                    @click="grabCandidate(rel, acc.season_id, acc.episode_id)"
+                                                    class="px-2.5 py-1 rounded bg-[#d40060] hover:bg-[#a3004a] text-xs font-bold text-white shrink-0">
+                                                Grab Episode
+                                            </button>
                                         </div>
-                                        <button type="button"
-                                                @click="grabCandidate(rel, acc.season_id, acc.episode_id)"
-                                                class="px-2.5 py-1 rounded bg-[#d40060] hover:bg-[#a3004a] text-xs font-bold text-white shrink-0">
-                                            Grab Episode
-                                        </button>
+                                    </template>
+                                </div>
+
+                                <!-- Fallback Language Matches -->
+                                <div class="space-y-1.5" x-show="acc.fallback && acc.fallback.length > 0">
+                                    <div class="text-[10px] font-semibold uppercase text-amber-400">Fallback Language Matches</div>
+                                    <template x-for="rel in acc.fallback" :key="rel.guid">
+                                        <div class="flex items-center justify-between gap-3 p-2 rounded bg-[#111115] border border-amber-500/30">
+                                            <div class="min-w-0 flex-1">
+                                                <div class="text-xs text-white truncate" :title="rel.title" x-text="rel.title"></div>
+                                                <div class="flex flex-nowrap items-center gap-1.5 mt-1 overflow-hidden">
+                                                    <template x-for="(pill, pIdx) in visiblePills(rel.feature_pills, 8)" :key="pIdx">
+                                                        <span class="px-2 py-0.5 text-[10px] font-semibold rounded border whitespace-nowrap shrink-0"
+                                                              :class="pill.css"
+                                                              x-text="pill.label"></span>
+                                                    </template>
+                                                    <span x-show="overflowCount(rel.feature_pills, 8) > 0"
+                                                          class="px-2 py-0.5 text-[10px] font-semibold rounded border bg-zinc-700/60 text-zinc-200 border-zinc-500/40 whitespace-nowrap shrink-0 cursor-help"
+                                                          :title="overflowTooltip(rel.feature_pills, 8)"
+                                                          x-text="'+' + overflowCount(rel.feature_pills, 8)"></span>
+                                                </div>
+                                            </div>
+                                            <button type="button"
+                                                    @click="grabCandidate(rel, acc.season_id, acc.episode_id)"
+                                                    class="px-2.5 py-1 rounded bg-amber-600 hover:bg-amber-500 text-xs font-bold text-white shrink-0">
+                                                Grab Episode
+                                            </button>
+                                        </div>
+                                    </template>
+                                </div>
+
+                                <!-- Collapsed Mismatched / Other Languages Section -->
+                                <div x-show="acc.mismatched && acc.mismatched.length > 0" class="pt-1">
+                                    <button type="button"
+                                            @click="showMismatchedEp[acc.episode_id] = !showMismatchedEp[acc.episode_id]"
+                                            class="text-xs text-[#a1a1aa] hover:text-white underline">
+                                        Other / Mismatched Languages (<span x-text="acc.mismatched.length"></span>)
+                                    </button>
+                                    <div x-show="showMismatchedEp[acc.episode_id]" x-cloak class="mt-2 space-y-1.5">
+                                        <template x-for="rel in acc.mismatched" :key="rel.guid">
+                                            <div class="flex items-center justify-between gap-3 p-2 rounded bg-[#111115]/80 border border-red-500/20">
+                                                <div class="min-w-0 flex-1">
+                                                    <div class="text-xs text-[#d1d5db] truncate" :title="rel.title" x-text="rel.title"></div>
+                                                    <div class="flex flex-nowrap items-center gap-1.5 mt-1 overflow-hidden">
+                                                        <template x-for="(pill, pIdx) in visiblePills(rel.feature_pills, 8)" :key="pIdx">
+                                                            <span class="px-2 py-0.5 text-[10px] font-semibold rounded border whitespace-nowrap shrink-0"
+                                                                  :class="pill.css"
+                                                                  x-text="pill.label"></span>
+                                                        </template>
+                                                        <span x-show="overflowCount(rel.feature_pills, 8) > 0"
+                                                              class="px-2 py-0.5 text-[10px] font-semibold rounded border bg-zinc-700/60 text-zinc-200 border-zinc-500/40 whitespace-nowrap shrink-0 cursor-help"
+                                                              :title="overflowTooltip(rel.feature_pills, 8)"
+                                                              x-text="'+' + overflowCount(rel.feature_pills, 8)"></span>
+                                                    </div>
+                                                </div>
+                                                <button type="button"
+                                                        @click="grabCandidate(rel, acc.season_id, acc.episode_id)"
+                                                        class="px-2.5 py-1 rounded bg-[#2a2a32] hover:bg-[#3f3f46] text-xs text-white shrink-0">
+                                                    Grab Anyway
+                                                </button>
+                                            </div>
+                                        </template>
                                     </div>
-                                </template>
+                                </div>
                             </div>
                         </div>
                     </template>
@@ -778,7 +903,7 @@
                         @click="runManualSearch()"
                         :disabled="isLoadingManual || isLoadingAuto"
                         class="px-4 py-2.5 rounded-lg bg-[#1e1e24] hover:bg-[#3f3f46] border border-[#3f3f46] text-xs font-bold text-white flex items-center gap-2 transition disabled:opacity-50">
-                    <svg class="w-4 h-4 shrink-0 text-[#d40060]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                    <svg width="16" height="16" class="w-4 h-4 shrink-0 text-[#d40060]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
                     <span x-show="!isLoadingManual">Search &amp; Pick Manually</span>
                     <span x-show="isLoadingManual" x-cloak>Searching Indexers...</span>
                 </button>
@@ -787,7 +912,7 @@
                         @click="runAutoPush()"
                         :disabled="isLoadingAuto || isLoadingManual"
                         class="px-5 py-2.5 rounded-lg bg-[#d40060] hover:bg-[#a3004a] text-xs font-bold text-white shadow-lg shadow-[#d40060]/30 flex items-center gap-2 transition disabled:opacity-50">
-                    <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
+                    <svg width="16" height="16" class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
                     <span x-show="!isLoadingAuto">Auto-Push Best</span>
                     <span x-show="isLoadingAuto" x-cloak>Pushing to TorBox...</span>
                 </button>

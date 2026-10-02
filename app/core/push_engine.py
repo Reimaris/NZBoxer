@@ -28,7 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.fake_detector import is_nzb_content_fake
-from app.core.parser import parse_release_name
+from app.core.parser import build_release_feature_pills, parse_release_name
 from app.core.scorer import score_release
 from app.db.models import (
     BlacklistedRelease,
@@ -361,6 +361,7 @@ def _score_and_partition_candidates(
     mismatched_list: list[dict[str, Any]] = []
 
     seen_guids: set[str] = set()
+    seen_titles: set[str] = set()
 
     primary_lang = effective_cfg.get("primary_language")
     fallback_lang = effective_cfg.get("fallback_language")
@@ -375,9 +376,11 @@ def _score_and_partition_candidates(
 
         if not title or not guid:
             continue
-        if guid in seen_guids:
+        norm_title = title.strip().lower()
+        if guid in seen_guids or norm_title in seen_titles:
             continue
         seen_guids.add(guid)
+        seen_titles.add(norm_title)
 
         if guid in blacklisted_guids or title in blacklisted_titles:
             continue
@@ -418,11 +421,21 @@ def _score_and_partition_candidates(
         }
 
         if not score_res.is_rejected:
-            entry["score"] = round(score_res.score, 1)
+            rounded_score = round(score_res.score, 1)
+            entry["score"] = rounded_score
             entry["score_res"] = score_res
             entry["is_primary"] = score_res.is_primary
             entry["is_fallback"] = score_res.is_fallback
             entry["matched_language"] = score_res.matched_language
+            entry["feature_pills"] = build_release_feature_pills(
+                parsed=parsed,
+                score=rounded_score,
+                size_bytes=size_bytes,
+                is_fallback=bool(score_res.is_fallback),
+                is_mismatch=False,
+                matched_language=score_res.matched_language,
+                api_language=raw.get("api_language"),
+            )
             if score_res.is_primary:
                 primary_list.append(entry)
             else:
@@ -449,11 +462,21 @@ def _score_and_partition_candidates(
                 custom_config=custom_cfg,
             )
             if not any_lang_res.is_rejected:
-                entry["score"] = round(any_lang_res.score, 1)
+                mismatch_score = round(any_lang_res.score, 1)
+                entry["score"] = mismatch_score
                 entry["score_res"] = any_lang_res
                 entry["is_primary"] = False
                 entry["is_fallback"] = False
                 entry["matched_language"] = any_lang_res.matched_language
+                entry["feature_pills"] = build_release_feature_pills(
+                    parsed=parsed,
+                    score=mismatch_score,
+                    size_bytes=size_bytes,
+                    is_fallback=False,
+                    is_mismatch=True,
+                    matched_language=any_lang_res.matched_language,
+                    api_language=raw.get("api_language"),
+                )
                 mismatched_list.append(entry)
 
     primary_list.sort(key=lambda x: x["score"], reverse=True)

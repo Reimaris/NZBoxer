@@ -596,25 +596,23 @@ def score_release(
     score = 0.0
     cfg = scoring_config.get("scoring", {})
 
-    def add_score(category: str, key: str | None) -> None:
-        nonlocal score
+    def _lookup_cat_score(category: str, key: str | None) -> float:
         cat_scores = cfg.get(category, {})
         if not key:
-            score += cat_scores.get("default", 0)
-            return
+            return float(cat_scores.get("default", 0))
+        key_low = key.lower()
+        if key_low in cat_scores:
+            return float(cat_scores[key_low])
+        matched_vals = [
+            float(v) for k, v in cat_scores.items() if k != "default" and k in key_low
+        ]
+        if matched_vals:
+            return max(matched_vals)
+        return float(cat_scores.get("default", 0))
 
-        # Exact match
-        if key in cat_scores:
-            score += cat_scores[key]
-            return
-
-        # Substring match (e.g. 'dts-hd' in 'dts-hd ma')
-        for k, v in cat_scores.items():
-            if k != "default" and k in key:
-                score += v
-                return
-
-        score += cat_scores.get("default", 0)
+    def add_score(category: str, key: str | None) -> None:
+        nonlocal score
+        score += _lookup_cat_score(category, key)
 
     add_score("resolution", parsed.resolution)
     add_score("video_codec", parsed.video_codec)
@@ -622,9 +620,26 @@ def score_release(
     add_score("audio_channels", parsed.audio_channels)
     add_score("source", parsed.source)
 
-    # HDR matching (guessit 'other' or 'color_depth' can contain multiple tokens)
-    if parsed.hdr:
-        add_score("hdr", parsed.hdr)
+    # Multi-tag HDR matching (evaluate all hdr_formats + hdr + color_depth and award highest weight)
+    hdr_candidates: list[str] = []
+    hdr_fmt_map = {
+        "DV": "dolby vision",
+        "HDR10+": "hdr10+",
+        "HDR10": "hdr10",
+        "HDR": "hdr",
+    }
+    for fmt in getattr(parsed, "hdr_formats", None) or []:
+        mapped = hdr_fmt_map.get(fmt.upper(), fmt.lower())
+        if mapped not in hdr_candidates:
+            hdr_candidates.append(mapped)
+    if parsed.hdr and parsed.hdr.lower() not in hdr_candidates:
+        hdr_candidates.append(parsed.hdr.lower())
+    color_depth = getattr(parsed, "color_depth", None)
+    if color_depth and color_depth.lower() not in hdr_candidates:
+        hdr_candidates.append(color_depth.lower())
+
+    if hdr_candidates:
+        score += max(_lookup_cat_score("hdr", c) for c in hdr_candidates)
 
     # Whitelist bonus
     lang_cfg = scoring_config.get("language_preferences", {})

@@ -24,16 +24,18 @@
 
                 <!-- Col 2: Release Name & Quality/Language Pills -->
                 <td class="px-6 py-4 max-w-[320px] break-words">
-                    <div class="text-xs font-mono text-gray-200 break-all">{{ p.release_name }}</div>
-                    <div class="flex flex-wrap gap-1.5 mt-1.5 text-[10px] font-bold">
-                        {% if p.language %}
-                        <span class="bg-indigo-950/80 text-indigo-300 border border-indigo-700/50 px-2 py-0.5 rounded uppercase">{{ p.language }}</span>
-                        {% endif %}
-                        {% if p.resolution %}
-                        <span class="bg-pink-950/80 text-pink-300 border border-pink-700/50 px-2 py-0.5 rounded uppercase">{{ p.resolution }}</span>
-                        {% endif %}
-                        {% if p.source %}
-                        <span class="bg-emerald-950/80 text-emerald-300 border border-emerald-700/50 px-2 py-0.5 rounded uppercase">{{ p.source }}</span>
+                    <div class="text-xs font-mono text-gray-200 truncate" title="{{ p.release_name }}">{{ p.release_name }}</div>
+                    {% set pills = p.feature_pills if p.feature_pills is defined else [] %}
+                    {% set cap = 6 %}
+                    <div class="flex flex-nowrap items-center gap-1.5 mt-1.5 overflow-hidden">
+                        {% set visible = pills[:cap - 1] if pills|length > cap else pills %}
+                        {% for pill in visible %}
+                        <span class="px-1.5 py-0.5 text-[10px] font-semibold rounded border whitespace-nowrap shrink-0 {{ pill.css }}">{{ pill.label }}</span>
+                        {% endfor %}
+                        {% if pills|length > cap %}
+                        {% set overflow = pills[cap - 1:] %}
+                        <span class="px-1.5 py-0.5 text-[10px] font-semibold rounded border bg-zinc-700/60 text-zinc-200 border-zinc-500/40 whitespace-nowrap shrink-0 cursor-help"
+                              title="Remaining: {{ overflow | map(attribute='label') | join(', ') }}">+{{ overflow|length }}</span>
                         {% endif %}
                     </div>
                 </td>

@@ -32,6 +32,7 @@ from sqlalchemy.orm import selectinload
 
 from app.core.failure_logger import log_failure
 from app.core.fake_detector import is_torbox_filelist_fake
+from app.core.parser import build_release_feature_pills
 from app.db.database import async_session_factory
 from app.db.models import (
     BlacklistedRelease,
@@ -1024,6 +1025,14 @@ async def get_active_pushes(session: AsyncSession) -> list[dict[str, Any]]:
         else:
             status_badge = "Downloading"
 
+        feature_pills = build_release_feature_pills(
+            release_title=h.nzb_title,
+            score=h.score,
+            size_bytes=h.size_bytes,
+            is_fallback=bool(getattr(h, "is_fallback", False)),
+            matched_language=h.grabbed_language,
+        )
+
         active_rows.append(
             {
                 "history_id": h.id,
@@ -1037,6 +1046,7 @@ async def get_active_pushes(session: AsyncSession) -> list[dict[str, Any]]:
                 "resolution": h.resolution,
                 "source": h.source,
                 "language": h.grabbed_language,
+                "feature_pills": feature_pills,
                 "progress_pct": round(float(h.progress_pct or 0.0), 1),
                 "download_speed_bytes": int(h.download_speed_bytes or 0),
                 "eta_seconds": h.eta_seconds,
@@ -1570,6 +1580,14 @@ async def get_push_history_ledger(session: AsyncSession) -> list[dict[str, Any]]
             else None
         )
 
+        feature_pills = build_release_feature_pills(
+            release_title=h.nzb_title,
+            score=h.score,
+            size_bytes=h.size_bytes,
+            is_fallback=bool(getattr(h, "is_fallback", False)),
+            matched_language=h.grabbed_language,
+        )
+
         ledger.append(
             {
                 "id": h.id,
@@ -1596,6 +1614,7 @@ async def get_push_history_ledger(session: AsyncSession) -> list[dict[str, Any]]
                 "grabbed_language": h.grabbed_language,
                 "size_gb": size_gb,
                 "score": int(h.score) if h.score is not None else None,
+                "feature_pills": feature_pills,
                 "pushed_at_str": pushed_str,
                 "pushed_at_ts": pushed_ts,
                 "torbox_id": h.torbox_id,

@@ -800,21 +800,17 @@ document.addEventListener('alpine:init', () => {
                         <!-- Col 3: Release & Quality -->
                         <td class="px-6 py-4 min-w-[220px] max-w-[380px]">
                             <div class="text-xs font-mono text-gray-200 truncate" title="{{ h.nzb_title }}">{{ h.nzb_title }}</div>
-                            <div class="flex flex-wrap items-center gap-1.5 mt-1.5">
-                                {% if h.resolution %}
-                                <span class="px-1.5 py-0.5 text-[10px] font-bold uppercase rounded bg-indigo-500/15 text-indigo-300 border border-indigo-500/30">{{ h.resolution }}</span>
-                                {% endif %}
-                                {% if h.source %}
-                                <span class="px-1.5 py-0.5 text-[10px] font-bold uppercase rounded bg-slate-500/15 text-slate-300 border border-slate-500/30">{{ h.source }}</span>
-                                {% endif %}
-                                {% if h.video_codec %}
-                                <span class="px-1.5 py-0.5 text-[10px] font-bold uppercase rounded bg-slate-500/15 text-slate-300 border border-slate-500/30">{{ h.video_codec }}</span>
-                                {% endif %}
-                                {% if h.grabbed_language %}
-                                <span class="px-1.5 py-0.5 text-[10px] font-bold uppercase rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">{{ h.grabbed_language }}</span>
-                                {% endif %}
-                                {% if h.size_gb %}
-                                <span class="px-1.5 py-0.5 text-[10px] font-mono rounded bg-[#1e1e24] text-gray-400 border border-[#3f3f46]">{{ h.size_gb }}</span>
+                            {% set pills = h.feature_pills if h.feature_pills is defined else [] %}
+                            {% set cap = 6 %}
+                            <div class="flex flex-nowrap items-center gap-1.5 mt-1.5 overflow-hidden">
+                                {% set visible = pills[:cap - 1] if pills|length > cap else pills %}
+                                {% for pill in visible %}
+                                <span class="px-1.5 py-0.5 text-[10px] font-semibold rounded border whitespace-nowrap shrink-0 {{ pill.css }}">{{ pill.label }}</span>
+                                {% endfor %}
+                                {% if pills|length > cap %}
+                                {% set overflow = pills[cap - 1:] %}
+                                <span class="px-1.5 py-0.5 text-[10px] font-semibold rounded border bg-zinc-700/60 text-zinc-200 border-zinc-500/40 whitespace-nowrap shrink-0 cursor-help"
+                                      title="Remaining: {{ overflow | map(attribute='label') | join(', ') }}">+{{ overflow|length }}</span>
                                 {% endif %}
                             </div>
                         </td>

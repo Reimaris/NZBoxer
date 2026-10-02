@@ -1,43 +1,30 @@
 {% macro render_card(result, tier="primary") %}
-{% set p = result.parsed %}
-{% set score_color = "bg-green-500/20 text-green-400 border-green-500/30" if result.score >= 6000 else "bg-yellow-500/20 text-yellow-400 border-yellow-500/30" if result.score >= 3000 else "bg-gray-500/20 text-gray-400 border-gray-500/30" %}
+{% set pills = result.feature_pills if result.feature_pills is defined else [] %}
+{% set cap = 8 %}
 
-<div class="bg-[#2a2a32] border {% if tier == 'fallback' %}border-amber-500/30 hover:border-amber-500/60{% elif tier == 'mismatch' %}border-red-500/30 hover:border-red-500/60{% else %}border-[#3f3f46] hover:border-[#52525b]{% endif %} rounded-xl shadow-lg p-4 flex items-center gap-4 transition-all">
-    <!-- Score Badge -->
-    <div class="shrink-0 flex flex-col items-center justify-center w-20 h-20 rounded-lg border {{ score_color }}">
-        <span class="text-xs font-bold uppercase tracking-wider opacity-80">Score</span>
-        <span class="text-xl font-bold">{{ "{:.0f}".format(result.score) }}</span>
-    </div>
-
+<div class="bg-[#2a2a32] border {% if tier == 'fallback' %}border-amber-500/30 hover:border-amber-500/60{% elif tier == 'mismatch' %}border-red-500/30 hover:border-red-500/60{% else %}border-[#3f3f46] hover:border-[#52525b]{% endif %} rounded-xl shadow-lg p-3.5 flex items-center justify-between gap-4 transition-all">
     <!-- Details -->
     <div class="flex-1 min-w-0 flex flex-col justify-between">
         <div class="flex items-center gap-2">
-            <h3 class="text-white font-semibold truncate" title="{{ result.title }}">{{ result.title }}</h3>
+            <h3 class="text-white text-sm font-semibold truncate" title="{{ result.title }}">{{ result.title }}</h3>
             {% if tier == 'fallback' %}
-            <span class="px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 text-xs font-semibold border border-amber-500/30 whitespace-nowrap">Fallback</span>
+            <span class="px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 text-[10px] font-semibold border border-amber-500/30 whitespace-nowrap">Fallback</span>
             {% elif tier == 'mismatch' %}
-            <span class="px-2 py-0.5 rounded bg-red-500/20 text-red-300 text-xs font-semibold border border-red-500/30 whitespace-nowrap">Language Mismatch</span>
+            <span class="px-2 py-0.5 rounded bg-red-500/20 text-red-300 text-[10px] font-semibold border border-red-500/30 whitespace-nowrap">Language Mismatch</span>
             {% endif %}
         </div>
-        
-        <!-- Pill Tags -->
-        <div class="flex flex-wrap gap-2 mt-2">
-            {% if p.resolution %}<span class="px-2 py-0.5 rounded bg-blue-500/20 text-blue-300 text-xs font-medium border border-blue-500/20">{{ p.resolution }}</span>{% endif %}
-            {% if p.audio_codec %}<span class="px-2 py-0.5 rounded bg-purple-500/20 text-purple-300 text-xs font-medium border border-purple-500/20">{{ p.audio_codec|upper }}{% if p.audio_channels %} {{ p.audio_channels }}{% endif %}</span>{% endif %}
-            {% if p.video_codec %}<span class="px-2 py-0.5 rounded bg-orange-500/20 text-orange-300 text-xs font-medium border border-orange-500/20">{{ p.video_codec|upper }}</span>{% endif %}
-            {% if p.hdr %}<span class="px-2 py-0.5 rounded bg-pink-500/20 text-pink-300 text-xs font-medium border border-pink-500/20">{{ p.hdr|upper }}</span>{% endif %}
-            {% if p.source %}<span class="px-2 py-0.5 rounded bg-teal-500/20 text-teal-300 text-xs font-medium border border-teal-500/20">{{ p.source|title }}</span>{% endif %}
-            
-            {% if p.languages %}
-                {% for lang in p.languages %}
-                <span class="px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 text-xs font-medium border border-indigo-500/20">{{ lang|title }}</span>
-                {% endfor %}
-            {% elif result.api_language %}
-                <span class="px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 text-xs font-medium border border-indigo-500/20">{{ result.api_language }}</span>
+
+        <!-- Unified Single-Line 4-Tier Pill Row -->
+        <div class="flex flex-nowrap items-center gap-1.5 mt-1.5 overflow-hidden">
+            {% set visible = pills[:cap - 1] if pills|length > cap else pills %}
+            {% for pill in visible %}
+            <span class="px-2 py-0.5 rounded text-[10px] font-semibold border whitespace-nowrap shrink-0 {{ pill.css }}">{{ pill.label }}</span>
+            {% endfor %}
+            {% if pills|length > cap %}
+            {% set overflow = pills[cap - 1:] %}
+            <span class="px-2 py-0.5 rounded text-[10px] font-semibold border bg-zinc-700/60 text-zinc-200 border-zinc-500/40 whitespace-nowrap shrink-0 cursor-help"
+                  title="Remaining: {{ overflow | map(attribute='label') | join(', ') }}">+{{ overflow|length }}</span>
             {% endif %}
-            
-            {% if p.release_group %}<span class="px-2 py-0.5 rounded bg-gray-600/30 text-gray-300 text-xs font-medium border border-gray-600/40">Grp: {{ p.release_group }}</span>{% endif %}
-            <span class="px-2 py-0.5 rounded bg-gray-600/30 text-gray-300 text-xs font-medium border border-gray-600/40">{{ "%.1f"|format(result.size / 1024 / 1024 / 1024) }} GB</span>
         </div>
     </div>
 
@@ -49,7 +36,7 @@
             hx-swap="outerHTML"
             onclick="this.innerHTML='<svg class=\'w-4 h-4 animate-spin shrink-0\' fill=\'none\' stroke=\'currentColor\' viewBox=\'0 0 24 24\'><circle class=\'opacity-25\' cx=\'12\' cy=\'12\' r=\'10\' stroke=\'currentColor\' stroke-width=\'4\'></circle><path class=\'opacity-75\' fill=\'currentColor\' d=\'M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z\'></path></svg> Sending...'; this.classList.add('opacity-75', 'pointer-events-none', 'cursor-wait');"
             class="flex items-center justify-center gap-1.5 px-3 py-2 bg-[#d40060] hover:bg-[#a3004a] text-white rounded-md transition-colors text-xs font-medium shadow-md shadow-pink-900/20 min-w-[130px]">
-            <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10"></path></svg>
+            <svg width="16" height="16" class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10"></path></svg>
             <span>Push to TorBox</span>
         </button>
     </div>
