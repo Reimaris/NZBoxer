@@ -7,7 +7,6 @@ Newznab indexers, evaluating scores, and sending releases to TorBox.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -30,147 +29,6 @@ from app.db.models import (
 from app.services import simkl, tmdb
 
 logger = logging.getLogger(__name__)
-
-_tick_cooling_indexers: set[str] = set()
-
-
-def reset_tick_cooling_indexers() -> None:
-    """Reset the set of cooling indexer IDs/URLs at the start of each automation cycle."""
-    global _tick_cooling_indexers
-    _tick_cooling_indexers = set()
-
-
-def mark_indexer_cooling(indexer: Provider | str | Any) -> None:
-    """Mark an indexer as cooling for the remainder of the current automation cycle."""
-    if hasattr(indexer, "id") and getattr(indexer, "id", None):
-        _tick_cooling_indexers.add(str(indexer.id))
-    if hasattr(indexer, "api_url") and getattr(indexer, "api_url", None):
-        _tick_cooling_indexers.add(str(indexer.api_url))
-    if isinstance(indexer, str):
-        _tick_cooling_indexers.add(indexer)
-
-
-def is_indexer_cooling(indexer: Provider | str | Any) -> bool:
-    """Check if an indexer is marked as cooling in the current tick."""
-    if (
-        hasattr(indexer, "id")
-        and str(getattr(indexer, "id", "")) in _tick_cooling_indexers
-    ):
-        return True
-    if (
-        hasattr(indexer, "api_url")
-        and str(getattr(indexer, "api_url", "")) in _tick_cooling_indexers
-    ):
-        return True
-    if isinstance(indexer, str) and indexer in _tick_cooling_indexers:
-        return True
-    return False
-
-
-def is_eligible_for_metadata_refresh(item: MediaItem) -> bool:
-    """Determine if a series/anime is eligible for a metadata refresh (24h TTL or premiere wakeup)."""
-    if item.media_type == MediaType.MOVIE:
-        return False
-
-    if item.status in (MediaStatus.COMPLETED, MediaStatus.CANCELED):
-        # Enforce Archival Freeze policy
-        return False
-
-    now = datetime.now(timezone.utc)
-
-    # Premiere Date Immediate Wakeup
-    if getattr(item, "seasons", None):
-        for season in item.seasons:
-            if season.status == SeasonStatus.FUTURE and season.air_date:
-                ad = season.air_date
-                if ad.tzinfo is None:
-                    ad = ad.replace(tzinfo=timezone.utc)
-                if ad <= now:
-                    return True
-
-            if getattr(season, "episodes", None):
-                for episode in season.episodes:
-                    if episode.status == EpisodeStatus.FUTURE and episode.air_date:
-                        ad = episode.air_date
-                        if ad.tzinfo is None:
-                            ad = ad.replace(tzinfo=timezone.utc)
-                        if ad <= now:
-                            return True
-
-    # If Anime is already ended/completed and has established metadata, skip routine refresh
-    if item.media_type == MediaType.ANIME and getattr(item, "seasons", None):
-        has_seasons = len(item.seasons) > 0
-        all_seasons_have_episodes = has_seasons and all(
-            getattr(s, "episodes", None) and len(s.episodes) > 0 for s in item.seasons
-        )
-        if all_seasons_have_episodes:
-            has_future = any(
-                s.status == SeasonStatus.FUTURE
-                or (
-                    s.air_date
-                    and (
-                        s.air_date.replace(tzinfo=timezone.utc)
-                        if s.air_date.tzinfo is None
-                        else s.air_date
-                    )
-                    > now
-                )
-                for s in item.seasons
-            ) or any(
-                ep.status == EpisodeStatus.FUTURE
-                or (
-                    ep.air_date
-                    and (
-                        ep.air_date.replace(tzinfo=timezone.utc)
-                        if ep.air_date.tzinfo is None
-                        else ep.air_date
-                    )
-                    > now
-                )
-                for s in item.seasons
-                for ep in s.episodes
-            )
-            if not has_future:
-                # Calculate latest air date taking into account known episode air dates
-                # and season run duration (weekly release cadence)
-                calculated_end_dates = []
-                for s in item.seasons:
-                    for ep in s.episodes:
-                        if ep.air_date:
-                            calculated_end_dates.append(
-                                ep.air_date.replace(tzinfo=timezone.utc)
-                                if ep.air_date.tzinfo is None
-                                else ep.air_date
-                            )
-                    if s.air_date:
-                        s_air = (
-                            s.air_date.replace(tzinfo=timezone.utc)
-                            if s.air_date.tzinfo is None
-                            else s.air_date
-                        )
-                        num_eps = max(len(s.episodes), s.episode_count or 0)
-                        if num_eps > 0:
-                            calculated_end_dates.append(
-                                s_air + timedelta(days=7 * (num_eps - 1))
-                            )
-                        else:
-                            calculated_end_dates.append(s_air)
-
-                if calculated_end_dates:
-                    latest_end_date = max(calculated_end_dates)
-                    if (now - latest_end_date) >= timedelta(days=14):
-                        return False
-                elif item.year and item.year < now.year:
-                    return False
-
-    if item.last_metadata_refreshed_at is None:
-        return True
-
-    last_refreshed = item.last_metadata_refreshed_at
-    if last_refreshed.tzinfo is None:
-        last_refreshed = last_refreshed.replace(tzinfo=timezone.utc)
-
-    return (now - last_refreshed) >= timedelta(hours=24)
 
 
 def is_future_or_tba(
@@ -607,11 +465,6 @@ async def sync_all_providers() -> None:
             await session.rollback()
         finally:
             log_process_end(logger, "Provider Sync Engine")
-
-
-async def sync_simkl_watchlist() -> None:
-    """Sync the Simkl 'plan to watch' list to the local SQLite database."""
-    await sync_all_providers()
 
 
 async def _sync_items(
@@ -1200,232 +1053,6 @@ async def _sync_season_episodes(
             session.add(new_ep)
 
 
-async def _refresh_series_metadata(session: AsyncSession, item: MediaItem) -> None:
-    """Incremental metadata synchronization engine for TV shows and Anime series."""
-    now = datetime.now(timezone.utc)
-
-    if item.media_type == MediaType.ANIME:
-        if not item.anilist_id:
-            from app.services import anilist
-
-            item.anilist_id = await anilist.search_anime_id_by_title(
-                item.title, item.year
-            )
-        if item.anilist_id:
-            await enrich_anime_metadata(session, item)
-    elif item.media_type == MediaType.SHOW:
-        details = None
-        if item.tmdb_id:
-            details = await tmdb.get_show_details(item.tmdb_id)
-
-        if details:
-            seasons_data = details.get("seasons", [])
-            existing_seasons = sorted(item.seasons, key=lambda s: s.season_number)
-            existing_season_nums = {s.season_number for s in item.seasons}
-
-            for s_data in seasons_data:
-                s_num = s_data.get("season_number")
-                if s_num is None or s_num <= 0:
-                    continue
-
-                s_air_date_str = s_data.get("air_date")
-                s_air_date = None
-                if s_air_date_str:
-                    try:
-                        s_air_date = datetime.strptime(
-                            s_air_date_str, "%Y-%m-%d"
-                        ).replace(tzinfo=timezone.utc)
-                    except ValueError:
-                        pass
-
-                if s_num not in existing_season_nums:
-                    # New season discovery logic
-                    should_monitor = False
-                    initial_status = SeasonStatus.PENDING
-
-                    if item.auto_monitor_next_season and s_num > 1:
-                        preceding = next(
-                            (
-                                s
-                                for s in existing_seasons
-                                if s.season_number == s_num - 1
-                            ),
-                            None,
-                        )
-                        if preceding and preceding.status in (
-                            SeasonStatus.COMPLETED,
-                            SeasonStatus.DOWNLOADED,
-                        ):
-                            should_monitor = True
-                            if s_air_date and s_air_date > now:
-                                initial_status = SeasonStatus.FUTURE
-                            else:
-                                initial_status = SeasonStatus.SEARCHING
-
-                    new_season = Season(
-                        media_item_id=item.id,
-                        season_number=s_num,
-                        monitored=should_monitor,
-                        episode_count=s_data.get("episode_count"),
-                        air_date=s_air_date,
-                        status=initial_status,
-                    )
-                    session.add(new_season)
-                    await session.flush()
-                    item.seasons.append(new_season)
-                    existing_seasons.append(new_season)
-                    existing_seasons.sort(key=lambda s: s.season_number)
-                    existing_season_nums.add(s_num)
-
-                    target_season = new_season
-                else:
-                    target_season = next(
-                        s for s in item.seasons if s.season_number == s_num
-                    )
-                    if s_air_date:
-                        target_season.air_date = s_air_date
-
-                # Sync episodes for the season
-                await _sync_season_episodes(
-                    session, target_season, tmdb_id=item.tmdb_id, force_refresh=True
-                )
-
-        # Premiere date wakeup logic for FUTURE seasons and episodes
-        for season in item.seasons:
-            if season.status == SeasonStatus.FUTURE and season.air_date:
-                ad = season.air_date
-                if ad.tzinfo is None:
-                    ad = ad.replace(tzinfo=timezone.utc)
-                if ad <= now:
-                    season.status = (
-                        SeasonStatus.SEARCHING
-                        if season.monitored
-                        else SeasonStatus.PENDING
-                    )
-
-            for episode in season.episodes:
-                if episode.status == EpisodeStatus.FUTURE and episode.air_date:
-                    ead = episode.air_date
-                    if ead.tzinfo is None:
-                        ead = ead.replace(tzinfo=timezone.utc)
-                    if ead <= now:
-                        episode.status = (
-                            EpisodeStatus.SEARCHING
-                            if season.monitored
-                            else EpisodeStatus.PENDING
-                        )
-
-    item.last_metadata_refreshed_at = now
-
-
-async def run_video_metadata_refresh_cycle(session: AsyncSession) -> None:
-    logger.info("🔄 Starting Stage 4: Metadata Refresh...")
-    stmt_refresh = (
-        select(MediaItem)
-        .where(MediaItem.media_type.in_([MediaType.SHOW, MediaType.ANIME]))
-        .options(selectinload(MediaItem.seasons).selectinload(Season.episodes))
-    )
-    refresh_result = await session.execute(stmt_refresh)
-    for item in refresh_result.scalars().unique():
-        if is_eligible_for_metadata_refresh(item):
-            try:
-                await _refresh_series_metadata(session, item)
-                await session.commit()
-            except Exception as e:
-                logger.error("Failed to refresh metadata for '%s': %s", item.title, e)
-                await session.rollback()
-            if item.media_type == MediaType.ANIME:
-                await asyncio.sleep(1.0)
-
-    await consolidate_standalone_anime_sequels(session)
-
-    # Date progression logic
-    stmt_reached = select(MediaItem).where(
-        MediaItem.status.in_([MediaStatus.PENDING, MediaStatus.FUTURE]),
-        MediaItem.release_date.isnot(None),
-        MediaItem.release_date <= datetime.now(timezone.utc),
-    )
-    for m in (await session.execute(stmt_reached)).scalars():
-        m.status = MediaStatus.SEARCHING
-        logger.info(
-            "🔄 Item '%s' has reached its release date and is now being searched.",
-            m.title,
-        )
-
-    stmt_future = select(MediaItem).where(
-        MediaItem.status.in_([MediaStatus.SEARCHING, MediaStatus.PENDING]),
-    )
-    for m in (await session.execute(stmt_future)).scalars().all():
-        rd = m.release_date
-        if rd and rd.tzinfo is None:
-            rd = rd.replace(tzinfo=timezone.utc)
-        if rd and rd > datetime.now(timezone.utc):
-            m.status = MediaStatus.FUTURE
-            m.fail_count = 0
-            logger.info(
-                "    🔄 Item '%s' set to FUTURE (Release Date: %s is in the future)",
-                m.title,
-                rd.strftime("%Y-%m-%d"),
-            )
-        elif not m.release_date and m.year and m.year > datetime.now().year:
-            m.status = MediaStatus.FUTURE
-            m.fail_count = 0
-            logger.info(
-                "    🔄 Item '%s' set to FUTURE (Year %s is in the future)",
-                m.title,
-                m.year,
-            )
-
-    stmt_s_future = (
-        select(Season)
-        .join(MediaItem)
-        .where(
-            Season.status.in_([SeasonStatus.SEARCHING, SeasonStatus.PENDING]),
-            MediaItem.status == MediaStatus.FUTURE,
-        )
-    )
-    for s in (await session.execute(stmt_s_future)).scalars().all():
-        s.status = SeasonStatus.FUTURE
-
-    await session.commit()
-
-    from app.db.models import Episode, EpisodeStatus
-
-    stmt_e = select(Episode).where(
-        Episode.status.in_([EpisodeStatus.PENDING, EpisodeStatus.FUTURE]),
-        Episode.air_date.isnot(None),
-        Episode.air_date <= datetime.now(timezone.utc),
-    )
-    for pending_ep in (await session.execute(stmt_e)).scalars():
-        pending_ep.status = EpisodeStatus.SEARCHING
-
-    stmt_e_future = select(Episode).where(
-        Episode.status.in_([EpisodeStatus.PENDING, EpisodeStatus.SEARCHING]),
-        Episode.air_date.isnot(None),
-        Episode.air_date > datetime.now(timezone.utc),
-    )
-    for future_ep in (await session.execute(stmt_e_future)).scalars():
-        future_ep.status = EpisodeStatus.FUTURE
-
-    await session.commit()
-
-
-async def _get_anime_aliases(item) -> list[str]:
-    aliases = {item.title}
-    if getattr(item, "alt_title", None):
-        aliases.add(item.alt_title)
-
-    if getattr(item, "anilist_id", None):
-        from app.services import anilist
-
-        anilist_aliases = await anilist.get_anime_aliases(item.anilist_id)
-        for alias in anilist_aliases:
-            if alias:
-                aliases.add(alias)
-
-    return list(aliases)
-
-
 async def enrich_anime_metadata(session: AsyncSession, item: MediaItem) -> None:
     from datetime import datetime, timezone
 
@@ -1524,7 +1151,7 @@ async def enrich_anime_metadata(session: AsyncSession, item: MediaItem) -> None:
                 start_date.get("year") if isinstance(start_date, dict) else None
             )
 
-            if s_air_date is not None or start_year is not None:
+            if s_air_date is not None or start_year is not None or watch_order > 1:
                 is_season_future = is_future_or_tba(s_air_date, start_year, now)
             else:
                 is_season_future = is_future_or_tba(item.release_date, item.year, now)
@@ -1980,7 +1607,7 @@ async def reset_anime_metadata(session: AsyncSession, item_id: int) -> MediaItem
         s_air_date = _parse_anilist_start_date(start_date, now)
         start_year = start_date.get("year") if isinstance(start_date, dict) else None
 
-        if s_air_date is not None or start_year is not None:
+        if s_air_date is not None or start_year is not None or watch_order > 1:
             is_season_future = is_future_or_tba(s_air_date, start_year, now)
         else:
             is_season_future = is_future_or_tba(item.release_date, item.year, now)

@@ -23,7 +23,6 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.config import settings
-from app.core.automation import reset_tick_cooling_indexers
 from app.db.database import close_db, get_engine, get_session_factory, init_db
 from app.db.models import (
     Base,
@@ -70,12 +69,10 @@ def anyio_backend():
 def reset_torbox_state():
     torbox.set_cooldown(0.0)
     torbox.clear_usenet_cache()
-    reset_tick_cooling_indexers()
     simkl._SIMKL_DEVICE_SESSIONS.clear()
     yield
     torbox.set_cooldown(0.0)
     torbox.clear_usenet_cache()
-    reset_tick_cooling_indexers()
     simkl._SIMKL_DEVICE_SESSIONS.clear()
 
 
@@ -158,20 +155,28 @@ async def default_search_preset(db_session: AsyncSession) -> SearchPreset:
 # ---------------------------------------------------------------------------
 
 
-async def _ensure_watchlist_provider(session: AsyncSession, provider_id: int | None) -> int:
+async def _ensure_watchlist_provider(
+    session: AsyncSession, provider_id: int | None
+) -> int:
     """Return *provider_id* unchanged, or seed and return a default watchlist Provider's id."""
     if provider_id is not None:
         return provider_id
     from sqlalchemy import select
 
     existing = (
-        await session.execute(
-            select(Provider).where(Provider.category == "watchlist").limit(1)
+        (
+            await session.execute(
+                select(Provider).where(Provider.category == "watchlist").limit(1)
+            )
         )
-    ).scalars().first()
+        .scalars()
+        .first()
+    )
     if existing is not None:
         return existing.id
-    provider = Provider(name="Simkl", type="simkl", category="watchlist", is_active=True)
+    provider = Provider(
+        name="Simkl", type="simkl", category="watchlist", is_active=True
+    )
     session.add(provider)
     await session.flush()
     return provider.id  # type: ignore[return-value]
@@ -190,7 +195,9 @@ async def make_movie(session: AsyncSession, **overrides: Any) -> MediaItem:
         simkl_id=10001
         provider_id=<auto-seeded watchlist provider>
     """
-    provider_id = await _ensure_watchlist_provider(session, overrides.pop("provider_id", None))
+    provider_id = await _ensure_watchlist_provider(
+        session, overrides.pop("provider_id", None)
+    )
     defaults: dict[str, Any] = dict(
         provider_id=provider_id,
         simkl_id=10001,
@@ -239,7 +246,9 @@ async def make_series(
         The parent item, a list of ``Season`` objects (in creation order), and a
         flat list of all ``Episode`` objects (all seasons, in creation order).
     """
-    provider_id = await _ensure_watchlist_provider(session, overrides.pop("provider_id", None))
+    provider_id = await _ensure_watchlist_provider(
+        session, overrides.pop("provider_id", None)
+    )
     item_defaults: dict[str, Any] = dict(
         provider_id=provider_id,
         simkl_id=20001,

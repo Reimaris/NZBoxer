@@ -27,7 +27,7 @@ import logging
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
 
 from app.core.failure_logger import log_failure
@@ -44,7 +44,6 @@ from app.db.models import (
     MediaType,
     Season,
     SeasonStatus,
-    SeenTorboxDownload,
     SystemSettings,
 )
 from app.services import discord, torbox
@@ -155,7 +154,7 @@ async def _delete_and_purge_torbox_transfer(
     torbox_id: str | None,
     tb_item: dict[str, Any] | None = None,
 ) -> None:
-    """Delete a failed/canceled transfer from TorBox and remove its SeenTorboxDownload cache row."""
+    """Delete a failed/canceled transfer from TorBox."""
     if not torbox_id:
         return
     tb_type = tb_item.get("_type", "usenet") if tb_item else "usenet"
@@ -169,11 +168,6 @@ async def _delete_and_purge_torbox_transfer(
         logger.warning(
             "Failed to delete %s %s from TorBox: %s", tb_type, torbox_id, exc
         )
-
-    await session.execute(
-        delete(SeenTorboxDownload).where(SeenTorboxDownload.torbox_id == str(torbox_id))
-    )
-    await session.commit()
 
 
 async def _auto_replace_failed_push(
@@ -332,6 +326,7 @@ def _is_history_terminal(status_detail: str | None) -> bool:
     return detail in (
         "completed",
         "deleted",
+        "expired",
         "replaced",
         "canceled",
     ) or detail.startswith("failed")
@@ -673,7 +668,7 @@ async def _run_transfer_poller_tick_with_session(
             for h in histories
             if not h.is_dismissed
             and (h.status_detail or "").strip().lower()
-            not in ("replaced", "canceled", "deleted")
+            not in ("replaced", "canceled", "deleted", "expired")
             and (not require_episode_none or h.episode_id is None)
         ]
         if not candidates:
@@ -779,6 +774,34 @@ async def _run_transfer_poller_tick_with_session(
             history.download_speed_bytes = 0
             history.eta_seconds = 0
             history.status_detail = "completed"
+
+            if isinstance(target, Episode):
+                target.status = EpisodeStatus.COMPLETED
+                target.fail_count = 0
+                target.last_error = None
+                _sync_season_status_from_episodes(season)
+            elif isinstance(target, Season):
+                target.status = SeasonStatus.COMPLETED
+                target.fail_count = 0
+                target.last_error = None
+                for ep in target.episodes:
+                    if ep.status != EpisodeStatus.FUTURE:
+                        ep.status = EpisodeStatus.COMPLETED
+                        ep.fail_count = 0
+                        ep.last_error = None
+            else:
+                target.status = MediaStatus.COMPLETED
+                target.fail_count = 0
+                target.last_error = None
+            continue
+
+        # 1b. Check Expired (Previously completed transfer whose cloud files aged out on TorBox)
+        if status_lower == "expired" or "expired" in status_lower:
+            history.progress_pct = 100.0
+            history.download_speed_bytes = 0
+            history.eta_seconds = 0
+            history.status_detail = "deleted"
+            history.notification_sent = True
 
             if isinstance(target, Episode):
                 target.status = EpisodeStatus.COMPLETED
@@ -1014,7 +1037,8 @@ async def get_active_pushes(session: AsyncSession) -> list[dict[str, Any]]:
         is_failed = entity_status == "failed" or detail_lower.startswith("failed")
         is_active_downloading = (
             entity_status == "downloading"
-            and detail_lower not in ("completed", "replaced", "canceled", "deleted")
+            and detail_lower
+            not in ("completed", "replaced", "canceled", "deleted", "expired")
             and not detail_lower.startswith("failed")
         )
 
@@ -1264,6 +1288,8 @@ async def _recalculate_parent_status(
 
     def _is_hist_completed(h: DownloadHistory) -> bool:
         d = (h.status_detail or "").strip().lower()
+        if d in ("deleted", "expired"):
+            return not h.is_dismissed
         return d in ("completed", "")
 
     def _is_hist_failed(h: DownloadHistory) -> bool:
@@ -1744,7 +1770,7 @@ async def get_push_history_ledger(session: AsyncSession) -> list[dict[str, Any]]
         ) or (not detail_low and entity_is_downloading):
             continue
 
-        if detail_low == "deleted":
+        if detail_low in ("deleted", "expired"):
             torbox_status = "DELETED"
             status_key = "deleted"
             failure_reason = None

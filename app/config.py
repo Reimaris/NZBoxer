@@ -38,19 +38,9 @@ class Settings:
         "DATABASE_URL", "sqlite+aiosqlite:///./config/nzboxer.db"
     )
 
-    # --- API Keys (Populated from DB on startup) ---
-    tmdb_api_key: str = ""
-    treasure_maps_api_key: str = ""
-    torbox_api_key: str = ""
-
-    # Self-Healing & Active Push Monitoring
-    scan_interval_multiplier: int = int(os.getenv("SCAN_INTERVAL_MULTIPLIER", "1"))
+    # TorBox Transfer Poller & Failure Recovery
     sh_max_retries: int = int(os.getenv("SH_MAX_RETRIES", "3"))
-    sh_max_time_hours: float = float(os.getenv("SH_MAX_TIME_HOURS", "12.0"))
-    sh_auto_retry: bool = os.getenv("SH_AUTO_RETRY", "True").lower() == "true"
-    sh_retry_wait_hours: float = float(os.getenv("SH_RETRY_WAIT_HOURS", "24.0"))
     download_timeout_hours: int = int(os.getenv("DOWNLOAD_TIMEOUT_HOURS", "24"))
-    dry_run: bool = os.getenv("DRY_RUN", "False").lower() == "true"
 
     # Discord & Event Notification Settings (v3.0.0)
     discord_webhook_url: str | None = os.getenv("DISCORD_WEBHOOK_URL") or None
@@ -106,16 +96,8 @@ async def reload_settings_from_db(session: AsyncSession) -> None:
     if not db_settings:
         db_settings = SystemSettings(
             id=1,
-            tmdb_api_key=settings.tmdb_api_key,
-            treasure_maps_api_key=settings.treasure_maps_api_key,
-            torbox_api_key=settings.torbox_api_key,
-            scan_interval_multiplier=settings.scan_interval_multiplier,
             sh_max_retries=settings.sh_max_retries,
-            sh_max_time_hours=settings.sh_max_time_hours,
-            sh_auto_retry=settings.sh_auto_retry,
-            sh_retry_wait_hours=settings.sh_retry_wait_hours,
             download_timeout_hours=settings.download_timeout_hours,
-            dry_run=settings.dry_run,
             discord_webhook_url=settings.discord_webhook_url,
             discord_enabled=settings.discord_enabled,
             notify_on_push_initiated=settings.notify_on_push_initiated,
@@ -129,18 +111,10 @@ async def reload_settings_from_db(session: AsyncSession) -> None:
         await session.refresh(db_settings)
 
     # Overwrite global settings cache
-    settings.tmdb_api_key = db_settings.tmdb_api_key
-    settings.treasure_maps_api_key = db_settings.treasure_maps_api_key
-    settings.torbox_api_key = db_settings.torbox_api_key
-    settings.scan_interval_multiplier = db_settings.scan_interval_multiplier
     settings.sh_max_retries = db_settings.sh_max_retries
-    settings.sh_max_time_hours = db_settings.sh_max_time_hours
-    settings.sh_auto_retry = db_settings.sh_auto_retry
-    settings.sh_retry_wait_hours = db_settings.sh_retry_wait_hours
     settings.download_timeout_hours = getattr(
         db_settings, "download_timeout_hours", settings.download_timeout_hours
     )
-    settings.dry_run = db_settings.dry_run
     settings.discord_webhook_url = getattr(db_settings, "discord_webhook_url", None)
     settings.discord_enabled = bool(getattr(db_settings, "discord_enabled", False))
     settings.notify_on_push_initiated = bool(

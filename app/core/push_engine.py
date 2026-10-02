@@ -542,11 +542,7 @@ async def _query_movie_across_indexers(
     use_external_ids: bool = True,
 ) -> list[dict[str, Any]]:
     """Query active indexers for a standalone movie or franchise movie entry."""
-    cat_id = (
-        item.provider.movie_category_id
-        if item.provider and item.provider.movie_category_id
-        else 2000
-    )
+    cat_id = 2000
     search_title = title_override or item.title
     imdb_id = item.imdb_id if use_external_ids else None
     tmdb_id = item.tmdb_id if use_external_ids else None
@@ -593,18 +589,7 @@ async def _query_show_across_indexers(
     episode_number: int | None = None,
 ) -> list[dict[str, Any]]:
     """Query active indexers for a TV/Anime season pack or episode."""
-    if item.media_type == MediaType.ANIME:
-        cat_id = (
-            item.provider.anime_category_id
-            if item.provider and item.provider.anime_category_id
-            else 5070
-        )
-    else:
-        cat_id = (
-            item.provider.series_category_id
-            if item.provider and item.provider.series_category_id
-            else 5000
-        )
+    cat_id = 5070 if item.media_type == MediaType.ANIME else 5000
 
     ep_str = str(episode_number) if episode_number is not None else None
     indexers = await get_active_indexers(session)
@@ -660,8 +645,6 @@ async def _dispatch_candidate_list_to_torbox(
     reset_fail_count: bool = True,
 ) -> DownloadHistory | None:
     """Iterate through scored candidates, verify Layer 2 NZB fake check, and dispatch to TorBox."""
-    from app.db.grab_tracker import increment_today_grab_count
-
     is_movie = episode is None and (
         season is None or getattr(season, "entry_type", "season") == "movie"
     )
@@ -710,7 +693,6 @@ async def _dispatch_candidate_list_to_torbox(
             logger.warning("TorBox dispatch failed for '%s': %s", title, torbox_result)
             continue
 
-        await increment_today_grab_count(session)
         parsed = cand.get("parsed")
         score_res = cand.get("score_res")
 

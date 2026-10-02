@@ -128,20 +128,31 @@ async def init_db(database_url: str) -> None:
     # Enable SQLite WAL mode for better concurrent access
     if database_url.startswith("sqlite"):
         async with _session_factory() as session:
+            # Automatically drop retired v2 tables (ADR-089)
+            for retired_tbl in (
+                "manga_volumes",
+                "manga_items",
+                "magazine_issues",
+                "magazine_subscriptions",
+                "provider_profiles",
+                "seen_torbox_downloads",
+                "daily_grab_counters",
+                "book_items",
+            ):
+                try:
+                    await session.execute(
+                        __import__("sqlalchemy").text(
+                            f"DROP TABLE IF EXISTS {retired_tbl};"
+                        )
+                    )
+                except Exception:
+                    pass
+
             # Perform a crude migration if the table exists but column is missing
             try:
                 await session.execute(
                     __import__("sqlalchemy").text(
                         "ALTER TABLE system_settings ADD COLUMN scoring_settings JSON;"
-                    )
-                )
-            except Exception:
-                pass
-
-            try:
-                await session.execute(
-                    __import__("sqlalchemy").text(
-                        "ALTER TABLE system_settings ADD COLUMN tmdb_api_key VARCHAR(200) DEFAULT '';"
                     )
                 )
             except Exception:
@@ -166,15 +177,6 @@ async def init_db(database_url: str) -> None:
                 await session.execute(
                     __import__("sqlalchemy").text(
                         "ALTER TABLE download_history ADD COLUMN torbox_id VARCHAR(200);"
-                    )
-                )
-            except Exception:
-                pass
-
-            try:
-                await session.execute(
-                    __import__("sqlalchemy").text(
-                        "ALTER TABLE providers ADD COLUMN anime_category_id INTEGER;"
                     )
                 )
             except Exception:
@@ -229,24 +231,6 @@ async def init_db(database_url: str) -> None:
                 await session.execute(
                     __import__("sqlalchemy").text(
                         "ALTER TABLE download_history ADD COLUMN episode_id INTEGER;"
-                    )
-                )
-            except Exception:
-                pass
-
-            try:
-                await session.execute(
-                    __import__("sqlalchemy").text(
-                        "ALTER TABLE system_settings ADD COLUMN dry_run BOOLEAN NOT NULL DEFAULT 0;"
-                    )
-                )
-            except Exception:
-                pass
-
-            try:
-                await session.execute(
-                    __import__("sqlalchemy").text(
-                        "ALTER TABLE media_items ADD COLUMN auto_monitor_next_season BOOLEAN NOT NULL DEFAULT 0;"
                     )
                 )
             except Exception:
@@ -678,75 +662,11 @@ async def init_db(database_url: str) -> None:
             except Exception as e:
                 logger.warning("Error reconciling transfer truth during startup: %s", e)
 
-            # Auto-seed providers from legacy SystemSettings
-            try:
-                from sqlalchemy import select
-
-                from app.db.models import Provider, ProviderCategory, SystemSettings
-
-                settings_res = await session.execute(
-                    select(SystemSettings).where(SystemSettings.id == 1)
-                )
-                db_settings = settings_res.scalars().first()
-
-                if db_settings:
-                    prov_res = await session.execute(select(Provider))
-                    existing_providers = prov_res.scalars().all()
-                    existing_types = {p.type for p in existing_providers}
-
-                    # TMDB
-                    if (
-                        db_settings.tmdb_api_key
-                        and db_settings.tmdb_api_key != "your_tmdb_api_v3_key_here"
-                        and "tmdb" not in existing_types
-                    ):
-                        tmdb_p = Provider(
-                            category=ProviderCategory.METADATA.value,
-                            type="tmdb",
-                            name="The Movie Database (TMDB)",
-                            api_key=db_settings.tmdb_api_key,
-                            is_active=True,
-                        )
-                        session.add(tmdb_p)
-
-                    # TorBox
-                    if (
-                        db_settings.torbox_api_key
-                        and db_settings.torbox_api_key != "your_torbox_api_key_here"
-                        and "torbox" not in existing_types
-                    ):
-                        torbox_p = Provider(
-                            category=ProviderCategory.DOWNLOADER.value,
-                            type="torbox",
-                            name="TorBox Downloader",
-                            api_key=db_settings.torbox_api_key,
-                            is_active=True,
-                        )
-                        session.add(torbox_p)
-
-                    # Treasure Maps
-                    if (
-                        db_settings.treasure_maps_api_key
-                        and db_settings.treasure_maps_api_key
-                        != "your_newznab_api_key_here"
-                        and "treasure_maps" not in existing_types
-                    ):
-                        tm_p = Provider(
-                            category=ProviderCategory.INDEXER.value,
-                            type="treasure_maps",
-                            name="Treasure Maps Indexer",
-                            api_key=db_settings.treasure_maps_api_key,
-                            api_url="https://treasure-maps.com/api",
-                            priority=1,
-                            is_active=True,
-                        )
-                        session.add(tm_p)
-            except Exception as e:
-                logger.warning("Error migrating legacy provider settings: %s", e)
-
             # --- Domain migration: treasuremaps.net → treasure-maps.com ---
             try:
-                from sqlalchemy import func, update
+                from sqlalchemy import func, select, update
+
+                from app.db.models import Provider
 
                 migrated = await session.execute(
                     update(Provider)

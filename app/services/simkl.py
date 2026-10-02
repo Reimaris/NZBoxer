@@ -420,16 +420,6 @@ async def ensure_valid_simkl_token(
     return client_id, access_token
 
 
-async def request_pin(client_id: str) -> dict[str, Any]:
-    """Backwards-compatible alias forwarding to Simkl AUTH V2 request_device_code."""
-    return await request_device_code(client_id)
-
-
-async def check_pin(client_id: str, device_code: str) -> dict[str, Any]:
-    """Backwards-compatible alias forwarding to Simkl AUTH V2 poll_device_token."""
-    return await poll_device_token(client_id, device_code)
-
-
 async def get_watchlist(
     media_type: str, client_id: str, access_token: str
 ) -> list[dict[str, Any]]:

@@ -759,22 +759,6 @@
                             <p class="text-[#71717a] text-xs mt-1">Maximum times NZBoxer will auto-push the next-best indexer candidate when an Auto-Push fails on TorBox before marking it Failed.</p>
                         </div>
                     </div>
-
-                    <div class="pt-4 border-t border-[#3f3f46] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                        <div>
-                            <h3 class="text-white font-semibold text-sm">Sync External TorBox Library</h3>
-                            <p class="text-[#71717a] text-xs">Scan TorBox cloud downloads and mark matching watchlist items as Completed.</p>
-                        </div>
-                        <div id="rescan-torbox-container" class="flex items-center gap-3 shrink-0">
-                            <button type="button"
-                                    hx-post="/api/automation/rescan-torbox"
-                                    hx-target="#rescan-torbox-container"
-                                    hx-swap="innerHTML"
-                                    class="bg-[#2a2a32] hover:bg-[#3f3f46] text-white border border-[#3f3f46] text-xs font-semibold px-4 py-2 rounded-lg">
-                                Sync TorBox Library
-                            </button>
-                        </div>
-                    </div>
                 </div>
             </div>
 

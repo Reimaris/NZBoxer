@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Any
 
 import httpx
 
-from app.config import DEFAULT_USER_AGENT, settings
+from app.config import DEFAULT_USER_AGENT
 from app.core.rate_limiter import RateLimiter
 
 if TYPE_CHECKING:
@@ -32,7 +32,7 @@ class TMDBError(Exception):
 async def resolve_api_key(
     session: AsyncSession | None = None, explicit_key: str | None = None
 ) -> str:
-    """Resolve active TMDB API key from explicit argument, DB provider, or config settings."""
+    """Resolve active TMDB API key from explicit argument or DB provider."""
     if explicit_key:
         return explicit_key
 
@@ -53,7 +53,7 @@ async def resolve_api_key(
         except Exception:
             pass
 
-    return settings.tmdb_api_key or ""
+    return ""
 
 
 def _build_auth(key: str) -> tuple[dict[str, Any], dict[str, str]]:

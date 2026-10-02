@@ -116,34 +116,15 @@ class SystemSettings(Base):
     __tablename__ = "system_settings"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    treasure_maps_api_key: Mapped[str] = mapped_column(String(200), default="")
-    torbox_api_key: Mapped[str] = mapped_column(String(200), default="")
-    tmdb_api_key: Mapped[str] = mapped_column(String(200), default="")
 
-    # Self-Healing & Active Push Monitoring
-    scan_interval_multiplier: Mapped[int] = mapped_column(Integer, default=1)
+    # TorBox Transfer Poller & Failure Recovery
     sh_max_retries: Mapped[int] = mapped_column(Integer, default=3)
-    sh_max_time_hours: Mapped[float] = mapped_column(
-        Float, nullable=False, default=12.0
-    )
-    sh_auto_retry: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
-    sh_retry_wait_hours: Mapped[float] = mapped_column(
-        Float, nullable=False, default=24.0
-    )
     download_timeout_hours: Mapped[int] = mapped_column(
         Integer, default=24, server_default="24", nullable=False
-    )
-    dry_run: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, default=False, server_default="0"
     )
 
     # Structured Scoring Settings
     scoring_settings: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=True)
-
-    # Core Scoring Threshold
-    upgrade_threshold: Mapped[int] = mapped_column(
-        Integer, default=500, server_default="500"
-    )
 
     # Discord Webhook & Per-Event Notification Triggers (v3.0.0)
     discord_webhook_url: Mapped[str | None] = mapped_column(
@@ -231,11 +212,6 @@ class Provider(Base):
     username: Mapped[str | None] = mapped_column(String(200), nullable=True)
     client_id: Mapped[str | None] = mapped_column(String(500), nullable=True)
     access_token: Mapped[str | None] = mapped_column(String(500), nullable=True)
-
-    movie_category_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    series_category_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    anime_category_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    bandwidth_mbit: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     # Provider-specific JSON configuration (e.g. Simkl sync interval, category flags, last_synced_at)
     config_json: Mapped[str] = mapped_column(
@@ -440,10 +416,6 @@ class MediaItem(Base):
     # --- Release date (movies: digital release; shows: first air date) ---
     release_date: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
-    )
-
-    auto_monitor_next_season: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, default=False, server_default="0"
     )
 
     # --- On-Demand Search Preset & Sticky Configuration (v3.0.0) ---
@@ -738,33 +710,6 @@ class MediaItem(Base):
         cascade="all, delete-orphan",
         lazy="selectin",
     )
-
-    @property
-    def is_fully_completed(self) -> bool:
-        """Returns True if the item requires no further automated actions (History)."""
-        if self.status in [
-            MediaStatus.COMPLETED,
-            MediaStatus.DOWNLOADED,
-            MediaStatus.IGNORED,
-        ]:
-            return True
-
-        if self.media_type in (MediaType.SHOW, MediaType.ANIME):
-            if not self.seasons or (self.total_seasons + self.total_movies) == 0:
-                return False
-
-            for season in self.seasons:
-                if season.season_number == 0:
-                    continue
-                if season.status in [
-                    SeasonStatus.COMPLETED,
-                    SeasonStatus.DOWNLOADED,
-                    SeasonStatus.IGNORED,
-                ]:
-                    continue
-                return False
-            return True
-        return False
 
 
 class Season(Base):
@@ -1198,85 +1143,6 @@ class BlacklistedRelease(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
-
-
-# ---------------------------------------------------------------------------
-# DailyGrabCounter Model
-# ---------------------------------------------------------------------------
-
-
-class DailyGrabCounter(Base):
-    """Tracks daily NZB downloads (grabs) to enforce a hard daily limit of 400."""
-
-    __tablename__ = "daily_grab_counters"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    date_str: Mapped[str] = mapped_column(
-        String(10), unique=True, index=True
-    )  # YYYY-MM-DD
-    count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-
-
-# ---------------------------------------------------------------------------
-# SeenTorboxDownload Model
-# ---------------------------------------------------------------------------
-
-
-class SeenTorboxDownload(Base):
-    """Caches evaluated TorBox Usenet downloads to prevent redundant title parsing.
-
-    Attributes:
-        id:             Auto-incremented primary key.
-        torbox_id:      Unique TorBox download ID (string/int).
-        raw_title:      Original release name from TorBox.
-        parsed_title:   Extracted title / normalized name.
-        parsed_year:    Extracted release year (if available).
-        season_number:  Extracted season number (if season pack or episode).
-        episode_number: Extracted episode number (if individual episode).
-        media_type:     Inferred media type ('movie', 'series_season', 'series_episode', 'unknown').
-        download_state: TorBox state ('completed', 'cached', 'downloading', 'queued', 'processing', 'failed', 'error', etc.).
-        size_bytes:     File size in bytes.
-        progress:       Download progress percentage (0.0 to 1.0 or 0 to 100).
-        created_at:     Row creation timestamp.
-        updated_at:     Last state update timestamp.
-    """
-
-    __tablename__ = "seen_torbox_downloads"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    torbox_id: Mapped[str] = mapped_column(
-        String(200), unique=True, index=True, nullable=False
-    )
-    raw_title: Mapped[str] = mapped_column(String(1000), nullable=False)
-    parsed_title: Mapped[str | None] = mapped_column(
-        String(500), index=True, nullable=True
-    )
-    parsed_year: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    season_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    episode_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    media_type: Mapped[str] = mapped_column(
-        String(50), default="unknown", nullable=False
-    )
-    download_state: Mapped[str] = mapped_column(
-        String(50), default="unknown", nullable=False
-    )
-    size_bytes: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
-    progress: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=func.now()
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        nullable=False,
-        server_default=func.now(),
-        onupdate=func.now(),
-    )
-
-    def __repr__(self) -> str:
-        return (
-            f"<SeenTorboxDownload id={self.id} torbox_id={self.torbox_id!r} "
-            f"state={self.download_state!r} title={self.raw_title!r:.40}>"
-        )
 
 
 class FailureLog(Base):

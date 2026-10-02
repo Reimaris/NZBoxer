@@ -181,24 +181,6 @@
                                 <input type="text" name="api_url" value="{{ provider.api_url if provider and provider.api_url else '' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors font-mono" placeholder="https://api.your-indexer.com/api">
                             </div>
                         </div>
-
-                        <div class="border border-[#3f3f46] rounded-xl bg-[#1e1e24] p-5 space-y-3">
-                            <h4 class="text-xs font-bold text-white uppercase tracking-wider">Newznab Search Categories</h4>
-                            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                <div>
-                                    <label class="text-xs text-[#a1a1aa] block font-semibold mb-1">Movies Category ID</label>
-                                    <input type="number" name="movie_category_id" value="{{ provider.movie_category_id if provider and provider.movie_category_id else '2000' }}" class="w-full h-10 bg-[#111115] border border-[#3f3f46] rounded-lg px-3 text-white font-mono text-sm">
-                                </div>
-                                <div>
-                                    <label class="text-xs text-[#a1a1aa] block font-semibold mb-1">TV Shows Category ID</label>
-                                    <input type="number" name="series_category_id" value="{{ provider.series_category_id if provider and provider.series_category_id else '5000' }}" class="w-full h-10 bg-[#111115] border border-[#3f3f46] rounded-lg px-3 text-white font-mono text-sm">
-                                </div>
-                                <div>
-                                    <label class="text-xs text-[#a1a1aa] block font-semibold mb-1">Anime Category ID</label>
-                                    <input type="number" name="anime_category_id" value="{{ provider.anime_category_id if provider and provider.anime_category_id else '5070' }}" class="w-full h-10 bg-[#111115] border border-[#3f3f46] rounded-lg px-3 text-white font-mono text-sm">
-                                </div>
-                            </div>
-                        </div>
                     </fieldset>
 
                     <!-- TMDB CONFIGURATION -->
@@ -256,7 +238,7 @@
                                 <label class="h-6 text-[#d1d5db] font-medium mb-1 flex items-center">Simkl Access Token</label>
                                 <div class="flex gap-2 w-full">
                                     <input type="password" id="access_token" name="access_token" value="{{ provider.access_token if provider and provider.access_token else '' }}" class="flex-1 min-w-0 h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors font-mono">
-                                    <button type="button" hx-post="/simkl/auth/pin" hx-include="[name='client_id'], [name='provider_id']" hx-target="#simkl-auth-container-modal" class="h-11 bg-blue-600 hover:bg-blue-700 text-white px-4 rounded-lg font-medium transition-colors text-sm whitespace-nowrap shrink-0">
+                                    <button type="button" hx-post="/simkl/auth/start" hx-include="[name='client_id'], [name='provider_id']" hx-target="#simkl-auth-container-modal" class="h-11 bg-blue-600 hover:bg-blue-700 text-white px-4 rounded-lg font-medium transition-colors text-sm whitespace-nowrap shrink-0">
                                         Get PIN &amp; Connect
                                     </button>
                                 </div>

@@ -63,49 +63,6 @@ def _bytes_to_mb(size_bytes: int) -> float:
     return size_bytes / (1024 * 1024)
 
 
-def is_indexer_metadata_fake(
-    item_metadata: dict[str, Any],
-    resolution: str | None = None,
-    media_type: str = "movie",
-) -> tuple[bool, str | None]:
-    """Layer 1: Evaluates Newznab item XML attributes (password, size bounds)."""
-
-    # Check password flag
-    if item_metadata.get("password", 0) > 0:
-        return True, "Indexer reports release is password protected"
-
-    size_bytes = item_metadata.get("size", 0)
-    if not size_bytes:
-        return False, None
-
-    size_mb = _bytes_to_mb(int(size_bytes))
-
-    # Check general bounds
-    constraints = SIZE_CONSTRAINTS.get(media_type)
-    if constraints:
-        if size_mb < constraints["min_mb"]:
-            return (
-                True,
-                f"Size {size_mb:.1f}MB is below minimum {constraints['min_mb']}MB for {media_type}",
-            )
-        if size_mb > constraints["max_mb"]:
-            return (
-                True,
-                f"Size {size_mb:.1f}MB exceeds maximum {constraints['max_mb']}MB for {media_type}",
-            )
-
-    # Check video resolution bounds
-    if media_type in ["movie", "episode"] and resolution:
-        min_mb = MIN_RESOLUTION_MB.get(resolution, 0)
-        if size_mb < (min_mb * 0.5):
-            return (
-                True,
-                f"Size {size_mb:.1f}MB is unrealistically small for {resolution}",
-            )
-
-    return False, None
-
-
 def is_nzb_content_fake(
     nzb_xml_bytes: bytes, media_type: str = "movie"
 ) -> tuple[bool, str | None]:

@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any
 
 import httpx
 
-from app.config import DEFAULT_USER_AGENT, settings
+from app.config import DEFAULT_USER_AGENT
 from app.core.rate_limiter import RateLimiter
 
 if TYPE_CHECKING:
@@ -59,7 +59,7 @@ async def resolve_indexer(
 
     return (
         api_url or "https://treasure-maps.com/api",
-        api_key or settings.treasure_maps_api_key or "",
+        api_key or "",
     )
 
 
@@ -434,18 +434,3 @@ async def fetch_nzb_bytes(
         except httpx.HTTPError as e:
             logger.error("Failed to fetch NZB bytes from indexer: %s", e)
             raise IndexerError(f"HTTP error fetching NZB: {e}") from e
-
-
-async def get_download_url(
-    guid: str,
-    api_url: str | None = None,
-    api_key: str | None = None,
-    session: AsyncSession | None = None,
-) -> str:
-    """Generate the download URL for a specific NZB given its GUID/ID."""
-    resolved_url, resolved_key = await resolve_indexer(
-        session=session, api_url=api_url, api_key=api_key
-    )
-    params = {"t": "get", "id": guid, "apikey": resolved_key}
-    request = httpx.Request("GET", resolved_url, params=params)
-    return str(request.url)

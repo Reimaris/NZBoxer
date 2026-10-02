@@ -247,13 +247,6 @@ async def dashboard(request: Request, background_tasks: BackgroundTasks):
         result = await session.execute(stmt)
         all_items = result.scalars().all()
         items = [i for i in all_items if i.status != MediaStatus.IGNORED]
-        history_video = sorted(
-            [i for i in all_items if i.is_fully_completed],
-            key=lambda x: (
-                x.updated_at.timestamp() if getattr(x, "updated_at", None) else 0.0
-            ),
-            reverse=True,
-        )
 
         for item in items:
             item.status_tier = classify_v3_status_tier(item)
@@ -292,25 +285,7 @@ async def dashboard(request: Request, background_tasks: BackgroundTasks):
             if i.media_type == MediaType.ANIME or getattr(i, "is_anime_movie", False)
         ]
 
-        # History category collections
-        history_movie_items = [
-            i
-            for i in history_video
-            if i.media_type == MediaType.MOVIE
-            and not getattr(i, "is_anime_movie", False)
-        ]
-        history_series_items = [
-            i for i in history_video if i.media_type == MediaType.SHOW
-        ]
-        history_anime_items = [
-            i
-            for i in history_video
-            if i.media_type == MediaType.ANIME or getattr(i, "is_anime_movie", False)
-        ]
-
-        def _build_cat_stats(
-            cat_items: list[MediaItem], hist_items: list[MediaItem]
-        ) -> dict[str, int]:
+        def _build_cat_stats(cat_items: list[MediaItem]) -> dict[str, int]:
             return {
                 "total": len(cat_items),
                 "in_progress": sum(
@@ -323,15 +298,14 @@ async def dashboard(request: Request, background_tasks: BackgroundTasks):
                 "wanted": sum(
                     1 for i in cat_items if i.status in ("searching", "pending")
                 ),
-                "completed": len(hist_items),
                 "ignored": sum(
                     1 for i in cat_items if i.status in ("ignored", "canceled")
                 ),
             }
 
-        movie_stats = _build_cat_stats(movie_items, history_movie_items)
-        series_stats = _build_cat_stats(series_items, history_series_items)
-        anime_stats = _build_cat_stats(anime_items, history_anime_items)
+        movie_stats = _build_cat_stats(movie_items)
+        series_stats = _build_cat_stats(series_items)
+        anime_stats = _build_cat_stats(anime_items)
 
         from app.core.transfer_poller import (
             count_downloading_entities,
@@ -383,10 +357,6 @@ async def dashboard(request: Request, background_tasks: BackgroundTasks):
             "movies_wanted": movie_stats["wanted"],
             "series_wanted": series_stats["wanted"],
             "anime_wanted": anime_stats["wanted"],
-            "history_items": history_video,
-            "history_movie_items": history_movie_items,
-            "history_series_items": history_series_items,
-            "history_anime_items": history_anime_items,
             "push_history_ledger": push_history_ledger,
             "history_total": len(push_history_ledger),
             "active_pushes": active_pushes,
@@ -936,16 +906,6 @@ async def delete_item(item_id: int):
     return HTMLResponse(content="Error", status_code=400)
 
 
-@app.get("/api/status")
-async def get_status():
-    """Health check and scheduler status."""
-    return {
-        "status": "ok",
-        "scheduler_running": scheduler.running,
-        "jobs": [job.id for job in scheduler.get_jobs()],
-    }
-
-
 # ---------------------------------------------------------------------------
 # Settings & Configuration Routes
 # ---------------------------------------------------------------------------
@@ -1025,14 +985,7 @@ async def export_settings():
         settings_dict = {}
         if db_settings:
             settings_dict = {
-                "tmdb_api_key": db_settings.tmdb_api_key,
-                "treasure_maps_api_key": db_settings.treasure_maps_api_key,
-                "torbox_api_key": db_settings.torbox_api_key,
-                "scan_interval_multiplier": db_settings.scan_interval_multiplier,
                 "sh_max_retries": db_settings.sh_max_retries,
-                "sh_max_time_hours": db_settings.sh_max_time_hours,
-                "sh_auto_retry": db_settings.sh_auto_retry,
-                "sh_retry_wait_hours": db_settings.sh_retry_wait_hours,
                 "download_timeout_hours": getattr(
                     db_settings, "download_timeout_hours", 24
                 ),
@@ -1061,12 +1014,14 @@ async def export_settings():
                 {
                     "name": p.name,
                     "type": p.type,
+                    "category": p.category,
                     "username": p.username,
                     "access_token": p.access_token,
                     "client_id": p.client_id,
-                    "movie_category_id": p.movie_category_id,
-                    "series_category_id": p.series_category_id,
-                    "bandwidth_mbit": p.bandwidth_mbit,
+                    "api_key": p.api_key,
+                    "api_url": p.api_url,
+                    "priority": p.priority,
+                    "is_active": p.is_active,
                     "config_json": getattr(p, "config_json", "{}"),
                 }
             )
@@ -1108,14 +1063,8 @@ async def export_settings():
 @app.post("/settings/system")
 async def save_global_settings(
     request: Request,
-    scan_interval_multiplier: int = Form(1),
     download_timeout_hours: int = Form(24),
     sh_max_retries: int = Form(3),
-    sh_max_time_hours: float = Form(12.0),
-    sh_auto_retry: bool = Form(True),
-    sh_retry_wait_hours: float = Form(24.0),
-    dry_run: bool = Form(False),
-    upgrade_threshold: int = Form(500),
 ):
     import copy
 
@@ -1134,14 +1083,8 @@ async def save_global_settings(
         db_settings = (await session.execute(stmt)).scalars().first()
 
         if db_settings:
-            db_settings.scan_interval_multiplier = scan_interval_multiplier
             db_settings.download_timeout_hours = download_timeout_hours
             db_settings.sh_max_retries = sh_max_retries
-            db_settings.sh_max_time_hours = sh_max_time_hours
-            db_settings.sh_auto_retry = sh_auto_retry
-            db_settings.sh_retry_wait_hours = sh_retry_wait_hours
-            db_settings.dry_run = dry_run
-            db_settings.upgrade_threshold = upgrade_threshold
 
             if "discord_webhook_url" in form_data:
                 raw_url = str(form_data.get("discord_webhook_url") or "").strip()
@@ -1226,7 +1169,6 @@ async def save_global_settings(
                 vupg = _get_int("cutoffs_upgrade")
                 if vupg is not None:
                     cutoffs["upgrade_threshold"] = vupg
-                    db_settings.upgrade_threshold = vupg
 
             db_settings.scoring_settings = sc
 
@@ -1277,10 +1219,6 @@ async def save_provider(
     priority: int = Form(1),
     is_active: bool = Form(False),
     category: str = Form(""),
-    movie_category_id: int = Form(2000),
-    series_category_id: int = Form(5000),
-    anime_category_id: int = Form(5070),
-    bandwidth_mbit: int = Form(None),
     enable_movies: bool = Form(False),
     enable_series: bool = Form(False),
     enable_anime: bool = Form(False),
@@ -1346,10 +1284,6 @@ async def save_provider(
         provider.api_url = api_url
         provider.priority = priority
         provider.is_active = is_active
-        provider.movie_category_id = movie_category_id
-        provider.series_category_id = series_category_id
-        provider.anime_category_id = anime_category_id
-        provider.bandwidth_mbit = bandwidth_mbit
 
         if provider.type.lower() == "simkl":
             import json
@@ -1771,7 +1705,6 @@ def _render_simkl_device_card(auth_session: dict[str, Any]) -> str:
     """
 
 
-@app.post("/simkl/auth/pin")
 @app.post("/simkl/auth/start")
 async def start_simkl_auth(
     client_id: str = Form(""),
@@ -1945,20 +1878,11 @@ async def run_system_check(request: Request):
     from sqlalchemy import select
 
     from app.config import DEFAULT_USER_AGENT
-    from app.db.models import NotificationChannel, Provider, SystemSettings
+    from app.db.models import NotificationChannel, Provider
     from app.services import simkl
 
     results = {}
     async with async_session_factory() as session:
-        db_settings = (
-            (
-                await session.execute(
-                    select(SystemSettings).where(SystemSettings.id == 1)
-                )
-            )
-            .scalars()
-            .first()
-        )
         providers = (await session.execute(select(Provider))).scalars().all()
         notifications = (
             (await session.execute(select(NotificationChannel))).scalars().all()
@@ -1975,11 +1899,7 @@ async def run_system_check(request: Request):
         ) as client:
             # 1. TMDB
             tmdb_p = get_prov("tmdb")
-            tmdb_key = (
-                tmdb_p.api_key
-                if tmdb_p and tmdb_p.api_key
-                else (db_settings.tmdb_api_key if db_settings else "")
-            ) or ""
+            tmdb_key = (tmdb_p.api_key if tmdb_p and tmdb_p.api_key else "") or ""
             if tmdb_key:
                 try:
                     headers = {}
@@ -2006,11 +1926,7 @@ async def run_system_check(request: Request):
 
             # 2. Treasure Maps
             tm_p = get_prov("treasure_maps")
-            tm_key = (
-                tm_p.api_key
-                if tm_p and tm_p.api_key
-                else (db_settings.treasure_maps_api_key if db_settings else "")
-            ) or ""
+            tm_key = (tm_p.api_key if tm_p and tm_p.api_key else "") or ""
             tm_url = (
                 tm_p.api_url
                 if tm_p and tm_p.api_url
@@ -2038,11 +1954,7 @@ async def run_system_check(request: Request):
 
             # 3. TorBox
             tb_p = get_prov("torbox")
-            tb_key = (
-                tb_p.api_key
-                if tb_p and tb_p.api_key
-                else (db_settings.torbox_api_key if db_settings else "")
-            ) or ""
+            tb_key = (tb_p.api_key if tb_p and tb_p.api_key else "") or ""
             tb_url = (
                 tb_p.api_url
                 if tb_p and tb_p.api_url
@@ -2168,49 +2080,6 @@ async def manual_sync(background_tasks: BackgroundTasks):
         </div>
     """
     )
-
-
-@app.post("/api/automation/rescan-torbox", response_class=HTMLResponse)
-async def rescan_torbox_cache():
-    """Manually invalidates TorBox cache and triggers an immediate full adoption pass."""
-    import logging
-
-    from app.core.self_healing import (
-        adopt_torbox_downloads_for_video,
-        sync_torbox_cache,
-    )
-    from app.core.transfer_poller import reconcile_completed_history_with_torbox
-    from app.db.database import async_session_factory
-    from app.services import torbox
-
-    logger = logging.getLogger(__name__)
-
-    async with async_session_factory() as session:
-        try:
-            raw_downloads = await torbox.get_usenet_downloads(session=session)
-            if raw_downloads is not None:
-                await sync_torbox_cache(session, raw_downloads, force_rescan=True)
-                await adopt_torbox_downloads_for_video(session)
-                live_ids = {
-                    str(d["id"])
-                    for d in raw_downloads
-                    if isinstance(d, dict) and d.get("id") is not None
-                }
-                await reconcile_completed_history_with_torbox(session, live_ids)
-                return HTMLResponse(
-                    content='<span class="text-green-500 font-medium text-sm flex items-center gap-1.5"><svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>Rescan complete! Reload to see changes.</span>'
-                )
-            else:
-                return HTMLResponse(
-                    content='<span class="text-red-500 font-medium text-sm">Error: Could not reach TorBox</span>',
-                    status_code=500,
-                )
-        except Exception as e:
-            logger.error("Error during manual TorBox rescan: %s", e)
-            return HTMLResponse(
-                content=f'<span class="text-red-500 font-medium text-sm">Error: {str(e)}</span>',
-                status_code=500,
-            )
 
 
 @app.get("/api/blacklist")
@@ -2743,19 +2612,9 @@ async def api_trigger_transfer_poller_tick() -> Response:
 @app.get("/api/history")
 async def api_get_push_history(request: Request) -> Response:
     """Return the Push History Ledger (DownloadHistory rows) ordered by most recent push."""
-    from sqlalchemy import select
-
-    from app.core.transfer_poller import (
-        get_push_history_ledger,
-        reconcile_completed_history_with_torbox,
-    )
-    from app.db.models import SeenTorboxDownload
+    from app.core.transfer_poller import get_push_history_ledger
 
     async with async_session_factory() as session:
-        seen_rows = (await session.execute(select(SeenTorboxDownload))).scalars().all()
-        if seen_rows:
-            live_ids = {str(r.torbox_id) for r in seen_rows if r.torbox_id is not None}
-            await reconcile_completed_history_with_torbox(session, live_ids)
         ledger = await get_push_history_ledger(session)
 
     return JSONResponse(
