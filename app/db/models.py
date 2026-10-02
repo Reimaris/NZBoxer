@@ -595,12 +595,29 @@ class MediaItem(Base):
         return pills
 
     @property
+    def effective_release_date(self) -> datetime | None:
+        """Return release_date, or the earliest non-special Season.air_date when release_date is None."""
+        if self.release_date is not None:
+            return self.release_date
+        from sqlalchemy import inspect as sa_inspect
+
+        if "seasons" not in sa_inspect(self).unloaded and self.seasons:
+            air_dates = [
+                s.air_date
+                for s in self.seasons
+                if s.season_number > 0 and s.air_date is not None
+            ]
+            if air_dates:
+                return min(air_dates)
+        return None
+
+    @property
     def is_tba(self) -> bool:
         """True if the item lacks an exact release date or its year is in the future."""
         now_year = datetime.now(timezone.utc).year
         if self.year is not None and self.year > now_year:
             return True
-        return self.release_date is None
+        return self.effective_release_date is None
 
     def __repr__(self) -> str:
         return (

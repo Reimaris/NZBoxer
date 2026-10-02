@@ -2789,8 +2789,9 @@ async def api_history_delete_torbox(history_id: int, request: Request) -> Respon
 
 @app.delete("/api/history/{history_id}")
 async def api_delete_history_entry(history_id: int, request: Request) -> Response:
-    """Delete a DownloadHistory ledger row from SQLite without affecting TorBox or MediaItem status."""
-    from app.db.models import DownloadHistory
+    """Delete a DownloadHistory ledger row from SQLite and reconcile parent status if zero transfers remain."""
+    from app.core.transfer_poller import _recalculate_parent_status
+    from app.db.models import DownloadHistory, MediaItem
 
     async with async_session_factory() as session:
         row = await session.get(DownloadHistory, history_id)
@@ -2799,13 +2800,29 @@ async def api_delete_history_entry(history_id: int, request: Request) -> Respons
                 status_code=404,
                 content={"deleted": False, "error": "History entry not found"},
             )
+        media_item_id = row.media_item_id
         await session.delete(row)
+        await session.flush()
+
+        if media_item_id is not None:
+            item = await session.get(MediaItem, media_item_id)
+            if item is not None:
+                await _recalculate_parent_status(session, item)
+
         await session.commit()
 
     if request.headers.get("HX-Request") == "true":
-        return HTMLResponse(content="", status_code=200)
+        return HTMLResponse(
+            content="",
+            status_code=200,
+            headers={"HX-Trigger": "refreshDashboard"},
+        )
 
-    return JSONResponse(status_code=200, content={"deleted": True, "id": history_id})
+    return JSONResponse(
+        status_code=200,
+        content={"deleted": True, "id": history_id},
+        headers={"HX-Trigger": "refreshDashboard"},
+    )
 
 
 @app.post("/api/items/{item_id}/delete-torbox")

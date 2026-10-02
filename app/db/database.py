@@ -647,6 +647,37 @@ async def init_db(database_url: str) -> None:
             except Exception:
                 pass
 
+            # Backfill missing parent media_items.release_date from earliest non-special season air_date
+            try:
+                await session.execute(
+                    __import__("sqlalchemy").text(
+                        "UPDATE media_items SET release_date = ("
+                        "  SELECT MIN(seasons.air_date) FROM seasons "
+                        "  WHERE seasons.media_item_id = media_items.id "
+                        "    AND seasons.season_number > 0 "
+                        "    AND seasons.air_date IS NOT NULL"
+                        ") WHERE release_date IS NULL AND EXISTS ("
+                        "  SELECT 1 FROM seasons "
+                        "  WHERE seasons.media_item_id = media_items.id "
+                        "    AND seasons.season_number > 0 "
+                        "    AND seasons.air_date IS NOT NULL"
+                        ");"
+                    )
+                )
+                await session.commit()
+            except Exception as e:
+                logger.warning("Error backfilling media_items.release_date: %s", e)
+
+            # Reconcile any COMPLETED/DOWNLOADED items, seasons, or episodes with zero active/completed DownloadHistory rows
+            try:
+                from app.core.transfer_poller import (
+                    reconcile_all_items_transfer_truth,
+                )
+
+                await reconcile_all_items_transfer_truth(session)
+            except Exception as e:
+                logger.warning("Error reconciling transfer truth during startup: %s", e)
+
             # Auto-seed providers from legacy SystemSettings
             try:
                 from sqlalchemy import select

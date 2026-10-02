@@ -137,14 +137,18 @@ def populate_history_snapshot(
         history.target_label = t_label
     if not only_missing or not history.poster_url:
         history.poster_url = item.poster_url
-    if not only_missing or history.simkl_id is None:
-        history.simkl_id = item.simkl_id or s_simkl
+    if s_simkl is not None:
+        history.simkl_id = s_simkl
+    elif not only_missing or history.simkl_id is None:
+        history.simkl_id = item.simkl_id
     if not only_missing or history.tmdb_id is None:
         history.tmdb_id = item.tmdb_id
     if not only_missing or not history.imdb_id:
         history.imdb_id = item.imdb_id
-    if not only_missing or history.anilist_id is None:
-        history.anilist_id = item.anilist_id or s_anilist
+    if s_anilist is not None:
+        history.anilist_id = s_anilist
+    elif not only_missing or history.anilist_id is None:
+        history.anilist_id = item.anilist_id
 
 
 async def detach_item_download_history(session: AsyncSession, item: MediaItem) -> None:

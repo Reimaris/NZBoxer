@@ -209,12 +209,49 @@ def _parse_anilist_start_date(
         yr = int(start_date["year"])
         mo = start_date.get("month")
         dy = start_date.get("day")
-        if yr >= now.year and not mo:
-            # Unannounced month/day in current or future year -> TBA
+        if yr >= now.year and (not mo or not dy):
+            # Unannounced month or day in current or future year -> TBA
             return None
         return datetime(yr, int(mo or 1), int(dy or 1), tzinfo=timezone.utc)
     except (ValueError, TypeError):
         return None
+
+
+def _backfill_item_release_date_from_seasons(
+    item: MediaItem,
+    now: datetime | None = None,
+    seasons_iter: Any | None = None,
+) -> None:
+    """Backfill item.release_date from the earliest non-special Season.air_date when missing."""
+    if item.release_date is None:
+        from sqlalchemy import inspect as sa_inspect
+
+        if seasons_iter is not None:
+            seasons_list = list(seasons_iter)
+        elif "seasons" not in sa_inspect(item).unloaded and item.seasons:
+            seasons_list = list(item.seasons)
+        else:
+            seasons_list = []
+        air_dates = [
+            s.air_date
+            for s in seasons_list
+            if getattr(s, "season_number", 0) > 0 and s.air_date is not None
+        ]
+        if air_dates:
+            earliest = min(air_dates)
+            item.release_date = earliest
+            if item.year is None:
+                item.year = earliest.year
+    if item.release_date is not None and item.status in (
+        MediaStatus.PENDING,
+        MediaStatus.SEARCHING,
+        MediaStatus.FUTURE,
+    ):
+        item.status = (
+            MediaStatus.FUTURE
+            if is_future_or_tba(item.release_date, item.year, now)
+            else MediaStatus.SEARCHING
+        )
 
 
 def _parse_iso_utc(ts_str: str | None) -> datetime | None:
@@ -564,9 +601,6 @@ async def sync_all_providers() -> None:
                         await session.commit()
 
             if any_synced:
-                from app.core.self_healing import adopt_torbox_downloads_for_video
-
-                await adopt_torbox_downloads_for_video(session)
                 logger.info("All provider watchlists synced successfully.")
         except Exception as e:  # noqa: BLE001
             logger.error("Provider sync failed: %s", e)
@@ -691,25 +725,17 @@ async def _sync_items(
             if anilist_id and not existing_season.anilist_id:
                 existing_season.anilist_id = anilist_id
 
-            if not existing_season.monitored:
-                existing_season.monitored = True
-                if existing_season.status != SeasonStatus.FUTURE:
-                    existing_season.status = SeasonStatus.SEARCHING
-                from app.db.models import Episode, EpisodeStatus
+            existing_season.monitored = True
+            if existing_season.status == SeasonStatus.PENDING:
+                existing_season.status = SeasonStatus.SEARCHING
+            from app.db.models import Episode, EpisodeStatus
 
-                ep_stmt = select(Episode).where(Episode.season_id == existing_season.id)
-                eps = (await session.execute(ep_stmt)).scalars().all()
-                for ep in eps:
-                    if ep.status not in (
-                        EpisodeStatus.DOWNLOADED,
-                        EpisodeStatus.COMPLETED,
-                        EpisodeStatus.FUTURE,
-                    ):
-                        ep.status = EpisodeStatus.SEARCHING
-                logger.info(
-                    "    🔄 Activated previously unmonitored consolidated Season %d.",
-                    existing_season.season_number,
-                )
+            ep_stmt = select(Episode).where(Episode.season_id == existing_season.id)
+            eps = (await session.execute(ep_stmt)).scalars().all()
+            for ep in eps:
+                ep.monitored = True
+                if ep.status == EpisodeStatus.PENDING:
+                    ep.status = EpisodeStatus.SEARCHING
             if parent_item is not None:
                 from app.core.push_engine import (
                     evaluate_simkl_watch_progress_and_advance,
@@ -973,6 +999,7 @@ async def _sync_items(
                         else:
                             item.status = MediaStatus.SEARCHING
 
+                    synced_seasons: list[Season] = []
                     for s in details.get("seasons", []):
                         s_num = s.get("season_number")
                         if s_num is not None and s_num > 0:
@@ -1006,25 +1033,24 @@ async def _sync_items(
                                     watch_order=s_num,
                                     type_number=s_num,
                                     entry_type="season",
-                                    monitored=(s_num == 1),
+                                    monitored=True,
                                     episode_count=s.get("episode_count"),
                                     air_date=s_air_date,
                                     status=SeasonStatus.FUTURE
                                     if is_season_future
-                                    else (
-                                        SeasonStatus.SEARCHING
-                                        if (s_num == 1)
-                                        else SeasonStatus.PENDING
-                                    ),
+                                    else SeasonStatus.SEARCHING,
                                 )
                                 session.add(season_obj)
                                 await session.flush()
+                                synced_seasons.append(season_obj)
                                 await _sync_season_episodes(
                                     session, season_obj, tmdb_id=item.tmdb_id
                                 )
                             else:
+                                existing_season.monitored = True
                                 if s_air_date:
                                     existing_season.air_date = s_air_date
+                                synced_seasons.append(existing_season)
                                 await _sync_season_episodes(
                                     session, existing_season, tmdb_id=item.tmdb_id
                                 )
@@ -1035,12 +1061,11 @@ async def _sync_items(
                                 ):
                                     if is_season_future:
                                         existing_season.status = SeasonStatus.FUTURE
-                                    elif existing_season.status == SeasonStatus.FUTURE:
-                                        existing_season.status = (
-                                            SeasonStatus.SEARCHING
-                                            if existing_season.monitored
-                                            else SeasonStatus.PENDING
-                                        )
+                                    else:
+                                        existing_season.status = SeasonStatus.SEARCHING
+                    _backfill_item_release_date_from_seasons(
+                        item, seasons_iter=synced_seasons
+                    )
                 elif item.status in (
                     MediaStatus.PENDING,
                     MediaStatus.SEARCHING,
@@ -1084,6 +1109,7 @@ async def _sync_items(
                 else:
                     item.status = MediaStatus.SEARCHING
 
+        _backfill_item_release_date_from_seasons(item)
         item.simkl_synced_at = datetime.now(timezone.utc)
         from app.core.push_engine import evaluate_simkl_watch_progress_and_advance
 
@@ -1149,6 +1175,7 @@ async def _sync_season_episodes(
 
         if ep_num in existing_eps:
             existing_eps[ep_num].air_date = air_date
+            existing_eps[ep_num].monitored = True
             if existing_eps[ep_num].status in (
                 EpisodeStatus.PENDING,
                 EpisodeStatus.SEARCHING,
@@ -1156,25 +1183,17 @@ async def _sync_season_episodes(
             ):
                 if ep_is_future:
                     existing_eps[ep_num].status = EpisodeStatus.FUTURE
-                elif existing_eps[ep_num].status == EpisodeStatus.FUTURE:
-                    existing_eps[ep_num].status = (
-                        EpisodeStatus.SEARCHING
-                        if season.monitored
-                        else EpisodeStatus.PENDING
-                    )
+                else:
+                    existing_eps[ep_num].status = EpisodeStatus.SEARCHING
         else:
-            if ep_is_future:
-                initial_status = EpisodeStatus.FUTURE
-            else:
-                initial_status = (
-                    EpisodeStatus.SEARCHING
-                    if season.monitored
-                    else EpisodeStatus.PENDING
-                )
+            initial_status = (
+                EpisodeStatus.FUTURE if ep_is_future else EpisodeStatus.SEARCHING
+            )
 
             new_ep = Episode(
                 season_id=season.id,
                 episode_number=ep_num,
+                monitored=True,
                 air_date=air_date,
                 status=initial_status,
             )
@@ -1489,6 +1508,7 @@ async def enrich_anime_metadata(session: AsyncSession, item: MediaItem) -> None:
 
         season_counter = 0
         movie_counter = 0
+        created_or_updated_seasons: list[Season] = []
 
         async def _create_anilist_season(
             s_num: int,
@@ -1504,11 +1524,12 @@ async def enrich_anime_metadata(session: AsyncSession, item: MediaItem) -> None:
                 start_date.get("year") if isinstance(start_date, dict) else None
             )
 
-            is_season_future = is_future_or_tba(s_air_date, start_year, now) or (
-                item.status == MediaStatus.FUTURE
-            )
+            if s_air_date is not None or start_year is not None:
+                is_season_future = is_future_or_tba(s_air_date, start_year, now)
+            else:
+                is_season_future = is_future_or_tba(item.release_date, item.year, now)
             node_id = anilist_node.get("id")
-            is_monitored = True if s_num == 1 else False
+            is_monitored = True
 
             existing_season_stmt = select(Season).where(
                 Season.media_item_id == item.id,
@@ -1540,12 +1561,11 @@ async def enrich_anime_metadata(session: AsyncSession, item: MediaItem) -> None:
                     title=resolved_title,
                     status=SeasonStatus.FUTURE
                     if is_season_future
-                    else (
-                        SeasonStatus.SEARCHING if is_monitored else SeasonStatus.PENDING
-                    ),
+                    else SeasonStatus.SEARCHING,
                 )
                 session.add(season_obj)
                 await session.flush()
+                created_or_updated_seasons.append(season_obj)
 
                 # Create episodes manually since TMDB sync won't work
                 from app.db.models import Episode, EpisodeStatus
@@ -1555,17 +1575,17 @@ async def enrich_anime_metadata(session: AsyncSession, item: MediaItem) -> None:
                         new_ep = Episode(
                             season_id=season_obj.id,
                             episode_number=ep_num,
+                            monitored=True,
                             air_date=s_air_date if ep_num == 1 else None,
                             status=EpisodeStatus.FUTURE
                             if is_season_future
-                            else (
-                                EpisodeStatus.SEARCHING
-                                if is_monitored
-                                else EpisodeStatus.PENDING
-                            ),
+                            else EpisodeStatus.SEARCHING,
                         )
                         session.add(new_ep)
             else:
+                existing_season.monitored = True
+                if s_air_date and not existing_season.air_date:
+                    existing_season.air_date = s_air_date
                 if node_id:
                     existing_season.anilist_id = node_id
                 if resolved_title and not existing_season.title:
@@ -1585,6 +1605,12 @@ async def enrich_anime_metadata(session: AsyncSession, item: MediaItem) -> None:
                 existing_season.watch_order = watch_order
                 existing_season.type_number = type_number
                 existing_season.entry_type = entry_type
+                if (
+                    existing_season.status == SeasonStatus.PENDING
+                    and not is_season_future
+                ):
+                    existing_season.status = SeasonStatus.SEARCHING
+                created_or_updated_seasons.append(existing_season)
 
         for idx, node in enumerate(hierarchy_list):
             node_format = str(node.get("format") or "").upper()
@@ -1607,6 +1633,9 @@ async def enrich_anime_metadata(session: AsyncSession, item: MediaItem) -> None:
                 resolved_type_number,
             )
 
+        _backfill_item_release_date_from_seasons(
+            item, now, seasons_iter=created_or_updated_seasons
+        )
         await consolidate_standalone_anime_sequels(session)
 
 
@@ -1951,15 +1980,16 @@ async def reset_anime_metadata(session: AsyncSession, item_id: int) -> MediaItem
         s_air_date = _parse_anilist_start_date(start_date, now)
         start_year = start_date.get("year") if isinstance(start_date, dict) else None
 
-        is_season_future = is_future_or_tba(s_air_date, start_year, now) or (
-            item.status == MediaStatus.FUTURE
-        )
+        if s_air_date is not None or start_year is not None:
+            is_season_future = is_future_or_tba(s_air_date, start_year, now)
+        else:
+            is_season_future = is_future_or_tba(item.release_date, item.year, now)
 
         season_obj = existing_seasons_map.get(s_num)
         if not season_obj:
             # Create new season
             season_title = node.get("title", {})
-            is_monitored = True if s_num == 1 else False
+            is_monitored = True
             season_obj = Season(
                 media_item_id=item.id,
                 season_number=s_num,
@@ -1975,7 +2005,7 @@ async def reset_anime_metadata(session: AsyncSession, item_id: int) -> MediaItem
                 or season_title.get("native"),
                 status=SeasonStatus.FUTURE
                 if is_season_future
-                else (SeasonStatus.SEARCHING if is_monitored else SeasonStatus.PENDING),
+                else SeasonStatus.SEARCHING,
             )
             session.add(season_obj)
             await session.flush()
@@ -1983,6 +2013,7 @@ async def reset_anime_metadata(session: AsyncSession, item_id: int) -> MediaItem
 
         else:
             # Update existing season metadata
+            season_obj.monitored = True
             season_title = node.get("title", {})
             season_obj.title = (
                 season_title.get("english")
@@ -2004,13 +2035,7 @@ async def reset_anime_metadata(session: AsyncSession, item_id: int) -> MediaItem
                 SeasonStatus.FUTURE,
             ):
                 season_obj.status = (
-                    SeasonStatus.FUTURE
-                    if is_season_future
-                    else (
-                        SeasonStatus.SEARCHING
-                        if season_obj.monitored
-                        else SeasonStatus.PENDING
-                    )
+                    SeasonStatus.FUTURE if is_season_future else SeasonStatus.SEARCHING
                 )
 
         season_obj.last_searched_at = None
@@ -2020,6 +2045,7 @@ async def reset_anime_metadata(session: AsyncSession, item_id: int) -> MediaItem
             for ep_num in range(1, ep_count + 1):
                 ep_obj = existing_episodes_map.pop((s_num, ep_num), None)
                 if ep_obj:
+                    ep_obj.monitored = True
                     # Episode exists: preserve downloaded/completed/downloading state
                     if ep_obj.status in (
                         EpisodeStatus.DOWNLOADED,
@@ -2032,11 +2058,7 @@ async def reset_anime_metadata(session: AsyncSession, item_id: int) -> MediaItem
                         ep_obj.status = (
                             EpisodeStatus.FUTURE
                             if is_season_future
-                            else (
-                                EpisodeStatus.SEARCHING
-                                if season_obj.monitored
-                                else EpisodeStatus.PENDING
-                            )
+                            else EpisodeStatus.SEARCHING
                         )
                     if s_air_date and ep_num == 1 and not ep_obj.air_date:
                         ep_obj.air_date = s_air_date
@@ -2045,14 +2067,11 @@ async def reset_anime_metadata(session: AsyncSession, item_id: int) -> MediaItem
                     new_ep = Episode(
                         season_id=season_obj.id,
                         episode_number=ep_num,
+                        monitored=True,
                         air_date=s_air_date if ep_num == 1 else None,
                         status=EpisodeStatus.FUTURE
                         if is_season_future
-                        else (
-                            EpisodeStatus.SEARCHING
-                            if season_obj.monitored
-                            else EpisodeStatus.PENDING
-                        ),
+                        else EpisodeStatus.SEARCHING,
                     )
                     session.add(new_ep)
 
@@ -2064,6 +2083,11 @@ async def reset_anime_metadata(session: AsyncSession, item_id: int) -> MediaItem
     for s_num, old_season in existing_seasons_map.items():
         if s_num not in valid_season_numbers:
             await session.delete(old_season)
+
+    active_seasons = [
+        s for s_num, s in existing_seasons_map.items() if s_num in valid_season_numbers
+    ]
+    _backfill_item_release_date_from_seasons(item, now, seasons_iter=active_seasons)
 
     item.last_searched_at = None
     item.last_metadata_refreshed_at = now
@@ -2131,7 +2155,7 @@ def classify_v3_status_tier(item: MediaItem) -> str:
                     if not is_future_or_tba(s.air_date):
                         has_released_entry = True
                         break
-                elif not is_future_or_tba(item.release_date, item.year):
+                elif not is_future_or_tba(item.effective_release_date, item.year):
                     has_released_entry = True
                     break
             if not has_released_entry:
@@ -2139,7 +2163,7 @@ def classify_v3_status_tier(item: MediaItem) -> str:
             return "ready_to_push"
 
     if item.status == MediaStatus.FUTURE or is_future_or_tba(
-        item.release_date, item.year
+        item.effective_release_date, item.year
     ):
         return "upcoming"
 

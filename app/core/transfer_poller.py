@@ -338,21 +338,40 @@ def _is_history_terminal(status_detail: str | None) -> bool:
 
 
 def _sync_season_status_from_episodes(season: Season | None) -> None:
-    """Update Season.status when an Episode finishes if no Season Pack is actively downloading."""
-    if season is None or season.status != SeasonStatus.DOWNLOADING:
+    """Roll up Episode statuses to Season.status across any non-future season with episodes."""
+    if season is None or season.status in (SeasonStatus.FUTURE, SeasonStatus.IGNORED):
         return
-    # Check if there is an active season-pack DownloadHistory (episode_id is None)
+    from sqlalchemy import inspect as sa_inspect
+
+    hist_list = (
+        list(season.download_history or [])
+        if "download_history" not in sa_inspect(season).unloaded
+        else []
+    )
     has_active_pack = any(
         not h.is_dismissed
         and h.episode_id is None
         and not _is_history_terminal(h.status_detail)
-        for h in getattr(season, "download_history", []) or []
+        for h in hist_list
     )
     if has_active_pack:
+        season.status = SeasonStatus.DOWNLOADING
         return
 
-    eps = getattr(season, "episodes", []) or []
+    eps = (
+        list(season.episodes or [])
+        if "episodes" not in sa_inspect(season).unloaded
+        else []
+    )
+    if not eps:
+        return
+
     if any(ep.status == EpisodeStatus.DOWNLOADING for ep in eps):
+        season.status = SeasonStatus.DOWNLOADING
+        return
+
+    if any(ep.status == EpisodeStatus.FAILED for ep in eps):
+        season.status = SeasonStatus.FAILED
         return
 
     non_future_eps = [ep for ep in eps if ep.status != EpisodeStatus.FUTURE]
@@ -361,8 +380,13 @@ def _sync_season_status_from_episodes(season: Season | None) -> None:
         for ep in non_future_eps
     ):
         season.status = SeasonStatus.COMPLETED
-    elif any(ep.status == EpisodeStatus.FAILED for ep in eps):
-        season.status = SeasonStatus.FAILED
+    elif season.status in (
+        SeasonStatus.DOWNLOADING,
+        SeasonStatus.COMPLETED,
+        SeasonStatus.DOWNLOADED,
+        SeasonStatus.PENDING,
+    ):
+        season.status = SeasonStatus.SEARCHING
 
 
 async def _count_active_transfers_for_item(
@@ -813,6 +837,9 @@ async def _run_transfer_poller_tick_with_session(
         # 3. Still actively downloading / processing
         history.status_detail = status_lower or "downloading"
 
+    for aff_item in affected_items.values():
+        await _recalculate_parent_status(session, aff_item)
+
     await session.commit()
 
     # Dispatch show-level batch notifications for any show/movie whose active transfers have all settled
@@ -1193,7 +1220,7 @@ async def _recalculate_parent_status(
     session: AsyncSession,
     item: MediaItem | None,
 ) -> None:
-    """Recalculate parent MediaItem status from its child Seasons and Episodes."""
+    """Recalculate parent MediaItem, Season, and Episode statuses strictly from DownloadHistory truth."""
     if item is None or item.id is None:
         return
 
@@ -1202,40 +1229,203 @@ async def _recalculate_parent_status(
             await session.execute(
                 select(Season)
                 .where(Season.media_item_id == item.id)
-                .options(selectinload(Season.episodes))
+                .options(
+                    selectinload(Season.episodes),
+                    selectinload(Season.download_history),
+                )
             )
         )
         .scalars()
         .all()
     )
+
+    season_ids = [s.id for s in seasons if s.id is not None]
+    ep_ids = [ep.id for s in seasons for ep in (s.episodes or []) if ep.id is not None]
+
+    from sqlalchemy import or_
+
+    hist_conds = [DownloadHistory.media_item_id == item.id]
+    if season_ids:
+        hist_conds.append(DownloadHistory.season_id.in_(season_ids))
+    if ep_ids:
+        hist_conds.append(DownloadHistory.episode_id.in_(ep_ids))
+
+    item_histories = (
+        (await session.execute(select(DownloadHistory).where(or_(*hist_conds))))
+        .scalars()
+        .all()
+    )
+
+    def _is_hist_active(h: DownloadHistory) -> bool:
+        if h.is_dismissed:
+            return False
+        d = (h.status_detail or "").strip().lower()
+        return d in ("downloading", "queued", "processing", "unpacking", "verifying")
+
+    def _is_hist_completed(h: DownloadHistory) -> bool:
+        d = (h.status_detail or "").strip().lower()
+        return d in ("completed", "")
+
+    def _is_hist_failed(h: DownloadHistory) -> bool:
+        if h.is_dismissed:
+            return False
+        d = (h.status_detail or "").strip().lower()
+        return d.startswith("failed")
+
     if not seasons:
+        has_active_movie = any(_is_hist_active(h) for h in item_histories)
+        has_completed_movie = any(_is_hist_completed(h) for h in item_histories)
+        has_failed_movie = any(_is_hist_failed(h) for h in item_histories)
+
+        if has_active_movie:
+            item.status = MediaStatus.DOWNLOADING
+        elif has_completed_movie:
+            item.status = MediaStatus.COMPLETED
+        elif has_failed_movie and item.status == MediaStatus.FAILED:
+            item.status = MediaStatus.FAILED
+        else:
+            if item.status != MediaStatus.FUTURE:
+                item.status = MediaStatus.SEARCHING
+                item.fail_count = 0
+                item.last_error = None
+                if hasattr(item, "completed_at"):
+                    setattr(item, "completed_at", None)
         return
 
-    any_downloading = False
-    any_completed = False
-
     for s in seasons:
-        if s.status == SeasonStatus.DOWNLOADING:
-            any_downloading = True
-        elif s.status in (SeasonStatus.COMPLETED, SeasonStatus.DOWNLOADED):
-            any_completed = True
+        if s.season_number > 0 and s.status != SeasonStatus.IGNORED:
+            s.monitored = True
+        has_completed_pack = any(
+            h.season_id == s.id and h.episode_id is None and _is_hist_completed(h)
+            for h in item_histories
+        )
+        has_active_pack = any(
+            h.season_id == s.id and h.episode_id is None and _is_hist_active(h)
+            for h in item_histories
+        )
 
         for ep in s.episodes or []:
-            if ep.status == EpisodeStatus.DOWNLOADING:
-                any_downloading = True
-            elif ep.status in (EpisodeStatus.COMPLETED, EpisodeStatus.DOWNLOADED):
-                any_completed = True
+            if ep.status != EpisodeStatus.IGNORED:
+                ep.monitored = True
+            has_completed_ep = has_completed_pack or any(
+                h.episode_id == ep.id and _is_hist_completed(h) for h in item_histories
+            )
+            has_active_ep = has_active_pack or any(
+                h.episode_id == ep.id and _is_hist_active(h) for h in item_histories
+            )
+            if (
+                ep.status in (EpisodeStatus.COMPLETED, EpisodeStatus.DOWNLOADED)
+                and not has_completed_ep
+            ):
+                ep.status = EpisodeStatus.SEARCHING
+                ep.fail_count = 0
+                ep.last_error = None
+            elif ep.status == EpisodeStatus.DOWNLOADING and not has_active_ep:
+                ep.status = (
+                    EpisodeStatus.COMPLETED
+                    if has_completed_ep
+                    else EpisodeStatus.SEARCHING
+                )
+            elif ep.status == EpisodeStatus.PENDING:
+                ep.status = EpisodeStatus.SEARCHING
+
+        _sync_season_status_from_episodes(s)
+
+        if not s.episodes:
+            if (
+                s.status in (SeasonStatus.COMPLETED, SeasonStatus.DOWNLOADED)
+                and not has_completed_pack
+            ):
+                s.status = SeasonStatus.SEARCHING
+                s.fail_count = 0
+                s.last_error = None
+            elif s.status == SeasonStatus.DOWNLOADING and not has_active_pack:
+                s.status = (
+                    SeasonStatus.COMPLETED
+                    if has_completed_pack
+                    else SeasonStatus.SEARCHING
+                )
+            elif s.status == SeasonStatus.PENDING and s.season_number > 0:
+                s.status = SeasonStatus.SEARCHING
+
+    any_downloading = any(
+        s.status == SeasonStatus.DOWNLOADING
+        or any(ep.status == EpisodeStatus.DOWNLOADING for ep in (s.episodes or []))
+        for s in seasons
+    )
+    any_failed = any(
+        s.status == SeasonStatus.FAILED
+        or any(ep.status == EpisodeStatus.FAILED for ep in (s.episodes or []))
+        for s in seasons
+    )
+    released_seasons = [
+        s for s in seasons if s.season_number > 0 and s.status != SeasonStatus.FUTURE
+    ]
 
     if any_downloading:
         item.status = MediaStatus.DOWNLOADING
-    elif any_completed:
+    elif any_failed:
+        item.status = MediaStatus.FAILED
+    elif released_seasons and all(
+        s.status in (SeasonStatus.COMPLETED, SeasonStatus.DOWNLOADED)
+        for s in released_seasons
+    ):
         item.status = MediaStatus.COMPLETED
+    elif not released_seasons and any(
+        s.status == SeasonStatus.FUTURE for s in seasons if s.season_number > 0
+    ):
+        item.status = MediaStatus.FUTURE
     else:
         item.status = MediaStatus.SEARCHING
         item.fail_count = 0
         item.last_error = None
         if hasattr(item, "completed_at"):
             setattr(item, "completed_at", None)
+
+
+async def reconcile_all_items_transfer_truth(session: AsyncSession) -> int:
+    """Reconcile all non-ignored MediaItems, Seasons, and Episodes against active/completed DownloadHistory truth."""
+    stmt = (
+        select(MediaItem)
+        .where(MediaItem.status != MediaStatus.IGNORED)
+        .options(
+            selectinload(MediaItem.seasons).selectinload(Season.episodes),
+        )
+    )
+    items = (await session.execute(stmt)).scalars().unique().all()
+    reconciled = 0
+    for item in items:
+        needs_check = item.status in (
+            MediaStatus.COMPLETED,
+            MediaStatus.DOWNLOADED,
+            MediaStatus.DOWNLOADING,
+            MediaStatus.PENDING,
+        ) or any(
+            s.status
+            in (
+                SeasonStatus.COMPLETED,
+                SeasonStatus.DOWNLOADED,
+                SeasonStatus.DOWNLOADING,
+                SeasonStatus.PENDING,
+            )
+            or not s.monitored
+            or any(
+                ep.status
+                in (
+                    EpisodeStatus.COMPLETED,
+                    EpisodeStatus.DOWNLOADED,
+                    EpisodeStatus.DOWNLOADING,
+                    EpisodeStatus.PENDING,
+                )
+                or not ep.monitored
+                for ep in (s.episodes or [])
+            )
+            for s in (item.seasons or [])
+        )
+        if needs_check:
+            await _recalculate_parent_status(session, item)
+            reconciled += 1
+    return reconciled
 
 
 async def manual_delete_from_torbox(
@@ -1396,7 +1586,7 @@ async def manual_delete_from_torbox(
             h.download_speed_bytes = 0
             h.eta_seconds = None
 
-    # Reset target entities to SEARCHING (WANTED)
+    # Reset target entities to SEARCHING (Ready to Push)
     if episode is not None:
         episode.status = EpisodeStatus.SEARCHING
         episode.fail_count = 0
@@ -1431,6 +1621,7 @@ async def manual_delete_from_torbox(
             setattr(item, "torbox_id", None)
         if hasattr(item, "completed_at"):
             setattr(item, "completed_at", None)
+        await _recalculate_parent_status(session, item)
 
     await session.commit()
 
@@ -1478,10 +1669,18 @@ async def get_push_history_ledger(session: AsyncSession) -> list[dict[str, Any]]
             media_year = item.year
             alt_title = item.alt_title
             poster_url = item.poster_url or h.poster_url
-            simkl_id = item.simkl_id or h.simkl_id
+            simkl_id = (
+                (season.simkl_id if season and season.simkl_id else None)
+                or item.simkl_id
+                or h.simkl_id
+            )
             tmdb_id = item.tmdb_id or h.tmdb_id
             imdb_id = item.imdb_id or h.imdb_id
-            anilist_id = item.anilist_id or h.anilist_id
+            anilist_id = (
+                (season.anilist_id if season and season.anilist_id else None)
+                or item.anilist_id
+                or h.anilist_id
+            )
             target_label = discord.format_target_label(
                 item=item, season=season, episode=episode
             )
