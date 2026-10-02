@@ -754,6 +754,7 @@ async def _dispatch_candidate_list_to_torbox(
             is_fallback=bool(cand.get("is_fallback", False)),
             grabbed_language=cand.get("matched_language"),
             push_mode=push_mode,
+            status_detail="downloading",
             notification_sent=False,
         )
         history.media_item = item

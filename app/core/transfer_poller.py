@@ -1129,6 +1129,27 @@ async def cancel_active_push(session: AsyncSession, history_id: int) -> bool:
     if old_torbox_id:
         await _delete_and_purge_torbox_transfer(session, old_torbox_id)
 
+    if history.media_item is not None and history.media_item.id is not None:
+        sys_settings = (
+            (
+                await session.execute(
+                    select(SystemSettings).where(SystemSettings.id == 1)
+                )
+            )
+            .scalars()
+            .first()
+        )
+        sh_max_retries = (
+            sys_settings.sh_max_retries
+            if sys_settings and sys_settings.sh_max_retries is not None
+            else 3
+        )
+        await _dispatch_settled_show_notifications(
+            session=session,
+            affected_items={history.media_item.id: history.media_item},
+            sh_max_retries=sh_max_retries,
+        )
+
     remaining = await count_downloading_entities(session)
     if remaining == 0:
         transfer_poller.sleep()
@@ -1488,9 +1509,32 @@ async def get_push_history_ledger(session: AsyncSession) -> list[dict[str, Any]]
                 category_key = "movie"
             is_detached = True
 
-        # Status badge classification
+        # Status badge classification (active downloading transfers stay in Card 5 Active Pushes)
         detail_raw = (h.status_detail or "").strip()
         detail_low = detail_raw.lower()
+        entity_is_downloading = (
+            (episode is not None and episode.status == EpisodeStatus.DOWNLOADING)
+            or (
+                episode is None
+                and season is not None
+                and season.status == SeasonStatus.DOWNLOADING
+            )
+            or (
+                episode is None
+                and season is None
+                and item is not None
+                and item.status == MediaStatus.DOWNLOADING
+            )
+        )
+        if detail_low in (
+            "downloading",
+            "queued",
+            "processing",
+            "unpacking",
+            "verifying",
+        ) or (not detail_low and entity_is_downloading):
+            continue
+
         if detail_low == "deleted":
             torbox_status = "DELETED"
             status_key = "deleted"
@@ -1511,16 +1555,6 @@ async def get_push_history_ledger(session: AsyncSession) -> list[dict[str, Any]]
                 if ":" in detail_raw
                 else detail_raw
             )
-        elif detail_low in (
-            "downloading",
-            "queued",
-            "processing",
-            "unpacking",
-            "verifying",
-        ):
-            torbox_status = detail_low.upper()
-            status_key = "downloading"
-            failure_reason = None
         else:
             torbox_status = "READY ON TORBOX"
             status_key = "completed"
