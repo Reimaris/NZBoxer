@@ -221,7 +221,9 @@
             const data = await resp.json();
             if (resp.ok && data.pushed) {
                 this.hasPushedInSession = true;
-                this.statusMessage = "Grabbed & pushed \"" + rel.title + "\" to TorBox!";
+                this.statusMessage = data.queued
+                    ? "Paused by TorBox rate limit — \"" + rel.title + "\" is queued and will push automatically."
+                    : "Grabbed & pushed \"" + rel.title + "\" to TorBox!";
             } else {
                 this.statusError = data.error || "Failed to grab release.";
             }

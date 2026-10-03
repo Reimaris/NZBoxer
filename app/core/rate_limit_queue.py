@@ -128,18 +128,43 @@ async def resume_rate_limited_pushes() -> int:
         rate_limit_queue.sleep()
         return 0
 
-    # Group targets per item, preserving FIFO order of first appearance.
-    groups: dict[int, dict[str, list[int]]] = {}
+    # Preserve FIFO order of queued rows (manual picks keep their chosen release;
+    # auto-push targets are grouped per item).
+    work_items: list[tuple[str, int, dict[str, Any]]] = []
+    auto_groups: dict[int, dict[str, list[int]]] = {}
     for h in rows:
         assert h.media_item_id is not None
-        grp = groups.setdefault(h.media_item_id, {"season_ids": [], "episode_ids": []})
+        if (h.push_mode or "auto").lower() == "manual" and h.nzb_guid:
+            work_items.append(
+                (
+                    "manual",
+                    h.media_item_id,
+                    {
+                        "guid": h.nzb_guid,
+                        "title": h.nzb_title,
+                        "size_bytes": h.size_bytes or 0,
+                        "score": h.score or 0.0,
+                        "is_fallback": bool(h.is_fallback),
+                        "matched_language": h.grabbed_language,
+                        "season_id": h.season_id,
+                        "episode_id": h.episode_id,
+                    },
+                )
+            )
+            continue
+        if h.media_item_id not in auto_groups:
+            grp: dict[str, list[int]] = {"season_ids": [], "episode_ids": []}
+            auto_groups[h.media_item_id] = grp
+            work_items.append(("auto", h.media_item_id, grp))
+        else:
+            grp = auto_groups[h.media_item_id]
         if h.episode_id is not None:
             grp["episode_ids"].append(h.episode_id)
         elif h.season_id is not None:
             grp["season_ids"].append(h.season_id)
 
     resumed = 0
-    for item_id, payload in groups.items():
+    for mode, item_id, payload in work_items:
         if torbox.get_cooldown_remaining(is_manual=True) > 0:
             break
         if not item_lock_manager.try_acquire(item_id, owner="background"):
@@ -150,12 +175,22 @@ async def resume_rate_limited_pushes() -> int:
                 if item is None:
                     continue
                 transfer_poller.register_in_flight_push(item_id, item.title)
-                logger.info(
-                    "▶️ Resuming rate-limited Auto-Push for '%s' (%d target(s)).",
-                    item.title,
-                    len(payload["season_ids"]) + len(payload["episode_ids"]) or 1,
-                )
-                await execute_auto_push(session, item_id, dict(payload))
+                if mode == "manual":
+                    from app.core.push_engine import execute_manual_grab
+
+                    logger.info(
+                        "▶️ Resuming rate-limited manual pick for '%s' (%s).",
+                        item.title,
+                        payload.get("title"),
+                    )
+                    await execute_manual_grab(session, item_id, dict(payload))
+                else:
+                    logger.info(
+                        "▶️ Resuming rate-limited Auto-Push for '%s' (%d target(s)).",
+                        item.title,
+                        len(payload["season_ids"]) + len(payload["episode_ids"]) or 1,
+                    )
+                    await execute_auto_push(session, item_id, dict(payload))
                 resumed += 1
         except Exception as exc:  # noqa: BLE001
             logger.exception(

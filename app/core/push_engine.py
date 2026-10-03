@@ -948,8 +948,10 @@ async def _record_auto_push_failure(
     season: Season | None = None,
     episode: Episode | None = None,
     reason: str,
+    push_mode: str = "auto",
+    candidate: dict[str, Any] | None = None,
 ) -> DownloadHistory:
-    """Persist a visible failed DownloadHistory row for an explicit Auto-Push target that dispatched nothing.
+    """Persist a visible failed DownloadHistory row for an explicit push target that dispatched nothing.
 
     If ``reason`` describes a TorBox rate limit, the target is instead queued as a
     ``RATE_LIMITED`` (paused) push that resumes automatically after the cooldown (ADR-094).
@@ -989,21 +991,55 @@ async def _record_auto_push_failure(
     else:
         label = f"{item.title} ({item.year})" if item.year else item.title
 
+    cand_parsed = candidate.get("parsed") if candidate else None
+    cand_title = str(candidate.get("title") or "").strip() if candidate else ""
+    cand_guid = (
+        (str(candidate.get("guid") or "").strip() or None) if candidate else None
+    )
+
     history = DownloadHistory(
         media_item_id=item.id,
         season_id=target_season_id,
         episode_id=target_episode_id,
-        nzb_guid=None,
+        nzb_guid=cand_guid if rate_limited else None,
         nzb_title=(
-            f"{label} — Paused ({resume_time_label()})"
-            if rate_limited
-            else f"{label} — No matching release dispatched"
+            cand_title
+            if (rate_limited and cand_title)
+            else (
+                f"{label} — Paused ({resume_time_label()})"
+                if rate_limited
+                else f"{label} — No matching release dispatched"
+            )
         ),
         torbox_id=None,
         torbox_hash=None,
-        score=0.0,
+        score=float(candidate.get("score") or 0.0)
+        if (rate_limited and candidate)
+        else 0.0,
+        size_bytes=int(candidate.get("size_bytes") or 0)
+        if (rate_limited and candidate and candidate.get("size_bytes"))
+        else None,
+        resolution=(cand_parsed.resolution if cand_parsed else None)
+        if rate_limited
+        else None,
+        video_codec=(cand_parsed.video_codec if cand_parsed else None)
+        if rate_limited
+        else None,
+        audio_codec=(cand_parsed.audio_codec if cand_parsed else None)
+        if rate_limited
+        else None,
+        source=(cand_parsed.source if cand_parsed else None) if rate_limited else None,
+        release_group=(cand_parsed.release_group if cand_parsed else None)
+        if rate_limited
+        else None,
+        is_fallback=bool(candidate.get("is_fallback", False))
+        if (rate_limited and candidate)
+        else False,
+        grabbed_language=candidate.get("matched_language")
+        if (rate_limited and candidate)
+        else None,
         status_detail=RATE_LIMITED_DETAIL if rate_limited else reason,
-        push_mode="auto",
+        push_mode=push_mode,
         is_dismissed=False,
         notification_sent=True,
         progress_pct=0.0,
@@ -1476,7 +1512,9 @@ async def _push_single_season_or_movie_entry(
                                 session,
                                 item=item,
                                 season=season,
-                                episode=ep,
+                                episode=None
+                                if is_rate_limit_error(ep_tb_errors[-1])
+                                else ep,
                                 reason=f"failed: {ep_tb_errors[-1]}",
                             )
                             await session.commit()
@@ -1602,7 +1640,7 @@ async def advance_season_buffer(
     """
     from sqlalchemy import inspect as sa_inspect
 
-    if "seasons" in sa_inspect(item).unloaded:
+    if "seasons" in sa_inspect(item).unloaded or not item.seasons:
         await session.refresh(item, ["seasons"])
     if not item.seasons:
         return []
@@ -1625,12 +1663,6 @@ async def advance_season_buffer(
     dispatched: list[DownloadHistory] = []
     idx = 0
     while idx < len(remaining):
-        if torbox.get_cooldown_remaining(is_manual=True) > 0:
-            logger.warning(
-                "Halting Season Buffer Expansion for '%s' — TorBox cooldown active.",
-                item.title,
-            )
-            break
         candidate_entry = remaining[idx]
         is_eligible = (
             candidate_entry.id not in excluded
@@ -1643,7 +1675,21 @@ async def advance_season_buffer(
             )
             and not candidate_entry.is_tba
         )
-        if is_eligible:
+        cooldown_rem = torbox.get_cooldown_remaining(is_manual=True)
+        if cooldown_rem > 0:
+            if is_eligible:
+                await _record_auto_push_failure(
+                    session,
+                    item=item,
+                    season=candidate_entry,
+                    episode=None,
+                    reason=f"failed: TorBox rate limit exceeded (cooldown: {int(cooldown_rem)}s)",
+                )
+                await session.commit()
+                excluded.add(candidate_entry.id)
+            else:
+                break
+        elif is_eligible:
             hists = await _push_single_season_or_movie_entry(
                 session=session,
                 item=item,
@@ -2047,9 +2093,7 @@ async def execute_auto_push(
         )
         covered_season_ids: set[int] = set()
         candidates_found_acc: list[bool] = []
-        for idx_s, season in enumerate(selected_seasons):
-            if idx_s > 0 and torbox.get_cooldown_remaining(is_manual=True) > 0:
-                break
+        for season in selected_seasons:
             season.fail_count = 0
             for ep in season.episodes:
                 ep.fail_count = 0
@@ -2068,8 +2112,6 @@ async def execute_auto_push(
                 dispatched_histories.extend(s_hists)
                 pushed_seasons.append(season)
             covered_season_ids.add(season.id)
-            if torbox.get_cooldown_remaining(is_manual=True) > 0:
-                break
         if candidates_found_acc:
             any_candidates_found = True
 
@@ -2084,16 +2126,15 @@ async def execute_auto_push(
                     continue
                 cooldown_rem = torbox.get_cooldown_remaining(is_manual=True)
                 if cooldown_rem > 0:
-                    if not dispatched_histories:
-                        await _record_auto_push_failure(
-                            session,
-                            item=item,
-                            season=parent_s,
-                            episode=ep_obj,
-                            reason=f"failed: TorBox rate limit exceeded (cooldown: {int(cooldown_rem)}s)",
-                        )
-                        await session.commit()
-                    break
+                    await _record_auto_push_failure(
+                        session,
+                        item=item,
+                        season=parent_s,
+                        episode=ep_obj,
+                        reason=f"failed: TorBox rate limit exceeded (cooldown: {int(cooldown_rem)}s)",
+                    )
+                    await session.commit()
+                    continue
                 ep_obj.fail_count = 0
                 await session.commit()
                 raw_ep_results = await _query_show_across_indexers(
@@ -2145,7 +2186,7 @@ async def execute_auto_push(
                         episode=ep_obj,
                         reason=f"failed: {ep_tb_errors[-1]}",
                     )
-                    break
+                    await session.commit()
                 else:
                     await _record_auto_push_failure(
                         session,
@@ -2165,19 +2206,14 @@ async def execute_auto_push(
             )
 
         # Season Expansion & Movie Bridge Lookahead when auto_advance_seasons is ON
-        if (
-            auto_advance_seasons
-            and pushed_seasons
-            and torbox.get_cooldown_remaining(is_manual=True) == 0
-        ):
+        if auto_advance_seasons and pushed_seasons:
             max_order = max(s.watch_order for s in pushed_seasons)
-            pushed_ids = {s.id for s in pushed_seasons}
             adv_hists = await advance_season_buffer(
                 session=session,
                 item=item,
                 base_watch_order=max_order,
                 effective_cfg=effective_cfg,
-                excluded_season_ids=pushed_ids,
+                excluded_season_ids=covered_season_ids,
             )
             dispatched_histories.extend(adv_hists)
 
@@ -2484,6 +2520,18 @@ async def execute_manual_grab(
         item.fail_count = 0
     await session.commit()
 
+    if (
+        "auto_advance_seasons" in payload
+        and payload["auto_advance_seasons"] is not None
+    ):
+        val = payload["auto_advance_seasons"]
+        item.auto_advance_seasons = (
+            val
+            if isinstance(val, bool)
+            else str(val).strip().lower() in ("1", "true", "yes", "on")
+        )
+        await session.commit()
+
     parsed = parse_release_name(title)
     candidate = {
         "guid": guid,
@@ -2510,30 +2558,49 @@ async def execute_manual_grab(
         error_out=manual_tb_errors,
     )
     if hist is None:
-        await session.commit()
         err_msg = (
             manual_tb_errors[-1]
             if manual_tb_errors
             else "Release failed fake verification or TorBox dispatch"
         )
+        if is_rate_limit_error(err_msg):
+            queued_hist = await _record_auto_push_failure(
+                session,
+                item=item,
+                season=season_obj,
+                episode=episode_obj,
+                reason=f"failed: {err_msg}",
+                push_mode="manual",
+                candidate=candidate,
+            )
+            if (
+                season_obj is not None
+                and episode_obj is None
+                and getattr(item, "auto_advance_seasons", False)
+            ):
+                await advance_season_buffer(
+                    session=session,
+                    item=item,
+                    base_watch_order=season_obj.watch_order,
+                    excluded_season_ids={season_obj.id},
+                )
+            await session.commit()
+            return {
+                "pushed": True,
+                "queued": True,
+                "push_mode": "manual",
+                "history_id": queued_hist.id,
+                "guid": queued_hist.nzb_guid,
+                "torbox_id": None,
+                "status_code": 200,
+            }
+        await session.commit()
         return {
             "pushed": False,
             "push_mode": "manual",
             "error": err_msg,
-            "status_code": 429 if manual_tb_errors else 400,
+            "status_code": 400,
         }
-
-    if (
-        "auto_advance_seasons" in payload
-        and payload["auto_advance_seasons"] is not None
-    ):
-        val = payload["auto_advance_seasons"]
-        item.auto_advance_seasons = (
-            val
-            if isinstance(val, bool)
-            else str(val).strip().lower() in ("1", "true", "yes", "on")
-        )
-        await session.commit()
 
     await dispatch_batch_notification_event(
         session,

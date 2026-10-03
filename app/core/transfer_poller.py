@@ -1091,6 +1091,28 @@ async def _handle_transfer_failure(
         # the final settled notification will summarize any auto-replacements.
         return
 
+    # If auto-replacement was blocked by an active TorBox rate-limit cooldown while retry budget remains,
+    # pause the target in the rate-limit queue rather than failing it (ADR-094).
+    cooldown_rem = torbox.get_cooldown_remaining(is_manual=True)
+    if target.fail_count <= sh_max_retries and cooldown_rem > 0:
+        from app.core.push_engine import _record_auto_push_failure
+
+        history.status_detail = "replaced"
+        history.is_dismissed = True
+        history.notification_sent = True
+        history.download_speed_bytes = 0
+        history.eta_seconds = None
+        queued_hist = await _record_auto_push_failure(
+            session,
+            item=item,
+            season=season,
+            episode=episode,
+            reason=f"failed: TorBox rate limit exceeded (cooldown: {int(cooldown_rem)}s)",
+        )
+        queued_hist.auto_replaced_count = prev_auto_replaced + 1
+        await session.commit()
+        return
+
     # Budget exhausted (`target.fail_count > sh_max_retries`) or zero replacement candidates found:
     # Stop auto-replacing, transition target to FAILED, keep history row in Active Pushes (`is_dismissed = False`).
     history.download_speed_bytes = 0
