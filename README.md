@@ -11,7 +11,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/version-v3.0.0-pink" alt="Version" />
   <img src="https://img.shields.io/badge/docker-ready-blue" alt="Docker Ready" />
-  <img src="https://img.shields.io/badge/license-MIT-green" alt="License" />
+  <img src="https://img.shields.io/badge/license-AGPLv3-green" alt="License" />
 </p>
 
 ---
@@ -37,8 +37,8 @@ NZBoxer is built around an **on-demand workflow**:
 
 ### 2. On-Demand Search, Scoring & Push
 - **One-Click Auto-Push:** Push an entire movie, one or more seasons, or specific episodes with a single click. For series and anime, you can choose whether to allow season packs, prefer season packs over individual episodes (with automatic episode fallback if no pack is available), and optionally auto-advance to the next season when the current one finishes.
-- **Manual Release Picker:** Prefer to choose the exact release yourself? Run an interactive search directly from the item modal or the standalone Manual Search view to inspect scored candidates, 4-tier quality feature pills, language tags, file sizes, and rejection reasons before grabbing.
-- **Built-In Scoring & Search Presets:** Combines a built-in release scoring matrix (evaluating resolution, source, HDR/Dolby Vision, video/audio codecs, Atmos, bitrate, and primary/fallback language hierarchy) with reusable **Search Presets** and per-push quality, language, size, and keyword overrides.
+- **Manual Release Picker:** Prefer to choose the exact release yourself? Run an interactive search directly from the item modal or the standalone Manual Search view to inspect scored candidates, 5-tier metallic quality feature pills, language tags, file sizes, and rejection reasons before grabbing.
+- **Built-In Scoring & Search Presets:** Combines a built-in release scoring matrix (evaluating resolution, source, HDR/Dolby Vision, video/audio codecs, Atmos, net video bitrate density, and primary/fallback language hierarchy) with reusable **Search Presets** and per-push quality, language, size, and keyword overrides.
 
 ### 3. Live Transfer Monitoring, Auto-Recovery & Notifications
 - **Auto-Waking Transfer Poller:** As soon as a push is dispatched to TorBox, NZBoxer wakes its transfer monitor to track live download progress, speed, and ETA. Once all active transfers finish, the poller goes back to sleep automatically.
@@ -94,7 +94,7 @@ All configuration—including Providers (Simkl, TMDB, Newznab Indexers, TorBox),
 
 1. Open the dashboard at [http://localhost:8000/](http://localhost:8000/).
 2. Navigate to **Settings** (top right).
-3. In the **Providers** tab, configure your **TMDB**, **TorBox**, and **Newznab Indexer** credentials, and connect your **Simkl** account using the interactive PIN authentication flow.
+3. In the **Providers** tab, configure your **TMDB**, **TorBox**, and **Newznab Indexer** credentials, and connect your **Simkl** account using the interactive OAuth 2.0 Device Flow.
 4. Click **Sync Watchlist** in the top navigation bar to import your watchlist.
 
 ### Alternative: Running Locally with Python
@@ -119,3 +119,10 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000
 - **Database:** SQLite in WAL mode (stored persistently in `./config/nzboxer.db`)
 - **Release Parsing:** GuessIt + custom 3-layer fake release detection & weighted scoring engine
 - **Frontend:** Jinja2, HTMX, Alpine.js, TailwindCSS
+
+---
+
+## License
+
+This project is licensed under the **GNU Affero General Public License v3.0 (AGPL-3.0)** — see the [LICENSE](LICENSE) file for details.
+
