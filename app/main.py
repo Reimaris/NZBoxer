@@ -212,6 +212,7 @@ async def dashboard(request: Request, background_tasks: BackgroundTasks):
     from app.core.automation import (
         classify_v3_status_tier,
         consolidate_standalone_anime_sequels,
+        deduplicate_media_items,
         should_trigger_dashboard_simkl_sync,
         sync_all_providers,
     )
@@ -227,8 +228,10 @@ async def dashboard(request: Request, background_tasks: BackgroundTasks):
         if await should_trigger_dashboard_simkl_sync(session):
             background_tasks.add_task(sync_all_providers)
 
-        # Auto-consolidate any legacy standalone sequels before rendering
+        # Auto-consolidate any legacy standalone sequels and deduplicate items before rendering
         await consolidate_standalone_anime_sequels(session)
+        if await deduplicate_media_items(session) > 0:
+            await session.commit()
 
         # Fetch items
         stmt = (

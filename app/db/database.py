@@ -652,6 +652,16 @@ async def init_db(database_url: str) -> None:
             except Exception as e:
                 logger.warning("Error backfilling media_items.release_date: %s", e)
 
+            # Deduplicate any duplicate MediaItem rows (e.g. from concurrent syncs)
+            try:
+                from app.core.automation import deduplicate_media_items
+
+                removed_dups = await deduplicate_media_items(session)
+                if removed_dups > 0:
+                    await session.commit()
+            except Exception as e:
+                logger.warning("Error deduplicating media_items during startup: %s", e)
+
             # Reconcile any COMPLETED/DOWNLOADED items, seasons, or episodes with zero active/completed DownloadHistory rows
             try:
                 from app.core.transfer_poller import (

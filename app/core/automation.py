@@ -7,6 +7,7 @@ Newznab indexers, evaluating scores, and sending releases to TorBox.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -29,6 +30,9 @@ from app.db.models import (
 from app.services import simkl, tmdb
 
 logger = logging.getLogger(__name__)
+
+# Global mutex preventing concurrent Simkl watchlist sync executions
+_sync_lock = asyncio.Lock()
 
 
 def is_future_or_tba(
@@ -194,6 +198,8 @@ async def should_trigger_dashboard_simkl_sync(
     cooldown_minutes: int = 15,
 ) -> bool:
     """Check if any active Simkl provider is due for an automatic page-load sync (>15m cooldown)."""
+    if _sync_lock.locked():
+        return False
     stmt = select(Provider).where(Provider.type == "simkl")
     providers = (await session.execute(stmt)).scalars().all()
     return any(
@@ -204,6 +210,8 @@ async def should_trigger_dashboard_simkl_sync(
 
 async def run_periodic_simkl_sync_if_due(now: datetime | None = None) -> bool:
     """Run sync_all_providers if any active Simkl provider's periodic sync interval is due."""
+    if _sync_lock.locked():
+        return False
     async with async_session_factory() as session:
         stmt = select(Provider).where(Provider.type == "simkl")
         providers = (await session.execute(stmt)).scalars().all()
@@ -212,6 +220,153 @@ async def run_periodic_simkl_sync_if_due(now: datetime | None = None) -> bool:
         await sync_all_providers()
         return True
     return False
+
+
+async def deduplicate_media_items(session: AsyncSession) -> int:
+    """Detect and merge duplicate MediaItem rows sharing the same Simkl ID or external IDs.
+
+    Preserves the canonical item (preferring non-ignored, active/completed status,
+    history/seasons, and lowest ID), re-homes any DownloadHistory and FailureLog rows,
+    and deletes the redundant duplicate MediaItem row(s).
+    """
+    from sqlalchemy import update
+
+    from app.db.models import DownloadHistory, FailureLog
+
+    stmt = (
+        select(MediaItem)
+        .order_by(MediaItem.id.asc())
+        .options(
+            selectinload(MediaItem.seasons),
+            selectinload(MediaItem.download_history),
+        )
+    )
+    all_items = list((await session.execute(stmt)).scalars().unique().all())
+    if len(all_items) <= 1:
+        return 0
+
+    def _canonical_rank(item: MediaItem) -> tuple[int, int, int, int, int, int]:
+        not_ignored = 1 if item.status != MediaStatus.IGNORED else 0
+        active_or_done = (
+            1
+            if item.status
+            in (
+                MediaStatus.DOWNLOADING,
+                MediaStatus.COMPLETED,
+                MediaStatus.DOWNLOADED,
+            )
+            else 0
+        )
+        hist_count = len(item.download_history or [])
+        season_count = len(item.seasons or [])
+        has_sticky = (
+            1
+            if (item.preset_id is not None or bool(item.custom_search_config_json))
+            else 0
+        )
+        return (
+            not_ignored,
+            active_or_done,
+            hist_count,
+            season_count,
+            has_sticky,
+            -int(item.id or 0),
+        )
+
+    removed_ids: set[int] = set()
+    removed_count = 0
+
+    async def _merge_and_delete(canonical: MediaItem, dup: MediaItem) -> None:
+        nonlocal removed_count
+        if (
+            dup.id in removed_ids
+            or canonical.id in removed_ids
+            or canonical.id == dup.id
+        ):
+            return
+
+        logger.info(
+            "    🧹 Deduplicating MediaItem '%s' (removing duplicate ID %d, keeping canonical ID %d).",
+            dup.title,
+            dup.id,
+            canonical.id,
+        )
+        for attr in (
+            "simkl_id",
+            "tmdb_id",
+            "imdb_id",
+            "tvdb_id",
+            "mal_id",
+            "anilist_id",
+            "alt_title",
+            "poster_url",
+            "overview",
+            "release_date",
+            "runtime_minutes",
+            "preset_id",
+            "custom_search_config_json",
+        ):
+            if not getattr(canonical, attr, None) and getattr(dup, attr, None):
+                setattr(canonical, attr, getattr(dup, attr))
+
+        await session.execute(
+            update(DownloadHistory)
+            .where(DownloadHistory.media_item_id == dup.id)
+            .values(media_item_id=canonical.id)
+        )
+        await session.execute(
+            update(FailureLog)
+            .where(FailureLog.media_item_id == dup.id)
+            .values(media_item_id=canonical.id)
+        )
+        removed_ids.add(dup.id)
+        await session.delete(dup)
+        removed_count += 1
+
+    # Group by key extractors in priority order:
+    # 1) simkl_id (> 0)
+    # 2) (media_type, tmdb_id) for MOVIE and SHOW
+    # 3) (media_type, imdb_id) for MOVIE and SHOW
+    # 4) (media_type, anilist_id) for ANIME
+    for key_fn in (
+        lambda i: (
+            ("simkl", int(i.simkl_id)) if (i.simkl_id and int(i.simkl_id) > 0) else None
+        ),
+        lambda i: (
+            ("tmdb", i.media_type, int(i.tmdb_id))
+            if (i.tmdb_id and i.media_type in (MediaType.MOVIE, MediaType.SHOW))
+            else None
+        ),
+        lambda i: (
+            ("imdb", i.media_type, str(i.imdb_id).strip().lower())
+            if (i.imdb_id and i.media_type in (MediaType.MOVIE, MediaType.SHOW))
+            else None
+        ),
+        lambda i: (
+            ("anilist", i.media_type, int(i.anilist_id))
+            if (i.anilist_id and i.media_type == MediaType.ANIME)
+            else None
+        ),
+    ):
+        groups: dict[tuple[Any, ...], list[MediaItem]] = {}
+        for item in all_items:
+            if item.id in removed_ids:
+                continue
+            key = key_fn(item)
+            if key is not None:
+                groups.setdefault(key, []).append(item)
+
+        for group_items in groups.values():
+            if len(group_items) <= 1:
+                continue
+            sorted_group = sorted(group_items, key=_canonical_rank, reverse=True)
+            canonical = sorted_group[0]
+            for dup in sorted_group[1:]:
+                await _merge_and_delete(canonical, dup)
+
+    if removed_count > 0:
+        await session.flush()
+    return removed_count
 
 
 async def _fetch_simkl_category_with_retry(
@@ -339,132 +494,144 @@ async def sync_all_providers() -> None:
     """Sync watchlists and libraries from all configured providers (Simkl, etc.)."""
     import json
 
-    log_process_start(logger, "Provider Sync Engine")
-    from app.db.models import Provider
+    async with _sync_lock:
+        log_process_start(logger, "Provider Sync Engine")
+        from app.db.models import Provider
 
-    async with async_session_factory() as session:
-        try:
-            stmt = select(Provider)
-            providers_res = await session.execute(stmt)
-            provider_ids = [
-                p.id
-                for p in providers_res.scalars().unique().all()
-                if p.type == "simkl" and getattr(p, "is_active", True)
-            ]
+        async with async_session_factory() as session:
+            try:
+                stmt = select(Provider)
+                providers_res = await session.execute(stmt)
+                provider_ids = [
+                    p.id
+                    for p in providers_res.scalars().unique().all()
+                    if p.type == "simkl" and getattr(p, "is_active", True)
+                ]
 
-            any_synced = False
-            for prov_id in provider_ids:
-                provider = await session.get(Provider, prov_id)
-                if provider is None or not getattr(provider, "is_active", True):
-                    continue
-
-                cfg = provider.simkl_config
-                has_cid = bool(provider.client_id or cfg.get("client_id"))
-                has_tok = bool(
-                    provider.access_token
-                    or cfg.get("access_token")
-                    or cfg.get("refresh_token")
-                )
-                if not has_cid or not has_tok:
-                    logger.warning(
-                        "Provider %s lacks Simkl credentials, skipping.",
-                        provider.name,
-                    )
-                    continue
-
-                try:
-                    client_id, access_token = await simkl.ensure_valid_simkl_token(
-                        session, provider
-                    )
-                    cfg = provider.simkl_config
-                    sync_movies = bool(cfg.get("sync_movies", True))
-                    sync_series = bool(cfg.get("sync_series", True))
-                    sync_anime = bool(cfg.get("sync_anime", True))
-                    active_simkl_ids: set[int] = set()
-
-                    if sync_movies:
-                        (
-                            movies,
-                            client_id,
-                            access_token,
-                        ) = await _fetch_simkl_category_with_retry(
-                            session,
-                            provider,
-                            "movies",
-                            client_id,
-                            access_token,
-                        )
-                        active_simkl_ids.update(_extract_active_simkl_ids(movies))
-                        await _sync_items(session, movies, MediaType.MOVIE, provider.id)
-
-                    if sync_series:
-                        (
-                            shows,
-                            client_id,
-                            access_token,
-                        ) = await _fetch_simkl_category_with_retry(
-                            session,
-                            provider,
-                            "shows",
-                            client_id,
-                            access_token,
-                        )
-                        active_simkl_ids.update(_extract_active_simkl_ids(shows))
-                        await _sync_items(session, shows, MediaType.SHOW, provider.id)
-
-                    if sync_anime:
-                        (
-                            anime,
-                            client_id,
-                            access_token,
-                        ) = await _fetch_simkl_category_with_retry(
-                            session,
-                            provider,
-                            "anime",
-                            client_id,
-                            access_token,
-                        )
-                        active_simkl_ids.update(_extract_active_simkl_ids(anime))
-                        await _sync_items(session, anime, MediaType.ANIME, provider.id)
-                        await consolidate_standalone_anime_sequels(session)
-
-                    await _prune_completed_or_dropped_simkl_items(
-                        session,
-                        provider.id,
-                        active_simkl_ids,
-                        sync_movies=sync_movies,
-                        sync_series=sync_series,
-                        sync_anime=sync_anime,
-                    )
+                any_synced = False
+                for prov_id in provider_ids:
+                    provider = await session.get(Provider, prov_id)
+                    if provider is None or not getattr(provider, "is_active", True):
+                        continue
 
                     cfg = provider.simkl_config
-                    cfg["last_synced_at"] = datetime.now(timezone.utc).isoformat()
-                    provider.config_json = json.dumps(cfg)
-                    await session.commit()
-                    any_synced = True
-                except Exception as prov_err:  # noqa: BLE001
-                    logger.error(
-                        "Provider sync failed for %s: %s",
-                        provider.name,
-                        prov_err,
+                    has_cid = bool(provider.client_id or cfg.get("client_id"))
+                    has_tok = bool(
+                        provider.access_token
+                        or cfg.get("access_token")
+                        or cfg.get("refresh_token")
                     )
-                    await session.rollback()
-                    prov_after_rb = await session.get(Provider, prov_id)
-                    if prov_after_rb is not None:
-                        rb_cfg = prov_after_rb.simkl_config
-                        rb_cfg["last_synced_at"] = datetime.now(
-                            timezone.utc
-                        ).isoformat()
-                        prov_after_rb.config_json = json.dumps(rb_cfg)
+                    if not has_cid or not has_tok:
+                        logger.warning(
+                            "Provider %s lacks Simkl credentials, skipping.",
+                            provider.name,
+                        )
+                        continue
+
+                    try:
+                        client_id, access_token = await simkl.ensure_valid_simkl_token(
+                            session, provider
+                        )
+                        cfg = provider.simkl_config
+                        sync_movies = bool(cfg.get("sync_movies", True))
+                        sync_series = bool(cfg.get("sync_series", True))
+                        sync_anime = bool(cfg.get("sync_anime", True))
+                        active_simkl_ids: set[int] = set()
+
+                        # Release any read transaction snapshot before outbound HTTP calls
                         await session.commit()
 
-            if any_synced:
-                logger.info("All provider watchlists synced successfully.")
-        except Exception as e:  # noqa: BLE001
-            logger.error("Provider sync failed: %s", e)
-            await session.rollback()
-        finally:
-            log_process_end(logger, "Provider Sync Engine")
+                        if sync_movies:
+                            (
+                                movies,
+                                client_id,
+                                access_token,
+                            ) = await _fetch_simkl_category_with_retry(
+                                session,
+                                provider,
+                                "movies",
+                                client_id,
+                                access_token,
+                            )
+                            active_simkl_ids.update(_extract_active_simkl_ids(movies))
+                            await _sync_items(
+                                session, movies, MediaType.MOVIE, provider.id
+                            )
+
+                        if sync_series:
+                            (
+                                shows,
+                                client_id,
+                                access_token,
+                            ) = await _fetch_simkl_category_with_retry(
+                                session,
+                                provider,
+                                "shows",
+                                client_id,
+                                access_token,
+                            )
+                            active_simkl_ids.update(_extract_active_simkl_ids(shows))
+                            await _sync_items(
+                                session, shows, MediaType.SHOW, provider.id
+                            )
+
+                        if sync_anime:
+                            (
+                                anime,
+                                client_id,
+                                access_token,
+                            ) = await _fetch_simkl_category_with_retry(
+                                session,
+                                provider,
+                                "anime",
+                                client_id,
+                                access_token,
+                            )
+                            active_simkl_ids.update(_extract_active_simkl_ids(anime))
+                            await _sync_items(
+                                session, anime, MediaType.ANIME, provider.id
+                            )
+                            await consolidate_standalone_anime_sequels(session)
+
+                        await deduplicate_media_items(session)
+
+                        await _prune_completed_or_dropped_simkl_items(
+                            session,
+                            provider.id,
+                            active_simkl_ids,
+                            sync_movies=sync_movies,
+                            sync_series=sync_series,
+                            sync_anime=sync_anime,
+                        )
+
+                        cfg = provider.simkl_config
+                        cfg["last_synced_at"] = datetime.now(timezone.utc).isoformat()
+                        provider.config_json = json.dumps(cfg)
+                        await session.commit()
+                        any_synced = True
+                    except Exception as prov_err:  # noqa: BLE001
+                        logger.error(
+                            "Provider sync failed for %s: %s",
+                            provider.name,
+                            prov_err,
+                        )
+                        await session.rollback()
+                        prov_after_rb = await session.get(Provider, prov_id)
+                        if prov_after_rb is not None:
+                            rb_cfg = prov_after_rb.simkl_config
+                            rb_cfg["last_synced_at"] = datetime.now(
+                                timezone.utc
+                            ).isoformat()
+                            prov_after_rb.config_json = json.dumps(rb_cfg)
+                            await session.commit()
+
+                if any_synced:
+                    logger.info("All provider watchlists synced successfully.")
+            except Exception as e:  # noqa: BLE001
+                logger.error("Provider sync failed: %s", e)
+                await session.rollback()
+            finally:
+                log_process_end(logger, "Provider Sync Engine")
 
 
 async def _sync_items(
@@ -499,6 +666,8 @@ async def _sync_items(
         anilist_id_str = ids.get("anilist")
         anilist_id = int(anilist_id_str) if anilist_id_str else None
 
+        imdb_id = ids.get("imdb")
+
         from sqlalchemy import and_, or_
 
         item_conditions = [MediaItem.simkl_id == simkl_id]
@@ -508,10 +677,28 @@ async def _sync_items(
                     MediaItem.anilist_id.isnot(None), MediaItem.anilist_id == anilist_id
                 )
             )
+        if media_type in (MediaType.MOVIE, MediaType.SHOW):
+            if tmdb_id:
+                item_conditions.append(
+                    and_(
+                        MediaItem.media_type == media_type,
+                        MediaItem.tmdb_id.isnot(None),
+                        MediaItem.tmdb_id == tmdb_id,
+                    )
+                )
+            if imdb_id:
+                item_conditions.append(
+                    and_(
+                        MediaItem.media_type == media_type,
+                        MediaItem.imdb_id.isnot(None),
+                        MediaItem.imdb_id == imdb_id,
+                    )
+                )
 
         stmt = (
             select(MediaItem)
             .where(or_(*item_conditions))
+            .order_by(MediaItem.id.asc())
             .options(selectinload(MediaItem.seasons))
         )
         result = await session.execute(stmt)
@@ -967,6 +1154,13 @@ async def _sync_items(
                 else:
                     item.status = MediaStatus.SEARCHING
 
+        from sqlalchemy import inspect as sa_inspect
+
+        item_state = sa_inspect(item)
+        if item_state.deleted or item_state.was_deleted:
+            await session.commit()
+            continue
+
         _backfill_item_release_date_from_seasons(item)
         item.simkl_synced_at = datetime.now(timezone.utc)
         from app.core.push_engine import evaluate_simkl_watch_progress_and_advance
@@ -977,6 +1171,7 @@ async def _sync_items(
             item_data=item_data,
             matched_season=None,
         )
+        await session.commit()
 
 
 async def _sync_season_episodes(
