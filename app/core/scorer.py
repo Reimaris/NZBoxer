@@ -159,6 +159,151 @@ class ScoreResult:
     is_primary: bool = True
     is_fallback: bool = False
     matched_language: str | None = None
+    normalized_bitrate_mbps: float | None = None
+
+
+def resolve_duration_seconds(
+    runtime_minutes: int | None,
+    media_type: str | None = None,
+    expected_season: int | None = None,
+    expected_episode: int | None = None,
+    season_episode_count: int | None = None,
+) -> int:
+    """Resolve effective media duration in seconds across movies, episodes, and season packs."""
+    is_season_pack = expected_season is not None and expected_episode is None
+    if runtime_minutes is not None and runtime_minutes > 0:
+        base_minutes = runtime_minutes
+    else:
+        mtype = (media_type or "").strip().lower()
+        if mtype == "movie":
+            base_minutes = 115
+        elif mtype == "anime":
+            base_minutes = 24
+        elif mtype in ("show", "series", "tv"):
+            base_minutes = 45
+        else:
+            base_minutes = (
+                45
+                if (expected_season is not None or expected_episode is not None)
+                else 115
+            )
+
+    multiplier = 1
+    if is_season_pack:
+        multiplier = (
+            season_episode_count
+            if (season_episode_count is not None and season_episode_count > 0)
+            else 10
+        )
+    return base_minutes * multiplier * 60
+
+
+def get_audio_bitrate_offset(audio_codec: str | None) -> float:
+    """Estimate the audio track bitrate overhead in Mbps for net video bitrate deduction."""
+    if not audio_codec:
+        return 0.4
+    ac = audio_codec.strip().lower()
+    if any(k in ac for k in ("truehd", "dts-hd ma", "dts:x", "flac", "pcm", "lpcm")):
+        return 4.0
+    if "dts-hd hra" in ac or "dts-hd" in ac:
+        return 2.0
+    if "dts" in ac:
+        return 1.5
+    if "eac3" in ac or "dd+" in ac or "ddp" in ac:
+        return 0.8
+    if any(k in ac for k in ("ac3", "aac", "opus", "mp3", "wma")):
+        return 0.4
+    return 0.4
+
+
+def get_codec_efficiency_factor(video_codec: str | None) -> float:
+    """Return the H.264-equivalent compression efficiency multiplier for a video codec."""
+    if not video_codec:
+        return 1.0
+    vc = video_codec.strip().lower()
+    if "av1" in vc:
+        return 1.45
+    if any(k in vc for k in ("hevc", "h.265", "h265", "x265")):
+        return 1.35
+    if any(k in vc for k in ("h.264", "h264", "x264", "avc")):
+        return 1.00
+    if any(k in vc for k in ("mpeg-2", "mpeg2", "xvid", "divx", "vc-1", "vc1")):
+        return 0.75
+    return 1.00
+
+
+def calculate_net_video_bitrate_mbps(
+    size_bytes: int,
+    duration_seconds: int,
+    audio_codec: str | None = None,
+    video_codec: str | None = None,
+) -> tuple[float, float]:
+    """Calculate (raw_video_mbps, normalized_video_mbps) after deducting audio overhead."""
+    if size_bytes <= 0 or duration_seconds <= 0:
+        return (0.0, 0.0)
+    total_mbps = (size_bytes * 8.0) / (duration_seconds * 1_000_000.0)
+    audio_offset = get_audio_bitrate_offset(audio_codec)
+    raw_video_mbps = max(total_mbps - audio_offset, total_mbps * 0.25)
+    norm_video_mbps = raw_video_mbps * get_codec_efficiency_factor(video_codec)
+    return (round(raw_video_mbps, 2), round(norm_video_mbps, 2))
+
+
+def calculate_dynamic_bitrate_score(
+    normalized_bitrate_mbps: float, resolution: str | None
+) -> int:
+    """Return resolution-aware bitrate score points from codec-normalized video bitrate."""
+    if not resolution:
+        return 0
+    res = resolution.strip().lower()
+    if res in ("2160p", "4k"):
+        if normalized_bitrate_mbps < 8.0:
+            return -1000
+        if normalized_bitrate_mbps < 14.0:
+            return 200
+        if normalized_bitrate_mbps < 25.0:
+            return 700
+        if normalized_bitrate_mbps < 45.0:
+            return 1200
+        return 1500
+    if res == "1440p":
+        if normalized_bitrate_mbps < 5.0:
+            return -600
+        if normalized_bitrate_mbps < 10.0:
+            return 250
+        if normalized_bitrate_mbps < 18.0:
+            return 650
+        if normalized_bitrate_mbps < 30.0:
+            return 1000
+        return 1200
+    if res == "1080p":
+        if normalized_bitrate_mbps < 2.5:
+            return -600
+        if normalized_bitrate_mbps < 5.0:
+            return 200
+        if normalized_bitrate_mbps < 10.0:
+            return 500
+        if normalized_bitrate_mbps < 18.0:
+            return 900
+        return 1100
+    if res == "720p":
+        if normalized_bitrate_mbps < 1.2:
+            return -400
+        if normalized_bitrate_mbps < 2.5:
+            return 150
+        if normalized_bitrate_mbps < 5.0:
+            return 400
+        if normalized_bitrate_mbps < 9.0:
+            return 650
+        return 750
+    if res in ("480p", "576p", "sd"):
+        if normalized_bitrate_mbps < 0.6:
+            return -300
+        if normalized_bitrate_mbps < 1.2:
+            return 100
+        if normalized_bitrate_mbps < 2.5:
+            return 250
+        return 350
+    return 0
 
 
 def calculate_bitrate_mbps(
@@ -167,8 +312,6 @@ def calculate_bitrate_mbps(
     """Calculate the average bitrate in Megabits per second."""
     if not size_bytes or not runtime_minutes or runtime_minutes <= 0:
         return None
-    # Megabits = (bytes * 8) / 1_000_000
-    # Seconds = minutes * 60
     megabits = (size_bytes * 8) / 1_000_000
     seconds = runtime_minutes * 60
     return megabits / seconds
@@ -193,6 +336,8 @@ def score_release(
     audio_quality_mode: str = "best",
     custom_config: dict[str, Any] | str | None = None,
     preset: Any = None,
+    media_type: str | None = None,
+    season_episode_count: int | None = None,
 ) -> ScoreResult:
     """Calculate the score for a parsed release."""
     if preset is not None:
@@ -614,32 +759,65 @@ def score_release(
         nonlocal score
         score += _lookup_cat_score(category, key)
 
+    # Hard rejection for disallowed low-quality sources (CAM / Telesync)
+    if (parsed.source or "").strip().lower() in (
+        "cam",
+        "ts",
+        "telesync",
+        "hdts",
+        "hdcam",
+    ):
+        return ScoreResult(
+            -5000.0,
+            True,
+            "Disallowed low-quality source: cam/telesync",
+            None,
+            is_primary=is_primary,
+            is_fallback=is_fallback,
+            matched_language=matched_language,
+            normalized_bitrate_mbps=None,
+        )
+
     add_score("resolution", parsed.resolution)
     add_score("video_codec", parsed.video_codec)
     add_score("audio_codec", parsed.audio_codec)
     add_score("audio_channels", parsed.audio_channels)
     add_score("source", parsed.source)
 
-    # Multi-tag HDR matching (evaluate all hdr_formats + hdr + color_depth and award highest weight)
+    # Multi-tag HDR matching: evaluate hdr_formats + hdr and award highest weight.
+    # 10-bit SDR bonus (+150) is awarded ONLY when no HDR format is present.
+    has_real_hdr = bool(getattr(parsed, "hdr_formats", None)) or (
+        parsed.hdr is not None and parsed.hdr.lower() not in ("10-bit", "10bit")
+    )
     hdr_candidates: list[str] = []
     hdr_fmt_map = {
         "DV": "dolby vision",
+        "DOVI": "dolby vision",
         "HDR10+": "hdr10+",
         "HDR10": "hdr10",
         "HDR": "hdr",
+        "HLG": "hlg",
     }
     for fmt in getattr(parsed, "hdr_formats", None) or []:
         mapped = hdr_fmt_map.get(fmt.upper(), fmt.lower())
         if mapped not in hdr_candidates:
             hdr_candidates.append(mapped)
-    if parsed.hdr and parsed.hdr.lower() not in hdr_candidates:
-        hdr_candidates.append(parsed.hdr.lower())
-    color_depth = getattr(parsed, "color_depth", None)
-    if color_depth and color_depth.lower() not in hdr_candidates:
-        hdr_candidates.append(color_depth.lower())
+    if parsed.hdr and (
+        not has_real_hdr or parsed.hdr.lower() not in ("10-bit", "10bit")
+    ):
+        hdr_low = parsed.hdr.lower()
+        if hdr_low not in hdr_candidates:
+            hdr_candidates.append(hdr_low)
+    if not has_real_hdr:
+        color_depth = getattr(parsed, "color_depth", None)
+        if color_depth and color_depth.lower() not in hdr_candidates:
+            hdr_candidates.append(color_depth.lower())
 
     if hdr_candidates:
         score += max(_lookup_cat_score("hdr", c) for c in hdr_candidates)
+
+    if getattr(parsed, "is_proper_or_repack", False):
+        score += float(cfg.get("proper_repack_bonus", 250))
 
     # Whitelist bonus
     lang_cfg = scoring_config.get("language_preferences", {})
@@ -649,34 +827,31 @@ def score_release(
             score += lang_cfg.get("preferred_bonus", 0)
         else:
             score -= lang_cfg.get("missing_penalty", 0)
-    elif (
-        pref_langs
-    ):  # No languages parsed, apply penalty just in case? Usually we don't.
-        pass
 
-    # 3. Bitrate Scoring with Codec Efficiency Multipliers
-    bitrate_mbps = calculate_bitrate_mbps(size_bytes, runtime_minutes)
-
-    # Determine codec multiplier for bitrate compensation
-    codec_mult = 1.0
-    if parsed.video_codec:
-        vc = parsed.video_codec.lower()
-        if "av1" in vc:
-            codec_mult = 2.0  # AV1 is highly efficient
-        elif "hevc" in vc or "h265" in vc or "h.265" in vc:
-            codec_mult = 1.5  # HEVC is ~50% more efficient than H.264
-        elif "h264" in vc or "avc" in vc or "h.264" in vc:
-            codec_mult = 1.0
-
-    if bitrate_mbps is not None:
-        effective_bitrate = bitrate_mbps * codec_mult
-        bitrate_brackets = cfg.get("bitrate_brackets", [])
-        for bracket in sorted(
-            bitrate_brackets, key=lambda x: x["min_mbps"], reverse=True
-        ):
-            if effective_bitrate >= bracket["min_mbps"]:
-                score += bracket["score"]
-                break
+    # 3. Net Video Bitrate Engine & Dynamic Resolution-Aware Bitrate Scoring
+    bitrate_mbps: float | None = None
+    normalized_bitrate_mbps: float | None = None
+    if size_bytes > 0:
+        duration_seconds = resolve_duration_seconds(
+            runtime_minutes=runtime_minutes,
+            media_type=media_type,
+            expected_season=(
+                expected_season if expected_season is not None else parsed.season
+            ),
+            expected_episode=(
+                expected_episode if expected_episode is not None else parsed.episode
+            ),
+            season_episode_count=season_episode_count,
+        )
+        raw_mbps, norm_mbps = calculate_net_video_bitrate_mbps(
+            size_bytes=size_bytes,
+            duration_seconds=duration_seconds,
+            audio_codec=parsed.audio_codec,
+            video_codec=parsed.video_codec,
+        )
+        bitrate_mbps = raw_mbps
+        normalized_bitrate_mbps = norm_mbps
+        score += calculate_dynamic_bitrate_score(norm_mbps, parsed.resolution)
 
     # 4. Final Multipliers (Whitelist)
     if group and group in whitelist:
@@ -693,4 +868,5 @@ def score_release(
         is_primary=is_primary,
         is_fallback=is_fallback,
         matched_language=matched_language,
+        normalized_bitrate_mbps=normalized_bitrate_mbps,
     )

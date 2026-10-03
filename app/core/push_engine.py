@@ -358,6 +358,8 @@ def _score_and_partition_candidates(
     expected_season_title: str | None,
     runtime_minutes: int | None,
     effective_cfg: dict[str, Any],
+    media_type: str | None = None,
+    season_episode_count: int | None = None,
 ) -> dict[str, Any]:
     """Score raw indexer results and partition them into primary, fallback, mismatched, and all_valid."""
     primary_list: list[dict[str, Any]] = []
@@ -406,6 +408,8 @@ def _score_and_partition_candidates(
             video_quality_mode=v_mode,
             audio_quality_mode=a_mode,
             custom_config=custom_cfg,
+            media_type=media_type,
+            season_episode_count=season_episode_count,
         )
 
         entry = {
@@ -428,6 +432,8 @@ def _score_and_partition_candidates(
             rounded_score = round(score_res.score, 1)
             entry["score"] = rounded_score
             entry["score_res"] = score_res
+            entry["bitrate_mbps"] = score_res.bitrate_mbps
+            entry["normalized_bitrate_mbps"] = score_res.normalized_bitrate_mbps
             entry["is_primary"] = score_res.is_primary
             entry["is_fallback"] = score_res.is_fallback
             entry["matched_language"] = score_res.matched_language
@@ -439,6 +445,11 @@ def _score_and_partition_candidates(
                 is_mismatch=False,
                 matched_language=score_res.matched_language,
                 api_language=raw.get("api_language"),
+                bitrate_mbps=score_res.bitrate_mbps,
+                normalized_bitrate_mbps=score_res.normalized_bitrate_mbps,
+                runtime_minutes=runtime_minutes,
+                media_type=media_type,
+                season_episode_count=season_episode_count,
             )
             if score_res.is_primary:
                 primary_list.append(entry)
@@ -464,11 +475,15 @@ def _score_and_partition_candidates(
                 video_quality_mode=v_mode,
                 audio_quality_mode=a_mode,
                 custom_config=custom_cfg,
+                media_type=media_type,
+                season_episode_count=season_episode_count,
             )
             if not any_lang_res.is_rejected:
                 mismatch_score = round(any_lang_res.score, 1)
                 entry["score"] = mismatch_score
                 entry["score_res"] = any_lang_res
+                entry["bitrate_mbps"] = any_lang_res.bitrate_mbps
+                entry["normalized_bitrate_mbps"] = any_lang_res.normalized_bitrate_mbps
                 entry["is_primary"] = False
                 entry["is_fallback"] = False
                 entry["matched_language"] = any_lang_res.matched_language
@@ -480,6 +495,11 @@ def _score_and_partition_candidates(
                     is_mismatch=True,
                     matched_language=any_lang_res.matched_language,
                     api_language=raw.get("api_language"),
+                    bitrate_mbps=any_lang_res.bitrate_mbps,
+                    normalized_bitrate_mbps=any_lang_res.normalized_bitrate_mbps,
+                    runtime_minutes=runtime_minutes,
+                    media_type=media_type,
+                    season_episode_count=season_episode_count,
                 )
                 mismatched_list.append(entry)
 
@@ -754,7 +774,9 @@ async def _dispatch_candidate_list_to_torbox(
             audio_codec=parsed.audio_codec if parsed else cand.get("audio_codec"),
             source=parsed.source if parsed else cand.get("source"),
             release_group=parsed.release_group if parsed else cand.get("release_group"),
-            bitrate_mbps=score_res.bitrate_mbps if score_res else None,
+            bitrate_mbps=(
+                score_res.bitrate_mbps if score_res else cand.get("bitrate_mbps")
+            ),
             torbox_hash=str(torbox_result.get("hash"))
             if torbox_result.get("hash")
             else None,
@@ -902,6 +924,11 @@ async def _push_single_season_or_movie_entry(
 
     ev_type = "auto_advance" if is_auto_advance else "push_initiated"
     entry_type = getattr(season, "entry_type", "season") or "season"
+    item_media_type = (
+        item.media_type.value
+        if hasattr(item.media_type, "value")
+        else str(item.media_type or "")
+    )
     allow_season_packs, prefer_season_packs = normalize_season_pack_flags(
         effective_cfg.get("allow_season_packs", False),
         effective_cfg.get("prefer_season_packs", False),
@@ -927,6 +954,7 @@ async def _push_single_season_or_movie_entry(
             expected_season_title=season.title,
             runtime_minutes=item.runtime_minutes,
             effective_cfg=effective_cfg,
+            media_type="movie",
         )
         if partitioned["had_candidates"] and _candidates_found_acc is not None:
             _candidates_found_acc.append(True)
@@ -960,6 +988,7 @@ async def _push_single_season_or_movie_entry(
         season.title if season.title and season.title != item.title else None
     )
     sorted_eps = sorted(season.episodes, key=lambda e: e.episode_number)
+    ep_count = season.episode_count or len(sorted_eps)
     has_acquired_episodes = any(
         ep.status
         in (
@@ -1004,8 +1033,10 @@ async def _push_single_season_or_movie_entry(
             expected_season=effective_s_num,
             expected_episode=None,
             expected_season_title=expected_season_title,
-            runtime_minutes=None,
+            runtime_minutes=item.runtime_minutes,
             effective_cfg=effective_cfg,
+            media_type=item_media_type,
+            season_episode_count=ep_count,
         )
         if pack_partitioned["had_candidates"] and _candidates_found_acc is not None:
             _candidates_found_acc.append(True)
@@ -1038,8 +1069,10 @@ async def _push_single_season_or_movie_entry(
             expected_season=effective_s_num,
             expected_episode=None,
             expected_season_title=expected_season_title,
-            runtime_minutes=None,
+            runtime_minutes=item.runtime_minutes,
             effective_cfg=effective_cfg,
+            media_type=item_media_type,
+            season_episode_count=ep_count,
         )
         pack_candidates = pack_partitioned["all_valid"]
         if pack_partitioned["had_candidates"] and _candidates_found_acc is not None:
@@ -1079,8 +1112,10 @@ async def _push_single_season_or_movie_entry(
                 expected_season=effective_s_num,
                 expected_episode=first_ep.episode_number,
                 expected_season_title=expected_season_title,
-                runtime_minutes=None,
+                runtime_minutes=item.runtime_minutes,
                 effective_cfg=effective_cfg,
+                media_type=item_media_type,
+                season_episode_count=ep_count,
             )
             e01_candidates = e01_partitioned["all_valid"]
 
@@ -1125,8 +1160,10 @@ async def _push_single_season_or_movie_entry(
                     expected_season=effective_s_num,
                     expected_episode=ep.episode_number,
                     expected_season_title=expected_season_title,
-                    runtime_minutes=None,
+                    runtime_minutes=item.runtime_minutes,
                     effective_cfg=effective_cfg,
+                    media_type=item_media_type,
+                    season_episode_count=ep_count,
                 )
                 cands = ep_part["all_valid"]
                 if not cands:
@@ -1209,8 +1246,10 @@ async def _push_single_season_or_movie_entry(
             expected_season=effective_s_num,
             expected_episode=ep.episode_number,
             expected_season_title=expected_season_title,
-            runtime_minutes=None,
+            runtime_minutes=item.runtime_minutes,
             effective_cfg=effective_cfg,
+            media_type=item_media_type,
+            season_episode_count=ep_count,
         )
         if ep_partitioned["had_candidates"] and _candidates_found_acc is not None:
             _candidates_found_acc.append(True)
@@ -1590,6 +1629,12 @@ async def execute_auto_push(
         False  # True if any search returned ≥1 scored valid release
     )
 
+    item_media_type = (
+        item.media_type.value
+        if hasattr(item.media_type, "value")
+        else str(item.media_type or "")
+    )
+
     # Case 1: Standalone Movie (or movie item with no seasons)
     if item.media_type == MediaType.MOVIE and not season_ids and not episode_ids:
         item.fail_count = 0
@@ -1607,6 +1652,7 @@ async def execute_auto_push(
             expected_season_title=None,
             runtime_minutes=item.runtime_minutes,
             effective_cfg=effective_cfg,
+            media_type="movie",
         )
         if movie_partitioned["had_candidates"]:
             any_candidates_found = True
@@ -1707,8 +1753,11 @@ async def execute_auto_push(
                         if parent_s.title and parent_s.title != item.title
                         else None
                     ),
-                    runtime_minutes=None,
+                    runtime_minutes=item.runtime_minutes,
                     effective_cfg=effective_cfg,
+                    media_type=item_media_type,
+                    season_episode_count=parent_s.episode_count
+                    or len(parent_s.episodes),
                 )
                 ep_hist = await _dispatch_candidate_list_to_torbox(
                     session,
@@ -1810,6 +1859,11 @@ async def execute_manual_search(
     pack_fallback: list[dict[str, Any]] = []
     pack_mismatched: list[dict[str, Any]] = []
     episode_accordions: list[dict[str, Any]] = []
+    item_media_type = (
+        item.media_type.value
+        if hasattr(item.media_type, "value")
+        else str(item.media_type or "")
+    )
 
     if item.media_type == MediaType.MOVIE and not season_ids and not episode_ids:
         raw_movie_results = await _query_movie_across_indexers(session, item)
@@ -1825,6 +1879,7 @@ async def execute_manual_search(
             expected_season_title=None,
             runtime_minutes=item.runtime_minutes,
             effective_cfg=effective_cfg,
+            media_type="movie",
         )
         pack_primary.extend(_serialize_candidate(c) for c in partitioned["primary"])
         pack_fallback.extend(_serialize_candidate(c) for c in partitioned["fallback"])
@@ -1842,6 +1897,7 @@ async def execute_manual_search(
             if season is None:
                 continue
             entry_type = getattr(season, "entry_type", "season") or "season"
+            s_ep_count = season.episode_count or len(season.episodes)
             if entry_type == "movie":
                 raw_res = await _query_movie_across_indexers(
                     session,
@@ -1861,6 +1917,7 @@ async def execute_manual_search(
                     expected_season_title=season.title,
                     runtime_minutes=item.runtime_minutes,
                     effective_cfg=effective_cfg,
+                    media_type="movie",
                 )
             elif allow_season_packs:
                 raw_res = await _query_show_across_indexers(
@@ -1883,8 +1940,10 @@ async def execute_manual_search(
                         if season.title and season.title != item.title
                         else None
                     ),
-                    runtime_minutes=None,
+                    runtime_minutes=item.runtime_minutes,
                     effective_cfg=effective_cfg,
+                    media_type=item_media_type,
+                    season_episode_count=s_ep_count,
                 )
             else:
                 partitioned = {
@@ -1941,8 +2000,10 @@ async def execute_manual_search(
                     if parent_s.title and parent_s.title != item.title
                     else None
                 ),
-                runtime_minutes=None,
+                runtime_minutes=item.runtime_minutes,
                 effective_cfg=effective_cfg,
+                media_type=item_media_type,
+                season_episode_count=parent_s.episode_count or len(parent_s.episodes),
             )
             ep_primary = [_serialize_candidate(c) for c in ep_part["primary"]]
             ep_fallback = [_serialize_candidate(c) for c in ep_part["fallback"]]

@@ -40,18 +40,6 @@
         openAccordions: {},
         showMismatchedPacks: false,
         showMismatchedEp: {},
-        visiblePills(pills, cap = 8) {
-            if (!pills || !Array.isArray(pills)) return [];
-            return pills.length > cap ? pills.slice(0, cap - 1) : pills;
-        },
-        overflowCount(pills, cap = 8) {
-            if (!pills || !Array.isArray(pills)) return 0;
-            return pills.length > cap ? pills.length - (cap - 1) : 0;
-        },
-        overflowTooltip(pills, cap = 8) {
-            if (!pills || !Array.isArray(pills) || pills.length <= cap) return "";
-            return "Remaining: " + pills.slice(cap - 1).map(p => p.label).join(", ");
-        },
         closeModal() {
             const container = document.getElementById("modal-container");
             if (container) container.innerHTML = "";
@@ -696,16 +684,12 @@
                             <div class="flex items-center justify-between gap-3 p-2.5 rounded-lg bg-[#1e1e24] border border-[#3f3f46] hover:border-[#d40060]/60">
                                 <div class="min-w-0 flex-1">
                                     <div class="text-xs font-medium text-white truncate" :title="rel.title" x-text="rel.title"></div>
-                                    <div class="flex flex-nowrap items-center gap-1.5 mt-1.5 overflow-hidden">
-                                        <template x-for="(pill, pIdx) in visiblePills(rel.feature_pills, 8)" :key="pIdx">
-                                            <span class="px-2 py-0.5 text-[10px] font-semibold rounded border whitespace-nowrap shrink-0"
+                                    <div class="flex flex-wrap items-center gap-1.5 mt-1.5">
+                                        <template x-for="(pill, pIdx) in (rel.feature_pills || [])" :key="pIdx">
+                                            <span class="h-5 px-2 inline-flex items-center text-[10px] font-semibold rounded border whitespace-nowrap"
                                                   :class="pill.css"
                                                   x-text="pill.label"></span>
                                         </template>
-                                        <span x-show="overflowCount(rel.feature_pills, 8) > 0"
-                                              class="px-2 py-0.5 text-[10px] font-semibold rounded border bg-zinc-700/60 text-zinc-200 border-zinc-500/40 whitespace-nowrap shrink-0 cursor-help"
-                                              :title="overflowTooltip(rel.feature_pills, 8)"
-                                              x-text="'+' + overflowCount(rel.feature_pills, 8)"></span>
                                     </div>
                                 </div>
                                 <button type="button"
@@ -724,16 +708,12 @@
                             <div class="flex items-center justify-between gap-3 p-2.5 rounded-lg bg-[#1e1e24] border border-amber-500/30">
                                 <div class="min-w-0 flex-1">
                                     <div class="text-xs font-medium text-white truncate" :title="rel.title" x-text="rel.title"></div>
-                                    <div class="flex flex-nowrap items-center gap-1.5 mt-1.5 overflow-hidden">
-                                        <template x-for="(pill, pIdx) in visiblePills(rel.feature_pills, 8)" :key="pIdx">
-                                            <span class="px-2 py-0.5 text-[10px] font-semibold rounded border whitespace-nowrap shrink-0"
+                                    <div class="flex flex-wrap items-center gap-1.5 mt-1.5">
+                                        <template x-for="(pill, pIdx) in (rel.feature_pills || [])" :key="pIdx">
+                                            <span class="h-5 px-2 inline-flex items-center text-[10px] font-semibold rounded border whitespace-nowrap"
                                                   :class="pill.css"
                                                   x-text="pill.label"></span>
                                         </template>
-                                        <span x-show="overflowCount(rel.feature_pills, 8) > 0"
-                                              class="px-2 py-0.5 text-[10px] font-semibold rounded border bg-zinc-700/60 text-zinc-200 border-zinc-500/40 whitespace-nowrap shrink-0 cursor-help"
-                                              :title="overflowTooltip(rel.feature_pills, 8)"
-                                              x-text="'+' + overflowCount(rel.feature_pills, 8)"></span>
                                     </div>
                                 </div>
                                 <button type="button"
@@ -757,16 +737,12 @@
                                 <div class="flex items-center justify-between gap-3 p-2 rounded-lg bg-[#1e1e24]/60 border border-red-500/20">
                                     <div class="min-w-0 flex-1">
                                         <div class="text-xs text-[#d1d5db] truncate" :title="rel.title" x-text="rel.title"></div>
-                                        <div class="flex flex-nowrap items-center gap-1.5 mt-1 overflow-hidden">
-                                            <template x-for="(pill, pIdx) in visiblePills(rel.feature_pills, 8)" :key="pIdx">
-                                                <span class="px-2 py-0.5 text-[10px] font-semibold rounded border whitespace-nowrap shrink-0"
+                                        <div class="flex flex-wrap items-center gap-1.5 mt-1.5">
+                                            <template x-for="(pill, pIdx) in (rel.feature_pills || [])" :key="pIdx">
+                                                <span class="h-5 px-2 inline-flex items-center text-[10px] font-semibold rounded border whitespace-nowrap"
                                                       :class="pill.css"
                                                       x-text="pill.label"></span>
                                             </template>
-                                            <span x-show="overflowCount(rel.feature_pills, 8) > 0"
-                                                  class="px-2 py-0.5 text-[10px] font-semibold rounded border bg-zinc-700/60 text-zinc-200 border-zinc-500/40 whitespace-nowrap shrink-0 cursor-help"
-                                                  :title="overflowTooltip(rel.feature_pills, 8)"
-                                                  x-text="'+' + overflowCount(rel.feature_pills, 8)"></span>
                                         </div>
                                     </div>
                                     <button type="button"
@@ -801,16 +777,12 @@
                                         <div class="flex items-center justify-between gap-3 p-2 rounded bg-[#111115] border border-[#3f3f46] hover:border-[#d40060]/60">
                                             <div class="min-w-0 flex-1">
                                                 <div class="text-xs text-white truncate" :title="rel.title" x-text="rel.title"></div>
-                                                <div class="flex flex-nowrap items-center gap-1.5 mt-1 overflow-hidden">
-                                                    <template x-for="(pill, pIdx) in visiblePills(rel.feature_pills, 8)" :key="pIdx">
-                                                        <span class="px-2 py-0.5 text-[10px] font-semibold rounded border whitespace-nowrap shrink-0"
+                                                <div class="flex flex-wrap items-center gap-1.5 mt-1.5">
+                                                    <template x-for="(pill, pIdx) in (rel.feature_pills || [])" :key="pIdx">
+                                                        <span class="h-5 px-2 inline-flex items-center text-[10px] font-semibold rounded border whitespace-nowrap"
                                                               :class="pill.css"
                                                               x-text="pill.label"></span>
                                                     </template>
-                                                    <span x-show="overflowCount(rel.feature_pills, 8) > 0"
-                                                          class="px-2 py-0.5 text-[10px] font-semibold rounded border bg-zinc-700/60 text-zinc-200 border-zinc-500/40 whitespace-nowrap shrink-0 cursor-help"
-                                                          :title="overflowTooltip(rel.feature_pills, 8)"
-                                                          x-text="'+' + overflowCount(rel.feature_pills, 8)"></span>
                                                 </div>
                                             </div>
                                             <button type="button"
@@ -829,16 +801,12 @@
                                         <div class="flex items-center justify-between gap-3 p-2 rounded bg-[#111115] border border-amber-500/30">
                                             <div class="min-w-0 flex-1">
                                                 <div class="text-xs text-white truncate" :title="rel.title" x-text="rel.title"></div>
-                                                <div class="flex flex-nowrap items-center gap-1.5 mt-1 overflow-hidden">
-                                                    <template x-for="(pill, pIdx) in visiblePills(rel.feature_pills, 8)" :key="pIdx">
-                                                        <span class="px-2 py-0.5 text-[10px] font-semibold rounded border whitespace-nowrap shrink-0"
+                                                <div class="flex flex-wrap items-center gap-1.5 mt-1.5">
+                                                    <template x-for="(pill, pIdx) in (rel.feature_pills || [])" :key="pIdx">
+                                                        <span class="h-5 px-2 inline-flex items-center text-[10px] font-semibold rounded border whitespace-nowrap"
                                                               :class="pill.css"
                                                               x-text="pill.label"></span>
                                                     </template>
-                                                    <span x-show="overflowCount(rel.feature_pills, 8) > 0"
-                                                          class="px-2 py-0.5 text-[10px] font-semibold rounded border bg-zinc-700/60 text-zinc-200 border-zinc-500/40 whitespace-nowrap shrink-0 cursor-help"
-                                                          :title="overflowTooltip(rel.feature_pills, 8)"
-                                                          x-text="'+' + overflowCount(rel.feature_pills, 8)"></span>
                                                 </div>
                                             </div>
                                             <button type="button"
@@ -862,16 +830,12 @@
                                             <div class="flex items-center justify-between gap-3 p-2 rounded bg-[#111115]/80 border border-red-500/20">
                                                 <div class="min-w-0 flex-1">
                                                     <div class="text-xs text-[#d1d5db] truncate" :title="rel.title" x-text="rel.title"></div>
-                                                    <div class="flex flex-nowrap items-center gap-1.5 mt-1 overflow-hidden">
-                                                        <template x-for="(pill, pIdx) in visiblePills(rel.feature_pills, 8)" :key="pIdx">
-                                                            <span class="px-2 py-0.5 text-[10px] font-semibold rounded border whitespace-nowrap shrink-0"
+                                                    <div class="flex flex-wrap items-center gap-1.5 mt-1.5">
+                                                        <template x-for="(pill, pIdx) in (rel.feature_pills || [])" :key="pIdx">
+                                                            <span class="h-5 px-2 inline-flex items-center text-[10px] font-semibold rounded border whitespace-nowrap"
                                                                   :class="pill.css"
                                                                   x-text="pill.label"></span>
                                                         </template>
-                                                        <span x-show="overflowCount(rel.feature_pills, 8) > 0"
-                                                              class="px-2 py-0.5 text-[10px] font-semibold rounded border bg-zinc-700/60 text-zinc-200 border-zinc-500/40 whitespace-nowrap shrink-0 cursor-help"
-                                                              :title="overflowTooltip(rel.feature_pills, 8)"
-                                                              x-text="'+' + overflowCount(rel.feature_pills, 8)"></span>
                                                     </div>
                                                 </div>
                                                 <button type="button"

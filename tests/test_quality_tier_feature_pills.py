@@ -92,7 +92,7 @@ def test_compound_release_parser_extractions(
 
 
 def test_scorer_multi_tag_hdr_remux_and_atmos_weights():
-    """Verify score_release awards full Dolby Vision (+1000), Remux (+1500), and TrueHD Atmos (+3800) points even when 10bit precedes DV."""
+    """Verify score_release awards full Dolby Vision (+1200), Remux (+1600), and TrueHD Atmos (+1400) points even when 10bit precedes DV, and guards SDR 10-bit."""
     rel_dv_10bit = parse_release_name(
         "Blade.Runner.2049.2017.2160p.UHD.BluRay.Remux.10bit.DV.HDR10+.HEVC.TrueHD.7.1.Atmos-FG"
     )
@@ -100,30 +100,32 @@ def test_scorer_multi_tag_hdr_remux_and_atmos_weights():
         "Blade.Runner.2049.2017.2160p.UHD.BluRay.Remux.10bit.HEVC.TrueHD.7.1.Atmos-FG"
     )
 
-    res_dv = score_release(rel_dv_10bit, size_bytes=60 * 1024**3)
-    res_sdr = score_release(rel_sdr_10bit, size_bytes=60 * 1024**3)
+    res_dv = score_release(rel_dv_10bit, size_bytes=60 * 1024**3, runtime_minutes=164)
+    res_sdr = score_release(rel_sdr_10bit, size_bytes=60 * 1024**3, runtime_minutes=164)
 
     assert not res_dv.is_rejected
     assert not res_sdr.is_rejected
-    # DV (+1000) vs 10-bit SDR (+300) -> +700 difference
-    assert res_dv.score - res_sdr.score == 700
-    # 2160p (2500) + Remux (1500) + HEVC (400) + DV (1000) + TrueHD Atmos (3800) + 7.1 (200) = 9400
-    assert res_dv.score >= 9400
+    # DV (+1200, no 10-bit stack) vs 10-bit SDR (+150) -> +1050 difference
+    assert res_dv.score - res_sdr.score == pytest.approx(1050.0)
+    # 2160p (2500) + Remux (1600) + HEVC (150) + DV (1200) + TrueHD Atmos (1400) + 7.1 (300) + Bitrate (1500) = 8650
+    assert res_dv.score == pytest.approx(8650.0)
 
 
-def test_build_release_feature_pills_ordering_and_4_tier_colors():
-    """Verify build_release_feature_pills returns exact category ordering and 4-Tier Semantic Quality Palette classes."""
+def test_build_release_feature_pills_ordering_and_5_tier_metallic_colors():
+    """Verify build_release_feature_pills returns exact 12-slot atomic ordering and 5-Tier Metallic Palette classes."""
     assert hasattr(parser, "build_release_feature_pills"), "build_release_feature_pills must exist on app.core.parser"
 
     title = "Dune.Part.Two.2024.German.DL.2160p.UHD.BluRay.REMUX.DV.HDR10Plus.HEVC.TrueHD.7.1.Atmos-AilMWeb"
     parsed = parse_release_name(title)
     pills = parser.build_release_feature_pills(
         parsed=parsed,
-        score=9400,
+        score=8650,
         size_bytes=int(48.5 * (1024**3)),
         is_fallback=False,
         is_mismatch=False,
         matched_language="de",
+        bitrate_mbps=46.0,
+        normalized_bitrate_mbps=46.0,
     )
 
     categories = [p["category"] for p in pills]
@@ -132,69 +134,95 @@ def test_build_release_feature_pills_ordering_and_4_tier_colors():
         "language",
         "resolution",
         "source",
-        "video_codec",
+        "bitrate",
         "hdr",
-        "audio",
+        "audio_codec",
+        "atmos",
+        "audio_channels",
+        "video_codec",
         "size",
         "group",
     ]
 
     by_cat = {p["category"]: p for p in pills}
-    assert by_cat["score"]["label"] == "Score: 9400"
-    assert by_cat["score"]["tier"] == "ultra"
-    assert "emerald" in by_cat["score"]["css"]
+    assert by_cat["score"]["label"] == "Score: 8650"
+    assert by_cat["score"]["tier"] == "gold"
+    assert "amber-400" in by_cat["score"]["css"]
 
     assert "DL" in by_cat["language"]["label"]
-    assert by_cat["language"]["tier"] == "ultra"
+    assert by_cat["language"]["tier"] == "gold"
 
-    assert by_cat["resolution"]["label"] in ("4K", "2160p")
-    assert by_cat["resolution"]["tier"] == "ultra"
+    assert by_cat["resolution"]["label"] == "4K"
+    assert by_cat["resolution"]["tier"] == "gold"
 
     assert by_cat["source"]["label"] == "BluRay Remux"
-    assert by_cat["source"]["tier"] == "ultra"
+    assert by_cat["source"]["tier"] == "gold"
+
+    assert by_cat["bitrate"]["label"] == "~46 Mbps"
+    assert by_cat["bitrate"]["tier"] == "gold"
+
+    assert by_cat["hdr"]["label"] == "DV"
+    assert by_cat["hdr"]["tier"] == "gold"
+
+    assert by_cat["audio_codec"]["label"] == "TrueHD"
+    assert by_cat["audio_codec"]["tier"] == "gold"
+
+    assert by_cat["atmos"]["label"] == "Atmos"
+    assert by_cat["atmos"]["tier"] == "gold"
+
+    assert by_cat["audio_channels"]["label"] == "7.1"
+    assert by_cat["audio_channels"]["tier"] == "silver"
 
     assert by_cat["video_codec"]["label"] == "HEVC"
-    assert by_cat["video_codec"]["tier"] == "ultra"
-
-    assert by_cat["hdr"]["label"] == "DV + HDR10+"
-    assert by_cat["hdr"]["tier"] == "ultra"
-
-    assert by_cat["audio"]["label"] == "TrueHD 7.1 Atmos"
-    assert by_cat["audio"]["tier"] == "ultra"
+    assert by_cat["video_codec"]["tier"] == "gray"
+    assert "zinc" in by_cat["video_codec"]["css"]
 
     assert by_cat["size"]["label"] == "48.5 GB"
-    assert by_cat["size"]["tier"] == "neutral"
+    assert by_cat["size"]["tier"] == "gray"
     assert "zinc" in by_cat["size"]["css"]
 
     assert by_cat["group"]["label"] == "Grp: AilMWeb"
-    assert by_cat["group"]["tier"] == "neutral"
+    assert by_cat["group"]["tier"] == "gray"
 
-    # Verify High / Mid / Low tier mappings on a lower-quality mismatched release
+    # Verify HDR10+ + HDR de-duplication rule (single highest-priority HDR pill emitted)
+    dedup_parsed = parse_release_name("Movie.2024.2160p.WEB-DL.HDR10Plus.HDR.HEVC-GRP")
+    dedup_hdr_labels = [
+        p["label"]
+        for p in parser.build_release_feature_pills(parsed=dedup_parsed, score=6000, size_bytes=15 * 1024**3)
+        if p["category"] == "hdr"
+    ]
+    assert dedup_hdr_labels == ["HDR10+"]
+
+    # Verify Silver / Bronze / Gray / Red tier mappings on a lower-quality mismatched release
     low_parsed = parse_release_name("Movie.2020.French.480p.DVD.x264.AAC.2.0-LOW")
     low_pills = {
         p["category"]: p
         for p in parser.build_release_feature_pills(
             parsed=low_parsed,
-            score=900,
+            score=400,
             size_bytes=700 * 1024 * 1024,
             is_fallback=False,
             is_mismatch=True,
             matched_language="fr",
+            bitrate_mbps=0.8,
+            normalized_bitrate_mbps=0.56,
         )
     }
-    assert low_pills["score"]["tier"] == "low"
+    assert low_pills["score"]["tier"] == "red"
     assert "red" in low_pills["score"]["css"]
-    assert low_pills["language"]["tier"] == "low"
-    assert low_pills["resolution"]["tier"] == "low"
-    assert low_pills["source"]["tier"] == "low"
-    assert low_pills["video_codec"]["tier"] == "mid"
-    assert "amber" in low_pills["video_codec"]["css"]
-    assert low_pills["audio"]["tier"] == "mid"
+    assert low_pills["language"]["tier"] == "red"
+    assert low_pills["resolution"]["tier"] == "gray"
+    assert low_pills["source"]["tier"] == "gray"
+    assert low_pills["bitrate"]["label"] == "~0.8 Mbps"
+    assert low_pills["bitrate"]["tier"] == "red"
+    assert low_pills["video_codec"]["tier"] == "gray"
+    assert low_pills["audio_codec"]["tier"] == "bronze"
+    assert low_pills["audio_channels"]["tier"] == "gray"
     assert low_pills["size"]["label"] == "700 MB"
 
 
 def test_score_and_partition_deduplicates_normalized_titles_and_attaches_pills():
-    """Verify _score_and_partition_candidates deduplicates identical titles with different GUIDs and attaches feature_pills."""
+    """Verify _score_and_partition_candidates deduplicates identical titles with different GUIDs and attaches atomic feature_pills."""
     raw_results = [
         {
             "title": "Severance.S01E01.1080p.WEB-DL.DDP5.1.Atmos.H.264-FLUX",
@@ -228,9 +256,11 @@ def test_score_and_partition_deduplicates_normalized_titles_and_attaches_pills()
     assert len(part["primary"]) == 1
     assert len(part["mismatched"]) == 1
     assert "feature_pills" in part["primary"][0]
-    assert any(p["category"] == "audio" and "Atmos" in p["label"] for p in part["primary"][0]["feature_pills"])
+    assert any(p["category"] == "atmos" and p["label"] == "Atmos" for p in part["primary"][0]["feature_pills"])
+    assert any(p["category"] == "audio_codec" and p["label"] == "DD+" for p in part["primary"][0]["feature_pills"])
+    assert any(p["category"] == "bitrate" and "Mbps" in p["label"] for p in part["primary"][0]["feature_pills"])
     assert "feature_pills" in part["mismatched"][0]
-    assert any(p["category"] == "language" and p["tier"] == "low" for p in part["mismatched"][0]["feature_pills"])
+    assert any(p["category"] == "language" and p["tier"] == "red" for p in part["mismatched"][0]["feature_pills"])
 
 
 @pytest.mark.asyncio
@@ -305,9 +335,10 @@ async def test_push_modal_ui_polish_and_cross_view_pills(
     assert "Delete episode E01 from TorBox" in modal_html
     # Explicit SVG width/height on Reset Metadata / AniList
     assert 'width="16" height="16"' in modal_html
-    # Episode Accordion 3-tier language partitioning & single-line feature pills
+    # Episode Accordion 3-tier language partitioning & wrapping atomic feature pills (no +N overflow)
     assert "showMismatchedEp" in modal_html
     assert "rel.feature_pills" in modal_html
+    assert "visiblePills" not in modal_html
 
     # 2. Card 4 History Ledger on GET /
     dash_resp = await async_client.get("/")
@@ -315,7 +346,10 @@ async def test_push_modal_ui_polish_and_cross_view_pills(
     dash_html = dash_resp.text
     assert "BluRay Remux" in dash_html
     assert "Score: 9200" in dash_html
-    assert "Remaining:" in dash_html
+    assert "TrueHD" in dash_html
+    assert "Atmos" in dash_html
+    assert "Mbps" in dash_html
+    assert "Remaining:" not in dash_html
     # Pre-declared w-3.5 h-3.5 in base.html
     assert "w-3.5 h-3.5" in dash_html
 
@@ -325,6 +359,7 @@ async def test_push_modal_ui_polish_and_cross_view_pills(
     active_html = active_resp.text
     assert "Score: 5400" in active_html
     assert "WEB-DL" in active_html
+    assert "Remaining:" not in active_html
 
     # 4. Card 6 Ad-Hoc Manual Search on POST /api/search/manual
     async def fake_search_raw(**kwargs):
@@ -352,5 +387,10 @@ async def test_push_modal_ui_polish_and_cross_view_pills(
     search_html = search_resp.text
     assert "Primary Language Releases (1)" in search_html
     assert "w-20 h-20" not in search_html
-    assert "DD+ 5.1 Atmos" in search_html
-    assert "DV + HDR10" in search_html
+    assert ">DD+<" in search_html
+    assert ">5.1<" in search_html
+    assert ">Atmos<" in search_html
+    assert ">DV<" in search_html
+    assert "Mbps" in search_html
+    assert "Remaining:" not in search_html
+

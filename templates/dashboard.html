@@ -878,17 +878,10 @@ document.addEventListener('alpine:init', () => {
                         <td class="px-4 py-3.5 min-w-[220px] max-w-[380px]">
                             <div class="text-xs font-mono text-gray-200 truncate" title="{{ h.nzb_title }}">{{ h.nzb_title }}</div>
                             {% set pills = h.feature_pills if h.feature_pills is defined else [] %}
-                            {% set cap = 6 %}
-                            <div class="flex flex-nowrap items-center gap-1.5 mt-1.5 overflow-hidden">
-                                {% set visible = pills[:cap - 1] if pills|length > cap else pills %}
-                                {% for pill in visible %}
-                                <span class="px-1.5 py-0.5 text-[10px] font-semibold rounded border whitespace-nowrap shrink-0 {{ pill.css }}">{{ pill.label }}</span>
+                            <div class="flex flex-wrap items-center gap-1.5 mt-1.5">
+                                {% for pill in pills %}
+                                <span class="h-5 px-2 inline-flex items-center text-[10px] font-semibold rounded border whitespace-nowrap {{ pill.css }}">{{ pill.label }}</span>
                                 {% endfor %}
-                                {% if pills|length > cap %}
-                                {% set overflow = pills[cap - 1:] %}
-                                <span class="px-1.5 py-0.5 text-[10px] font-semibold rounded border bg-zinc-700/60 text-zinc-200 border-zinc-500/40 whitespace-nowrap shrink-0 cursor-help"
-                                      title="Remaining: {{ overflow | map(attribute='label') | join(', ') }}">+{{ overflow|length }}</span>
-                                {% endif %}
                             </div>
                         </td>
                         <!-- Col 3: Pushed At -->

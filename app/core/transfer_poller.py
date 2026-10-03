@@ -194,6 +194,12 @@ async def _auto_replace_failed_push(
         session, item.id
     )
 
+    item_media_type = (
+        item.media_type.value
+        if hasattr(item.media_type, "value")
+        else str(item.media_type or "")
+    )
+
     if episode is not None and season is not None:
         effective_s_num = int(season.type_number or season.season_number)
         raw_results = await _query_show_across_indexers(
@@ -214,8 +220,10 @@ async def _auto_replace_failed_push(
             expected_season_title=(
                 season.title if season.title and season.title != item.title else None
             ),
-            runtime_minutes=None,
+            runtime_minutes=item.runtime_minutes,
             effective_cfg=effective_cfg,
+            media_type=item_media_type,
+            season_episode_count=season.episode_count,
         )
         return await _dispatch_candidate_list_to_torbox(
             session,
@@ -265,6 +273,7 @@ async def _auto_replace_failed_push(
         expected_season_title=None,
         runtime_minutes=item.runtime_minutes,
         effective_cfg=effective_cfg,
+        media_type="movie",
     )
     return await _dispatch_candidate_list_to_torbox(
         session,
@@ -1076,12 +1085,21 @@ async def get_active_pushes(session: AsyncSession) -> list[dict[str, Any]]:
         else:
             status_badge = "Downloading"
 
+        item_media_type = (
+            item.media_type.value
+            if hasattr(item.media_type, "value")
+            else str(item.media_type or "")
+        )
         feature_pills = build_release_feature_pills(
             release_title=h.nzb_title,
             score=h.score,
             size_bytes=h.size_bytes,
             is_fallback=bool(getattr(h, "is_fallback", False)),
             matched_language=h.grabbed_language,
+            bitrate_mbps=h.bitrate_mbps,
+            runtime_minutes=item.runtime_minutes,
+            media_type=item_media_type,
+            season_episode_count=season.episode_count if season else None,
         )
 
         active_rows.append(
@@ -1811,6 +1829,10 @@ async def get_push_history_ledger(session: AsyncSession) -> list[dict[str, Any]]
             size_bytes=h.size_bytes,
             is_fallback=bool(getattr(h, "is_fallback", False)),
             matched_language=h.grabbed_language,
+            bitrate_mbps=h.bitrate_mbps,
+            runtime_minutes=item.runtime_minutes if item else None,
+            media_type=category_key,
+            season_episode_count=season.episode_count if season else None,
         )
 
         ledger.append(

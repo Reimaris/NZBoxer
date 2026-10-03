@@ -128,6 +128,16 @@ async def reload_settings_from_db(session: AsyncSession) -> None:
         getattr(db_settings, "notify_on_auto_advance", True)
     )
 
-    if db_settings.scoring_settings:
-        scoring_config.clear()
-        scoring_config.update(db_settings.scoring_settings)
+    import copy
+
+    authoritative_cfg = copy.deepcopy(DEFAULT_SCORING_CONFIG)
+    if isinstance(db_settings.scoring_settings, dict):
+        if "manual_search_defaults" in db_settings.scoring_settings:
+            authoritative_cfg["manual_search_defaults"] = copy.deepcopy(
+                db_settings.scoring_settings["manual_search_defaults"]
+            )
+    scoring_config.clear()
+    scoring_config.update(authoritative_cfg)
+    if db_settings.scoring_settings != authoritative_cfg:
+        db_settings.scoring_settings = copy.deepcopy(authoritative_cfg)
+        await session.commit()

@@ -581,6 +581,16 @@ async def manual_search(
     seen_guids: set[str] = set()
     seen_titles: set[str] = set()
 
+    cat_norm = (category or "any").strip().lower()
+    if cat_norm in ("movie", "anime-movie"):
+        ad_hoc_media_type: str | None = "movie"
+    elif cat_norm == "anime":
+        ad_hoc_media_type = "anime"
+    elif cat_norm == "series" or season_val is not None or ep_val is not None:
+        ad_hoc_media_type = "show"
+    else:
+        ad_hoc_media_type = None
+
     for item in raw_results:
         title = str(item.get("title") or "")
         if not title:
@@ -614,13 +624,17 @@ async def manual_search(
             continue
 
         size_bytes = int(item.get("size") or item.get("size_bytes") or 0)
+        ep_int = ep_val if isinstance(ep_val, int) else None
         sr = score_release(
             parsed,
             size_bytes=size_bytes,
             age_days=0,
+            expected_season=season_val,
+            expected_episode=ep_int,
             primary_language=prim_lang,
             fallback_language=fall_lang,
             api_language=item.get("api_language"),
+            media_type=ad_hoc_media_type,
         )
 
         if sr.is_rejected:
@@ -629,9 +643,12 @@ async def manual_search(
                     parsed,
                     size_bytes=size_bytes,
                     age_days=0,
+                    expected_season=season_val,
+                    expected_episode=ep_int,
                     primary_language=None,
                     fallback_language=None,
                     api_language=item.get("api_language"),
+                    media_type=ad_hoc_media_type,
                 )
                 item["score"] = sr_mismatch.score
                 item["parsed"] = parsed
@@ -645,6 +662,9 @@ async def manual_search(
                     is_mismatch=True,
                     matched_language=sr_mismatch.matched_language,
                     api_language=item.get("api_language"),
+                    bitrate_mbps=sr_mismatch.bitrate_mbps,
+                    normalized_bitrate_mbps=sr_mismatch.normalized_bitrate_mbps,
+                    media_type=ad_hoc_media_type,
                 )
                 mismatched_results.append(item)
             continue
@@ -661,6 +681,9 @@ async def manual_search(
             is_mismatch=False,
             matched_language=sr.matched_language,
             api_language=item.get("api_language"),
+            bitrate_mbps=sr.bitrate_mbps,
+            normalized_bitrate_mbps=sr.normalized_bitrate_mbps,
+            media_type=ad_hoc_media_type,
         )
         if sr.is_fallback:
             fallback_results.append(item)
@@ -1110,66 +1133,14 @@ async def save_global_settings(
                     form_data.get("notify_on_auto_advance")
                 ).lower() in ("1", "true", "on", "yes")
 
-            sc: dict[str, Any] = copy.deepcopy(
-                db_settings.scoring_settings or DEFAULT_SCORING_CONFIG
-            )
-
-            def _get_int(key: str) -> int | None:
-                val = form_data.get(key)
-                if val is not None and isinstance(val, (str, int)):
-                    try:
-                        return int(val)
-                    except ValueError:
-                        pass
-                return None
-
-            scoring_res = sc.setdefault("scoring", {})
-            if isinstance(scoring_res, dict):
-                res_map = scoring_res.setdefault("resolution", {})
-                if isinstance(res_map, dict):
-                    v1080 = _get_int("res_1080p")
-                    if v1080 is not None:
-                        res_map["1080p"] = v1080
-                    v2160 = _get_int("res_2160p")
-                    if v2160 is not None:
-                        res_map["2160p"] = v2160
-                    v720 = _get_int("res_720p")
-                    if v720 is not None:
-                        res_map["720p"] = v720
-
-                vc_map = scoring_res.setdefault("video_codec", {})
-                if isinstance(vc_map, dict):
-                    vh265 = _get_int("codec_h265")
-                    if vh265 is not None:
-                        vc_map["h265"] = vh265
-                    vh264 = _get_int("codec_h264")
-                    if vh264 is not None:
-                        vc_map["h264"] = vh264
-
-                src_map = scoring_res.setdefault("source", {})
-                if isinstance(src_map, dict):
-                    vremux = _get_int("source_remux")
-                    if vremux is not None:
-                        src_map["remux"] = vremux
-                    vbluray = _get_int("source_bluray")
-                    if vbluray is not None:
-                        src_map["bluray"] = vbluray
-                    vwebdl = _get_int("source_webdl")
-                    if vwebdl is not None:
-                        src_map["web-dl"] = vwebdl
-                    vwebrip = _get_int("source_webrip")
-                    if vwebrip is not None:
-                        src_map["webrip"] = vwebrip
-
-            cutoffs = sc.setdefault("cutoffs", {})
-            if isinstance(cutoffs, dict):
-                vtarget = _get_int("cutoffs_target")
-                if vtarget is not None:
-                    cutoffs["target_score"] = vtarget
-                vupg = _get_int("cutoffs_upgrade")
-                if vupg is not None:
-                    cutoffs["upgrade_threshold"] = vupg
-
+            sc: dict[str, Any] = copy.deepcopy(DEFAULT_SCORING_CONFIG)
+            if (
+                isinstance(db_settings.scoring_settings, dict)
+                and "manual_search_defaults" in db_settings.scoring_settings
+            ):
+                sc["manual_search_defaults"] = copy.deepcopy(
+                    db_settings.scoring_settings["manual_search_defaults"]
+                )
             db_settings.scoring_settings = sc
 
             await session.commit()
