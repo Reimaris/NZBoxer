@@ -82,14 +82,14 @@ class RateLimitQueueState:
 
 rate_limit_queue = RateLimitQueueState()
 
-# Grace period that lets a burst of enqueues settle so the "reached" alert reports
-# the full pending count (tests set this to 0).
-REACHED_NOTIFY_DELAY_SECONDS = 3.0
-
 
 async def _reached_settle_delay() -> None:
-    if REACHED_NOTIFY_DELAY_SECONDS > 0:
-        await asyncio.sleep(REACHED_NOTIFY_DELAY_SECONDS)
+    """Wait for a burst of enqueues to settle (``RATE_LIMIT_NOTIFY_DELAY_SECONDS``)."""
+    from app.config import settings
+
+    delay = settings.rate_limit_notify_delay_seconds
+    if delay > 0:
+        await asyncio.sleep(delay)
 
 
 class RateLimitEpisode:
@@ -102,28 +102,51 @@ class RateLimitEpisode:
     def __init__(self) -> None:
         self.active = False
         self.resumed_sent = False
+        self._reached_pending = False
+        self._dirty = False
         self._task: asyncio.Task[None] | None = None
 
     def reset(self) -> None:
         self.active = False
         self.resumed_sent = False
+        self._reached_pending = False
+        self._dirty = False
+
+    def adopt_existing_queue(self) -> None:
+        """After a restart, treat queued rows as an ongoing episode.
+
+        The "reached" alert was already sent before the restart, so only the
+        "resumed" alert remains to be sent.
+        """
+        self.active = True
+        self.resumed_sent = False
+        self._reached_pending = False
 
     def on_enqueue(self) -> None:
         """Called after a push is queued; starts the episode and its single alert."""
         if self.active:
+            if self._reached_pending:
+                self._dirty = True  # more pushes queued while settling
             return
         self.active = True
         self.resumed_sent = False
+        self._reached_pending = True
+        self._dirty = False
         try:
             self._task = asyncio.get_running_loop().create_task(self._notify_reached())
         except RuntimeError:  # no running loop
-            self.active = False
+            self.reset()
 
     async def _notify_reached(self) -> None:
         from app.db.database import async_session_factory
 
         try:
-            await _reached_settle_delay()
+            for _ in range(5):  # debounce: re-wait while new pushes keep arriving
+                self._dirty = False
+                await _reached_settle_delay()
+                if not self._dirty:
+                    break
+            self._reached_pending = False
             async with async_session_factory() as session:
                 pending = await count_rate_limited_pushes(session)
                 await _send_alert(

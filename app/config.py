@@ -56,6 +56,10 @@ class Settings:
         os.getenv("NOTIFY_ON_AUTO_ADVANCE", "True").lower() == "true"
     )
     notify_on_errors: bool = os.getenv("NOTIFY_ON_ERRORS", "True").lower() == "true"
+    # Seconds the "rate limit reached" alert waits for a burst of queued pushes to settle
+    rate_limit_notify_delay_seconds: float = float(
+        os.getenv("RATE_LIMIT_NOTIFY_DELAY_SECONDS", "3.0")
+    )
 
     # --- App ---
     app_env: str = os.getenv("APP_ENV", "development")

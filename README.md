@@ -45,6 +45,8 @@ NZBoxer is built around an **on-demand workflow**:
 - **Automatic Dead-Release Replacement:** If a pushed NZB fails on TorBox (e.g., missing articles, repair failure, or password protection), NZBoxer blacklists the broken release, deletes the failed transfer from TorBox, and automatically pushes the next highest-scoring candidate.
 - **Push History & TorBox Management:** Every push is recorded in a permanent history ledger showing its current TorBox status (*Ready on TorBox*, *Replaced*, *Deleted*, *Failed*, or *Canceled*), with built-in controls to delete files directly from TorBox or re-push a title at any time.
 - **Consolidated Notifications:** Sends rich status notifications via **Discord Webhooks** and/or **Telegram**, automatically grouping multi-episode pushes and completions for the same show into a single clean summary message.
+- **TorBox Rate-Limit Queue:** If TorBox rate-limits NZBoxer, pushes (auto, manual picks, season packs, auto-advance, and replacements) are paused instead of failed, shown as *Paused — rate limit* in Active Pushes, and resumed automatically in order once the cooldown ends. You get just one "limit reached" and one "resumed" message per episode, however many pushes were queued.
+- **Error Alerts & Log Redaction:** ERROR-level log events can be forwarded to Discord/Telegram (deduplicated, toggle: *Error & rate-limit alerts*), and API keys/tokens are masked in all logs and forwarded messages.
 
 ---
 
