@@ -2060,12 +2060,12 @@ async def run_system_check(request: Request):
 
 
 @app.post("/sync", response_class=HTMLResponse)
-async def manual_sync(background_tasks: BackgroundTasks):
-    """Trigger manual sync for all configured providers and show flash message."""
+async def manual_sync() -> HTMLResponse:
+    """Trigger manual sync for all configured providers — synchronous, blocks until complete."""
     from app.core.automation import sync_all_providers
 
-    background_tasks.add_task(sync_all_providers)
-    msg = "Provider sync started in background."
+    await sync_all_providers()
+    msg = "Watchlist sync complete."
 
     return HTMLResponse(
         content=f"""
@@ -2078,7 +2078,8 @@ async def manual_sync(background_tasks: BackgroundTasks):
                 <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
             </button>
         </div>
-    """
+    """,
+        headers={"HX-Trigger": "refreshDashboard"},
     )
 
 
