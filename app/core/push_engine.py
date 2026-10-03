@@ -32,6 +32,7 @@ from app.core.parser import build_release_feature_pills, parse_release_name
 from app.core.rate_limit_queue import (
     RATE_LIMITED_DETAIL,
     is_rate_limit_error,
+    rate_limit_episode,
     rate_limit_queue,
     resume_time_label,
 )
@@ -1085,6 +1086,7 @@ async def _record_auto_push_failure(
             "⏸️ Queued rate-limited push for '%s' (%s).", item.title, resume_time_label()
         )
         rate_limit_queue.wake()
+        rate_limit_episode.on_enqueue()
     return history
 
 

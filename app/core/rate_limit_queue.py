@@ -15,6 +15,7 @@ pushes are attempted immediately (a fresh 429 simply re-queues them).
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any
@@ -81,6 +82,84 @@ class RateLimitQueueState:
 
 rate_limit_queue = RateLimitQueueState()
 
+# Grace period that lets a burst of enqueues settle so the "reached" alert reports
+# the full pending count (tests set this to 0).
+REACHED_NOTIFY_DELAY_SECONDS = 3.0
+
+
+async def _reached_settle_delay() -> None:
+    if REACHED_NOTIFY_DELAY_SECONDS > 0:
+        await asyncio.sleep(REACHED_NOTIFY_DELAY_SECONDS)
+
+
+class RateLimitEpisode:
+    """Tracks one rate-limit episode so only two alerts are sent per episode (ADR-095).
+
+    An episode starts at the first enqueue, sends one ``reached`` alert, one
+    ``resumed`` alert when the queue restarts, and ends when the queue is empty.
+    """
+
+    def __init__(self) -> None:
+        self.active = False
+        self.resumed_sent = False
+        self._task: asyncio.Task[None] | None = None
+
+    def reset(self) -> None:
+        self.active = False
+        self.resumed_sent = False
+
+    def on_enqueue(self) -> None:
+        """Called after a push is queued; starts the episode and its single alert."""
+        if self.active:
+            return
+        self.active = True
+        self.resumed_sent = False
+        try:
+            self._task = asyncio.get_running_loop().create_task(self._notify_reached())
+        except RuntimeError:  # no running loop
+            self.active = False
+
+    async def _notify_reached(self) -> None:
+        from app.db.database import async_session_factory
+
+        try:
+            await _reached_settle_delay()
+            async with async_session_factory() as session:
+                pending = await count_rate_limited_pushes(session)
+                await _send_alert(
+                    session,
+                    "⏸️ TorBox rate limit reached",
+                    f"{pending} push(es) paused — {resume_time_label()}.",
+                )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Rate-limit reached alert failed: %s", exc)
+
+    async def on_resume(self, pending: int) -> None:
+        """Send the single ``resumed`` alert when the queue restarts."""
+        if not self.active or self.resumed_sent:
+            return
+        self.resumed_sent = True
+        from app.db.database import async_session_factory
+
+        try:
+            async with async_session_factory() as session:
+                await _send_alert(
+                    session,
+                    "▶️ TorBox rate limit over — queue resumed",
+                    f"Resuming {pending} paused push(es).",
+                )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Rate-limit resumed alert failed: %s", exc)
+
+
+async def _send_alert(session: AsyncSession, title: str, body: str) -> None:
+    from app.services.notifications import dispatch_alert_message
+
+    await dispatch_alert_message(session, "notify_on_errors", title, body)
+
+
+rate_limit_episode = RateLimitEpisode()
+
 
 async def count_rate_limited_pushes(session: AsyncSession) -> int:
     """Number of queued (not dismissed) rate-limited pushes."""
@@ -125,8 +204,11 @@ async def resume_rate_limited_pushes() -> int:
         )
 
     if not rows:
+        rate_limit_episode.reset()
         rate_limit_queue.sleep()
         return 0
+
+    await rate_limit_episode.on_resume(len(rows))
 
     # Preserve FIFO order of queued rows (manual picks keep their chosen release;
     # auto-push targets are grouped per item).
@@ -202,6 +284,7 @@ async def resume_rate_limited_pushes() -> int:
 
     async with async_session_factory() as session:
         if await count_rate_limited_pushes(session) == 0:
+            rate_limit_episode.reset()
             rate_limit_queue.sleep()
     return resumed
 
