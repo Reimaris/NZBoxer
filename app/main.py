@@ -147,6 +147,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         await reload_settings_from_db(session)
 
     # 2. Setup and Start APScheduler
+    import asyncio
+
     from apscheduler.triggers.cron import CronTrigger
     from apscheduler.triggers.interval import IntervalTrigger
 
@@ -155,10 +157,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         run_transfer_poller_tick,
         transfer_poller,
     )
-
-    async with async_session_factory() as session:
-        if await count_downloading_entities(session) > 0:
-            transfer_poller.wake()
 
     scheduler.add_job(
         run_orchestrator_tick,
@@ -173,6 +171,16 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         replace_existing=True,
     )
     scheduler.start()
+    transfer_poller.set_scheduler(scheduler)
+
+    async with async_session_factory() as session:
+        active_dl_count = await count_downloading_entities(session)
+        if active_dl_count > 0:
+            transfer_poller.wake()
+            asyncio.create_task(run_transfer_poller_tick())
+        else:
+            transfer_poller.sleep(0)
+
     logger.info(
         "APScheduler started with quarter-hour cron trigger and 20s auto-wake transfer poller."
     )

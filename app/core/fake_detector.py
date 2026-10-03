@@ -131,6 +131,22 @@ def _extract_file_names(files: list[Any]) -> list[str]:
     return names
 
 
+PLAYABLE_VIDEO_EXTENSIONS = (
+    ".mkv",
+    ".mp4",
+    ".avi",
+    ".ts",
+    ".m2ts",
+    ".webm",
+    ".mov",
+    ".wmv",
+    ".flv",
+    ".mpg",
+    ".mpeg",
+    ".m4v",
+)
+
+
 def is_torbox_filelist_fake(
     tb_files: list[Any] | None, media_type: str = "movie"
 ) -> tuple[bool, str | None]:
@@ -151,7 +167,7 @@ def is_torbox_filelist_fake(
             if fname.endswith(bad_ext):
                 return True, f"Downloaded executable file: {raw_name}"
 
-        for vid_ext in [".mkv", ".mp4", ".ts", ".avi"]:
+        for vid_ext in PLAYABLE_VIDEO_EXTENSIONS:
             if fname.endswith(vid_ext):
                 has_valid_payload = True
                 break

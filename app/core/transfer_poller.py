@@ -9,8 +9,8 @@ Responsibilities:
 1. Auto-Wake / Auto-Sleep lifecycle (`transfer_poller.wake()` / `transfer_poller.sleep()`).
 2. Live progress tracking (`progress_pct`, `download_speed_bytes`, `eta_seconds`, `status_detail`)
    on active `DownloadHistory` rows.
-3. Layer 3 Playable Video Verification (`is_torbox_filelist_fake`) with a 15-minute
-   unpack grace window (`UNPACK_GRACE_PERIOD_SECONDS = 900`) for archive-only payloads,
+3. Layer 3 Playable Video Verification (`is_torbox_filelist_fake`) with immediate
+   Tick-1 rejection for archive-only (`RAR`/`PAR2`) or executable payloads,
    transitioning verified transfers to `COMPLETED` and dispatching `Ready on TorBox` notifications.
 4. Split Failure Recovery:
    - `push_mode == "auto"`: Deletes broken transfer from TorBox, blacklists the release,
@@ -27,7 +27,7 @@ import logging
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import func, select
+from sqlalchemy import exists, func, select
 from sqlalchemy.orm import selectinload
 
 from app.core.failure_logger import log_failure
@@ -53,28 +53,86 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-UNPACK_GRACE_PERIOD_SECONDS = 900
 NOT_FOUND_GRACE_PERIOD_SECONDS = 900
 
 _poller_lock = asyncio.Lock()
 
 
 class TransferPollerState:
-    """Tracks whether the event-driven TorBox transfer poller is awake or sleeping."""
+    """In-memory runtime state for the Auto-Wake / Auto-Sleep Transfer Poller."""
 
     def __init__(self) -> None:
         self.is_awake: bool = False
         self.last_polled_at: datetime | None = None
+        self.active_count: int = 0
+        self._scheduler: Any | None = None
+        # Maps item_id -> human-readable item title currently being searched/dispatched in background
+        self.in_flight_pushes: dict[int, str] = {}
+
+    @property
+    def last_tick_at(self) -> datetime | None:
+        return self.last_polled_at
+
+    @last_tick_at.setter
+    def last_tick_at(self, val: datetime | None) -> None:
+        self.last_polled_at = val
+
+    def set_scheduler(self, scheduler: Any) -> None:
+        self._scheduler = scheduler
+
+    def register_in_flight_push(self, item_id: int, title: str) -> None:
+        self.in_flight_pushes[item_id] = title
+        self.wake()
+
+    def unregister_in_flight_push(self, item_id: int) -> None:
+        self.in_flight_pushes.pop(item_id, None)
+
+    @property
+    def has_in_flight_pushes(self) -> bool:
+        return len(self.in_flight_pushes) > 0
+
+    @property
+    def in_flight_titles(self) -> list[str]:
+        return list(self.in_flight_pushes.values())
 
     def wake(self) -> None:
-        if not self.is_awake:
-            logger.info("⚡ Auto-Wake Transfer Poller awakened.")
+        was_awake = self.is_awake
         self.is_awake = True
+        if self._scheduler is not None:
+            try:
+                job = self._scheduler.get_job("transfer_poller_job")
+                if job is not None and job.next_run_time is None:
+                    self._scheduler.resume_job("transfer_poller_job")
+                    logger.info("⚡ Transfer Poller resumed in APScheduler.")
+            except Exception as exc:
+                logger.warning("Could not resume transfer_poller_job: %s", exc)
+        if not was_awake:
+            logger.info(
+                "⚡ Transfer Poller woken up — active downloads or in-flight pushes detected."
+            )
 
-    def sleep(self) -> None:
+    def sleep(self, active_count: int = 0) -> None:
+        if self.has_in_flight_pushes or active_count > 0:
+            # Never sleep while a background Auto-Push is still querying indexers / uploading NZBs
+            self.is_awake = True
+            self.active_count = active_count
+            return
         if self.is_awake:
-            logger.info("💤 Active transfers finished. Transfer Poller entering sleep.")
+            logger.info(
+                "💤 Transfer Poller going to sleep — 0 active downloads remaining."
+            )
         self.is_awake = False
+        self.active_count = active_count
+        if self._scheduler is not None:
+            try:
+                job = self._scheduler.get_job("transfer_poller_job")
+                if job is not None and job.next_run_time is not None:
+                    self._scheduler.pause_job("transfer_poller_job")
+                    logger.info(
+                        "💤 Transfer Poller paused in APScheduler (zero idle CPU/DB usage)."
+                    )
+            except Exception as exc:
+                logger.warning("Could not pause transfer_poller_job: %s", exc)
 
 
 transfer_poller = TransferPollerState()
@@ -86,7 +144,12 @@ def wake_transfer_poller() -> None:
 
 
 async def count_downloading_entities(session: AsyncSession) -> int:
-    """Count all entities currently in DOWNLOADING status across Movies, Seasons, and Episodes."""
+    """Count all active downloading push targets across Movies, Season Packs, and Episodes.
+
+    Season rows in DOWNLOADING state are only counted when they have zero child Episode
+    rows in DOWNLOADING state (true season-pack downloads), ensuring a single downloading
+    episode reports DOWNLOADING: 1 rather than 2.
+    """
     movies_c = (
         await session.execute(
             select(func.count(MediaItem.id)).where(
@@ -99,7 +162,13 @@ async def count_downloading_entities(session: AsyncSession) -> int:
     seasons_c = (
         await session.execute(
             select(func.count(Season.id)).where(
-                Season.status == SeasonStatus.DOWNLOADING
+                Season.status == SeasonStatus.DOWNLOADING,
+                ~exists(
+                    select(Episode.id).where(
+                        Episode.season_id == Season.id,
+                        Episode.status == EpisodeStatus.DOWNLOADING,
+                    )
+                ),
             )
         )
     ).scalar() or 0
@@ -354,6 +423,7 @@ def _sync_season_status_from_episodes(season: Season | None) -> None:
     )
     has_active_pack = any(
         not h.is_dismissed
+        and bool(h.torbox_id or h.torbox_hash)
         and h.episode_id is None
         and not _is_history_terminal(h.status_detail)
         for h in hist_list
@@ -546,18 +616,29 @@ async def run_transfer_poller_tick(
         )
 
 
+ACTIVE_POLLABLE_STATUS_DETAILS = (
+    "downloading",
+    "queued",
+    "processing",
+    "unpacking",
+    "verifying",
+    "pending",
+    "",
+)
+
+
 async def _run_transfer_poller_tick_with_session(
     session: AsyncSession,
     pre_fetched_downloads: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     active_count = await count_downloading_entities(session)
     if active_count == 0:
-        transfer_poller.sleep()
+        transfer_poller.sleep(0)
         return {
             "polled": False,
             "active_count": 0,
             "remaining_active": 0,
-            "sleeping": True,
+            "sleeping": not transfer_poller.is_awake,
         }
 
     transfer_poller.wake()
@@ -676,8 +757,9 @@ async def _run_transfer_poller_tick_with_session(
             h
             for h in histories
             if not h.is_dismissed
+            and bool(h.torbox_id or h.torbox_hash)
             and (h.status_detail or "").strip().lower()
-            not in ("replaced", "canceled", "deleted", "expired")
+            in ACTIVE_POLLABLE_STATUS_DETAILS
             and (not require_episode_none or h.episode_id is None)
         ]
         if not candidates:
@@ -690,23 +772,39 @@ async def _run_transfer_poller_tick_with_session(
             ),
         )
 
+    affected_items: dict[int, MediaItem] = {}
+
     for m in movies:
         hist = _latest_history(m.download_history)
         if hist is not None:
             targets_to_evaluate.append((m, hist, m, None, None))
+        elif not transfer_poller.has_in_flight_pushes and m.id is not None:
+            affected_items[m.id] = m
 
     for s in seasons:
         hist = _latest_history(s.download_history, require_episode_none=True)
         if hist is not None:
             targets_to_evaluate.append((s, hist, s.media_item, s, None))
+        elif (
+            not transfer_poller.has_in_flight_pushes
+            and s.media_item is not None
+            and s.media_item.id is not None
+        ):
+            affected_items[s.media_item.id] = s.media_item
 
     for e in episodes:
         hist = _latest_history(e.download_history)
         if hist is not None:
             targets_to_evaluate.append((e, hist, e.season.media_item, e.season, e))
+        elif (
+            not transfer_poller.has_in_flight_pushes
+            and e.season is not None
+            and e.season.media_item is not None
+            and e.season.media_item.id is not None
+        ):
+            affected_items[e.season.media_item.id] = e.season.media_item
 
     now_utc = datetime.now(timezone.utc)
-    affected_items: dict[int, MediaItem] = {}
 
     for target, history, item, season, episode in targets_to_evaluate:
         if item.id is not None:
@@ -737,8 +835,11 @@ async def _run_transfer_poller_tick_with_session(
             else:
                 history.eta_seconds = None
 
-        # 1. Check Completed / Cached -> Layer 3 Playable Video Verification
-        if status_lower in ("completed", "cached", "paused") and tb_item is not None:
+        # 1. Check Completed / Cached -> Immediate Layer 3 Playable Video Verification
+        is_completed = status_lower in ("completed", "cached", "paused") or bool(
+            tb_item and tb_item.get("download_finished") is True
+        )
+        if is_completed and tb_item is not None:
             raw_files = tb_item.get("files")
             tb_files: list[Any] = (
                 raw_files
@@ -754,29 +855,23 @@ async def _run_transfer_poller_tick_with_session(
             )
 
             if is_fake:
-                if elapsed_seconds < UNPACK_GRACE_PERIOD_SECONDS:
-                    # Still within the 15-minute unpack grace window
-                    history.progress_pct = 100.0
-                    history.download_speed_bytes = 0
-                    history.eta_seconds = 0
-                    history.status_detail = "unpacking"
-                    continue
-                else:
-                    # Exceeded 15m unpack grace window -> treat as unextractable archive failure
-                    await _handle_transfer_failure(
-                        session=session,
-                        target=target,
-                        history=history,
-                        item=item,
-                        season=season,
-                        episode=episode,
-                        tb_item=tb_item,
-                        reason="TorBox failed to extract archive (only RARs/PAR2)",
-                        error_type="unextracted_archive",
-                        log_msg=f"TorBox failed to extract archive (only RARs/PAR2): {fake_reason}",
-                        sh_max_retries=sh_max_retries,
-                    )
-                    continue
+                reason = (
+                    "Layer 3 Fake Detection: Archive/RAR-only without playable video"
+                )
+                await _handle_transfer_failure(
+                    session=session,
+                    target=target,
+                    history=history,
+                    item=item,
+                    season=season,
+                    episode=episode,
+                    tb_item=tb_item,
+                    reason=reason,
+                    error_type="unextracted_archive",
+                    log_msg=f"{reason} ({fake_reason})",
+                    sh_max_retries=sh_max_retries,
+                )
+                continue
 
             # Verified Playable Video! Transition immediately to COMPLETED
             history.progress_pct = 100.0
@@ -883,13 +978,13 @@ async def _run_transfer_poller_tick_with_session(
 
     remaining_active = await count_downloading_entities(session)
     if remaining_active == 0:
-        transfer_poller.sleep()
+        transfer_poller.sleep(0)
 
     return {
         "polled": True,
         "active_count": active_count,
         "remaining_active": remaining_active,
-        "sleeping": remaining_active == 0,
+        "sleeping": not transfer_poller.is_awake,
     }
 
 
@@ -1299,10 +1394,17 @@ async def _recalculate_parent_status(
     )
 
     def _is_hist_active(h: DownloadHistory) -> bool:
-        if h.is_dismissed:
+        if h.is_dismissed or not (h.torbox_id or h.torbox_hash):
             return False
         d = (h.status_detail or "").strip().lower()
-        return d in ("downloading", "queued", "processing", "unpacking", "verifying")
+        return d in (
+            "downloading",
+            "queued",
+            "processing",
+            "unpacking",
+            "verifying",
+            "pending",
+        )
 
     def _is_hist_completed(h: DownloadHistory) -> bool:
         d = (h.status_detail or "").strip().lower()
