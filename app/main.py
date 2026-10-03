@@ -67,6 +67,16 @@ root_logger.addHandler(console_handler)
 if file_handler:
     root_logger.addHandler(file_handler)
 
+# Mask API keys and other secrets on every handler (ADR-097)
+from app.core.log_redaction import (  # noqa: E402
+    install_model_listeners,
+    install_redaction,
+    refresh_secrets,
+)
+
+install_redaction([console_handler, file_handler])
+install_model_listeners()
+
 logger = logging.getLogger(__name__)
 
 # Silence noisy loggers
@@ -147,6 +157,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # 1.5 Load settings from DB into memory
     async with async_session_factory() as session:
         await reload_settings_from_db(session)
+        await refresh_secrets(session)
 
     # 2. Setup and Start APScheduler
     import asyncio
