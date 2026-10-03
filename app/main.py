@@ -778,7 +778,10 @@ async def manual_push_to_torbox(magnet: str = Form(...)):
 
     try:
         if magnet.startswith("magnet:"):
-            result = await torbox.send_magnet_link(magnet, is_manual=True)
+            try:
+                result = await torbox.send_magnet_link(magnet, is_manual=True)
+            except (torbox.DownloaderNetworkError, torbox.TorBoxError) as e:
+                result = {"error": str(e)}
         else:
             try:
                 nzb_bytes, filename = await treasure_maps.fetch_nzb_bytes(magnet)
@@ -787,6 +790,8 @@ async def manual_push_to_torbox(magnet: str = Form(...)):
                 )
             except treasure_maps.IndexerError as e:
                 result = {"error": f"NZB Download Error: {e}"}
+            except (torbox.DownloaderNetworkError, torbox.TorBoxError) as e:
+                result = {"error": str(e)}
 
         if result and (result.get("hash") or result.get("id")):
             return HTMLResponse(

@@ -258,6 +258,13 @@ async def _auto_replace_failed_push(
         resolve_effective_search_config,
     )
 
+    if torbox.get_cooldown_remaining(is_manual=True) > 0:
+        logger.warning(
+            "Skipping auto-replacement search for '%s' — TorBox cooldown active.",
+            item.title,
+        )
+        return None
+
     effective_cfg = await resolve_effective_search_config(session, item)
     blacklisted_guids, blacklisted_titles = await _load_blacklisted_sets(
         session, item.id

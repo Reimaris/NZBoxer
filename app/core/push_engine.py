@@ -663,6 +663,7 @@ async def _dispatch_candidate_list_to_torbox(
     event_type: str = "push_initiated",
     status_reason: str | None = None,
     reset_fail_count: bool = True,
+    error_out: list[str] | None = None,
 ) -> DownloadHistory | None:
     """Iterate through scored candidates, verify Layer 2 NZB fake check, and dispatch to TorBox."""
     is_movie = episode is None and (
@@ -673,6 +674,19 @@ async def _dispatch_candidate_list_to_torbox(
     for cand in candidates:
         guid = cand["guid"]
         title = cand["title"]
+
+        cooldown_rem = torbox.get_cooldown_remaining(is_manual=True)
+        if cooldown_rem > 0:
+            err_str = f"TorBox rate limit exceeded (cooldown: {int(cooldown_rem)}s)"
+            logger.warning(
+                "Skipping NZB fetch & TorBox dispatch for '%s': %s",
+                title,
+                err_str,
+            )
+            if error_out is not None:
+                error_out.append(err_str)
+            return None
+
         prefetched = cand.get("_prefetched_nzb")
         if prefetched is not None:
             nzb_bytes, filename = prefetched
@@ -704,9 +718,19 @@ async def _dispatch_candidate_list_to_torbox(
                 await session.commit()
                 continue
 
-        torbox_result = await torbox.send_nzb_file(
-            nzb_bytes, filename=filename, session=session, is_manual=True
-        )
+        try:
+            torbox_result = await torbox.send_nzb_file(
+                nzb_bytes, filename=filename, session=session, is_manual=True
+            )
+        except (torbox.DownloaderNetworkError, torbox.TorBoxError) as exc:
+            logger.warning(
+                "TorBox dispatch halted for '%s' due to downloader error/cooldown: %s",
+                title,
+                exc,
+            )
+            if error_out is not None:
+                error_out.append(str(exc))
+            return None
         if not torbox_result or (
             not torbox_result.get("hash") and not torbox_result.get("id")
         ):
@@ -1033,6 +1057,28 @@ async def _push_single_season_or_movie_entry(
     )
     dispatched: list[DownloadHistory] = []
 
+    cooldown_rem = torbox.get_cooldown_remaining(is_manual=True)
+    if cooldown_rem > 0:
+        err_reason = (
+            f"failed: TorBox rate limit exceeded (cooldown: {int(cooldown_rem)}s)"
+        )
+        logger.warning(
+            "Skipping season/movie push for '%s' (%s) — %s",
+            item.title,
+            season.title or f"Season {season.season_number}",
+            err_reason,
+        )
+        if reset_fail_count:
+            await _record_auto_push_failure(
+                session,
+                item=item,
+                season=season,
+                episode=None,
+                reason=err_reason,
+            )
+            await session.commit()
+        return dispatched
+
     if entry_type == "movie":
         raw_results = await _query_movie_across_indexers(
             session,
@@ -1056,6 +1102,7 @@ async def _push_single_season_or_movie_entry(
         )
         if partitioned["had_candidates"] and _candidates_found_acc is not None:
             _candidates_found_acc.append(True)
+        tb_errors: list[str] = []
         hist = await _dispatch_candidate_list_to_torbox(
             session,
             partitioned["all_valid"],
@@ -1065,16 +1112,22 @@ async def _push_single_season_or_movie_entry(
             push_mode="auto",
             event_type=ev_type,
             reset_fail_count=reset_fail_count,
+            error_out=tb_errors,
         )
         if hist is not None:
             dispatched.append(hist)
-        elif not is_auto_advance and reset_fail_count:
+        elif reset_fail_count and (not is_auto_advance or tb_errors):
+            reason = (
+                f"failed: {tb_errors[-1]}"
+                if tb_errors
+                else _failure_reason_from_partitioned(partitioned)
+            )
             await _record_auto_push_failure(
                 session,
                 item=item,
                 season=season,
                 episode=None,
-                reason=_failure_reason_from_partitioned(partitioned),
+                reason=reason,
             )
             await session.commit()
         return dispatched
@@ -1149,6 +1202,7 @@ async def _push_single_season_or_movie_entry(
         )
         if pack_partitioned["had_candidates"] and _candidates_found_acc is not None:
             _candidates_found_acc.append(True)
+        pack_tb_errors: list[str] = []
         hist = await _dispatch_candidate_list_to_torbox(
             session,
             pack_partitioned["all_valid"],
@@ -1158,9 +1212,21 @@ async def _push_single_season_or_movie_entry(
             push_mode="auto",
             event_type=ev_type,
             reset_fail_count=reset_fail_count,
+            error_out=pack_tb_errors,
         )
         if hist is not None:
             dispatched.append(hist)
+            return dispatched
+        if pack_tb_errors:
+            if reset_fail_count:
+                await _record_auto_push_failure(
+                    session,
+                    item=item,
+                    season=season,
+                    episode=None,
+                    reason=f"failed: {pack_tb_errors[-1]}",
+                )
+                await session.commit()
             return dispatched
 
     # State 2: Score Decides (allow_season_packs=True, prefer_season_packs=False)
@@ -1188,6 +1254,7 @@ async def _push_single_season_or_movie_entry(
             _candidates_found_acc.append(True)
 
         if pack_candidates and not missing_released_eps:
+            pack_tb_errors = []
             hist = await _dispatch_candidate_list_to_torbox(
                 session,
                 pack_candidates,
@@ -1197,9 +1264,21 @@ async def _push_single_season_or_movie_entry(
                 push_mode="auto",
                 event_type=ev_type,
                 reset_fail_count=reset_fail_count,
+                error_out=pack_tb_errors,
             )
             if hist is not None:
                 dispatched.append(hist)
+                return dispatched
+            if pack_tb_errors:
+                if reset_fail_count:
+                    await _record_auto_push_failure(
+                        session,
+                        item=item,
+                        season=season,
+                        episode=None,
+                        reason=f"failed: {pack_tb_errors[-1]}",
+                    )
+                    await session.commit()
                 return dispatched
 
         if pack_candidates and missing_released_eps:
@@ -1232,6 +1311,7 @@ async def _push_single_season_or_movie_entry(
             if not e01_candidates or not _candidate_beats_pack(
                 e01_candidates[0], best_pack
             ):
+                pack_tb_errors = []
                 hist = await _dispatch_candidate_list_to_torbox(
                     session,
                     pack_candidates,
@@ -1241,9 +1321,21 @@ async def _push_single_season_or_movie_entry(
                     push_mode="auto",
                     event_type=ev_type,
                     reset_fail_count=reset_fail_count,
+                    error_out=pack_tb_errors,
                 )
                 if hist is not None:
                     dispatched.append(hist)
+                    return dispatched
+                if pack_tb_errors:
+                    if reset_fail_count:
+                        await _record_auto_push_failure(
+                            session,
+                            item=item,
+                            season=season,
+                            episode=None,
+                            reason=f"failed: {pack_tb_errors[-1]}",
+                        )
+                        await session.commit()
                     return dispatched
 
             # Case 2b: E01 beats Pack -> Pre-flight resolve all remaining episodes in memory before any TorBox upload
@@ -1307,6 +1399,7 @@ async def _push_single_season_or_movie_entry(
                     verified_ep_candidates.append((ep, verified_cand))
 
             if abort_to_pack:
+                pack_tb_errors = []
                 hist = await _dispatch_candidate_list_to_torbox(
                     session,
                     pack_candidates,
@@ -1316,12 +1409,25 @@ async def _push_single_season_or_movie_entry(
                     push_mode="auto",
                     event_type=ev_type,
                     reset_fail_count=reset_fail_count,
+                    error_out=pack_tb_errors,
                 )
                 if hist is not None:
                     dispatched.append(hist)
                     return dispatched
+                if pack_tb_errors:
+                    if reset_fail_count:
+                        await _record_auto_push_failure(
+                            session,
+                            item=item,
+                            season=season,
+                            episode=None,
+                            reason=f"failed: {pack_tb_errors[-1]}",
+                        )
+                        await session.commit()
+                    return dispatched
             else:
                 for ep, verified_cand in verified_ep_candidates:
+                    ep_tb_errors: list[str] = []
                     ep_hist = await _dispatch_candidate_list_to_torbox(
                         session,
                         [verified_cand],
@@ -1331,10 +1437,22 @@ async def _push_single_season_or_movie_entry(
                         push_mode="auto",
                         event_type=ev_type,
                         reset_fail_count=reset_fail_count,
+                        error_out=ep_tb_errors,
                     )
                     if ep_hist is not None:
                         dispatched.append(ep_hist)
                         await session.commit()
+                    elif ep_tb_errors:
+                        if reset_fail_count:
+                            await _record_auto_push_failure(
+                                session,
+                                item=item,
+                                season=season,
+                                episode=ep,
+                                reason=f"failed: {ep_tb_errors[-1]}",
+                            )
+                            await session.commit()
+                        break
                     elif not is_auto_advance and reset_fail_count:
                         await _record_auto_push_failure(
                             session,
@@ -1348,6 +1466,18 @@ async def _push_single_season_or_movie_entry(
 
     # State 1 (allow_season_packs=False) or Pack-to-Episode Fallback (when no valid Season Pack exists)
     for ep in missing_released_eps:
+        cooldown_rem = torbox.get_cooldown_remaining(is_manual=True)
+        if cooldown_rem > 0:
+            if not dispatched and reset_fail_count:
+                await _record_auto_push_failure(
+                    session,
+                    item=item,
+                    season=season,
+                    episode=ep,
+                    reason=f"failed: TorBox rate limit exceeded (cooldown: {int(cooldown_rem)}s)",
+                )
+                await session.commit()
+            break
         raw_ep_results = await _query_show_across_indexers(
             session,
             item,
@@ -1371,6 +1501,7 @@ async def _push_single_season_or_movie_entry(
         )
         if ep_partitioned["had_candidates"] and _candidates_found_acc is not None:
             _candidates_found_acc.append(True)
+        ep_tb_errors = []
         ep_hist = await _dispatch_candidate_list_to_torbox(
             session,
             ep_partitioned["all_valid"],
@@ -1380,10 +1511,22 @@ async def _push_single_season_or_movie_entry(
             push_mode="auto",
             event_type=ev_type,
             reset_fail_count=reset_fail_count,
+            error_out=ep_tb_errors,
         )
         if ep_hist is not None:
             dispatched.append(ep_hist)
             await session.commit()
+        elif ep_tb_errors:
+            if reset_fail_count:
+                await _record_auto_push_failure(
+                    session,
+                    item=item,
+                    season=season,
+                    episode=ep,
+                    reason=f"failed: {ep_tb_errors[-1]}",
+                )
+                await session.commit()
+            break
         elif not is_auto_advance and reset_fail_count:
             await _record_auto_push_failure(
                 session,
@@ -1452,6 +1595,12 @@ async def advance_season_buffer(
     dispatched: list[DownloadHistory] = []
     idx = 0
     while idx < len(remaining):
+        if torbox.get_cooldown_remaining(is_manual=True) > 0:
+            logger.warning(
+                "Halting Season Buffer Expansion for '%s' — TorBox cooldown active.",
+                item.title,
+            )
+            break
         candidate_entry = remaining[idx]
         is_eligible = (
             candidate_entry.id not in excluded
@@ -1781,51 +1930,69 @@ async def execute_auto_push(
     if item.media_type == MediaType.MOVIE and not season_ids and not episode_ids:
         item.fail_count = 0
         await session.commit()
-        raw_movie_results = await _query_movie_across_indexers(session, item)
-        movie_partitioned = _score_and_partition_candidates(
-            raw_results=raw_movie_results,
-            blacklisted_guids=blacklisted_guids,
-            blacklisted_titles=blacklisted_titles,
-            expected_title=item.title,
-            expected_year=item.year,
-            expected_alt_title=item.alt_title,
-            expected_season=None,
-            expected_episode=None,
-            expected_season_title=None,
-            runtime_minutes=item.runtime_minutes,
-            effective_cfg=effective_cfg,
-            media_type="movie",
-        )
-        if movie_partitioned["had_candidates"]:
-            any_candidates_found = True
-        hist = await _dispatch_candidate_list_to_torbox(
-            session,
-            movie_partitioned["all_valid"],
-            item=item,
-            season=None,
-            episode=None,
-            push_mode="auto",
-            event_type="push_initiated",
-            reset_fail_count=True,
-        )
-        if hist is not None:
-            dispatched_histories.append(hist)
-        else:
+        cooldown_rem = torbox.get_cooldown_remaining(is_manual=True)
+        if cooldown_rem > 0:
             await _record_auto_push_failure(
                 session,
                 item=item,
                 season=None,
                 episode=None,
-                reason=_failure_reason_from_partitioned(movie_partitioned),
+                reason=f"failed: TorBox rate limit exceeded (cooldown: {int(cooldown_rem)}s)",
             )
-        await session.commit()
-        if dispatched_histories:
-            await dispatch_batch_notification_event(
+            await session.commit()
+        else:
+            raw_movie_results = await _query_movie_across_indexers(session, item)
+            movie_partitioned = _score_and_partition_candidates(
+                raw_results=raw_movie_results,
+                blacklisted_guids=blacklisted_guids,
+                blacklisted_titles=blacklisted_titles,
+                expected_title=item.title,
+                expected_year=item.year,
+                expected_alt_title=item.alt_title,
+                expected_season=None,
+                expected_episode=None,
+                expected_season_title=None,
+                runtime_minutes=item.runtime_minutes,
+                effective_cfg=effective_cfg,
+                media_type="movie",
+            )
+            if movie_partitioned["had_candidates"]:
+                any_candidates_found = True
+            movie_tb_errors: list[str] = []
+            hist = await _dispatch_candidate_list_to_torbox(
                 session,
-                event_type="push_initiated",
-                histories=dispatched_histories,
+                movie_partitioned["all_valid"],
                 item=item,
+                season=None,
+                episode=None,
+                push_mode="auto",
+                event_type="push_initiated",
+                reset_fail_count=True,
+                error_out=movie_tb_errors,
             )
+            if hist is not None:
+                dispatched_histories.append(hist)
+            else:
+                reason = (
+                    f"failed: {movie_tb_errors[-1]}"
+                    if movie_tb_errors
+                    else _failure_reason_from_partitioned(movie_partitioned)
+                )
+                await _record_auto_push_failure(
+                    session,
+                    item=item,
+                    season=None,
+                    episode=None,
+                    reason=reason,
+                )
+            await session.commit()
+            if dispatched_histories:
+                await dispatch_batch_notification_event(
+                    session,
+                    event_type="push_initiated",
+                    histories=dispatched_histories,
+                    item=item,
+                )
 
     # Case 2: Series / Anime selected seasons (or default to first monitored/searching season if none specified)
     else:
@@ -1850,7 +2017,9 @@ async def execute_auto_push(
         )
         covered_season_ids: set[int] = set()
         candidates_found_acc: list[bool] = []
-        for season in selected_seasons:
+        for idx_s, season in enumerate(selected_seasons):
+            if idx_s > 0 and torbox.get_cooldown_remaining(is_manual=True) > 0:
+                break
             season.fail_count = 0
             for ep in season.episodes:
                 ep.fail_count = 0
@@ -1869,6 +2038,8 @@ async def execute_auto_push(
                 dispatched_histories.extend(s_hists)
                 pushed_seasons.append(season)
             covered_season_ids.add(season.id)
+            if torbox.get_cooldown_remaining(is_manual=True) > 0:
+                break
         if candidates_found_acc:
             any_candidates_found = True
 
@@ -1881,6 +2052,18 @@ async def execute_auto_push(
                 parent_s, ep_obj = eps_by_id[eid]
                 if parent_s.id in covered_season_ids:
                     continue
+                cooldown_rem = torbox.get_cooldown_remaining(is_manual=True)
+                if cooldown_rem > 0:
+                    if not dispatched_histories:
+                        await _record_auto_push_failure(
+                            session,
+                            item=item,
+                            season=parent_s,
+                            episode=ep_obj,
+                            reason=f"failed: TorBox rate limit exceeded (cooldown: {int(cooldown_rem)}s)",
+                        )
+                        await session.commit()
+                    break
                 ep_obj.fail_count = 0
                 await session.commit()
                 raw_ep_results = await _query_show_across_indexers(
@@ -1911,6 +2094,7 @@ async def execute_auto_push(
                 )
                 if ep_partitioned["had_candidates"]:
                     any_candidates_found = True
+                ep_tb_errors: list[str] = []
                 ep_hist = await _dispatch_candidate_list_to_torbox(
                     session,
                     ep_partitioned["all_valid"],
@@ -1919,9 +2103,19 @@ async def execute_auto_push(
                     episode=ep_obj,
                     push_mode="auto",
                     event_type="push_initiated",
+                    error_out=ep_tb_errors,
                 )
                 if ep_hist is not None:
                     dispatched_histories.append(ep_hist)
+                elif ep_tb_errors:
+                    await _record_auto_push_failure(
+                        session,
+                        item=item,
+                        season=parent_s,
+                        episode=ep_obj,
+                        reason=f"failed: {ep_tb_errors[-1]}",
+                    )
+                    break
                 else:
                     await _record_auto_push_failure(
                         session,
@@ -1941,7 +2135,11 @@ async def execute_auto_push(
             )
 
         # Season Expansion & Movie Bridge Lookahead when auto_advance_seasons is ON
-        if auto_advance_seasons and pushed_seasons:
+        if (
+            auto_advance_seasons
+            and pushed_seasons
+            and torbox.get_cooldown_remaining(is_manual=True) == 0
+        ):
             max_order = max(s.watch_order for s in pushed_seasons)
             pushed_ids = {s.id for s in pushed_seasons}
             adv_hists = await advance_season_buffer(
@@ -2270,6 +2468,7 @@ async def execute_manual_grab(
         "matched_language": payload.get("matched_language"),
     }
 
+    manual_tb_errors: list[str] = []
     hist = await _dispatch_candidate_list_to_torbox(
         session,
         [candidate],
@@ -2278,14 +2477,20 @@ async def execute_manual_grab(
         episode=episode_obj,
         push_mode="manual",
         reset_fail_count=True,
+        error_out=manual_tb_errors,
     )
     if hist is None:
         await session.commit()
+        err_msg = (
+            manual_tb_errors[-1]
+            if manual_tb_errors
+            else "Release failed fake verification or TorBox dispatch"
+        )
         return {
             "pushed": False,
             "push_mode": "manual",
-            "error": "Release failed fake verification or TorBox dispatch",
-            "status_code": 400,
+            "error": err_msg,
+            "status_code": 429 if manual_tb_errors else 400,
         }
 
     if (
