@@ -67,14 +67,18 @@ root_logger.addHandler(console_handler)
 if file_handler:
     root_logger.addHandler(file_handler)
 
-# Mask API keys and other secrets on every handler (ADR-097)
+# Mask API keys and other secrets on every handler (ADR-097) and forward
+# ERROR+ records to Telegram/Discord (ADR-096)
+from app.core.error_forwarder import ErrorForwarderHandler  # noqa: E402
 from app.core.log_redaction import (  # noqa: E402
     install_model_listeners,
     install_redaction,
     refresh_secrets,
 )
 
-install_redaction([console_handler, file_handler])
+error_forwarder = ErrorForwarderHandler()
+root_logger.addHandler(error_forwarder)
+install_redaction([console_handler, file_handler, error_forwarder])
 install_model_listeners()
 
 logger = logging.getLogger(__name__)
@@ -158,6 +162,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     async with async_session_factory() as session:
         await reload_settings_from_db(session)
         await refresh_secrets(session)
+
+    import asyncio as _asyncio
+
+    error_forwarder.set_loop(_asyncio.get_running_loop())
 
     # 2. Setup and Start APScheduler
     import asyncio
@@ -1060,6 +1068,7 @@ async def export_settings():
                 "notify_on_auto_advance": getattr(
                     db_settings, "notify_on_auto_advance", True
                 ),
+                "notify_on_errors": getattr(db_settings, "notify_on_errors", True),
                 "scoring_settings": db_settings.scoring_settings,
             }
 
@@ -1165,6 +1174,10 @@ async def save_global_settings(
             if "notify_on_auto_advance" in form_data:
                 db_settings.notify_on_auto_advance = str(
                     form_data.get("notify_on_auto_advance")
+                ).lower() in ("1", "true", "on", "yes")
+            if "notify_on_errors" in form_data:
+                db_settings.notify_on_errors = str(
+                    form_data.get("notify_on_errors")
                 ).lower() in ("1", "true", "on", "yes")
 
             sc: dict[str, Any] = copy.deepcopy(DEFAULT_SCORING_CONFIG)
@@ -1672,6 +1685,9 @@ async def save_notification_settings(request: Request) -> Response:
         )
         db_settings.notify_on_auto_advance = _to_bool(
             payload.get("notify_on_auto_advance", False)
+        )
+        db_settings.notify_on_errors = _to_bool(
+            payload.get("notify_on_errors", db_settings.notify_on_errors)
         )
 
         await session.commit()

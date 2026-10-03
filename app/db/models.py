@@ -145,6 +145,9 @@ class SystemSettings(Base):
     notify_on_auto_advance: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default="1"
     )
+    notify_on_errors: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="1"
+    )
 
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

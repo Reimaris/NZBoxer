@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from app.services.discord import (
     build_discord_embed,
+    dispatch_alert_message,
     dispatch_batch_notification_event,
     dispatch_notification_event,
     format_batch_target_summary,
@@ -20,6 +21,7 @@ from app.services.discord import (
 
 __all__ = [
     "build_discord_embed",
+    "dispatch_alert_message",
     "dispatch_batch_notification_event",
     "dispatch_notification_event",
     "format_batch_target_summary",

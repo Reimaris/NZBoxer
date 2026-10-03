@@ -55,6 +55,7 @@ class Settings:
     notify_on_auto_advance: bool = (
         os.getenv("NOTIFY_ON_AUTO_ADVANCE", "True").lower() == "true"
     )
+    notify_on_errors: bool = os.getenv("NOTIFY_ON_ERRORS", "True").lower() == "true"
 
     # --- App ---
     app_env: str = os.getenv("APP_ENV", "development")
@@ -104,6 +105,7 @@ async def reload_settings_from_db(session: AsyncSession) -> None:
             notify_on_completed=settings.notify_on_completed,
             notify_on_failure=settings.notify_on_failure,
             notify_on_auto_advance=settings.notify_on_auto_advance,
+            notify_on_errors=settings.notify_on_errors,
             scoring_settings=scoring_config,
         )
         session.add(db_settings)
@@ -127,6 +129,7 @@ async def reload_settings_from_db(session: AsyncSession) -> None:
     settings.notify_on_auto_advance = bool(
         getattr(db_settings, "notify_on_auto_advance", True)
     )
+    settings.notify_on_errors = bool(getattr(db_settings, "notify_on_errors", True))
 
     import copy
 

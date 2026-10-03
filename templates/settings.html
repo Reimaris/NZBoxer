@@ -733,6 +733,10 @@
                                 <input type="checkbox" name="notify_on_auto_advance" value="true" {% if not db_settings or db_settings.notify_on_auto_advance %}checked{% endif %} class="w-4 h-4 accent-[#d40060]">
                                 <span class="text-xs text-white font-medium">Auto-Advance Season Triggered</span>
                             </label>
+                            <label class="flex items-center gap-2.5 p-2.5 rounded-lg bg-[#111115] border border-[#3f3f46] cursor-pointer">
+                                <input type="checkbox" name="notify_on_errors" value="true" {% if not db_settings or db_settings.notify_on_errors %}checked{% endif %} class="w-4 h-4 accent-[#d40060]">
+                                <span class="text-xs text-white font-medium">Errors &amp; Rate-Limit Alerts</span>
+                            </label>
                         </div>
                     </div>
                 </div>

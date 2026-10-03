@@ -420,6 +420,67 @@ async def dispatch_notification_event(
     }
 
 
+async def dispatch_alert_message(
+    session: AsyncSession | None,
+    flag_attr: str,
+    title: str,
+    body: str,
+    color: int = EVENT_COLORS["failure"],
+) -> dict[str, Any]:
+    """Send a plain alert (title + preformatted body) to Telegram and Discord.
+
+    Used for non-media alerts such as forwarded ERROR logs and rate-limit
+    notices. Gated by the given `SystemSettings` flag (e.g. `notify_on_errors`).
+    """
+    import html
+
+    from app.db.models import NotificationChannel, SystemSettings
+
+    db_settings: SystemSettings | None = None
+    if session is not None:
+        stmt = select(SystemSettings).where(SystemSettings.id == 1)
+        db_settings = (await session.execute(stmt)).scalars().first()
+
+    source: Any = db_settings if db_settings is not None else settings
+    if not bool(getattr(source, flag_attr, False)):
+        return {
+            "dispatched": False,
+            "telegram_sent": 0,
+            "discord_sent": False,
+            "reason": f"Alert disabled ({flag_attr}=False)",
+        }
+
+    telegram_sent = 0
+    if session is not None:
+        tg_stmt = select(NotificationChannel).where(
+            NotificationChannel.type == "telegram"
+        )
+        tg_channels = list((await session.execute(tg_stmt)).scalars().all())
+        tg_msg = f"<b>{html.escape(title)}</b>\n<pre>{html.escape(body)}</pre>"
+        for ch in tg_channels:
+            if ch.bot_token and ch.chat_id:
+                if await telegram.send_notification(tg_msg, ch.bot_token, ch.chat_id):
+                    telegram_sent += 1
+
+    discord_sent = False
+    discord_url = getattr(source, "discord_webhook_url", None)
+    if bool(getattr(source, "discord_enabled", False)) and discord_url:
+        embed = {
+            "title": title[:256],
+            "description": f"```\n{body}\n```"[:4096],
+            "color": color,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "footer": {"text": "NZBoxer"},
+        }
+        discord_sent = await send_discord_webhook(discord_url, embed=embed)
+
+    return {
+        "dispatched": telegram_sent > 0 or discord_sent,
+        "telegram_sent": telegram_sent,
+        "discord_sent": discord_sent,
+    }
+
+
 def _contiguous_runs(sorted_nums: list[int]) -> list[tuple[int, int]]:
     """Group a sorted list of unique integers into contiguous (start, end) ranges."""
     if not sorted_nums:

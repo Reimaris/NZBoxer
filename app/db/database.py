@@ -716,6 +716,7 @@ async def init_db(database_url: str) -> None:
                 "ALTER TABLE system_settings ADD COLUMN notify_on_completed BOOLEAN NOT NULL DEFAULT 1;",
                 "ALTER TABLE system_settings ADD COLUMN notify_on_failure BOOLEAN NOT NULL DEFAULT 1;",
                 "ALTER TABLE system_settings ADD COLUMN notify_on_auto_advance BOOLEAN NOT NULL DEFAULT 1;",
+                "ALTER TABLE system_settings ADD COLUMN notify_on_errors BOOLEAN NOT NULL DEFAULT 1;",
                 # Provider Simkl sync config_json column
                 "ALTER TABLE providers ADD COLUMN config_json TEXT NOT NULL DEFAULT '{}';",
                 # Migrate retired v2 MANUAL_GRAB status values to SEARCHING
