@@ -1,3 +1,3 @@
 """Application version constant."""
 
-APP_VERSION = "3.1.0"
+APP_VERSION = "3.1.1"
