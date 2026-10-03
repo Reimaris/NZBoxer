@@ -37,6 +37,9 @@ function initVideoDashboard() {
     return {
         activeCard: startCard,
         tab: ['movie', 'show', 'anime'].includes(startCard) ? startCard : 'movie',
+        pollerAwake: {{ (poller_awake if poller_awake is defined else false) | tojson }},
+        lastActivePushesCount: {{ (active_pushes_count if active_pushes_count is defined else 0) | tojson }},
+        lastDownloadingCount: {{ (downloading_count if downloading_count is defined else 0) | tojson }},
         search: '',
         historySearch: '',
         showStatus: false,
@@ -67,10 +70,14 @@ function initVideoDashboard() {
             window.addEventListener('nzboxer:switch-card', (ev) => {
                 const card = ev.detail && ev.detail.card;
                 if (card) {
+                    if (card === 'active_pushes') {
+                        this.pollerAwake = true;
+                    }
                     this.setCard(card);
                     this.$nextTick(() => {
                         const el = document.getElementById('active-pushes-container');
                         if (el && window.htmx) htmx.trigger(el, 'load');
+                        if (window.htmx) htmx.trigger(document.body, 'refreshDashboard');
                     });
                 }
             });
@@ -120,6 +127,23 @@ function initVideoDashboard() {
                 }
             };
             document.body.addEventListener('refreshDashboard', handleRefreshDashboard);
+            document.body.addEventListener('nzboxer:poller-state', (ev) => {
+                const d = (ev && ev.detail) || {};
+                const nextAwake = !!d.pollerAwake;
+                const nextActiveCount = typeof d.activePushesCount === 'number' ? d.activePushesCount : this.lastActivePushesCount;
+                const nextDownloadingCount = typeof d.downloadingCount === 'number' ? d.downloadingCount : this.lastDownloadingCount;
+                const awakeToSleeping = this.pollerAwake && !nextAwake;
+                const countsChanged = (
+                    nextActiveCount !== this.lastActivePushesCount ||
+                    nextDownloadingCount !== this.lastDownloadingCount
+                );
+                this.pollerAwake = nextAwake;
+                this.lastActivePushesCount = nextActiveCount;
+                this.lastDownloadingCount = nextDownloadingCount;
+                if (countsChanged || awakeToSleeping) {
+                    handleRefreshDashboard();
+                }
+            });
         },
         applySearchPreset(presetId) {
             if (!presetId) return;
@@ -978,7 +1002,7 @@ document.addEventListener('alpine:init', () => {
 
         <div id="active-pushes-container"
              hx-get="/api/pushes/active"
-             hx-trigger="load, every 8s[activeCard === 'active_pushes']"
+             hx-trigger="load, every 8s[activeCard === 'active_pushes' && pollerAwake]"
              hx-swap="innerHTML">
             {% include "partials/active_pushes_table.html" %}
         </div>

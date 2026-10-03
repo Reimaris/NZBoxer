@@ -67,13 +67,21 @@ def anyio_backend():
 
 @pytest.fixture(autouse=True)
 def reset_torbox_state():
+    from app.core.transfer_poller import transfer_poller
+
     torbox.set_cooldown(0.0)
     torbox.clear_usenet_cache()
     simkl._SIMKL_DEVICE_SESSIONS.clear()
+    transfer_poller.in_flight_pushes.clear()
+    transfer_poller.set_scheduler(None)
+    transfer_poller.sleep(0)
     yield
     torbox.set_cooldown(0.0)
     torbox.clear_usenet_cache()
     simkl._SIMKL_DEVICE_SESSIONS.clear()
+    transfer_poller.in_flight_pushes.clear()
+    transfer_poller.set_scheduler(None)
+    transfer_poller.sleep(0)
 
 
 @pytest.fixture(autouse=True)

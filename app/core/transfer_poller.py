@@ -432,6 +432,13 @@ def _sync_season_status_from_episodes(season: Season | None) -> None:
         season.status = SeasonStatus.DOWNLOADING
         return
 
+    has_failed_pack = any(
+        not h.is_dismissed
+        and h.episode_id is None
+        and (h.status_detail or "").strip().lower().startswith("failed")
+        for h in hist_list
+    )
+
     eps = (
         list(season.episodes or [])
         if "episodes" not in sa_inspect(season).unloaded
@@ -444,7 +451,9 @@ def _sync_season_status_from_episodes(season: Season | None) -> None:
         season.status = SeasonStatus.DOWNLOADING
         return
 
-    if any(ep.status == EpisodeStatus.FAILED for ep in eps):
+    if any(ep.status == EpisodeStatus.FAILED for ep in eps) or (
+        has_failed_pack and season.status == SeasonStatus.FAILED
+    ):
         season.status = SeasonStatus.FAILED
         return
 
@@ -459,6 +468,7 @@ def _sync_season_status_from_episodes(season: Season | None) -> None:
         SeasonStatus.COMPLETED,
         SeasonStatus.DOWNLOADED,
         SeasonStatus.PENDING,
+        SeasonStatus.FAILED,
     ):
         season.status = SeasonStatus.SEARCHING
 
@@ -1253,6 +1263,9 @@ async def dismiss_failed_push(session: AsyncSession, history_id: int) -> bool:
     ):
         history.media_item.status = MediaStatus.SEARCHING
 
+    if history.media_item is not None:
+        await _recalculate_parent_status(session, history.media_item)
+
     await session.commit()
     return True
 
@@ -1325,7 +1338,7 @@ async def cancel_active_push(session: AsyncSession, history_id: int) -> bool:
         )
 
     remaining = await count_downloading_entities(session)
-    if remaining == 0:
+    if remaining == 0 and not transfer_poller.has_in_flight_pushes:
         transfer_poller.sleep()
     return True
 
@@ -1425,10 +1438,10 @@ async def _recalculate_parent_status(
 
         if has_active_movie:
             item.status = MediaStatus.DOWNLOADING
-        elif has_completed_movie:
-            item.status = MediaStatus.COMPLETED
         elif has_failed_movie and item.status == MediaStatus.FAILED:
             item.status = MediaStatus.FAILED
+        elif has_completed_movie:
+            item.status = MediaStatus.COMPLETED
         else:
             if item.status != MediaStatus.FUTURE:
                 item.status = MediaStatus.SEARCHING
@@ -1447,6 +1460,10 @@ async def _recalculate_parent_status(
         )
         has_active_pack = any(
             h.season_id == s.id and h.episode_id is None and _is_hist_active(h)
+            for h in item_histories
+        )
+        has_failed_pack = any(
+            h.season_id == s.id and h.episode_id is None and _is_hist_failed(h)
             for h in item_histories
         )
 
@@ -1486,6 +1503,12 @@ async def _recalculate_parent_status(
                 s.fail_count = 0
                 s.last_error = None
             elif s.status == SeasonStatus.DOWNLOADING and not has_active_pack:
+                s.status = (
+                    SeasonStatus.COMPLETED
+                    if has_completed_pack
+                    else SeasonStatus.SEARCHING
+                )
+            elif s.status == SeasonStatus.FAILED and not has_failed_pack:
                 s.status = (
                     SeasonStatus.COMPLETED
                     if has_completed_pack

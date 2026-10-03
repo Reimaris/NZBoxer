@@ -8,6 +8,8 @@ and API endpoints for HTMX interactions.
 
 from __future__ import annotations
 
+import asyncio
+import json
 import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
@@ -331,6 +333,10 @@ async def dashboard(request: Request, background_tasks: BackgroundTasks):
         # Card 5: Active Pushes
         active_pushes = await get_active_pushes(session)
         downloading_count = await count_downloading_entities(session)
+        in_flight_titles = transfer_poller.in_flight_titles
+        poller_awake = (
+            transfer_poller.is_awake or downloading_count > 0 or bool(in_flight_titles)
+        )
 
         # Card 6: Manual Search defaults & Search Presets
         from app.services.preset_service import list_presets
@@ -373,7 +379,8 @@ async def dashboard(request: Request, background_tasks: BackgroundTasks):
             "active_pushes": active_pushes,
             "active_pushes_count": len(active_pushes),
             "downloading_count": downloading_count,
-            "poller_awake": transfer_poller.is_awake,
+            "in_flight_titles": in_flight_titles,
+            "poller_awake": poller_awake,
             "presets": presets,
             "presets_payload": presets_payload,
             "defaults": defaults,
@@ -2361,14 +2368,50 @@ async def api_get_push_modal(item_id: int, request: Request) -> Response:
         )
 
 
+_background_push_tasks: set[asyncio.Task[Any]] = set()
+
+
+async def wait_for_background_pushes() -> None:
+    """Await any in-flight background Auto-Push tasks (used by tests and graceful shutdown)."""
+    while _background_push_tasks:
+        pending = list(_background_push_tasks)
+        await asyncio.gather(*pending, return_exceptions=True)
+
+
+async def _run_background_auto_push(item_id: int, payload: dict[str, Any]) -> None:
+    """Execute Auto-Push Best asynchronously in the background while retaining lock & in-flight state."""
+    from app.core.push_engine import execute_auto_push
+    from app.core.search_lock import item_lock_manager
+    from app.core.transfer_poller import count_downloading_entities, transfer_poller
+    from app.db.database import async_session_factory
+
+    try:
+        async with async_session_factory() as session:
+            await execute_auto_push(session, item_id, payload)
+    except Exception as exc:
+        logger.exception("Background Auto-Push failed for item %s: %s", item_id, exc)
+    finally:
+        transfer_poller.unregister_in_flight_push(item_id)
+        try:
+            async with async_session_factory() as session:
+                remaining = await count_downloading_entities(session)
+                if remaining == 0 and not transfer_poller.has_in_flight_pushes:
+                    transfer_poller.sleep(0)
+        except Exception as exc:
+            logger.debug("Post-push poller sleep check skipped: %s", exc)
+        item_lock_manager.release(item_id)
+
+
 @app.post("/api/items/{item_id}/push/auto")
 async def api_push_item_auto(item_id: int, request: Request) -> Response:
-    """Execute Auto-Push Best (`push_mode = 'auto'`) protected by MediaItemLockManager."""
+    """Execute Auto-Push Best (`push_mode = 'auto'`) in the background protected by MediaItemLockManager."""
     from fastapi.responses import JSONResponse
 
-    from app.core.push_engine import execute_auto_push
+    from app.core.push_engine import persist_sticky_preferences
     from app.core.search_lock import create_conflict_response, item_lock_manager
+    from app.core.transfer_poller import transfer_poller, wake_transfer_poller
     from app.db.database import async_session_factory
+    from app.db.models import MediaItem
 
     if not item_lock_manager.try_acquire(item_id, owner="manual"):
         owner = item_lock_manager.get_lock_owner(item_id)
@@ -2382,11 +2425,40 @@ async def api_push_item_auto(item_id: int, request: Request) -> Response:
     try:
         payload = await _parse_request_payload(request)
         async with async_session_factory() as session:
-            result = await execute_auto_push(session, item_id, payload)
-        status_code = int(result.pop("status_code", 200))
-        return JSONResponse(status_code=status_code, content=result)
-    finally:
+            item = await session.get(MediaItem, item_id)
+            if item is None:
+                item_lock_manager.release(item_id)
+                return JSONResponse(
+                    status_code=404,
+                    content={
+                        "pushed": False,
+                        "error": f"MediaItem {item_id} not found",
+                    },
+                )
+            await persist_sticky_preferences(session, item, payload)
+            await session.commit()
+            item_title = item.title
+    except Exception:
         item_lock_manager.release(item_id)
+        raise
+
+    transfer_poller.register_in_flight_push(item_id, item_title)
+    wake_transfer_poller()
+    task = asyncio.create_task(_run_background_auto_push(item_id, payload))
+    _background_push_tasks.add(task)
+    task.add_done_callback(_background_push_tasks.discard)
+
+    return JSONResponse(
+        status_code=200,
+        content={
+            "status": "started",
+            "pushed": True,
+            "push_mode": "auto",
+            "item_id": item_id,
+            "title": item_title,
+            "message": f"Auto-Push started for '{item_title}'.",
+        },
+    )
 
 
 @app.post("/api/items/{item_id}/push/manual-search")
@@ -2447,9 +2519,30 @@ async def api_push_item_manual_grab(item_id: int, request: Request) -> Response:
 # ---------------------------------------------------------------------------
 
 
+def _build_poller_state_header(
+    *,
+    poller_awake: bool,
+    active_pushes_count: int,
+    downloading_count: int,
+    in_flight_count: int,
+) -> dict[str, str]:
+    return {
+        "HX-Trigger": json.dumps(
+            {
+                "nzboxer:poller-state": {
+                    "pollerAwake": poller_awake,
+                    "activePushesCount": active_pushes_count,
+                    "downloadingCount": downloading_count,
+                    "inFlightCount": in_flight_count,
+                }
+            }
+        )
+    }
+
+
 @app.get("/api/pushes/active")
 async def api_get_active_pushes(request: Request) -> Response:
-    """Return active transfers (`DOWNLOADING`) and unacknowledged failed manual picks (`FAILED`)."""
+    """Return active transfers (`DOWNLOADING`) and unacknowledged failed pushes (`FAILED`)."""
     from app.core.transfer_poller import (
         count_downloading_entities,
         get_active_pushes,
@@ -2473,6 +2566,17 @@ async def api_get_active_pushes(request: Request) -> Response:
                 logger.debug("Live active pushes refresh skipped: %s", exc)
         pushes = await get_active_pushes(session)
 
+    in_flight_titles = transfer_poller.in_flight_titles
+    poller_awake = (
+        transfer_poller.is_awake or downloading_count > 0 or bool(in_flight_titles)
+    )
+    headers = _build_poller_state_header(
+        poller_awake=poller_awake,
+        active_pushes_count=len(pushes),
+        downloading_count=downloading_count,
+        in_flight_count=len(in_flight_titles),
+    )
+
     accept = (request.headers.get("accept") or "").lower()
     is_hx = request.headers.get("HX-Request") == "true"
     partial_tpl = Path("templates/partials/active_pushes_table.html")
@@ -2483,8 +2587,10 @@ async def api_get_active_pushes(request: Request) -> Response:
             context={
                 "active_pushes": pushes,
                 "downloading_count": downloading_count,
-                "poller_awake": transfer_poller.is_awake,
+                "in_flight_titles": in_flight_titles,
+                "poller_awake": poller_awake,
             },
+            headers=headers,
         )
 
     return JSONResponse(
@@ -2493,14 +2599,16 @@ async def api_get_active_pushes(request: Request) -> Response:
             "pushes": pushes,
             "active_count": len(pushes),
             "downloading_count": downloading_count,
-            "poller_awake": transfer_poller.is_awake,
+            "in_flight_titles": in_flight_titles,
+            "poller_awake": poller_awake,
         },
+        headers=headers,
     )
 
 
 @app.post("/api/pushes/{history_id}/dismiss")
 async def api_dismiss_failed_push(history_id: int, request: Request) -> Response:
-    """Dismiss a failed manual-pick row from Active Pushes and revert its entity to SEARCHING."""
+    """Dismiss a failed push row from Active Pushes and revert its entity to SEARCHING."""
     from app.core.transfer_poller import (
         count_downloading_entities,
         dismiss_failed_push,
@@ -2517,6 +2625,17 @@ async def api_dismiss_failed_push(history_id: int, request: Request) -> Response
         pushes = await get_active_pushes(session)
         downloading_count = await count_downloading_entities(session)
 
+    in_flight_titles = transfer_poller.in_flight_titles
+    poller_awake = (
+        transfer_poller.is_awake or downloading_count > 0 or bool(in_flight_titles)
+    )
+    headers = _build_poller_state_header(
+        poller_awake=poller_awake,
+        active_pushes_count=len(pushes),
+        downloading_count=downloading_count,
+        in_flight_count=len(in_flight_titles),
+    )
+
     if request.headers.get("HX-Request") == "true":
         partial_tpl = Path("templates/partials/active_pushes_table.html")
         if partial_tpl.exists():
@@ -2526,14 +2645,17 @@ async def api_dismiss_failed_push(history_id: int, request: Request) -> Response
                 context={
                     "active_pushes": pushes,
                     "downloading_count": downloading_count,
-                    "poller_awake": transfer_poller.is_awake,
+                    "in_flight_titles": in_flight_titles,
+                    "poller_awake": poller_awake,
                 },
+                headers=headers,
             )
-        return HTMLResponse(content="", status_code=200)
+        return HTMLResponse(content="", status_code=200, headers=headers)
 
     return JSONResponse(
         status_code=200,
         content={"ok": True, "history_id": history_id, "remaining_pushes": len(pushes)},
+        headers=headers,
     )
 
 
@@ -2557,6 +2679,17 @@ async def api_cancel_active_push(history_id: int, request: Request) -> Response:
         pushes = await get_active_pushes(session)
         downloading_count = await count_downloading_entities(session)
 
+    in_flight_titles = transfer_poller.in_flight_titles
+    poller_awake = (
+        transfer_poller.is_awake or downloading_count > 0 or bool(in_flight_titles)
+    )
+    headers = _build_poller_state_header(
+        poller_awake=poller_awake,
+        active_pushes_count=len(pushes),
+        downloading_count=downloading_count,
+        in_flight_count=len(in_flight_titles),
+    )
+
     if request.headers.get("HX-Request") == "true":
         partial_tpl = Path("templates/partials/active_pushes_table.html")
         if partial_tpl.exists():
@@ -2566,14 +2699,17 @@ async def api_cancel_active_push(history_id: int, request: Request) -> Response:
                 context={
                     "active_pushes": pushes,
                     "downloading_count": downloading_count,
-                    "poller_awake": transfer_poller.is_awake,
+                    "in_flight_titles": in_flight_titles,
+                    "poller_awake": poller_awake,
                 },
+                headers=headers,
             )
-        return HTMLResponse(content="", status_code=200)
+        return HTMLResponse(content="", status_code=200, headers=headers)
 
     return JSONResponse(
         status_code=200,
         content={"ok": True, "history_id": history_id, "remaining_pushes": len(pushes)},
+        headers=headers,
     )
 
 

@@ -902,6 +902,104 @@ async def _verify_layer2_in_memory(
     return None
 
 
+def _failure_reason_from_partitioned(partitioned: dict[str, Any] | None) -> str:
+    """Return a descriptive failed status_detail string based on indexer & scorer results."""
+    if not partitioned or not partitioned.get("had_raw_results"):
+        return "failed: No matching releases found on indexers"
+    if not partitioned.get("had_candidates"):
+        return "failed: All indexer results rejected by quality/language filters"
+    return "failed: TorBox upload failed — all candidates exhausted"
+
+
+async def _record_auto_push_failure(
+    session: AsyncSession,
+    *,
+    item: MediaItem,
+    season: Season | None = None,
+    episode: Episode | None = None,
+    reason: str,
+) -> DownloadHistory:
+    """Persist a visible failed DownloadHistory row for an explicit Auto-Push target that dispatched nothing."""
+    target_season_id = (
+        season.id if season is not None else (episode.season_id if episode else None)
+    )
+    target_episode_id = episode.id if episode is not None else None
+
+    prior_stmt = select(DownloadHistory).where(
+        DownloadHistory.media_item_id == item.id,
+        DownloadHistory.season_id.is_(None)
+        if target_season_id is None
+        else DownloadHistory.season_id == target_season_id,
+        DownloadHistory.episode_id.is_(None)
+        if target_episode_id is None
+        else DownloadHistory.episode_id == target_episode_id,
+        DownloadHistory.torbox_id.is_(None),
+        DownloadHistory.is_dismissed.is_(False),
+    )
+    for prior_row in (await session.execute(prior_stmt)).scalars().all():
+        prior_row.is_dismissed = True
+        prior_row.notification_sent = True
+
+    if episode is not None and season is not None:
+        eff_s = int(season.type_number or season.season_number)
+        label = f"{item.title} S{eff_s:02d}E{int(episode.episode_number):02d}"
+    elif season is not None:
+        if getattr(season, "entry_type", "season") == "movie":
+            label = (
+                season.title or f"{item.title} — Movie {int(season.type_number or 1)}"
+            )
+        else:
+            eff_s = int(season.type_number or season.season_number)
+            label = f"{item.title} — Season {eff_s}"
+    else:
+        label = f"{item.title} ({item.year})" if item.year else item.title
+
+    history = DownloadHistory(
+        media_item_id=item.id,
+        season_id=target_season_id,
+        episode_id=target_episode_id,
+        nzb_guid=None,
+        nzb_title=f"{label} — No matching release dispatched",
+        torbox_id=None,
+        torbox_hash=None,
+        score=0.0,
+        status_detail=reason,
+        push_mode="auto",
+        is_dismissed=False,
+        notification_sent=True,
+        progress_pct=0.0,
+        download_speed_bytes=0,
+        eta_seconds=None,
+    )
+    history.media_item = item
+    if season is not None:
+        history.season = season
+    if episode is not None:
+        history.episode = episode
+    populate_history_snapshot(history, item, season=season, episode=episode)
+    session.add(history)
+
+    if episode is not None:
+        episode.status = EpisodeStatus.FAILED
+        episode.last_error = reason
+        if season is not None:
+            season.status = SeasonStatus.FAILED
+        item.status = MediaStatus.FAILED
+    elif season is not None:
+        season.status = SeasonStatus.FAILED
+        season.last_error = reason
+        item.status = MediaStatus.FAILED
+    else:
+        item.status = MediaStatus.FAILED
+        item.last_error = reason
+
+    await session.flush()
+    from app.core.transfer_poller import _recalculate_parent_status
+
+    await _recalculate_parent_status(session, item)
+    return history
+
+
 async def _push_single_season_or_movie_entry(
     session: AsyncSession,
     item: MediaItem,
@@ -970,6 +1068,15 @@ async def _push_single_season_or_movie_entry(
         )
         if hist is not None:
             dispatched.append(hist)
+        elif not is_auto_advance and reset_fail_count:
+            await _record_auto_push_failure(
+                session,
+                item=item,
+                season=season,
+                episode=None,
+                reason=_failure_reason_from_partitioned(partitioned),
+            )
+            await session.commit()
         return dispatched
 
     # TV / Anime Season entry (`entry_type == "season"`)
@@ -1017,6 +1124,8 @@ async def _push_single_season_or_movie_entry(
             ep for ep in sorted_eps if ep.status != EpisodeStatus.FUTURE
         ]
         has_acquired_episodes = False
+
+    pack_partitioned: dict[str, Any] | None = None
 
     # State 3: Prefer Season Pack (allow_season_packs=True, prefer_season_packs=True)
     if allow_season_packs and prefer_season_packs:
@@ -1091,7 +1200,7 @@ async def _push_single_season_or_movie_entry(
             )
             if hist is not None:
                 dispatched.append(hist)
-            return dispatched
+                return dispatched
 
         if pack_candidates and missing_released_eps:
             best_pack = pack_candidates[0]
@@ -1226,6 +1335,15 @@ async def _push_single_season_or_movie_entry(
                     if ep_hist is not None:
                         dispatched.append(ep_hist)
                         await session.commit()
+                    elif not is_auto_advance and reset_fail_count:
+                        await _record_auto_push_failure(
+                            session,
+                            item=item,
+                            season=season,
+                            episode=ep,
+                            reason="failed: TorBox upload failed — all candidates exhausted",
+                        )
+                        await session.commit()
                 return dispatched
 
     # State 1 (allow_season_packs=False) or Pack-to-Episode Fallback (when no valid Season Pack exists)
@@ -1266,6 +1384,30 @@ async def _push_single_season_or_movie_entry(
         if ep_hist is not None:
             dispatched.append(ep_hist)
             await session.commit()
+        elif not is_auto_advance and reset_fail_count:
+            await _record_auto_push_failure(
+                session,
+                item=item,
+                season=season,
+                episode=ep,
+                reason=_failure_reason_from_partitioned(ep_partitioned),
+            )
+            await session.commit()
+
+    if (
+        not missing_released_eps
+        and not dispatched
+        and not is_auto_advance
+        and reset_fail_count
+    ):
+        await _record_auto_push_failure(
+            session,
+            item=item,
+            season=season,
+            episode=None,
+            reason=_failure_reason_from_partitioned(pack_partitioned),
+        )
+        await session.commit()
 
     return dispatched
 
@@ -1668,6 +1810,14 @@ async def execute_auto_push(
         )
         if hist is not None:
             dispatched_histories.append(hist)
+        else:
+            await _record_auto_push_failure(
+                session,
+                item=item,
+                season=None,
+                episode=None,
+                reason=_failure_reason_from_partitioned(movie_partitioned),
+            )
         await session.commit()
         if dispatched_histories:
             await dispatch_batch_notification_event(
@@ -1759,6 +1909,8 @@ async def execute_auto_push(
                     season_episode_count=parent_s.episode_count
                     or len(parent_s.episodes),
                 )
+                if ep_partitioned["had_candidates"]:
+                    any_candidates_found = True
                 ep_hist = await _dispatch_candidate_list_to_torbox(
                     session,
                     ep_partitioned["all_valid"],
@@ -1770,6 +1922,14 @@ async def execute_auto_push(
                 )
                 if ep_hist is not None:
                     dispatched_histories.append(ep_hist)
+                else:
+                    await _record_auto_push_failure(
+                        session,
+                        item=item,
+                        season=parent_s,
+                        episode=ep_obj,
+                        reason=_failure_reason_from_partitioned(ep_partitioned),
+                    )
 
         await session.commit()
         if dispatched_histories:

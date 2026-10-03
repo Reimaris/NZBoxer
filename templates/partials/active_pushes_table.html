@@ -1,3 +1,10 @@
+{% set active_in_flight = in_flight_titles if in_flight_titles is defined else [] %}
+{% if active_in_flight %}
+<div class="mb-3 px-4 py-2.5 rounded-lg bg-cyan-950/60 border border-cyan-600/50 text-cyan-200 text-xs font-medium flex items-center gap-2.5 animate-pulse" data-in-flight-banner="true">
+    <span class="inline-flex rounded-full h-2 w-2 bg-cyan-400"></span>
+    <span>Searching indexers &amp; dispatching to TorBox: <strong class="text-white">{{ active_in_flight | join(", ") }}</strong>...</span>
+</div>
+{% endif %}
 <div class="border border-[#3f3f46] rounded-lg overflow-x-auto bg-[#1e1e24]/40 min-h-[160px]">
     <table class="w-full text-left border-collapse">
         <thead class="bg-[#1e1e24] text-[#a1a1aa] font-semibold text-xs uppercase tracking-wider border-b border-[#3f3f46]">
@@ -98,8 +105,13 @@
             <tr data-empty-row="true">
                 <td colspan="6" class="px-6 py-10 text-center text-[#a1a1aa]">
                     <div class="flex flex-col items-center justify-center gap-1">
+                        {% if active_in_flight %}
+                        <p class="text-sm font-medium text-cyan-300">Searching indexers for best releases — episodes will appear here momentarily...</p>
+                        <p class="text-xs text-[#71717a]">Transfer poller is awake and monitoring background dispatch for {{ active_in_flight | join(", ") }}.</p>
+                        {% else %}
                         <p class="text-sm font-medium text-gray-300">No active TorBox transfers</p>
                         <p class="text-xs text-[#71717a]">Transfer poller is sleeping (0 background API calls). Push any movie, season, or episode to wake it automatically.</p>
+                        {% endif %}
                     </div>
                 </td>
             </tr>

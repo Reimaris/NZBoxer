@@ -155,9 +155,7 @@
                     body: JSON.stringify(this.buildPayload())
                 });
                 const data = await resp.json();
-                if (resp.ok && data.pushed) {
-                    const count = data.dispatched_count || 1;
-                    // Close modal and switch dashboard to Active Pushes without a full reload
+                if (resp.ok && (data.status === "started" || data.pushed)) {
                     const container = document.getElementById("modal-container");
                     if (container) container.innerHTML = "";
                     window.dispatchEvent(new CustomEvent("nzboxer:switch-card", { detail: { card: "active_pushes" } }));
