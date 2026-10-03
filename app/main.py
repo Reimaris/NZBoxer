@@ -26,6 +26,7 @@ from fastapi.templating import Jinja2Templates
 
 from app.config import reload_settings_from_db, settings
 from app.db.database import async_session_factory, close_db, init_db
+from app.version import APP_VERSION
 
 # Configure logging
 config_dir = Path("/app/config")
@@ -125,9 +126,6 @@ def relative_date(dt: datetime | None) -> str:
         return "1 day ago"
     else:
         return f"{abs(days)} days ago"
-
-
-APP_VERSION = "3.0.0"
 
 
 templates.env.filters["relative_date"] = relative_date
