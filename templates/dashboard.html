@@ -564,7 +564,7 @@ document.addEventListener('alpine:init', () => {
             data-profile="{{ profile_name | lower }}"
             data-year="{{ item.year or '' }}"
             data-release-date="{{ eff_date.strftime('%Y-%m-%d') if eff_date else '' }}"
-            data-status-rank="{% if item.status.value == 'failed' or item.status.value == 'manual_grab' %}1{% elif item.status.value == 'downloading' %}2{% elif item.status.value == 'searching' or item.status.value == 'pending' %}3{% elif item.status.value == 'future' %}4{% elif item.status.value == 'downloaded' %}5{% elif item.status.value == 'completed' %}6{% else %}7{% endif %}"
+            data-status-rank="{% if item.status.value == 'failed' or item.status.value == 'manual_grab' %}1{% elif item.status.value == 'downloading' or item.status.value == 'rate_limited' %}2{% elif item.status.value == 'searching' or item.status.value == 'pending' %}3{% elif item.status.value == 'future' %}4{% elif item.status.value == 'downloaded' %}5{% elif item.status.value == 'completed' %}6{% else %}7{% endif %}"
             data-last-checked="{{ item.updated_at.strftime('%Y-%m-%d %H:%M:%S') if item.updated_at else '' }}"
             x-show="tab === '{{ display_category }}' && ('{{ item.title|replace('\'', '\\\'') }}'.toLowerCase().includes(search.toLowerCase()) || ('{{ item.alt_title|replace('\'', '\\\'') if item.alt_title else '' }}'.toLowerCase().includes(search.toLowerCase())) || '{{ item.tvdb_id or '' }}'.includes(search) || '{{ item.tmdb_id or '' }}'.includes(search) || '{{ item.imdb_id or '' }}'.includes(search) || '{{ item.simkl_id or '' }}'.includes(search) || '{{ item.anilist_id or '' }}'.includes(search))"
             style="display: none;">
@@ -641,6 +641,8 @@ document.addEventListener('alpine:init', () => {
                     {% else %}
                         {% if item.status.value == 'downloading' %}
                             <span class="bg-cyan-600 animate-pulse text-white text-[11px] font-bold px-2 py-0.5 rounded uppercase tracking-wider shadow-sm">DOWNLOADING</span>
+                        {% elif item.status.value == 'rate_limited' %}
+                            <span class="bg-amber-600 text-white text-[11px] font-bold px-2 py-0.5 rounded uppercase tracking-wider shadow-sm" title="Paused by TorBox rate limit — resumes automatically">PAUSED</span>
                         {% elif item.status.value == 'failed' %}
                             <span class="bg-red-600 text-white text-[11px] font-bold px-2 py-0.5 rounded uppercase tracking-wider shadow-sm">FAILED</span>
                         {% elif item.status.value == 'downloaded' or item.status.value == 'completed' %}

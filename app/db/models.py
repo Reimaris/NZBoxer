@@ -61,6 +61,7 @@ class MediaStatus(str, enum.Enum):
     DOWNLOADED = "downloaded"
     COMPLETED = "completed"
     FAILED = "failed"
+    RATE_LIMITED = "rate_limited"
     CANCELED = "canceled"
     IGNORED = "ignored"
 
@@ -75,6 +76,7 @@ class SeasonStatus(str, enum.Enum):
     DOWNLOADED = "downloaded"
     COMPLETED = "completed"
     FAILED = "failed"
+    RATE_LIMITED = "rate_limited"
     CANCELED = "canceled"
     IGNORED = "ignored"
 
@@ -89,6 +91,7 @@ class EpisodeStatus(str, enum.Enum):
     DOWNLOADED = "downloaded"
     COMPLETED = "completed"
     FAILED = "failed"
+    RATE_LIMITED = "rate_limited"
     CANCELED = "canceled"
     IGNORED = "ignored"
 

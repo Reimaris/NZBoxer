@@ -63,6 +63,8 @@
                         {% if p.status_detail %}
                         <div class="text-[10px] text-red-400 mt-1 max-w-[180px] truncate" title="{{ p.status_detail }}">{{ p.status_detail }}</div>
                         {% endif %}
+                    {% elif p.is_rate_limited %}
+                        <span class="bg-amber-900/80 text-amber-200 border border-amber-600 text-[11px] font-bold px-2.5 py-1 rounded uppercase tracking-wider shadow-sm" title="TorBox rate limit reached — this push resumes automatically">{{ p.status }}</span>
                     {% elif p.status == 'Unpacking' or p.status == 'Verifying' %}
                         <span class="bg-indigo-600 text-white text-[11px] font-bold px-2.5 py-1 rounded uppercase tracking-wider shadow-sm animate-pulse">{{ p.status }}</span>
                     {% else %}
@@ -87,6 +89,14 @@
                                 class="bg-[#2a2a32] hover:bg-[#3f3f46] text-gray-300 hover:text-white border border-[#3f3f46] text-xs font-semibold px-3 py-1.5 rounded-md transition-colors flex items-center gap-1.5">
                             <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                             Dismiss
+                        </button>
+                        {% elif p.is_rate_limited %}
+                        <button hx-post="/api/pushes/{{ p.history_id }}/dismiss"
+                                hx-target="#active-pushes-container"
+                                hx-swap="innerHTML"
+                                hx-confirm="Cancel this paused push?"
+                                class="bg-transparent border border-amber-700 text-amber-300 hover:bg-amber-700 hover:text-white text-xs font-semibold px-3 py-1.5 rounded-md transition-colors flex items-center gap-1.5">
+                            Cancel
                         </button>
                         {% else %}
                         <button hx-post="/api/pushes/{{ p.history_id }}/cancel"

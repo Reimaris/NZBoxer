@@ -191,8 +191,27 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         id="transfer_poller_job",
         replace_existing=True,
     )
+    from app.core.rate_limit_queue import (
+        RESUME_JOB_ID,
+        count_rate_limited_pushes,
+        rate_limit_queue,
+        run_rate_limit_resume_tick,
+    )
+
+    scheduler.add_job(
+        run_rate_limit_resume_tick,
+        IntervalTrigger(seconds=15),
+        id=RESUME_JOB_ID,
+        replace_existing=True,
+    )
     scheduler.start()
     transfer_poller.set_scheduler(scheduler)
+    rate_limit_queue.set_scheduler(scheduler)
+
+    # Rebuild the rate-limit queue state from the database (survives restarts)
+    async with async_session_factory() as session:
+        if await count_rate_limited_pushes(session) == 0:
+            rate_limit_queue.sleep()
 
     async with async_session_factory() as session:
         active_dl_count = await count_downloading_entities(session)

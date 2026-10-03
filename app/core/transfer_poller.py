@@ -445,6 +445,12 @@ def _sync_season_status_from_episodes(season: Season | None) -> None:
         and (h.status_detail or "").strip().lower().startswith("failed")
         for h in hist_list
     )
+    has_rate_limited_pack = any(
+        not h.is_dismissed
+        and h.episode_id is None
+        and (h.status_detail or "").strip().lower() == "rate_limited"
+        for h in hist_list
+    )
 
     eps = (
         list(season.episodes or [])
@@ -456,6 +462,12 @@ def _sync_season_status_from_episodes(season: Season | None) -> None:
 
     if any(ep.status == EpisodeStatus.DOWNLOADING for ep in eps):
         season.status = SeasonStatus.DOWNLOADING
+        return
+
+    if has_rate_limited_pack or any(
+        ep.status == EpisodeStatus.RATE_LIMITED for ep in eps
+    ):
+        season.status = SeasonStatus.RATE_LIMITED
         return
 
     if any(ep.status == EpisodeStatus.FAILED for ep in eps) or (
@@ -1155,7 +1167,10 @@ async def get_active_pushes(session: AsyncSession) -> list[dict[str, Any]]:
             entity_status = item.status.value
 
         detail_lower = (h.status_detail or "").lower()
-        is_failed = entity_status == "failed" or detail_lower.startswith("failed")
+        is_rate_limited = detail_lower == "rate_limited"
+        is_failed = not is_rate_limited and (
+            entity_status == "failed" or detail_lower.startswith("failed")
+        )
         is_active_downloading = (
             entity_status == "downloading"
             and detail_lower
@@ -1163,7 +1178,7 @@ async def get_active_pushes(session: AsyncSession) -> list[dict[str, Any]]:
             and not detail_lower.startswith("failed")
         )
 
-        if not (is_active_downloading or is_failed):
+        if not (is_active_downloading or is_failed or is_rate_limited):
             continue
 
         target_key = (item.id, h.season_id, h.episode_id)
@@ -1184,7 +1199,11 @@ async def get_active_pushes(session: AsyncSession) -> list[dict[str, Any]]:
             )
         )
 
-        if is_failed:
+        if is_rate_limited:
+            from app.core.rate_limit_queue import resume_time_label
+
+            status_badge = f"Paused — rate limit ({resume_time_label()})"
+        elif is_failed:
             status_badge = (
                 "Failed (Manual Pick)"
                 if h.push_mode == "manual"
@@ -1238,6 +1257,7 @@ async def get_active_pushes(session: AsyncSession) -> list[dict[str, Any]]:
                 "status_detail": h.status_detail,
                 "push_mode": h.push_mode,
                 "is_failed": is_failed,
+                "is_rate_limited": is_rate_limited,
             }
         )
 
@@ -1260,13 +1280,19 @@ async def dismiss_failed_push(session: AsyncSession, history_id: int) -> bool:
         return False
 
     history.is_dismissed = True
-    if history.episode is not None and history.episode.status == EpisodeStatus.FAILED:
+    if history.episode is not None and history.episode.status in (
+        EpisodeStatus.FAILED,
+        EpisodeStatus.RATE_LIMITED,
+    ):
         history.episode.status = EpisodeStatus.SEARCHING
-    elif history.season is not None and history.season.status == SeasonStatus.FAILED:
+    elif history.season is not None and history.season.status in (
+        SeasonStatus.FAILED,
+        SeasonStatus.RATE_LIMITED,
+    ):
         history.season.status = SeasonStatus.SEARCHING
-    elif (
-        history.media_item is not None
-        and history.media_item.status == MediaStatus.FAILED
+    elif history.media_item is not None and history.media_item.status in (
+        MediaStatus.FAILED,
+        MediaStatus.RATE_LIMITED,
     ):
         history.media_item.status = MediaStatus.SEARCHING
 
@@ -1438,13 +1464,22 @@ async def _recalculate_parent_status(
         d = (h.status_detail or "").strip().lower()
         return d.startswith("failed")
 
+    def _is_hist_rate_limited(h: DownloadHistory) -> bool:
+        return (
+            not h.is_dismissed
+            and (h.status_detail or "").strip().lower() == "rate_limited"
+        )
+
     if not seasons:
+        has_rate_limited_movie = any(_is_hist_rate_limited(h) for h in item_histories)
         has_active_movie = any(_is_hist_active(h) for h in item_histories)
         has_completed_movie = any(_is_hist_completed(h) for h in item_histories)
         has_failed_movie = any(_is_hist_failed(h) for h in item_histories)
 
         if has_active_movie:
             item.status = MediaStatus.DOWNLOADING
+        elif has_rate_limited_movie:
+            item.status = MediaStatus.RATE_LIMITED
         elif has_failed_movie and item.status == MediaStatus.FAILED:
             item.status = MediaStatus.FAILED
         elif has_completed_movie:
@@ -1474,9 +1509,19 @@ async def _recalculate_parent_status(
             for h in item_histories
         )
 
+        has_rate_limited_pack = any(
+            h.season_id == s.id and h.episode_id is None and _is_hist_rate_limited(h)
+            for h in item_histories
+        )
+
         for ep in s.episodes or []:
             if ep.status != EpisodeStatus.IGNORED:
                 ep.monitored = True
+            if ep.status == EpisodeStatus.RATE_LIMITED and not any(
+                h.episode_id == ep.id and _is_hist_rate_limited(h)
+                for h in item_histories
+            ):
+                ep.status = EpisodeStatus.SEARCHING
             has_completed_ep = has_completed_pack or any(
                 h.episode_id == ep.id and _is_hist_completed(h) for h in item_histories
             )
@@ -1521,6 +1566,12 @@ async def _recalculate_parent_status(
                     if has_completed_pack
                     else SeasonStatus.SEARCHING
                 )
+            elif s.status == SeasonStatus.RATE_LIMITED and not has_rate_limited_pack:
+                s.status = (
+                    SeasonStatus.COMPLETED
+                    if has_completed_pack
+                    else SeasonStatus.SEARCHING
+                )
             elif s.status == SeasonStatus.PENDING and s.season_number > 0:
                 s.status = SeasonStatus.SEARCHING
 
@@ -1538,8 +1589,16 @@ async def _recalculate_parent_status(
         s for s in seasons if s.season_number > 0 and s.status != SeasonStatus.FUTURE
     ]
 
+    any_rate_limited = any(
+        s.status == SeasonStatus.RATE_LIMITED
+        or any(ep.status == EpisodeStatus.RATE_LIMITED for ep in (s.episodes or []))
+        for s in seasons
+    )
+
     if any_downloading:
         item.status = MediaStatus.DOWNLOADING
+    elif any_rate_limited:
+        item.status = MediaStatus.RATE_LIMITED
     elif any_failed:
         item.status = MediaStatus.FAILED
     elif released_seasons and all(

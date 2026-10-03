@@ -29,6 +29,12 @@ from sqlalchemy.orm import selectinload
 
 from app.core.fake_detector import is_nzb_content_fake
 from app.core.parser import build_release_feature_pills, parse_release_name
+from app.core.rate_limit_queue import (
+    RATE_LIMITED_DETAIL,
+    is_rate_limit_error,
+    rate_limit_queue,
+    resume_time_label,
+)
 from app.core.scorer import score_release
 from app.db.models import (
     BlacklistedRelease,
@@ -943,7 +949,12 @@ async def _record_auto_push_failure(
     episode: Episode | None = None,
     reason: str,
 ) -> DownloadHistory:
-    """Persist a visible failed DownloadHistory row for an explicit Auto-Push target that dispatched nothing."""
+    """Persist a visible failed DownloadHistory row for an explicit Auto-Push target that dispatched nothing.
+
+    If ``reason`` describes a TorBox rate limit, the target is instead queued as a
+    ``RATE_LIMITED`` (paused) push that resumes automatically after the cooldown (ADR-094).
+    """
+    rate_limited = is_rate_limit_error(reason)
     target_season_id = (
         season.id if season is not None else (episode.season_id if episode else None)
     )
@@ -983,11 +994,15 @@ async def _record_auto_push_failure(
         season_id=target_season_id,
         episode_id=target_episode_id,
         nzb_guid=None,
-        nzb_title=f"{label} — No matching release dispatched",
+        nzb_title=(
+            f"{label} — Paused ({resume_time_label()})"
+            if rate_limited
+            else f"{label} — No matching release dispatched"
+        ),
         torbox_id=None,
         torbox_hash=None,
         score=0.0,
-        status_detail=reason,
+        status_detail=RATE_LIMITED_DETAIL if rate_limited else reason,
         push_mode="auto",
         is_dismissed=False,
         notification_sent=True,
@@ -1003,7 +1018,15 @@ async def _record_auto_push_failure(
     populate_history_snapshot(history, item, season=season, episode=episode)
     session.add(history)
 
-    if episode is not None:
+    if rate_limited:
+        if episode is not None:
+            episode.status = EpisodeStatus.RATE_LIMITED
+            if season is not None:
+                season.status = SeasonStatus.RATE_LIMITED
+        elif season is not None:
+            season.status = SeasonStatus.RATE_LIMITED
+        item.status = MediaStatus.RATE_LIMITED
+    elif episode is not None:
         episode.status = EpisodeStatus.FAILED
         episode.last_error = reason
         if season is not None:
@@ -1021,6 +1044,11 @@ async def _record_auto_push_failure(
     from app.core.transfer_poller import _recalculate_parent_status
 
     await _recalculate_parent_status(session, item)
+    if rate_limited:
+        logger.warning(
+            "⏸️ Queued rate-limited push for '%s' (%s).", item.title, resume_time_label()
+        )
+        rate_limit_queue.wake()
     return history
 
 
@@ -1468,12 +1496,13 @@ async def _push_single_season_or_movie_entry(
     for ep in missing_released_eps:
         cooldown_rem = torbox.get_cooldown_remaining(is_manual=True)
         if cooldown_rem > 0:
-            if not dispatched and reset_fail_count:
+            if reset_fail_count:
+                # Queue the whole season: on resume only the still-missing episodes are pushed.
                 await _record_auto_push_failure(
                     session,
                     item=item,
                     season=season,
-                    episode=ep,
+                    episode=None,
                     reason=f"failed: TorBox rate limit exceeded (cooldown: {int(cooldown_rem)}s)",
                 )
                 await session.commit()
@@ -1522,7 +1551,8 @@ async def _push_single_season_or_movie_entry(
                     session,
                     item=item,
                     season=season,
-                    episode=ep,
+                    # Rate limits queue the whole season; other errors fail this episode.
+                    episode=None if is_rate_limit_error(ep_tb_errors[-1]) else ep,
                     reason=f"failed: {ep_tb_errors[-1]}",
                 )
                 await session.commit()
