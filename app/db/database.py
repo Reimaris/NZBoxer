@@ -121,33 +121,335 @@ async def init_db(database_url: str) -> None:
         autocommit=False,
     )
 
-    # Create all tables defined in models.py (idempotent — safe to call on restart)
+    # Detect legacy v2 database before creating v3 tables (ADR-089)
+    retired_v2_tables = (
+        "manga_volumes",
+        "manga_items",
+        "magazine_issues",
+        "magazine_subscriptions",
+        "provider_profiles",
+        "seen_torbox_downloads",
+        "daily_grab_counters",
+        "book_items",
+    )
+    is_v2_upgrade = False
+    saved_providers: list[dict[str, Any]] = []
+    saved_settings: list[dict[str, Any]] = []
+    saved_channels: list[dict[str, Any]] = []
+    saved_presets: list[dict[str, Any]] = []
+
     async with _engine.begin() as conn:
+        if database_url.startswith("sqlite"):
+            import json
+            import shutil
+            from pathlib import Path
+
+            from sqlalchemy import text as sa_text
+            from sqlalchemy.engine import make_url
+
+            existing_tables = {
+                row[0]
+                for row in (
+                    await conn.execute(
+                        sa_text("SELECT name FROM sqlite_master WHERE type='table'")
+                    )
+                ).fetchall()
+            }
+            has_legacy_settings_cols = False
+            if "system_settings" in existing_tables:
+                settings_cols = {
+                    row[1]
+                    for row in (
+                        await conn.execute(
+                            sa_text("PRAGMA table_info(system_settings)")
+                        )
+                    ).fetchall()
+                }
+                if settings_cols & {
+                    "treasure_maps_api_key",
+                    "torbox_api_key",
+                    "tmdb_api_key",
+                    "automation_state",
+                    "dry_run",
+                }:
+                    has_legacy_settings_cols = True
+
+            is_v2_upgrade = (
+                bool(existing_tables & set(retired_v2_tables))
+                or has_legacy_settings_cols
+            )
+
+            if is_v2_upgrade:
+                logger.info(
+                    "Detected legacy v2 database — executing one-time v3 soft reset "
+                    "(preserving settings, providers, and notification channels)..."
+                )
+                # 1. Auto-backup file-based SQLite DB before modifying
+                try:
+                    db_file_str = make_url(database_url).database
+                    if (
+                        db_file_str
+                        and db_file_str != ":memory:"
+                        and "mode=memory" not in database_url
+                    ):
+                        db_path = Path(db_file_str)
+                        if db_path.is_file():
+                            backup_path = db_path.with_name(f"{db_path.name}.v2_backup")
+                            if not backup_path.exists():
+                                shutil.copy2(db_path, backup_path)
+                                logger.info(
+                                    "Backed up legacy v2 database to %s", backup_path
+                                )
+                except Exception as exc:
+                    logger.warning("Could not create v2 database backup: %s", exc)
+
+                # 2. Snapshot user configuration tables (providers, system_settings, notification_channels, search_presets)
+                if "providers" in existing_tables:
+                    rows = (
+                        (await conn.execute(sa_text("SELECT * FROM providers")))
+                        .mappings()
+                        .all()
+                    )
+                    for r in rows:
+                        p_type = str(r.get("type") or "").strip()
+                        p_cat = str(r.get("category") or "watchlist").strip()
+                        if (
+                            p_type in ("hardcover", "openlibrary")
+                            or p_cat == "print_media"
+                        ):
+                            continue
+                        if p_type in ("anilist", "tmdb"):
+                            p_cat = "metadata"
+                        elif p_type == "torbox":
+                            p_cat = "downloader"
+                        elif p_type == "treasure_maps":
+                            p_cat = "indexer"
+                        elif p_type == "simkl":
+                            p_cat = "watchlist"
+
+                        api_url = r.get("api_url")
+                        if isinstance(api_url, str) and "treasuremaps.net" in api_url:
+                            api_url = api_url.replace(
+                                "treasuremaps.net", "treasure-maps.com"
+                            )
+
+                        raw_cfg = r.get("config_json") or "{}"
+                        try:
+                            cfg_dict = (
+                                json.loads(raw_cfg)
+                                if isinstance(raw_cfg, str)
+                                else dict(raw_cfg)
+                            )
+                            if not isinstance(cfg_dict, dict):
+                                cfg_dict = {}
+                        except Exception:
+                            cfg_dict = {}
+                        if p_type == "simkl":
+                            cfg_dict.pop("last_synced_at", None)
+
+                        raw_prio = r.get("priority")
+                        raw_active = r.get("is_active")
+                        saved_providers.append(
+                            {
+                                "id": r.get("id"),
+                                "category": p_cat,
+                                "type": p_type,
+                                "name": str(r.get("name") or p_type or "Provider"),
+                                "api_key": r.get("api_key"),
+                                "api_url": api_url,
+                                "priority": int(raw_prio)
+                                if raw_prio is not None
+                                else 1,
+                                "is_active": bool(raw_active)
+                                if raw_active is not None
+                                else True,
+                                "username": r.get("username"),
+                                "client_id": r.get("client_id"),
+                                "access_token": r.get("access_token"),
+                                "config_json": json.dumps(cfg_dict),
+                            }
+                        )
+
+                if "system_settings" in existing_tables:
+                    rows = (
+                        (await conn.execute(sa_text("SELECT * FROM system_settings")))
+                        .mappings()
+                        .all()
+                    )
+                    for r in rows:
+                        raw_retries = r.get("sh_max_retries")
+                        raw_timeout = r.get("download_timeout_hours")
+                        raw_disc_en = r.get("discord_enabled")
+                        raw_not_push = r.get("notify_on_push_initiated")
+                        raw_not_comp = r.get("notify_on_completed")
+                        raw_not_fail = r.get("notify_on_failure")
+                        raw_not_adv = r.get("notify_on_auto_advance")
+                        saved_settings.append(
+                            {
+                                "id": int(r.get("id") or 1),
+                                "sh_max_retries": int(raw_retries)
+                                if raw_retries is not None
+                                else 3,
+                                "download_timeout_hours": int(raw_timeout)
+                                if raw_timeout is not None
+                                else 24,
+                                "discord_webhook_url": r.get("discord_webhook_url"),
+                                "discord_enabled": bool(raw_disc_en)
+                                if raw_disc_en is not None
+                                else False,
+                                "notify_on_push_initiated": bool(raw_not_push)
+                                if raw_not_push is not None
+                                else False,
+                                "notify_on_completed": bool(raw_not_comp)
+                                if raw_not_comp is not None
+                                else True,
+                                "notify_on_failure": bool(raw_not_fail)
+                                if raw_not_fail is not None
+                                else True,
+                                "notify_on_auto_advance": bool(raw_not_adv)
+                                if raw_not_adv is not None
+                                else True,
+                            }
+                        )
+
+                if "notification_channels" in existing_tables:
+                    rows = (
+                        (
+                            await conn.execute(
+                                sa_text("SELECT * FROM notification_channels")
+                            )
+                        )
+                        .mappings()
+                        .all()
+                    )
+                    for r in rows:
+                        saved_channels.append(
+                            {
+                                "id": r.get("id"),
+                                "type": str(r.get("type") or "telegram"),
+                                "name": str(r.get("name") or "Telegram"),
+                                "bot_token": r.get("bot_token"),
+                                "chat_id": r.get("chat_id"),
+                            }
+                        )
+
+                if "search_presets" in existing_tables:
+                    rows = (
+                        (await conn.execute(sa_text("SELECT * FROM search_presets")))
+                        .mappings()
+                        .all()
+                    )
+                    for r in rows:
+                        allow_packs = bool(r.get("allow_season_packs") or False)
+                        prefer_packs = (
+                            bool(r.get("prefer_season_packs") or False)
+                            if allow_packs
+                            else False
+                        )
+                        saved_presets.append(
+                            {
+                                "id": r.get("id"),
+                                "name": str(r.get("name") or "Default (Best)"),
+                                "is_default": bool(r.get("is_default") or False),
+                                "primary_language": str(
+                                    r.get("primary_language") or "en"
+                                ),
+                                "fallback_language": r.get("fallback_language"),
+                                "video_quality_mode": str(
+                                    r.get("video_quality_mode") or "best"
+                                ),
+                                "audio_quality_mode": str(
+                                    r.get("audio_quality_mode") or "best"
+                                ),
+                                "allow_season_packs": allow_packs,
+                                "prefer_season_packs": prefer_packs,
+                                "custom_config_json": str(
+                                    r.get("custom_config_json") or "{}"
+                                ),
+                            }
+                        )
+
+                # 3. Drop all retired v2 tables, media/history tables, and legacy-schema config tables
+                await conn.execute(sa_text("PRAGMA foreign_keys=OFF;"))
+                for tbl_to_drop in (
+                    *retired_v2_tables,
+                    "download_history",
+                    "episodes",
+                    "seasons",
+                    "blacklisted_releases",
+                    "failure_logs",
+                    "media_items",
+                    "providers",
+                    "system_settings",
+                    "notification_channels",
+                    "search_presets",
+                ):
+                    await conn.execute(sa_text(f"DROP TABLE IF EXISTS {tbl_to_drop};"))
+                await conn.execute(sa_text("PRAGMA foreign_keys=ON;"))
+
+        # Create all tables defined in models.py (idempotent — safe to call on restart)
         await conn.run_sync(Base.metadata.create_all)
+
+        # Restore preserved settings after v2 -> v3 soft reset
+        if is_v2_upgrade and database_url.startswith("sqlite"):
+            from sqlalchemy import text as sa_text
+
+            for p_row in saved_providers:
+                await conn.execute(
+                    sa_text(
+                        "INSERT INTO providers "
+                        "(id, category, type, name, api_key, api_url, priority, is_active, "
+                        "username, client_id, access_token, config_json) "
+                        "VALUES (:id, :category, :type, :name, :api_key, :api_url, :priority, :is_active, "
+                        ":username, :client_id, :access_token, :config_json)"
+                    ),
+                    p_row,
+                )
+            for s_row in saved_settings:
+                await conn.execute(
+                    sa_text(
+                        "INSERT INTO system_settings "
+                        "(id, sh_max_retries, download_timeout_hours, discord_webhook_url, "
+                        "discord_enabled, notify_on_push_initiated, notify_on_completed, "
+                        "notify_on_failure, notify_on_auto_advance) "
+                        "VALUES (:id, :sh_max_retries, :download_timeout_hours, :discord_webhook_url, "
+                        ":discord_enabled, :notify_on_push_initiated, :notify_on_completed, "
+                        ":notify_on_failure, :notify_on_auto_advance)"
+                    ),
+                    s_row,
+                )
+            for c_row in saved_channels:
+                await conn.execute(
+                    sa_text(
+                        "INSERT INTO notification_channels (id, type, name, bot_token, chat_id) "
+                        "VALUES (:id, :type, :name, :bot_token, :chat_id)"
+                    ),
+                    c_row,
+                )
+            for pr_row in saved_presets:
+                await conn.execute(
+                    sa_text(
+                        "INSERT INTO search_presets "
+                        "(id, name, is_default, primary_language, fallback_language, "
+                        "video_quality_mode, audio_quality_mode, allow_season_packs, "
+                        "prefer_season_packs, custom_config_json) "
+                        "VALUES (:id, :name, :is_default, :primary_language, :fallback_language, "
+                        ":video_quality_mode, :audio_quality_mode, :allow_season_packs, "
+                        ":prefer_season_packs, :custom_config_json)"
+                    ),
+                    pr_row,
+                )
+            logger.info(
+                "Completed one-time v2 -> v3 database soft reset "
+                "(preserved %d provider(s), %d settings row(s), %d notification channel(s)).",
+                len(saved_providers),
+                len(saved_settings),
+                len(saved_channels),
+            )
 
     # Enable SQLite WAL mode for better concurrent access
     if database_url.startswith("sqlite"):
         async with _session_factory() as session:
-            # Automatically drop retired v2 tables (ADR-089)
-            for retired_tbl in (
-                "manga_volumes",
-                "manga_items",
-                "magazine_issues",
-                "magazine_subscriptions",
-                "provider_profiles",
-                "seen_torbox_downloads",
-                "daily_grab_counters",
-                "book_items",
-            ):
-                try:
-                    await session.execute(
-                        __import__("sqlalchemy").text(
-                            f"DROP TABLE IF EXISTS {retired_tbl};"
-                        )
-                    )
-                except Exception:
-                    pass
-
             # Perform a crude migration if the table exists but column is missing
             try:
                 await session.execute(
