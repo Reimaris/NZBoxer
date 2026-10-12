@@ -1,0 +1,89 @@
+<div id="blacklist-slice-container" class="bg-[#1e1e24] border border-[#3f3f46] rounded-xl overflow-hidden shadow-lg">
+    <!-- Header Trigger -->
+    <div class="w-full px-6 py-4 flex items-center justify-between gap-4 hover:bg-[#25252d] transition-colors cursor-pointer select-none"
+         @click="toggleSlice('blacklist')">
+        <div class="flex items-center gap-3.5 min-w-0">
+            <div class="w-9 h-9 rounded-lg bg-red-500/15 border border-red-500/30 text-red-400 flex items-center justify-center shrink-0">
+                <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"></path></svg>
+            </div>
+            <div class="min-w-0">
+                <h2 class="text-base font-bold text-white leading-tight">Blacklisted Releases</h2>
+                <p class="text-xs text-[#a1a1aa] truncate mt-0.5">Audit log of rejected or stalled releases suppressed from future search results.</p>
+            </div>
+        </div>
+        <div class="flex items-center gap-3 shrink-0" @click.stop>
+            {% if blacklisted_releases %}
+            <button type="button"
+                    hx-get="/settings/blacklist/clear-modal"
+                    hx-target="#modal-container"
+                    class="text-xs px-2.5 py-1 rounded-md font-semibold bg-red-500/20 text-red-400 border border-red-500/30 hover:bg-red-500 hover:text-white transition-colors">
+                Clear Blacklist
+            </button>
+            {% endif %}
+            <span class="text-xs font-semibold px-2.5 py-1 rounded-full {% if blacklisted_releases %}bg-red-500/15 text-red-400 border border-red-500/30{% else %}bg-[#2a2a32] text-[#a1a1aa] border border-[#3f3f46]{% endif %}">
+                {{ blacklisted_releases|length }} Blacklisted
+            </span>
+            <div @click="toggleSlice('blacklist')" class="cursor-pointer">
+                <svg class="w-5 h-5 text-[#a1a1aa] transition-transform duration-200"
+                     :class="openSlices.blacklist ? 'rotate-180' : ''"
+                     fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                </svg>
+            </div>
+        </div>
+    </div>
+
+    <!-- Body Content -->
+    <div x-show="openSlices.blacklist" x-cloak class="p-6 border-t border-[#3f3f46] bg-[#18181d]">
+        <div class="overflow-x-auto max-h-96 overflow-y-auto">
+            <table class="w-full text-left text-sm text-gray-300 border-collapse">
+                <thead class="sticky top-0 bg-[#18181d] z-10">
+                    <tr class="border-b border-[#3f3f46] text-[#a1a1aa] uppercase text-xs">
+                        <th class="px-4 py-3 font-medium">Date</th>
+                        <th class="px-4 py-3 font-medium">Release Title</th>
+                        <th class="px-4 py-3 font-medium">Reason</th>
+                        <th class="px-4 py-3 font-medium w-24 text-right">Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% if blacklisted_releases %}
+                        {% for item in blacklisted_releases %}
+                        <tr class="border-b border-[#3f3f46]/50 hover:bg-[#25252d] transition-colors" id="blacklist-row-{{ item.id }}">
+                            <td class="px-4 py-3 whitespace-nowrap text-xs text-gray-400">
+                                {{ item.created_at | local_datetime }}
+                            </td>
+                            <td class="px-4 py-3 font-mono text-[11px] truncate max-w-xs break-all" title="{{ item.nzb_title }}">
+                                <span class="mr-1.5 px-1.5 py-0.5 rounded text-[10px] font-sans font-semibold bg-zinc-800 text-zinc-300 border border-zinc-700">
+                                    {{ 'Global' if item.media_item_id is none else ('Item #' ~ item.media_item_id) }}
+                                </span>
+                                {{ item.nzb_title }}
+                            </td>
+                            <td class="px-4 py-3 text-xs">
+                                <span class="bg-red-900/40 text-red-400 px-2 py-1 rounded-md border border-red-800/50">
+                                    {{ item.reason or 'Failed verification' }}
+                                </span>
+                            </td>
+                            <td class="px-4 py-3 text-right">
+                                <button type="button"
+                                        hx-delete="/api/blacklist/{{ item.id }}"
+                                        hx-target="#blacklist-row-{{ item.id }}"
+                                        hx-swap="outerHTML"
+                                        class="bg-transparent border border-red-800/80 text-red-500 hover:bg-red-600 hover:text-white transition-colors p-1.5 rounded-md inline-flex items-center justify-center"
+                                        title="Remove from Blacklist">
+                                    <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                                </button>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    {% else %}
+                        <tr>
+                            <td colspan="4" class="px-4 py-8 text-center text-[#71717a] italic">
+                                No releases are currently blacklisted.
+                            </td>
+                        </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>

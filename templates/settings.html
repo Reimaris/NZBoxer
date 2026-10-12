@@ -1,0 +1,734 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto space-y-6 text-sm"
+     x-data="{
+         openSlices: {
+             providers: false,
+             presets: false,
+             notifications: false,
+             system: false,
+             blacklist: false,
+             scoring: false
+         },
+         toggleSlice(key) {
+             this.openSlices[key] = !this.openSlices[key];
+         },
+         init() {
+             window.addEventListener('closePresetModal', () => {
+                 const container = document.getElementById('modal-container');
+                 if (container) container.innerHTML = '';
+             });
+             window.addEventListener('closeModal', () => {
+                 const container = document.getElementById('modal-container');
+                 if (container) container.innerHTML = '';
+             });
+         }
+     }">
+
+    <!-- Page Header (Minimal & Brand-Focused) -->
+    <div class="flex items-center justify-between mb-6">
+        <div>
+            <h1 class="text-3xl font-bold text-white flex items-center gap-3">
+                <svg class="w-6 h-6 shrink-0 text-[#d40060]" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clip-rule="evenodd"></path></svg>
+                Settings
+            </h1>
+            <p class="text-xs text-[#a1a1aa] mt-1">Configure automated acquisition preferences, third-party integrations, and notification channels.</p>
+        </div>
+    </div>
+
+    <!-- =================================================================== -->
+    <!-- SLICE 1: CONNECTED PROVIDERS                                        -->
+    <!-- =================================================================== -->
+    <div class="bg-[#1e1e24] border border-[#3f3f46] rounded-xl overflow-hidden shadow-lg">
+        <!-- Header Trigger -->
+        <button type="button"
+                @click="toggleSlice('providers')"
+                class="w-full text-left px-6 py-4 flex items-center justify-between gap-4 hover:bg-[#25252d] transition-colors">
+            <div class="flex items-center gap-3.5 min-w-0">
+                <div class="w-9 h-9 rounded-lg bg-[#d40060]/15 border border-[#d40060]/30 text-[#d40060] flex items-center justify-center shrink-0">
+                    <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
+                </div>
+                <div class="min-w-0">
+                    <h2 class="text-base font-bold text-white leading-tight">Connected Providers</h2>
+                    <p class="text-xs text-[#a1a1aa] truncate mt-0.5">Manage Watchlists (Simkl), Metadata (TMDB, AniList), Downloader (TorBox), and Indexers.</p>
+                </div>
+            </div>
+            <div class="flex items-center gap-3 shrink-0">
+                <span class="text-xs font-semibold px-2.5 py-1 rounded-full {% if active_providers_count > 0 %}bg-emerald-500/15 text-emerald-400 border border-emerald-500/30{% else %}bg-[#2a2a32] text-[#a1a1aa] border border-[#3f3f46]{% endif %}">
+                    {{ active_providers_count }} Active ({{ total_providers_count }} Total)
+                </span>
+                <svg class="w-5 h-5 text-[#a1a1aa] transition-transform duration-200"
+                     :class="openSlices.providers ? 'rotate-180' : ''"
+                     fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                </svg>
+            </div>
+        </button>
+
+        <!-- Body Content -->
+        <div x-show="openSlices.providers" x-cloak class="p-6 border-t border-[#3f3f46] bg-[#18181d] space-y-6">
+            <div class="flex items-center justify-between">
+                <div>
+                    <h3 class="text-sm font-bold text-white">Active Integrations</h3>
+                    <p class="text-xs text-[#a1a1aa] mt-0.5">Watchlists, Metadata clients, Downloader, and Newznab Indexers arranged in execution priority.</p>
+                </div>
+                <button hx-get="/settings/provider/new" hx-target="#modal-container" class="bg-[#d40060] hover:bg-[#a3004a] text-white px-4 py-2 rounded-lg text-xs font-bold transition-all shadow-lg shadow-[#d40060]/20 flex items-center gap-2">
+                    <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+                    Add Provider
+                </button>
+            </div>
+
+            <!-- Unified Responsive Flow Grid -->
+            <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
+                {% for provider in providers %}
+                {% set cat = provider.category.value if provider.category.value is defined else provider.category %}
+                {% set pcfg = provider.config %}
+                <div class="bg-[#1e1e24] border rounded-xl p-5 transition-all group shadow-lg flex flex-col justify-between
+                    {% if cat == 'watchlist' %}border-[#d40060]/60 hover:border-[#d40060]
+                    {% elif cat == 'metadata' %}border-amber-500/50 hover:border-amber-400
+                    {% elif cat == 'downloader' %}border-purple-500/50 hover:border-purple-400
+                    {% elif cat == 'indexer' %}border-blue-500/50 hover:border-blue-400
+                    {% else %}border-[#3f3f46] hover:border-zinc-400{% endif %}">
+
+                    <div>
+                        <!-- Category Header Pill & Actions -->
+                        <div class="flex items-center justify-between gap-2 mb-3">
+                            <div>
+                                {% if cat == 'watchlist' %}
+                                <span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold tracking-wide uppercase bg-[#d40060]/15 text-[#d40060] border border-[#d40060]/30">Watchlist</span>
+                                {% elif cat == 'metadata' %}
+                                <span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold tracking-wide uppercase bg-amber-500/15 text-amber-400 border border-amber-500/30">Metadata</span>
+                                {% elif cat == 'downloader' %}
+                                <span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold tracking-wide uppercase bg-purple-500/15 text-purple-400 border border-purple-500/30">Downloader</span>
+                                {% elif cat == 'indexer' %}
+                                <span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold tracking-wide uppercase bg-blue-500/15 text-blue-400 border border-blue-500/30">Indexer</span>
+                                {% else %}
+                                <span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold tracking-wide uppercase bg-zinc-500/15 text-zinc-400 border border-zinc-500/30">{{ cat|capitalize }}</span>
+                                {% endif %}
+                            </div>
+
+                            <div class="flex items-center gap-1.5 shrink-0">
+                                <button type="button" hx-get="/settings/provider/{{ provider.id }}/edit" hx-target="#modal-container" class="p-1.5 bg-[#2a2a32] hover:bg-[#3f3f46] border border-[#3f3f46] rounded-md text-[#a1a1aa] hover:text-white transition-colors" title="Edit provider">
+                                    <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
+                                </button>
+                                <button type="button" hx-delete="/settings/provider/{{ provider.id }}" hx-confirm="Delete this provider?" class="p-1.5 bg-transparent border border-red-800/80 text-red-500 hover:bg-red-600 hover:text-white rounded-md transition-colors" title="Delete provider">
+                                    <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Provider Avatar & Meta -->
+                        <div class="flex items-start gap-3 mb-3">
+                            <div class="w-10 h-10 rounded-xl flex items-center justify-center font-bold text-base shrink-0
+                                {% if cat == 'watchlist' %}bg-[#d40060]/15 border border-[#d40060]/30 text-[#d40060]
+                                {% elif cat == 'metadata' %}bg-amber-500/15 border border-amber-500/30 text-amber-400
+                                {% elif cat == 'downloader' %}bg-purple-500/15 border border-purple-500/30 text-purple-400
+                                {% elif cat == 'indexer' %}bg-blue-500/15 border border-blue-500/30 text-blue-400
+                                {% else %}bg-zinc-700 text-zinc-300{% endif %}">
+                                {% if cat == 'watchlist' %}S
+                                {% elif cat == 'downloader' %}TB
+                                {% elif cat == 'indexer' %}<span class="text-xs">NZB</span>
+                                {% elif provider.type == 'tmdb' %}T
+                                {% elif provider.type == 'anilist' %}A
+                                {% else %}{{ provider.name[:1]|upper }}{% endif %}
+                            </div>
+
+                            <div class="min-w-0 flex-1">
+                                <h4 class="text-base font-bold text-white truncate">{{ provider.name }}</h4>
+                                {% if cat == 'watchlist' %}
+                                <p class="text-xs text-[#a1a1aa] font-mono mt-0.5 truncate">{{ provider.type }} • {{ provider.username or 'Connected' }} ({{ pcfg.get('sync_interval_minutes', 60) }}m)</p>
+                                {% elif cat == 'indexer' %}
+                                <p class="text-xs text-[#a1a1aa] font-mono mt-0.5 truncate">{{ provider.api_url or 'Newznab API' }}</p>
+                                {% elif cat == 'downloader' %}
+                                <p class="text-xs text-[#a1a1aa] font-mono mt-0.5 truncate">{{ provider.type }}</p>
+                                {% else %}
+                                <p class="text-xs text-[#a1a1aa] font-mono mt-0.5 truncate">{{ provider.type }}</p>
+                                {% endif %}
+                            </div>
+                        </div>
+
+                        {% if provider.type == 'simkl' %}
+                        <div class="mb-2">
+                            {% if provider.is_simkl_v2_authenticated %}
+                            <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                                {{ provider.simkl_auth_status_label }}
+                            </span>
+                            {% elif provider.simkl_auth_status_label == 'Reconnect Required (Legacy V1 / Expired)' %}
+                            <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-500/15 text-amber-400 border border-amber-500/30">
+                                {{ provider.simkl_auth_status_label }}
+                            </span>
+                            {% else %}
+                            <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-slate-500/15 text-slate-400 border border-slate-500/30">
+                                {{ provider.simkl_auth_status_label }}
+                            </span>
+                            {% endif %}
+                        </div>
+                        {% endif %}
+                    </div>
+
+                    <!-- Footer with Credentials/Sync Tags & Active Toggle Button -->
+                    <div class="flex items-center justify-between gap-2 pt-3 border-t border-[#2a2a32] mt-2">
+                        <div class="flex items-center gap-1.5 flex-wrap min-w-0">
+                            {% if cat == 'watchlist' %}
+                            <span class="px-1.5 py-0.5 rounded text-[11px] font-semibold {% if pcfg.get('sync_movies', True) %}bg-emerald-500/20 text-emerald-400 border border-emerald-500/30{% else %}bg-[#2a2a32] text-[#71717a]{% endif %}">Movies</span>
+                            <span class="px-1.5 py-0.5 rounded text-[11px] font-semibold {% if pcfg.get('sync_series', True) %}bg-emerald-500/20 text-emerald-400 border border-emerald-500/30{% else %}bg-[#2a2a32] text-[#71717a]{% endif %}">Series</span>
+                            <span class="px-1.5 py-0.5 rounded text-[11px] font-semibold {% if pcfg.get('sync_anime', True) %}bg-emerald-500/20 text-emerald-400 border border-emerald-500/30{% else %}bg-[#2a2a32] text-[#71717a]{% endif %}">Anime</span>
+                            {% elif cat == 'indexer' %}
+                            <span class="px-2.5 py-1 rounded-md text-xs font-bold font-mono bg-blue-500/15 text-blue-300 border border-blue-500/30">
+                                Priority {{ provider.priority if provider.priority is not none else '1' }}
+                            </span>
+                            {% elif cat == 'downloader' %}
+                            <span class="text-xs text-[#a1a1aa] font-mono truncate max-w-[170px]" title="{{ provider.api_url or 'https://api.torbox.app/v1/api' }}">
+                                {{ provider.api_url or 'https://api.torbox.app/v1/api' }}
+                            </span>
+                            {% elif cat == 'metadata' %}
+                            <span class="text-xs text-[#a1a1aa] font-mono truncate">
+                                {{ 'Key: ••••••••' if provider.api_key else (provider.username or 'Connected') }}
+                            </span>
+                            {% endif %}
+                        </div>
+
+                        <button hx-post="/settings/provider/{{ provider.id }}/toggle-active" class="px-2.5 py-1 rounded-md text-xs font-bold shrink-0 {% if provider.is_active %}bg-emerald-500/20 text-emerald-400 border border-emerald-500/30{% else %}bg-[#3f3f46]/50 text-[#71717a]{% endif %}">
+                            {{ 'Active' if provider.is_active else 'Inactive' }}
+                        </button>
+                    </div>
+                </div>
+                {% endfor %}
+
+                {% if not providers %}
+                <div class="col-span-full bg-[#111115] border border-dashed border-[#3f3f46] rounded-xl p-8 text-center text-[#71717a]">
+                    No providers configured. Click 'Add Provider' above to get started.
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- =================================================================== -->
+    <!-- SLICE 2: SEARCH PRESETS                                             -->
+    <!-- =================================================================== -->
+    <div class="bg-[#1e1e24] border border-[#3f3f46] rounded-xl overflow-hidden shadow-lg">
+        <!-- Header Trigger -->
+        <button type="button"
+                @click="toggleSlice('presets')"
+                class="w-full text-left px-6 py-4 flex items-center justify-between gap-4 hover:bg-[#25252d] transition-colors">
+            <div class="flex items-center gap-3.5 min-w-0">
+                <div class="w-9 h-9 rounded-lg bg-rose-500/15 border border-rose-500/30 text-rose-400 flex items-center justify-center shrink-0">
+                    <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"></path></svg>
+                </div>
+                <div class="min-w-0">
+                    <h2 class="text-base font-bold text-white leading-tight">Search Presets</h2>
+                    <p class="text-xs text-[#a1a1aa] truncate mt-0.5">Manage reusable quality &amp; search profiles ("Best" vs "Custom") for Push Modal operations.</p>
+                </div>
+            </div>
+            <div class="flex items-center gap-3 shrink-0">
+                <span class="text-xs font-semibold px-2.5 py-1 rounded-full bg-[#d40060]/15 text-[#d40060] border border-[#d40060]/30">
+                    {{ presets|length }} Presets (Default: {{ default_preset.name if default_preset else 'None' }})
+                </span>
+                <svg class="w-5 h-5 text-[#a1a1aa] transition-transform duration-200"
+                     :class="openSlices.presets ? 'rotate-180' : ''"
+                     fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                </svg>
+            </div>
+        </button>
+
+        <!-- Body Content -->
+        <div x-show="openSlices.presets" x-cloak class="p-6 border-t border-[#3f3f46] bg-[#18181d] space-y-6">
+            <div class="flex items-center justify-between">
+                <div>
+                    <h3 class="text-sm font-bold text-white">Preset Profiles</h3>
+                    <p class="text-xs text-[#a1a1aa] mt-0.5">Define language preference, codec weights, size bounds, and season pack acquisition strategy.</p>
+                </div>
+                <button type="button"
+                        hx-get="/settings/preset/new/modal"
+                        hx-target="#modal-container"
+                        class="bg-[#d40060] hover:bg-[#a3004a] text-white px-4 py-2 rounded-lg text-xs font-bold shadow-lg shadow-[#d40060]/20 transition-colors flex items-center gap-2">
+                    <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+                    New Search Preset
+                </button>
+            </div>
+
+            <!-- Preset Cards List Container (HTMX Partial Refresh Target) -->
+            <div id="presets-list-container">
+                {% include "partials/presets_list.html" %}
+            </div>
+        </div>
+    </div>
+
+    <!-- =================================================================== -->
+    <!-- SLICE 3: NOTIFICATIONS                                              -->
+    <!-- =================================================================== -->
+    <div class="bg-[#1e1e24] border border-[#3f3f46] rounded-xl overflow-hidden shadow-lg">
+        <!-- Header Trigger -->
+        <button type="button"
+                @click="toggleSlice('notifications')"
+                class="w-full text-left px-6 py-4 flex items-center justify-between gap-4 hover:bg-[#25252d] transition-colors">
+            <div class="flex items-center gap-3.5 min-w-0">
+                <div class="w-9 h-9 rounded-lg bg-indigo-500/15 border border-indigo-500/30 text-indigo-400 flex items-center justify-center shrink-0">
+                    <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path></svg>
+                </div>
+                <div class="min-w-0">
+                    <h2 class="text-base font-bold text-white leading-tight">Notifications</h2>
+                    <p class="text-xs text-[#a1a1aa] truncate mt-0.5">Telegram bot channels, Discord Webhook alerts, and automated lifecycle event triggers.</p>
+                </div>
+            </div>
+            <div class="flex items-center gap-3 shrink-0">
+                <span class="text-xs font-semibold px-2.5 py-1 rounded-full bg-indigo-500/15 text-indigo-400 border border-indigo-500/30">
+                    Telegram: {{ notifications|length }} • Discord: {{ 'On' if db_settings and db_settings.discord_enabled else 'Off' }}
+                </span>
+                <svg class="w-5 h-5 text-[#a1a1aa] transition-transform duration-200"
+                     :class="openSlices.notifications ? 'rotate-180' : ''"
+                     fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                </svg>
+            </div>
+        </button>
+
+        <!-- Body Content -->
+        <div x-show="openSlices.notifications" x-cloak class="p-6 border-t border-[#3f3f46] bg-[#18181d] space-y-6">
+            <!-- Telegram Channels Sub-Section -->
+            <div class="space-y-4">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h3 class="text-sm font-bold text-white">Telegram Channels</h3>
+                        <p class="text-xs text-[#a1a1aa] mt-0.5">Direct chat or channel dispatch via Telegram Bot API tokens.</p>
+                    </div>
+                    <button type="button" hx-get="/settings/notification/new" hx-target="#modal-container" class="bg-[#2a2a32] hover:bg-[#3f3f46] border border-[#3f3f46] text-white px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors">
+                        <svg class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+                        Add Channel
+                    </button>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                    {% for notif in notifications %}
+                    <div class="bg-[#1e1e24] border border-[#3f3f46] rounded-xl p-4 flex items-center justify-between">
+                        <div class="min-w-0 pr-2">
+                            <div class="font-bold text-white truncate">{{ notif.name }}</div>
+                            <div class="text-xs text-[#a1a1aa] font-mono truncate">Telegram • Chat: {{ notif.chat_id or 'N/A' }}</div>
+                        </div>
+                        <div class="flex items-center gap-1.5 shrink-0">
+                            <button type="button" hx-get="/settings/notification/{{ notif.id }}/edit" hx-target="#modal-container" class="p-1.5 bg-[#2a2a32] hover:bg-[#3f3f46] border border-[#3f3f46] rounded-md text-[#a1a1aa] hover:text-white transition-colors" title="Edit channel">
+                                <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
+                            </button>
+                            <button type="button" hx-delete="/settings/notification/{{ notif.id }}" hx-confirm="Delete this Telegram channel?" class="p-1.5 bg-transparent border border-red-800/80 text-red-500 hover:bg-red-600 hover:text-white rounded-md transition-colors" title="Delete channel">
+                                <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                            </button>
+                        </div>
+                    </div>
+                    {% else %}
+                    <div class="col-span-full text-xs text-[#71717a] italic bg-[#111115] border border-dashed border-[#3f3f46] rounded-xl p-4 text-center">No Telegram notification channels configured.</div>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <!-- Discord Webhook Settings (Live Auto-Save) -->
+            <div class="pt-6 border-t border-[#2a2a32] space-y-4">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h3 class="text-xs font-bold text-indigo-400 uppercase tracking-wider">Discord Webhook</h3>
+                        <p class="text-xs text-[#71717a] mt-0.5">Post formatted embed cards with posters and release specs into your Discord server.</p>
+                    </div>
+                    <label class="inline-flex items-center gap-2 cursor-pointer text-xs text-white">
+                        <input type="checkbox"
+                               name="discord_enabled"
+                               value="true"
+                               {% if db_settings and db_settings.discord_enabled %}checked{% endif %}
+                               hx-post="/settings/auto-save"
+                               hx-trigger="change"
+                               hx-vals='js:{"discord_enabled": event.target.checked ? "true" : "false"}'
+                               hx-swap="none"
+                               class="w-4 h-4 accent-[#d40060]">
+                        <span class="font-semibold">Enable Discord Notifications</span>
+                    </label>
+                </div>
+                <div class="flex flex-col sm:flex-row gap-3">
+                    <input type="url"
+                           name="discord_webhook_url"
+                           value="{{ db_settings.discord_webhook_url if db_settings and db_settings.discord_webhook_url else '' }}"
+                           placeholder="https://discord.com/api/webhooks/..."
+                           hx-post="/settings/auto-save"
+                           hx-trigger="change, blur"
+                           hx-swap="none"
+                           class="flex-1 bg-[#111115] border border-[#3f3f46] rounded-lg px-3.5 py-2 text-white font-mono text-xs focus:border-indigo-500 focus:outline-none">
+                    <button type="button"
+                            hx-post="/api/settings/discord/test"
+                            hx-include="[name='discord_webhook_url']"
+                            hx-target="#discord-test-result"
+                            hx-swap="innerHTML"
+                            class="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shrink-0 transition-colors">
+                        Test Discord Webhook
+                    </button>
+                </div>
+                <div id="discord-test-result" class="empty:hidden"></div>
+            </div>
+
+            <!-- Per-Event Trigger Checkboxes (Live Auto-Save) -->
+            <div class="pt-6 border-t border-[#2a2a32] space-y-3">
+                <h3 class="text-xs font-bold text-[#a1a1aa] uppercase tracking-wider">Notification Event Triggers</h3>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <label class="flex items-center gap-2.5 p-3 rounded-lg bg-[#111115] border border-[#3f3f46] cursor-pointer hover:border-zinc-500 transition-colors">
+                        <input type="checkbox"
+                               name="notify_on_push_initiated"
+                               value="true"
+                               {% if db_settings and db_settings.notify_on_push_initiated %}checked{% endif %}
+                               hx-post="/settings/auto-save"
+                               hx-trigger="change"
+                               hx-vals='js:{"notify_on_push_initiated": event.target.checked ? "true" : "false"}'
+                               hx-swap="none"
+                               class="w-4 h-4 accent-[#d40060]">
+                        <span class="text-xs text-white font-medium">Push Initiated</span>
+                    </label>
+                    <label class="flex items-center gap-2.5 p-3 rounded-lg bg-[#111115] border border-[#3f3f46] cursor-pointer hover:border-zinc-500 transition-colors">
+                        <input type="checkbox"
+                               name="notify_on_completed"
+                               value="true"
+                               {% if not db_settings or db_settings.notify_on_completed %}checked{% endif %}
+                               hx-post="/settings/auto-save"
+                               hx-trigger="change"
+                               hx-vals='js:{"notify_on_completed": event.target.checked ? "true" : "false"}'
+                               hx-swap="none"
+                               class="w-4 h-4 accent-[#d40060]">
+                        <span class="text-xs text-white font-medium">Download Completed (Ready on TorBox)</span>
+                    </label>
+                    <label class="flex items-center gap-2.5 p-3 rounded-lg bg-[#111115] border border-[#3f3f46] cursor-pointer hover:border-zinc-500 transition-colors">
+                        <input type="checkbox"
+                               name="notify_on_failure"
+                               value="true"
+                               {% if not db_settings or db_settings.notify_on_failure %}checked{% endif %}
+                               hx-post="/settings/auto-save"
+                               hx-trigger="change"
+                               hx-vals='js:{"notify_on_failure": event.target.checked ? "true" : "false"}'
+                               hx-swap="none"
+                               class="w-4 h-4 accent-[#d40060]">
+                        <span class="text-xs text-white font-medium">Push Failed / Auto-Replaced</span>
+                    </label>
+                    <label class="flex items-center gap-2.5 p-3 rounded-lg bg-[#111115] border border-[#3f3f46] cursor-pointer hover:border-zinc-500 transition-colors">
+                        <input type="checkbox"
+                               name="notify_on_auto_advance"
+                               value="true"
+                               {% if not db_settings or db_settings.notify_on_auto_advance %}checked{% endif %}
+                               hx-post="/settings/auto-save"
+                               hx-trigger="change"
+                               hx-vals='js:{"notify_on_auto_advance": event.target.checked ? "true" : "false"}'
+                               hx-swap="none"
+                               class="w-4 h-4 accent-[#d40060]">
+                        <span class="text-xs text-white font-medium">Auto-Advance Season Triggered</span>
+                    </label>
+                    <label class="flex items-center gap-2.5 p-3 rounded-lg bg-[#111115] border border-[#3f3f46] cursor-pointer hover:border-zinc-500 transition-colors">
+                        <input type="checkbox"
+                               name="notify_on_errors"
+                               value="true"
+                               {% if not db_settings or db_settings.notify_on_errors %}checked{% endif %}
+                               hx-post="/settings/auto-save"
+                               hx-trigger="change"
+                               hx-vals='js:{"notify_on_errors": event.target.checked ? "true" : "false"}'
+                               hx-swap="none"
+                               class="w-4 h-4 accent-[#d40060]">
+                        <span class="text-xs text-white font-medium">Errors &amp; Rate-Limit Alerts</span>
+                    </label>
+                    <label class="flex items-center gap-2.5 p-3 rounded-lg bg-[#111115] border border-[#3f3f46] cursor-pointer hover:border-zinc-500 transition-colors">
+                        <input type="checkbox"
+                               name="notify_on_dry_run"
+                               value="true"
+                               {% if not db_settings or db_settings.notify_on_dry_run %}checked{% endif %}
+                               hx-post="/settings/auto-save"
+                               hx-trigger="change"
+                               hx-vals='js:{"notify_on_dry_run": event.target.checked ? "true" : "false"}'
+                               hx-swap="none"
+                               class="w-4 h-4 accent-[#d40060]">
+                        <span class="text-xs text-white font-medium">Dry-Run Simulation Alerts (Batch Summary)</span>
+                    </label>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- =================================================================== -->
+    <!-- SLICE 4: SYSTEM & AUTOMATION                                        -->
+    <!-- =================================================================== -->
+    <div class="bg-[#1e1e24] border border-[#3f3f46] rounded-xl overflow-hidden shadow-lg">
+        <!-- Header Trigger -->
+        <button type="button"
+                @click="toggleSlice('system')"
+                class="w-full text-left px-6 py-4 flex items-center justify-between gap-4 hover:bg-[#25252d] transition-colors">
+            <div class="flex items-center gap-3.5 min-w-0">
+                <div class="w-9 h-9 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 flex items-center justify-center shrink-0">
+                    <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                </div>
+                <div class="min-w-0">
+                    <h2 class="text-base font-bold text-white leading-tight">System &amp; Automation</h2>
+                    <p class="text-xs text-[#a1a1aa] truncate mt-0.5">Poller timeouts, replacement retry limits, and maintenance health checks.</p>
+                </div>
+            </div>
+            <div class="flex items-center gap-3 shrink-0">
+                <span class="text-xs font-semibold px-2.5 py-1 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                    Timeout: {{ (db_settings.download_timeout_minutes if db_settings else 60) }}m • Retries: {{ db_settings.sh_max_retries if db_settings else 3 }}
+                </span>
+                <svg class="w-5 h-5 text-[#a1a1aa] transition-transform duration-200"
+                     :class="openSlices.system ? 'rotate-180' : ''"
+                     fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                </svg>
+            </div>
+        </button>
+
+        <!-- Body Content -->
+        <div x-show="openSlices.system" x-cloak class="p-6 border-t border-[#3f3f46] bg-[#18181d] space-y-6">
+            <!-- Automation Parameters -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                    <label class="block text-xs font-semibold uppercase text-[#d1d5db] mb-1.5">Stalled Transfer Timeout</label>
+                    <select name="download_timeout_minutes"
+                            hx-post="/settings/auto-save"
+                            hx-trigger="change"
+                            hx-swap="none"
+                            class="w-full bg-[#111115] border border-[#3f3f46] rounded-lg p-2.5 text-white text-xs focus:border-emerald-500 focus:outline-none">
+                        <option value="15" {% if db_settings and db_settings.download_timeout_minutes == 15 %}selected{% endif %}>15 minutes</option>
+                        <option value="30" {% if db_settings and db_settings.download_timeout_minutes == 30 %}selected{% endif %}>30 minutes</option>
+                        <option value="60" {% if not db_settings or db_settings.download_timeout_minutes == 60 %}selected{% endif %}>60 minutes (Default)</option>
+                        <option value="120" {% if db_settings and db_settings.download_timeout_minutes == 120 %}selected{% endif %}>120 minutes (2 hours)</option>
+                        <option value="240" {% if db_settings and db_settings.download_timeout_minutes == 240 %}selected{% endif %}>240 minutes (4 hours)</option>
+                    </select>
+                    <p class="text-[#71717a] text-xs mt-1.5 leading-relaxed">Abort and blacklist active TorBox transfers that make zero completion progress past this duration.</p>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold uppercase text-[#d1d5db] mb-1.5">Max Auto-Push Replacement Attempts</label>
+                    <input type="number"
+                           name="sh_max_retries"
+                           min="0"
+                           value="{{ db_settings.sh_max_retries if db_settings else '3' }}"
+                           hx-post="/settings/auto-save"
+                           hx-trigger="change, blur"
+                           hx-swap="none"
+                           class="w-full bg-[#111115] border border-[#3f3f46] rounded-lg p-2.5 text-white font-mono text-center text-xs focus:border-emerald-500 focus:outline-none">
+                    <p class="text-[#71717a] text-xs mt-1.5 leading-relaxed">Maximum times NZBoxer will auto-push the next-best indexer candidate when an Auto-Push fails on TorBox before marking it Failed.</p>
+                </div>
+            </div>
+
+            <!-- Aired Episode Auto-Delivery & Upgrades -->
+            <div class="pt-6 border-t border-[#2a2a32] space-y-4">
+                <div>
+                    <h3 class="text-sm font-bold text-white">Aired Episode Auto-Delivery &amp; Upgrades</h3>
+                    <p class="text-xs text-[#a1a1aa] mt-0.5">Tune when freshly aired episodes are pushed and how long they are re-checked for better releases.</p>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div>
+                    <label class="block text-xs font-semibold uppercase text-[#d1d5db] mb-1.5">Initial Air Delay</label>
+                    <select name="air_delay_hours"
+                            hx-post="/settings/auto-save"
+                            hx-trigger="change"
+                            hx-swap="none"
+                            class="w-full bg-[#111115] border border-[#3f3f46] rounded-lg p-2.5 text-white text-xs focus:border-emerald-500 focus:outline-none">
+                            <option value="0" {% if (db_settings.air_delay_hours if db_settings else 2) == 0 %}selected{% endif %}>0h</option>
+                            <option value="1" {% if (db_settings.air_delay_hours if db_settings else 2) == 1 %}selected{% endif %}>1h</option>
+                            <option value="2" {% if (db_settings.air_delay_hours if db_settings else 2) == 2 %}selected{% endif %}>2h (Default)</option>
+                            <option value="4" {% if (db_settings.air_delay_hours if db_settings else 2) == 4 %}selected{% endif %}>4h</option>
+                            <option value="6" {% if (db_settings.air_delay_hours if db_settings else 2) == 6 %}selected{% endif %}>6h</option>
+                            <option value="12" {% if (db_settings.air_delay_hours if db_settings else 2) == 12 %}selected{% endif %}>12h</option>
+                    </select>
+                    <p class="text-[#71717a] text-xs mt-1.5 leading-relaxed">Hours to wait after an episode airs before the first auto-push.</p>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold uppercase text-[#d1d5db] mb-1.5">Upgrade Window</label>
+                    <select name="upgrade_window_hours"
+                            hx-post="/settings/auto-save"
+                            hx-trigger="change"
+                            hx-swap="none"
+                            class="w-full bg-[#111115] border border-[#3f3f46] rounded-lg p-2.5 text-white text-xs focus:border-emerald-500 focus:outline-none">
+                            <option value="24" {% if (db_settings.upgrade_window_hours if db_settings else 48) == 24 %}selected{% endif %}>24h</option>
+                            <option value="48" {% if (db_settings.upgrade_window_hours if db_settings else 48) == 48 %}selected{% endif %}>48h (Default)</option>
+                            <option value="72" {% if (db_settings.upgrade_window_hours if db_settings else 48) == 72 %}selected{% endif %}>72h</option>
+                            <option value="168" {% if (db_settings.upgrade_window_hours if db_settings else 48) == 168 %}selected{% endif %}>168h (7 days)</option>
+                    </select>
+                    <p class="text-[#71717a] text-xs mt-1.5 leading-relaxed">How long after airing an episode stays eligible for upgrades.</p>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold uppercase text-[#d1d5db] mb-1.5">Max Upgrades per Episode</label>
+                    <select name="max_upgrade_checks"
+                            hx-post="/settings/auto-save"
+                            hx-trigger="change"
+                            hx-swap="none"
+                            class="w-full bg-[#111115] border border-[#3f3f46] rounded-lg p-2.5 text-white text-xs focus:border-emerald-500 focus:outline-none">
+                            <option value="1" {% if (db_settings.max_upgrade_checks if db_settings else 3) == 1 %}selected{% endif %}>1</option>
+                            <option value="2" {% if (db_settings.max_upgrade_checks if db_settings else 3) == 2 %}selected{% endif %}>2</option>
+                            <option value="3" {% if (db_settings.max_upgrade_checks if db_settings else 3) == 3 %}selected{% endif %}>3 (Default)</option>
+                            <option value="5" {% if (db_settings.max_upgrade_checks if db_settings else 3) == 5 %}selected{% endif %}>5</option>
+                    </select>
+                    <p class="text-[#71717a] text-xs mt-1.5 leading-relaxed">Stops hourly upgrade searches for an episode after this many successful replacements</p>
+                </div>
+                </div>
+            </div>
+
+            <!-- Debug Mode & Dry-Run Sandbox Toggles -->
+            <div class="pt-6 border-t border-[#2a2a32] space-y-4">
+                <div>
+                    <h3 class="text-sm font-bold text-white">Diagnostics &amp; Simulation Sandbox</h3>
+                    <p class="text-xs text-[#a1a1aa] mt-0.5">Toggle runtime tracing verbosity and safe dispatch simulation without modifying downloader data.</p>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <!-- Debug Mode Toggle Card -->
+                    <label class="flex items-start gap-3.5 p-4 rounded-xl bg-[#111115] border border-[#3f3f46] cursor-pointer hover:border-zinc-500 transition-colors">
+                        <input type="checkbox"
+                               name="debug_mode"
+                               value="true"
+                               {% if db_settings and db_settings.debug_mode %}checked{% endif %}
+                               hx-post="/settings/auto-save"
+                               hx-trigger="change"
+                               hx-vals='js:{"debug_mode": event.target.checked ? "true" : "false"}'
+                               hx-swap="none"
+                               class="w-4 h-4 mt-0.5 accent-[#d40060] shrink-0">
+                        <div class="min-w-0">
+                            <span class="text-xs text-white font-bold block">Debug Mode (Verbose Application Tracing)</span>
+                            <p class="text-[#71717a] text-xs mt-1 leading-relaxed">
+                                Elevates internal scoring, fake detection, and search logging to DEBUG level without restarting the container. Third-party HTTP libraries remain filtered.
+                            </p>
+                        </div>
+                    </label>
+
+                    <!-- Dry-Run Sandbox Toggle Card -->
+                    <label class="flex items-start gap-3.5 p-4 rounded-xl bg-[#111115] border border-[#3f3f46] cursor-pointer hover:border-zinc-500 transition-colors">
+                        <input type="checkbox"
+                               name="dry_run"
+                               value="true"
+                               {% if db_settings and db_settings.dry_run %}checked{% endif %}
+                               hx-post="/settings/auto-save"
+                               hx-trigger="change"
+                               hx-vals='js:{"dry_run": event.target.checked ? "true" : "false"}'
+                               hx-swap="none"
+                               class="w-4 h-4 mt-0.5 accent-amber-500 shrink-0">
+                        <div class="min-w-0">
+                            <span class="text-xs text-white font-bold block">Dry-Run Mode (Simulation Sandbox)</span>
+                            <p class="text-[#71717a] text-xs mt-1 leading-relaxed">
+                                Executes searches, scoring, and NZB inspection end-to-end, but intercepts and skips the final TorBox upload. Library items remain in Searching state.
+                            </p>
+                        </div>
+                    </label>
+                </div>
+            </div>
+
+            <!-- System Diagnostics & Health (Relocated from Top Header) -->
+            <div class="pt-6 border-t border-[#2a2a32] flex flex-col sm:flex-row items-center justify-between gap-4">
+                <div>
+                    <h3 class="text-sm font-bold text-white">System Diagnostics &amp; Health</h3>
+                    <p class="text-xs text-[#a1a1aa] mt-0.5">Test real-time connectivity and response latency across all active downloaders, indexers, and third-party services.</p>
+                </div>
+                <div class="flex items-center gap-3 shrink-0">
+                    <button type="button"
+                            hx-get="/system/check/modal"
+                            hx-target="#modal-container"
+                            class="bg-[#1e1e24] hover:bg-[#2a2a32] border border-[#3f3f46] text-white px-4 py-2 rounded-lg text-xs font-bold transition-colors flex items-center gap-2">
+                        <svg class="w-4 h-4 shrink-0 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                        Run Health Check
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- =================================================================== -->
+    <!-- SLICE 5: BLACKLISTED RELEASES                                       -->
+    <!-- =================================================================== -->
+    {% include "partials/blacklist_slice.html" %}
+
+    <!-- =================================================================== -->
+    <!-- SLICE 6: VIDEO SCORING REFERENCE                                    -->
+    <!-- =================================================================== -->
+    <div class="bg-[#1e1e24] border border-[#3f3f46] rounded-xl overflow-hidden shadow-lg">
+        <!-- Header Trigger -->
+        <button type="button"
+                @click="toggleSlice('scoring')"
+                class="w-full text-left px-6 py-4 flex items-center justify-between gap-4 hover:bg-[#25252d] transition-colors">
+            <div class="flex items-center gap-3.5 min-w-0">
+                <div class="w-9 h-9 rounded-lg bg-teal-500/15 border border-teal-500/30 text-teal-400 flex items-center justify-center shrink-0">
+                    <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg>
+                </div>
+                <div class="min-w-0">
+                    <h2 class="text-base font-bold text-white leading-tight">Video Scoring Reference</h2>
+                    <p class="text-xs text-[#a1a1aa] truncate mt-0.5">Read-only reference tables for Bitrate, Resolution, Source, Codecs, and HDR matrices.</p>
+                </div>
+            </div>
+            <div class="flex items-center gap-3 shrink-0">
+                <span class="text-xs font-semibold px-2.5 py-1 rounded-full bg-teal-500/15 text-teal-400 border border-teal-500/30">
+                    Quality-Density Engine (v3.0)
+                </span>
+                <svg class="w-5 h-5 text-[#a1a1aa] transition-transform duration-200"
+                     :class="openSlices.scoring ? 'rotate-180' : ''"
+                     fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                </svg>
+            </div>
+        </button>
+
+        <!-- Body Content (Read-Only Reference Grid) -->
+        <div x-show="openSlices.scoring" x-cloak class="p-6 border-t border-[#3f3f46] bg-[#18181d] space-y-6">
+            <div class="bg-[#111115] border border-[#3f3f46] rounded-lg p-4 text-xs text-[#a1a1aa] leading-relaxed">
+                NZBoxer uses this built-in scoring matrix to rank candidate releases during on-demand searches. In <strong class="text-white">Auto-Push Best</strong> mode, the highest-scoring release matching your selected <strong class="text-white">Search Preset</strong> is automatically dispatched to TorBox. In <strong class="text-white">Search &amp; Pick Manually</strong> mode, candidates are sorted by score from highest to lowest.
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div class="bg-[#111115] border border-[#3f3f46] rounded-lg p-4 space-y-2">
+                    <h3 class="text-xs font-bold text-white uppercase tracking-wider border-b border-[#2a2a32] pb-2">Resolution</h3>
+                    <div class="flex justify-between text-xs py-1"><span class="text-gray-300">2160p (4K UHD)</span><span class="font-mono text-emerald-400 font-bold">+2500 pts</span></div>
+                    <div class="flex justify-between text-xs py-1"><span class="text-gray-300">1440p (QHD)</span><span class="font-mono text-teal-400 font-bold">+1600 pts</span></div>
+                    <div class="flex justify-between text-xs py-1"><span class="text-gray-300">1080p (FHD)</span><span class="font-mono text-blue-400 font-bold">+1200 pts</span></div>
+                    <div class="flex justify-between text-xs py-1"><span class="text-gray-300">720p (HD)</span><span class="font-mono text-yellow-500 font-bold">+400 pts</span></div>
+                    <div class="flex justify-between text-xs py-1"><span class="text-gray-300">576p / 480p / SD</span><span class="font-mono text-slate-500">+0 pts</span></div>
+                </div>
+                <div class="bg-[#111115] border border-[#3f3f46] rounded-lg p-4 space-y-2">
+                    <h3 class="text-xs font-bold text-white uppercase tracking-wider border-b border-[#2a2a32] pb-2">Source Quality</h3>
+                    <div class="flex justify-between text-xs py-1"><span class="text-gray-300">Remux (Lossless)</span><span class="font-mono text-emerald-400 font-bold">+1600 pts</span></div>
+                    <div class="flex justify-between text-xs py-1"><span class="text-gray-300">BluRay / UHD BD</span><span class="font-mono text-teal-400 font-bold">+1200 pts</span></div>
+                    <div class="flex justify-between text-xs py-1"><span class="text-gray-300">WEB-DL</span><span class="font-mono text-blue-400 font-bold">+900 pts</span></div>
+                    <div class="flex justify-between text-xs py-1"><span class="text-gray-300">WEBRip / BDRip</span><span class="font-mono text-yellow-500 font-bold">+500 pts</span></div>
+                    <div class="flex justify-between text-xs py-1"><span class="text-gray-300">HDTV / DVD</span><span class="font-mono text-slate-500">+150 / +0 pts</span></div>
+                    <div class="flex justify-between text-xs py-1"><span class="text-gray-300">CAM / Telesync</span><span class="font-mono text-red-400 font-bold">-5000 pts (Reject)</span></div>
+                </div>
+                <div class="bg-[#111115] border border-[#3f3f46] rounded-lg p-4 space-y-2">
+                    <h3 class="text-xs font-bold text-white uppercase tracking-wider border-b border-[#2a2a32] pb-2">Audio Formats</h3>
+                    <div class="flex justify-between text-xs py-1"><span class="text-gray-300">TrueHD Atmos / DTS:X</span><span class="font-mono text-emerald-400 font-bold">+1400 pts</span></div>
+                    <div class="flex justify-between text-xs py-1"><span class="text-gray-300">DTS-HD MA / TrueHD / FLAC</span><span class="font-mono text-teal-400 font-bold">+1100 pts</span></div>
+                    <div class="flex justify-between text-xs py-1"><span class="text-gray-300">EAC3 Atmos / DD+ Atmos</span><span class="font-mono text-blue-400 font-bold">+800 pts</span></div>
+                    <div class="flex justify-between text-xs py-1"><span class="text-gray-300">DTS-HD HRA / EAC3 / DTS / AC3</span><span class="font-mono text-yellow-500 font-bold">+500 pts</span></div>
+                    <div class="flex justify-between text-xs py-1"><span class="text-gray-300">AAC / Opus / MP3 / WMA</span><span class="font-mono text-slate-500">+100 pts</span></div>
+                </div>
+                <div class="bg-[#111115] border border-[#3f3f46] rounded-lg p-4 space-y-2">
+                    <h3 class="text-xs font-bold text-white uppercase tracking-wider border-b border-[#2a2a32] pb-2">Video Codec</h3>
+                    <div class="flex justify-between text-xs py-1"><span class="text-gray-300">AV1 (1.45x Bitrate Mult.)</span><span class="font-mono text-emerald-400 font-bold">+150 pts</span></div>
+                    <div class="flex justify-between text-xs py-1"><span class="text-gray-300">HEVC / H.265 (1.35x Mult.)</span><span class="font-mono text-teal-400 font-bold">+150 pts</span></div>
+                    <div class="flex justify-between text-xs py-1"><span class="text-gray-300">H.264 / AVC (1.0x Baseline)</span><span class="font-mono text-blue-400 font-bold">+100 pts</span></div>
+                    <div class="flex justify-between text-xs py-1"><span class="text-gray-300">MPEG-2 / VC-1 / XviD (0.75x)</span><span class="font-mono text-slate-500">+0 pts</span></div>
+                    <div class="flex justify-between text-xs py-1"><span class="text-gray-300">PROPER / REPACK</span><span class="font-mono text-purple-400 font-bold">+250 pts</span></div>
+                </div>
+                <div class="bg-[#111115] border border-[#3f3f46] rounded-lg p-4 space-y-2">
+                    <h3 class="text-xs font-bold text-white uppercase tracking-wider border-b border-[#2a2a32] pb-2">HDR &amp; Dynamic Range</h3>
+                    <div class="flex justify-between text-xs py-1"><span class="text-gray-300">Dolby Vision (DV)</span><span class="font-mono text-emerald-400 font-bold">+1200 pts</span></div>
+                    <div class="flex justify-between text-xs py-1"><span class="text-gray-300">HDR10+</span><span class="font-mono text-teal-400 font-bold">+900 pts</span></div>
+                    <div class="flex justify-between text-xs py-1"><span class="text-gray-300">HDR10 / HDR</span><span class="font-mono text-blue-400 font-bold">+600 pts</span></div>
+                    <div class="flex justify-between text-xs py-1"><span class="text-gray-300">HLG</span><span class="font-mono text-yellow-500 font-bold">+300 pts</span></div>
+                    <div class="flex justify-between text-xs py-1"><span class="text-gray-300">SDR 10-Bit Bonus</span><span class="font-mono text-purple-400 font-bold">+150 pts</span></div>
+                </div>
+                <div class="bg-[#111115] border border-[#3f3f46] rounded-lg p-4 space-y-2">
+                    <h3 class="text-xs font-bold text-white uppercase tracking-wider border-b border-[#2a2a32] pb-2">Audio Channels &amp; Bitrate</h3>
+                    <div class="flex justify-between text-xs py-1"><span class="text-gray-300">7.1 / 5.1 / 2.0 Channels</span><span class="font-mono text-emerald-400 font-bold">+300 / +200 / +0 pts</span></div>
+                    <div class="flex justify-between text-xs py-1"><span class="text-gray-300">2160p Net Video Bitrate</span><span class="font-mono text-teal-400 font-bold">Up to +1500 pts</span></div>
+                    <div class="flex justify-between text-xs py-1"><span class="text-gray-300">1080p Net Video Bitrate</span><span class="font-mono text-blue-400 font-bold">Up to +1100 pts</span></div>
+                    <div class="flex justify-between text-xs py-1"><span class="text-gray-300">Starved Encode (&lt; Min)</span><span class="font-mono text-red-400 font-bold">Up to -1000 pts</span></div>
+                    <div class="flex justify-between text-xs py-1"><span class="text-gray-300">Audio Offset Subtraction</span><span class="font-mono text-purple-400 font-bold">0.40–4.00 Mbps</span></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Live Auto-Save Transient Micro-Toast -->
+    <div x-data="{ show: false }"
+         @show-auto-save-toast.window="show = true; setTimeout(() => show = false, 1500)"
+         x-show="show" x-transition.opacity
+         class="fixed bottom-5 right-5 z-50 bg-emerald-600/90 text-white text-xs font-bold px-3 py-1.5 rounded-full shadow-lg border border-emerald-400/30 flex items-center gap-1.5 pointer-events-none">
+        <span>✓ Saved</span>
+    </div>
+
+</div>
+{% endblock %}

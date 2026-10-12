@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NZBoxer</title>
+    <link rel="icon" type="image/svg+xml" href="/static/icon.svg">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <!-- AlpineJS for basic interactions like modals/tabs if needed -->
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <style>
+        body {
+            background-color: #1e1e24;
+            color: #d1d5db;
+        }
+        .nav-link {
+            transition: all 0.2s;
+        }
+        .nav-link:hover {
+            color: #ffffff;
+            text-shadow: 0 0 8px rgba(255,255,255,0.3);
+        }
+        [x-cloak] { display: none !important; }
+        .htmx-indicator { opacity: 0; pointer-events: none; transition: opacity 200ms ease; }
+        .htmx-request .htmx-indicator,
+        .htmx-indicator.htmx-request { opacity: 1; pointer-events: auto; }
+        
+        /* Remove number input spinners globally across all browsers & engines */
+        input::-webkit-outer-spin-button,
+        input::-webkit-inner-spin-button,
+        input[type="number"]::-webkit-outer-spin-button,
+        input[type="number"]::-webkit-inner-spin-button {
+            -webkit-appearance: none !important;
+            margin: 0 !important;
+            display: none !important;
+        }
+        input[type="number"] {
+            -moz-appearance: textfield !important;
+            appearance: textfield !important;
+        }
+
+        /* Bulletproof Native CSS Modal Overlay & Dialog Rules */
+        .nzb-modal-backdrop {
+            position: fixed !important;
+            top: 0 !important;
+            right: 0 !important;
+            bottom: 0 !important;
+            left: 0 !important;
+            width: 100vw !important;
+            height: 100vh !important;
+            z-index: 9999 !important;
+            background-color: rgba(0, 0, 0, 0.82) !important;
+            backdrop-filter: blur(4px);
+            -webkit-backdrop-filter: blur(4px);
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            padding: 1rem !important;
+        }
+        .nzb-modal-dialog {
+            background-color: #1e1e24 !important;
+            border: 1px solid #3f3f46 !important;
+            border-radius: 0.75rem !important;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.75) !important;
+            width: 100% !important;
+            max-width: 64rem !important;
+            max-height: 90vh !important;
+            display: flex !important;
+            flex-direction: column !important;
+            overflow: hidden !important;
+            color: #d1d5db !important;
+        }
+        .nzb-modal-dialog-lg {
+            max-width: 48rem !important;
+        }
+        .nzb-modal-dialog-sm {
+            max-width: 32rem !important;
+        }
+        .nzb-modal-dialog select,
+        .nzb-modal-dialog input[type="text"],
+        .nzb-modal-dialog input[type="url"],
+        .nzb-modal-dialog input[type="password"],
+        .nzb-modal-dialog input[type="number"] {
+            background-color: #1e1e24;
+            color: #ffffff;
+            border-color: #3f3f46;
+        }
+    </style>
+</head>
+<body class="min-h-screen font-sans antialiased flex flex-col">
+    <!-- Top Navigation Bar -->
+    <nav class="bg-[#2a2a32] border-b border-[#3f3f46] shadow-md sticky top-0 z-50">
+        <div class="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex items-center justify-between h-14">
+                
+                <!-- Left side: Brand -->
+                <div class="flex items-center gap-4">
+                    <div class="flex items-center gap-2.5">
+                        <a href="/" class="flex items-center gap-2.5 group">
+                            <img src="/static/icon.svg" alt="NZBoxer Logo" class="w-9 h-9 sm:w-11 sm:h-11 shrink-0 transition-transform group-hover:scale-105">
+                            <span class="text-lg font-semibold text-white tracking-wide group-hover:text-pink-400 transition-colors">NZBoxer</span>
+                        </a>
+                        <span class="hidden sm:inline-block bg-[#3f3f46] text-[#d1d5db] text-xs font-mono font-medium px-2.5 py-0.5 rounded-full mt-0.5 shadow-sm">
+                            v{{ app_version }}
+                        </span>
+                    </div>
+                </div>
+
+                <!-- Right side: Navigation Links & Controls -->
+                <div class="flex items-center gap-2 sm:gap-3 text-sm text-[#a1a1aa] font-medium">
+                    <!-- 1. Clean Sync Watchlist Button -->
+                    <div class="flex items-center gap-2">
+                        <button hx-post="/sync" hx-target="#sync-result" hx-indicator="#sync-overlay" class="nav-link flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 bg-[#3f3f46] hover:bg-[#52525b] text-white rounded-md transition-colors text-xs font-medium">
+                            <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                            <span class="hidden sm:inline">Sync Watchlist</span><span class="sm:hidden">Sync</span>
+                        </button>
+                    </div>
+                    
+                    <!-- 2. Dashboard Link -->
+                    <a href="/" class="nav-link flex items-center gap-2 px-2 py-1.5 sm:px-0 sm:py-0 ml-1" title="Dashboard">
+                        <svg class="w-4 h-4 shrink-0" fill="currentColor" viewBox="0 0 20 20"><path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z"></path></svg>
+                        <span class="hidden sm:inline">Dashboard</span>
+                    </a>
+                    
+                    <!-- 3. Settings Link -->
+                    <a href="/settings" class="nav-link flex items-center gap-2 px-2 py-1.5 sm:px-0 sm:py-0" title="Settings">
+                        <svg class="w-4 h-4 shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clip-rule="evenodd"></path></svg>
+                        <span class="hidden sm:inline">Settings</span>
+                    </a>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Persistent Top Dry-Run Warning Banner -->
+    {% if settings.dry_run %}
+    <div class="bg-amber-500/20 border-b border-amber-500/40 text-amber-300 px-4 py-2 text-center text-xs sm:text-sm font-medium flex items-center justify-center gap-2 sticky top-14 z-40 backdrop-blur-sm shadow-md"
+         data-dry-run-banner="true">
+        <svg class="w-4 h-4 text-amber-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+        </svg>
+        <span><strong>Dry-Run Mode Active:</strong> All pushes are simulated. No NZBs will be uploaded to TorBox and library status is unchanged.</span>
+        <svg class="w-4 h-4 text-amber-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+        </svg>
+    </div>
+    {% endif %}
+
+    <!-- Global Alerts (Sync results etc) -->
+    <div id="sync-result" class="max-w-[1600px] w-full mx-auto px-4 sm:px-6 lg:px-8 mt-4 empty:hidden"></div>
+
+    <!-- Main Content -->
+    <main class="flex-1 w-full max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-4">
+        {% block content %}{% endblock %}
+    </main>
+
+    <!-- Unified Push Modal & Dialog Container -->
+    <div id="modal-container"></div>
+
+    <!-- Pre-declared Tailwind utility classes for dynamically swapped HTMX modals & partials -->
+    <div style="display: none !important;" aria-hidden="true"
+         class="fixed inset-0 z-50 z-[100] z-[110] z-[200] bg-black bg-black/60 bg-black/70 bg-black/80 bg-opacity-70 backdrop-blur-sm animate-fade-in animate-pulse animate-spin max-w-lg max-w-3xl max-w-4xl max-w-5xl max-h-52 max-h-[90vh] min-h-[160px] min-h-[200px] min-w-0 min-w-[130px] min-w-[180px] min-w-[200px] min-w-[240px] max-w-[180px] max-w-[260px] max-w-[320px] w-3 h-3 w-3.5 h-3.5 w-4 h-4 w-5 h-5 w-9 h-9 w-20 h-28 w-10 h-10 w-11 h-11 h-6 w-12 h-20 w-64 top-4 right-4 left-1/2 -translate-x-1/2 pr-1 pr-8 pl-2 pt-1 pt-2 pt-2.5 pt-3 pt-4 p-0.5 p-1 p-1.5 p-2 p-2.5 p-3 p-3.5 p-4 p-5 p-6 p-8 px-1.5 px-2 px-2.5 px-3 px-3.5 px-4 px-5 px-6 py-0.5 py-1 py-1.5 py-2 py-2.5 py-3 py-3.5 py-4 py-10 space-y-1.5 space-y-2 space-y-2.5 space-y-3 space-y-4 space-y-5 space-y-6 gap-1 gap-1.5 gap-2 gap-2.5 gap-3 gap-4 gap-6 mb-5 flex-wrap flex-nowrap inline-flex block hidden cursor-help grid-cols-2 grid-cols-3 bg-[#111115] bg-[#1e1e24] bg-[#1e1e24]/40 bg-[#1e1e24]/60 bg-[#2a2a32] bg-[#3f3f46] hover:bg-[#2a2a32] hover:bg-[#3f3f46] hover:bg-[#3f3f46]/50 hover:bg-[#3f3f46]/60 hover:bg-[#52525b] hover:bg-[#a3004a] bg-[#d40060] bg-[#d40060]/10 bg-[#d40060]/20 bg-[#d40060]/30 border-[#2a2a32] border-[#3f3f46] border-[#d40060] border-[#d40060]/30 border-[#d40060]/40 hover:border-[#52525b] hover:border-[#d40060] hover:border-[#d40060]/60 focus:border-[#d40060] focus:outline-none accent-[#d40060] text-[#71717a] text-[#a1a1aa] text-[#d1d5db] text-[#d40060] hover:text-pink-400 text-pink-300 text-[9px] text-[10px] text-[11px] sm:inline sm:inline-block sm:hidden sm:w-11 sm:h-11 sm:p-4 sm:p-5 sm:p-6 sm:px-0 sm:py-0 sm:px-3 sm:px-3.5 sm:py-2.5 sm:gap-3 sm:gap-4 sm:mb-8 sm:text-sm sm:flex-row sm:flex-nowrap sm:grid-cols-2 sm:grid-cols-3 sm:grid-cols-4 md:grid md:flex md:table-header-group md:table-row md:table-cell md:translate-y-2 md:p-0 md:space-y-0 md:px-4 md:py-3.5 md:px-6 md:py-4 md:min-w-[260px] md:w-px md:whitespace-nowrap md:grid-cols-2 md:grid-cols-3 md:grid-cols-4 md:grid-cols-6 md:col-span-2 lg:grid-cols-3 lg:grid-cols-6 rounded-full rounded-t-xl shadow-2xl shadow-lg shadow-sm shadow-[#d40060]/20 shadow-[#d40060]/30 disabled:opacity-50 opacity-60 line-clamp-2 object-cover bg-emerald-500/20 text-emerald-300 text-emerald-400 border-emerald-500/30 bg-cyan-500/20 text-cyan-300 border-cyan-500/30 bg-amber-400/20 text-amber-200 border-amber-400/50 shadow-amber-500/10 bg-slate-300/20 text-slate-100 border-slate-300/45 bg-orange-500/15 text-orange-300 border-orange-500/35 bg-red-500/15 hover:bg-red-500/25 bg-red-500/20 text-red-300 text-red-400 border-red-500/30 border-red-500/40 bg-amber-500/15 bg-amber-500/20 text-amber-300 border-amber-500/30 bg-purple-500/20 text-purple-300 border-purple-500/30 bg-blue-500/20 text-blue-300 border-blue-500/30 bg-zinc-700/40 text-zinc-300 border-zinc-600/40 bg-zinc-700/60 text-zinc-200 border-zinc-500/40"></div>
+
+    <!-- Sync overlay: shown via htmx-indicator while POST /sync is in-flight -->
+    <div id="sync-overlay"
+         class="htmx-indicator fixed inset-0 z-[200] bg-black/60 backdrop-blur-sm flex flex-col items-center justify-center gap-4">
+        <svg class="animate-spin w-10 h-10 text-[#d40060]" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+        </svg>
+        <p class="text-white text-sm font-medium">Syncing watchlist&hellip;</p>
+    </div>
+
+</body>
+</html>

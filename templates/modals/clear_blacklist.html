@@ -1,0 +1,47 @@
+<!-- Clear Blacklist Confirmation Modal -->
+<div class="nzb-modal-backdrop fixed inset-0 bg-black/70 backdrop-blur-sm z-[100] flex items-center justify-center p-4 animate-fade-in" id="clear-blacklist-modal-overlay">
+    <div class="nzb-modal-dialog bg-[#1e1e24] border border-[#3f3f46] rounded-xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col">
+        <!-- Header -->
+        <div class="bg-[#2a2a32] px-6 py-4 border-b border-[#3f3f46] flex justify-between items-center shrink-0">
+            <h2 class="text-lg font-bold text-white flex items-center gap-2">
+                <svg class="w-5 h-5 shrink-0 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+                </svg>
+                Clear Blacklisted Releases
+            </h2>
+            <button type="button"
+                    onclick="document.getElementById('modal-container').innerHTML = '';"
+                    class="p-1.5 text-[#a1a1aa] hover:text-white hover:bg-[#3f3f46]/50 rounded-lg transition-colors focus:outline-none">
+                <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                </svg>
+            </button>
+        </div>
+
+        <!-- Body -->
+        <div class="p-6 text-sm text-gray-300 space-y-3">
+            <p>
+                Are you sure you want to permanently clear all <strong class="text-white">{{ total_count }}</strong> blacklisted release{% if total_count != 1 %}s{% endif %}?
+            </p>
+            <p class="text-xs text-[#a1a1aa] bg-red-950/30 border border-red-900/40 rounded-lg p-3">
+                <strong class="text-red-400">Warning:</strong> Clearing the blacklist allows all previously rejected, failed, or stalled releases to be grabbed again during future automated or manual searches.
+            </p>
+        </div>
+
+        <!-- Footer -->
+        <div class="bg-[#2a2a32] px-6 py-4 border-t border-[#3f3f46] flex justify-end gap-3 shrink-0">
+            <button type="button"
+                    onclick="document.getElementById('modal-container').innerHTML = '';"
+                    class="px-4 py-2 text-sm text-[#a1a1aa] hover:text-white font-medium transition-colors">
+                Cancel
+            </button>
+            <button type="button"
+                    hx-post="/api/blacklist/clear"
+                    hx-target="#blacklist-slice-container"
+                    hx-swap="outerHTML"
+                    class="bg-red-600 hover:bg-red-700 text-white px-5 py-2 rounded-lg text-sm font-bold transition-all shadow-lg shadow-red-600/20 flex items-center gap-2">
+                Clear All Releases
+            </button>
+        </div>
+    </div>
+</div>

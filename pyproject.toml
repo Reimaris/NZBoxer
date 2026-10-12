@@ -1,0 +1,16 @@
+[tool.mypy]
+ignore_missing_imports = true
+warn_return_any = false
+warn_unused_configs = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+filterwarnings = [
+    "ignore:Using `httpx` with `starlette.testclient` is deprecated:starlette.exceptions.StarletteDeprecationWarning",
+]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+ignore = ["E501", "E712", "E741", "E731", "W293"]
+
+

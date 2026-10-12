@@ -1,0 +1,307 @@
+<!-- Provider Modal (v3.0.0) -->
+{% set cfg = provider.config if provider else {} %}
+<div class="nzb-modal-backdrop fixed inset-0 bg-black bg-opacity-70 z-[100] flex items-center justify-center p-4 animate-fade-in" id="provider-modal-overlay">
+    <div class="nzb-modal-dialog nzb-modal-dialog-lg bg-[#1e1e24] border border-[#3f3f46] rounded-xl shadow-2xl w-full max-w-3xl overflow-hidden flex flex-col max-h-[90vh]"
+         x-data="{
+             isEdit: {{ 'true' if provider else 'false' }},
+             step: {{ 2 if provider else 1 }},
+             providerType: '{{ provider.type if provider else '' }}',
+             providerCategory: '{{ provider.category if provider else '' }}',
+             selectProvider(type, category, defaultName) {
+                 this.providerType = type;
+                 this.providerCategory = category;
+                 const nameInput = document.getElementById('provider-name-input');
+                 if (nameInput && !nameInput.value) {
+                     nameInput.value = defaultName;
+                 }
+                 this.step = 2;
+             }
+         }">
+
+        <!-- Header -->
+        <div class="bg-[#2a2a32] rounded-t-xl px-6 py-4 border-b border-[#3f3f46] flex justify-between items-center shrink-0">
+            <div class="flex items-center gap-3">
+                <template x-if="step === 2 && !isEdit">
+                    <button type="button" @click="step = 1" class="text-[#a1a1aa] hover:text-white transition-colors flex items-center gap-1 text-sm font-semibold bg-[#1e1e24] px-2.5 py-1 rounded-lg border border-[#3f3f46]">
+                        <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+                        Back to Providers
+                    </button>
+                </template>
+                <h2 class="text-xl font-bold text-white flex items-center gap-2">
+                    <svg class="w-5 h-5 shrink-0 text-[#d40060]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 002-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
+                    <span x-text="isEdit ? 'Edit Provider: {{ provider.name if provider else '' }}' : (step === 1 ? 'Add New Provider — Select Type' : 'Configure Provider')">Add New Provider</span>
+                </h2>
+            </div>
+            <button onclick="document.getElementById('modal-container').innerHTML = '';" class="p-1.5 text-[#a1a1aa] hover:text-white hover:bg-[#3f3f46]/50 rounded-lg transition-colors focus:outline-none">
+                <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+            </button>
+        </div>
+
+        <div class="p-6 overflow-y-auto">
+            <!-- STEP 1: VISUAL PROVIDER CATALOG -->
+            <div x-show="step === 1" class="space-y-6 animate-fade-in">
+                <p class="text-[#a1a1aa] text-sm">Choose a provider integration below to configure credentials and sync options.</p>
+
+                <!-- Watchlist Section -->
+                <div class="space-y-3">
+                    <h3 class="text-xs font-bold text-[#d40060] uppercase tracking-wider">Watchlist Providers</h3>
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        <button type="button" @click="selectProvider('simkl', 'watchlist', 'Simkl Watchlist')" class="bg-[#111115] hover:bg-[#2a2a32] border border-[#3f3f46] hover:border-[#d40060] rounded-xl p-4 text-left transition-all group flex flex-col justify-between">
+                            <div class="flex items-center gap-3 mb-2">
+                                <div class="w-10 h-10 rounded-lg bg-sky-500/20 text-sky-400 flex items-center justify-center font-bold text-lg">S</div>
+                                <div>
+                                    <div class="font-bold text-white group-hover:text-[#d40060] transition-colors">Simkl</div>
+                                    <div class="text-xs text-[#a1a1aa]">Watchlist Integration</div>
+                                </div>
+                            </div>
+                            <p class="text-xs text-[#71717a] mt-1">Sync movies, TV shows, and anime watchlists via OAuth 2.0 Device Flow (AUTH V2) with auto-refreshing tokens and watch-progress season expansion.</p>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Metadata Section -->
+                <div class="space-y-3">
+                    <h3 class="text-xs font-bold text-amber-400 uppercase tracking-wider">Metadata Providers</h3>
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        <button type="button" @click="selectProvider('tmdb', 'metadata', 'TMDB')" class="bg-[#111115] hover:bg-[#2a2a32] border border-[#3f3f46] hover:border-amber-400 rounded-xl p-4 text-left transition-all group flex flex-col justify-between">
+                            <div class="flex items-center gap-3 mb-2">
+                                <div class="w-10 h-10 rounded-lg bg-amber-500/20 text-amber-400 flex items-center justify-center font-bold text-lg">T</div>
+                                <div>
+                                    <div class="font-bold text-white group-hover:text-amber-400 transition-colors">TMDB</div>
+                                    <div class="text-xs text-[#a1a1aa]">The Movie Database</div>
+                                </div>
+                            </div>
+                            <p class="text-xs text-[#71717a] mt-1">Movie and TV series metadata, season/episode air dates, and poster artwork (v3 API key required).</p>
+                        </button>
+                        <button type="button" @click="selectProvider('anilist', 'metadata', 'AniList')" class="bg-[#111115] hover:bg-[#2a2a32] border border-[#3f3f46] hover:border-amber-400 rounded-xl p-4 text-left transition-all group flex flex-col justify-between">
+                            <div class="flex items-center gap-3 mb-2">
+                                <div class="w-10 h-10 rounded-lg bg-indigo-500/20 text-indigo-400 flex items-center justify-center font-bold text-lg">A</div>
+                                <div>
+                                    <div class="font-bold text-white group-hover:text-amber-400 transition-colors">AniList</div>
+                                    <div class="text-xs text-[#a1a1aa]">Anime Metadata</div>
+                                </div>
+                            </div>
+                            <p class="text-xs text-[#71717a] mt-1">Public GraphQL anime metadata, chronological sequel chains, and episode air dates. Works automatically without credentials.</p>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Downloader Section -->
+                <div class="space-y-3">
+                    <h3 class="text-xs font-bold text-purple-400 uppercase tracking-wider">Downloader Providers</h3>
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        <button type="button" @click="selectProvider('torbox', 'downloader', 'TorBox')" class="bg-[#111115] hover:bg-[#2a2a32] border border-[#3f3f46] hover:border-purple-400 rounded-xl p-4 text-left transition-all group flex flex-col justify-between">
+                            <div class="flex items-center gap-3 mb-2">
+                                <div class="w-10 h-10 rounded-lg bg-purple-500/20 text-purple-400 flex items-center justify-center font-bold text-lg">TB</div>
+                                <div>
+                                    <div class="font-bold text-white group-hover:text-purple-400 transition-colors">TorBox</div>
+                                    <div class="text-xs text-[#a1a1aa]">Debrid &amp; Usenet Client</div>
+                                </div>
+                            </div>
+                            <p class="text-xs text-[#71717a] mt-1">Cloud Usenet downloader for multipart NZB uploads, active transfer polling, and Layer 3 video verification.</p>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Indexer Section -->
+                <div class="space-y-3">
+                    <h3 class="text-xs font-bold text-blue-400 uppercase tracking-wider">Indexer Providers</h3>
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        <button type="button" @click="selectProvider('treasure_maps', 'indexer', 'Newznab Indexer')" class="bg-[#111115] hover:bg-[#2a2a32] border border-[#3f3f46] hover:border-blue-400 rounded-xl p-4 text-left transition-all group flex flex-col justify-between">
+                            <div class="flex items-center gap-3 mb-2">
+                                <div class="w-10 h-10 rounded-lg bg-blue-500/20 text-blue-400 flex items-center justify-center font-bold text-xs">NZB</div>
+                                <div>
+                                    <div class="font-bold text-white group-hover:text-blue-400 transition-colors">Newznab Indexer</div>
+                                    <div class="text-xs text-[#a1a1aa]">Usenet Indexer (Newznab API)</div>
+                                </div>
+                            </div>
+                            <p class="text-xs text-[#71717a] mt-1">Compatible with any Newznab-standard Usenet indexer (NZBGeek, NzbPlanet, DrunkenSlug, SceneNZBs, TreasureMaps, etc.) evaluated in priority order.</p>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- STEP 2: DYNAMIC CONFIGURATION VIEW -->
+            <div x-show="step === 2" class="animate-fade-in">
+                <form id="provider-form" hx-post="/settings/provider{% if provider %}/{{ provider.id }}{% endif %}" class="space-y-6">
+                    <input type="hidden" name="provider_type" :value="providerType" value="{{ provider.type if provider else '' }}">
+                    <input type="hidden" name="category" :value="providerCategory" value="{{ provider.category if provider else '' }}">
+
+                    <!-- Basic Info -->
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div class="flex flex-col">
+                            <label class="h-6 text-[#d1d5db] font-medium mb-1 flex items-center">Display Name <span class="text-red-500 ml-1">*</span></label>
+                            <input type="text" id="provider-name-input" name="name" value="{{ provider.name if provider else '' }}" required class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors" placeholder="e.g. My Provider">
+                        </div>
+
+                        <div class="flex flex-col justify-center">
+                            <label class="h-6 text-[#d1d5db] font-medium mb-1 flex items-center gap-2">Active Status</label>
+                            <label class="relative inline-flex items-center cursor-pointer mt-1">
+                                <input type="checkbox" name="is_active" value="true" class="sr-only peer" {% if not provider or provider.is_active %}checked{% endif %}>
+                                <div class="w-11 h-6 bg-[#3f3f46] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#d40060]"></div>
+                                <span class="ml-3 text-sm font-medium text-white">Enable Provider</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- TORBOX CONFIGURATION -->
+                    <fieldset :disabled="providerType !== 'torbox'" x-show="providerType === 'torbox'" class="border-0 p-0 m-0 space-y-6">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div class="flex flex-col col-span-1 md:col-span-2">
+                                <label class="h-6 text-[#d1d5db] font-medium mb-1 flex items-center justify-between">
+                                    <span>TorBox API Key <span class="text-red-500 ml-1">*</span></span>
+                                    <a href="https://torbox.app/settings" target="_blank" class="text-xs text-blue-400 hover:underline">Get API Key</a>
+                                </label>
+                                <input type="password" name="api_key" value="{{ provider.api_key if provider and provider.api_key else '' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors font-mono" placeholder="Your TorBox API Token">
+                            </div>
+                            <div class="flex flex-col col-span-1 md:col-span-2">
+                                <label class="h-6 text-[#d1d5db] font-medium mb-1 flex items-center">TorBox API Base URL</label>
+                                <input type="text" name="api_url" value="{{ provider.api_url if provider and provider.api_url else 'https://api.torbox.app/v1/api' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors font-mono" placeholder="https://api.torbox.app/v1/api">
+                            </div>
+                        </div>
+                    </fieldset>
+
+                    <!-- NEWZNAB INDEXER CONFIGURATION -->
+                    <fieldset :disabled="providerType !== 'treasure_maps'" x-show="providerType === 'treasure_maps'" class="border-0 p-0 m-0 space-y-6">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div class="flex flex-col">
+                                <label class="h-6 text-[#d1d5db] font-medium mb-1 flex items-center justify-between">
+                                    <span>Indexer API Key <span class="text-red-500 ml-1">*</span></span>
+                                </label>
+                                <input type="password" name="api_key" value="{{ provider.api_key if provider and provider.api_key else '' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors font-mono" placeholder="Your Indexer API Key">
+                            </div>
+                            <div class="flex flex-col">
+                                <label class="h-6 text-[#d1d5db] font-medium mb-1 flex items-center">
+                                    <span>Priority Order (1 = Highest)</span>
+                                </label>
+                                <input type="number" name="priority" value="{{ provider.priority if provider and provider.priority is not none else '1' }}" min="1" max="99" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors font-mono text-center">
+                            </div>
+                            <div class="flex flex-col col-span-1 md:col-span-2">
+                                <label class="h-6 text-[#d1d5db] font-medium mb-1 flex items-center">Indexer Endpoint / API Base URL <span class="text-red-500 ml-1">*</span></label>
+                                <input type="text" name="api_url" value="{{ provider.api_url if provider and provider.api_url else '' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors font-mono" placeholder="https://api.your-indexer.com/api">
+                            </div>
+                        </div>
+                    </fieldset>
+
+                    <!-- TMDB CONFIGURATION -->
+                    <fieldset :disabled="providerType !== 'tmdb'" x-show="providerType === 'tmdb'" class="border-0 p-0 m-0 space-y-6">
+                        <div class="flex flex-col">
+                            <label class="h-6 text-[#d1d5db] font-medium mb-1 flex items-center justify-between">
+                                <span>TMDB API v3 Key <span class="text-red-500 ml-1">*</span></span>
+                                <a href="https://www.themoviedb.org/settings/api" target="_blank" class="text-xs text-blue-400 hover:underline">Get TMDB Key</a>
+                            </label>
+                            <input type="password" name="api_key" value="{{ provider.api_key if provider and provider.api_key else '' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors font-mono" placeholder="Your TMDB v3 API Key">
+                        </div>
+                    </fieldset>
+
+                    <!-- SIMKL CONFIGURATION (AUTH V2 — RFC 8628 Device Flow & Auto-Refresh) -->
+                    <fieldset :disabled="providerType !== 'simkl'" x-show="providerType === 'simkl'" class="border-0 p-0 m-0 space-y-6">
+                        <input type="hidden" name="provider_id" value="{{ provider.id if provider else '' }}">
+                        <input type="hidden" id="simkl-refresh-token" name="refresh_token" value="{{ cfg.get('refresh_token', '') or '' }}">
+                        <input type="hidden" id="simkl-token-expires-at" name="token_expires_at" value="{{ cfg.get('token_expires_at', '') or '' }}">
+
+                        <div class="flex items-center justify-between bg-[#111115] border border-[#3f3f46] rounded-xl px-4 py-3">
+                            <span class="text-xs font-bold text-[#a1a1aa] uppercase tracking-wider">Simkl Auth Status</span>
+                            {% if provider and provider.is_simkl_v2_authenticated %}
+                            <span id="simkl-modal-status-badge" class="px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                                {{ provider.simkl_auth_status_label }}
+                            </span>
+                            {% elif provider and provider.simkl_auth_status_label == 'Reconnect Required (Legacy V1 / Expired)' %}
+                            <span id="simkl-modal-status-badge" class="px-2.5 py-1 rounded-full text-xs font-bold bg-amber-500/15 text-amber-400 border border-amber-500/30">
+                                {{ provider.simkl_auth_status_label }}
+                            </span>
+                            {% else %}
+                            <span id="simkl-modal-status-badge" class="px-2.5 py-1 rounded-full text-xs font-bold bg-slate-500/15 text-slate-400 border border-slate-500/30">
+                                Not Connected
+                            </span>
+                            {% endif %}
+                        </div>
+
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div class="flex flex-col">
+                                <label class="h-6 text-[#d1d5db] font-medium mb-1 flex items-center">Simkl Username</label>
+                                <input type="text" name="simkl_username" value="{{ provider.username if provider else '' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors" placeholder="Simkl username">
+                            </div>
+
+                            <div class="flex flex-col">
+                                <label class="h-6 text-[#d1d5db] font-medium mb-1 flex items-center justify-between">
+                                    <span>Simkl Client ID</span>
+                                    <a href="https://simkl.com/settings/developer/" target="_blank" rel="noopener noreferrer" class="text-xs text-blue-400 hover:underline">Get Client ID</a>
+                                </label>
+                                <input type="password" name="client_id" value="{{ provider.client_id if provider and provider.client_id else '' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors font-mono">
+                                <p class="text-[11px] text-[#71717a] mt-1.5 leading-relaxed">
+                                    Create an app at <a href="https://simkl.com/settings/developer/" target="_blank" rel="noopener noreferrer" class="text-blue-400 hover:underline">simkl.com/settings/developer</a> with Application Type set to <strong>TV, devices &amp; command line</strong> or <strong>Mobile, desktop &amp; browser apps</strong> (AUTH V2 public client — no Client Secret required).
+                                </p>
+                            </div>
+
+                            <div class="flex flex-col col-span-1 md:col-span-2">
+                                <label class="h-6 text-[#d1d5db] font-medium mb-1 flex items-center">Simkl Access Token</label>
+                                <div class="flex gap-2 w-full">
+                                    <input type="password" id="access_token" name="access_token" value="{{ provider.access_token if provider and provider.access_token else '' }}" class="flex-1 min-w-0 h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors font-mono">
+                                    <button type="button" hx-post="/simkl/auth/start" hx-include="[name='client_id'], [name='provider_id']" hx-target="#simkl-auth-container-modal" class="h-11 bg-blue-600 hover:bg-blue-700 text-white px-4 rounded-lg font-medium transition-colors text-sm whitespace-nowrap shrink-0">
+                                        Get PIN &amp; Connect
+                                    </button>
+                                </div>
+                                <div id="simkl-auth-container-modal" class="mt-2"></div>
+                            </div>
+                        </div>
+
+                        <!-- Simplified Watchlist Sync Settings -->
+                        <div class="border border-[#3f3f46] rounded-xl bg-[#111115] p-5 space-y-4">
+                            <h3 class="text-xs font-bold text-[#a1a1aa] uppercase tracking-wider">Watchlist Sync Options</h3>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 items-center">
+                                <div>
+                                    <label class="text-xs text-[#d1d5db] block font-semibold mb-1">Sync Interval (Minutes)</label>
+                                    <input type="number" name="sync_interval_minutes" min="5" max="1440"
+                                           value="{{ cfg.get('sync_interval_minutes', 60) }}"
+                                           class="w-full h-10 bg-[#1e1e24] border border-[#3f3f46] rounded-lg px-3 text-white font-mono text-sm">
+                                </div>
+                                <div class="flex flex-wrap items-center gap-4 pt-4">
+                                    <label class="inline-flex items-center gap-2 text-sm text-white cursor-pointer">
+                                        <input type="checkbox" name="sync_movies" value="true" {% if cfg.get('sync_movies', True) %}checked{% endif %} class="w-4 h-4 accent-[#d40060]">
+                                        <span>Sync Movies</span>
+                                    </label>
+                                    <label class="inline-flex items-center gap-2 text-sm text-white cursor-pointer">
+                                        <input type="checkbox" name="sync_series" value="true" {% if cfg.get('sync_series', True) %}checked{% endif %} class="w-4 h-4 accent-[#d40060]">
+                                        <span>Sync Series</span>
+                                    </label>
+                                    <label class="inline-flex items-center gap-2 text-sm text-white cursor-pointer">
+                                        <input type="checkbox" name="sync_anime" value="true" {% if cfg.get('sync_anime', True) %}checked{% endif %} class="w-4 h-4 accent-[#d40060]">
+                                        <span>Sync Anime</span>
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                    </fieldset>
+
+                    <!-- ANILIST CONFIGURATION -->
+                    <fieldset :disabled="providerType !== 'anilist'" x-show="providerType === 'anilist'" class="border-0 p-0 m-0 space-y-6">
+                        <div class="bg-[#111115] border border-[#3f3f46] rounded-xl p-4 text-xs text-[#a1a1aa] leading-relaxed">
+                            AniList uses the public GraphQL API for anime metadata, chronological sequel chains, and episode air dates — <strong class="text-white">no API key or credentials are required</strong>. Username and Access Token below are completely optional.
+                        </div>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div class="flex flex-col">
+                                <label class="h-6 text-[#d1d5db] font-medium mb-1 flex items-center">AniList Username (Optional)</label>
+                                <input type="text" name="simkl_username" value="{{ provider.username if provider else '' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors" placeholder="AniList username">
+                            </div>
+                            <div class="flex flex-col">
+                                <label class="h-6 text-[#d1d5db] font-medium mb-1 flex items-center">Access Token (Optional)</label>
+                                <input type="password" name="access_token" value="{{ provider.access_token if provider and provider.access_token else '' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors font-mono" placeholder="Optional token">
+                            </div>
+                        </div>
+                    </fieldset>
+
+                    <!-- Form Submit Actions -->
+                    <div class="flex justify-end gap-3 pt-4 border-t border-[#3f3f46]">
+                        <button type="button" onclick="document.getElementById('modal-container').innerHTML = '';" class="px-5 py-2.5 bg-[#3f3f46] hover:bg-[#52525b] text-white rounded-lg font-medium transition-colors text-sm">
+                            Cancel
+                        </button>
+                        <button type="submit" class="px-6 py-2.5 bg-[#d40060] hover:bg-[#a3004a] text-white rounded-lg font-bold transition-colors text-sm shadow-lg shadow-[#d40060]/20">
+                            Save Provider
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>

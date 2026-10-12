@@ -1,0 +1,1543 @@
+{% extends "base.html" %}
+
+{% block content %}
+<script id="video-items-payload" type="application/json">
+{{ items_payload | tojson | safe }}
+</script>
+<script id="search-presets-payload" type="application/json">
+{{ (presets_payload | default([])) | tojson | safe }}
+</script>
+
+<script>
+function initVideoDashboard() {
+    let rawItems = [];
+    try {
+        const el = document.getElementById('video-items-payload');
+        if (el && el.textContent) {
+            rawItems = JSON.parse(el.textContent);
+        }
+    } catch (e) {
+        console.error('Failed to parse video items payload:', e);
+    }
+
+    let rawPresets = [];
+    try {
+        const pel = document.getElementById('search-presets-payload');
+        if (pel && pel.textContent) {
+            rawPresets = JSON.parse(pel.textContent);
+        }
+    } catch (e) {
+        console.error('Failed to parse search presets payload:', e);
+    }
+
+    const initialParam = new URLSearchParams(window.location.search).get('tab') || localStorage.getItem('video_dashboard_tab') || 'movie';
+    const validCards = ['movie', 'show', 'anime', 'history', 'active_pushes', 'manual_search'];
+    const startCard = validCards.includes(initialParam) ? initialParam : 'movie';
+
+    return {
+        activeCard: startCard,
+        tab: ['movie', 'show', 'anime'].includes(startCard) ? startCard : 'movie',
+        pollerAwake: {{ (poller_awake if poller_awake is defined else false) | tojson }},
+        lastActivePushesCount: {{ (active_pushes_count if active_pushes_count is defined else 0) | tojson }},
+        lastDownloadingCount: {{ (downloading_count if downloading_count is defined else 0) | tojson }},
+        search: '',
+        historySearch: '',
+        isSelectingHistory: false,
+        selectedHistoryIds: [],
+        showStatus: false,
+        sortCol: 'title',
+        sortDir: 'asc',
+        historySortCol: 'pushed-at',
+        historySortDir: 'desc',
+        items: rawItems,
+        presets: rawPresets,
+        manualPresetId: '',
+        manualCategory: {{ (defaults.get('category', 'any') if defaults is defined else 'any') | tojson }},
+        manualPrimaryLanguage: {{ (defaults.get('primary_language', 'any') if defaults is defined else 'any') | tojson }},
+        manualFallbackLanguage: {{ (defaults.get('fallback_language', 'none') if defaults is defined else 'none') | tojson }},
+        manualResolution: {{ (defaults.get('resolution', 'any') if defaults is defined else 'any') | tojson }},
+        manualSource: {{ (defaults.get('source', 'any') if defaults is defined else 'any') | tojson }},
+        manualVideoCodec: {{ (defaults.get('video_codec', 'any') if defaults is defined else 'any') | tojson }},
+        manualHdr: {{ (defaults.get('hdr', 'any') if defaults is defined else 'any') | tojson }},
+        manualAudioTier: {{ (defaults.get('audio_tier', 'any') if defaults is defined else 'any') | tojson }},
+        manualAudioChannels: {{ (defaults.get('audio_channels', 'any') if defaults is defined else 'any') | tojson }},
+        manualLimit: {{ (defaults.get('limit', 10) if defaults is defined else 10) | tojson }},
+        init() {
+            this.applySort();
+            this.applyHistorySort();
+            const url = new URL(window.location);
+            url.searchParams.set('tab', this.activeCard);
+            window.history.replaceState({}, '', url);
+            // Handle post-push card switch from push modal (avoids full page reload)
+            window.addEventListener('nzboxer:switch-card', (ev) => {
+                const card = ev.detail && ev.detail.card;
+                if (card) {
+                    if (card === 'active_pushes') {
+                        this.pollerAwake = true;
+                    }
+                    this.setCard(card);
+                    this.$nextTick(() => {
+                        const el = document.getElementById('active-pushes-container');
+                        if (el && window.htmx) htmx.trigger(el, 'load');
+                        if (window.htmx) htmx.trigger(document.body, 'refreshDashboard');
+                    });
+                }
+            });
+            // Handle HTMX HX-Trigger: refreshDashboard to live-refresh tables & counters
+            const handleRefreshDashboard = async () => {
+                try {
+                    const res = await fetch(window.location.pathname + window.location.search, {
+                        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+                    });
+                    if (!res.ok) return;
+                    const htmlText = await res.text();
+                    const doc = new DOMParser().parseFromString(htmlText, 'text/html');
+                    const swapIds = [
+                        'video-table-body-in-progress',
+                        'video-table-body-ready-to-push',
+                        'video-table-body-upcoming',
+                        'dashboard-history-table-body',
+                        'history-toolbar-actions',
+                        'deck-card-count-movie',
+                        'deck-card-count-show',
+                        'deck-card-count-anime',
+                        'deck-card-count-history',
+                        'deck-card-count-active',
+                        'card-active-pushes-total',
+                        'card-active-pushes-downloading',
+                        'card-active-pushes-poller'
+                    ];
+                    swapIds.forEach(id => {
+                        const cur = document.getElementById(id);
+                        const next = doc.getElementById(id);
+                        if (cur && next) {
+                            cur.innerHTML = next.innerHTML;
+                            if (window.htmx) htmx.process(cur);
+                        }
+                    });
+                    const payloadEl = doc.getElementById('video-items-payload');
+                    const curPayloadEl = document.getElementById('video-items-payload');
+                    if (payloadEl && payloadEl.textContent) {
+                        if (curPayloadEl) curPayloadEl.textContent = payloadEl.textContent;
+                        this.items = JSON.parse(payloadEl.textContent);
+                    }
+                    this.$nextTick(() => {
+                        this.applySort();
+                        this.applyHistorySort();
+                    });
+                } catch (err) {
+                    console.error('Failed to refresh dashboard:', err);
+                }
+            };
+            document.body.addEventListener('refreshDashboard', handleRefreshDashboard);
+            document.body.addEventListener('nzboxer:poller-state', (ev) => {
+                const d = (ev && ev.detail) || {};
+                const nextAwake = !!d.pollerAwake;
+                const nextActiveCount = typeof d.activePushesCount === 'number' ? d.activePushesCount : this.lastActivePushesCount;
+                const nextDownloadingCount = typeof d.downloadingCount === 'number' ? d.downloadingCount : this.lastDownloadingCount;
+                const awakeToSleeping = this.pollerAwake && !nextAwake;
+                const countsChanged = (
+                    nextActiveCount !== this.lastActivePushesCount ||
+                    nextDownloadingCount !== this.lastDownloadingCount
+                );
+                this.pollerAwake = nextAwake;
+                this.lastActivePushesCount = nextActiveCount;
+                this.lastDownloadingCount = nextDownloadingCount;
+                if (countsChanged || awakeToSleeping) {
+                    handleRefreshDashboard();
+                }
+            });
+            this._activePushesPollTimer = setInterval(() => {
+                if (this.activeCard === 'active_pushes' && (this.pollerAwake || this.lastActivePushesCount > 0)) {
+                    const el = document.getElementById('active-pushes-container');
+                    if (el && window.htmx) {
+                        htmx.trigger(el, 'refreshActivePushes');
+                    }
+                }
+            }, 3000);
+        },
+        applySearchPreset(presetId) {
+            if (!presetId) return;
+            const p = this.presets.find(item => String(item.id) === String(presetId));
+            if (!p) return;
+            this.manualPrimaryLanguage = p.primary_language || 'any';
+            this.manualFallbackLanguage = p.fallback_language || 'none';
+            const cfg = p.custom_config || {};
+            if (p.video_quality_mode === 'best') {
+                this.manualResolution = 'any';
+                this.manualSource = 'any';
+                this.manualVideoCodec = 'any';
+                this.manualHdr = 'any';
+            } else {
+                this.manualResolution = (Array.isArray(cfg.resolutions) && cfg.resolutions.length) ? cfg.resolutions[0] : (cfg.resolution || 'any');
+                this.manualSource = (Array.isArray(cfg.sources) && cfg.sources.length) ? cfg.sources[0] : (cfg.source || 'any');
+                this.manualVideoCodec = (Array.isArray(cfg.video_codecs) && cfg.video_codecs.length) ? cfg.video_codecs[0] : (cfg.video_codec || 'any');
+                this.manualHdr = (Array.isArray(cfg.hdr_formats) && cfg.hdr_formats.length) ? cfg.hdr_formats[0] : (cfg.hdr || 'any');
+            }
+            if (p.audio_quality_mode === 'best') {
+                this.manualAudioTier = 'any';
+                this.manualAudioChannels = 'any';
+            } else {
+                this.manualAudioTier = (Array.isArray(cfg.audio_formats) && cfg.audio_formats.length) ? cfg.audio_formats[0] : (cfg.audio_tier || 'any');
+                this.manualAudioChannels = (Array.isArray(cfg.audio_channels) && cfg.audio_channels.length) ? cfg.audio_channels[0] : (cfg.audio_channel || 'any');
+            }
+        },
+        setCard(cardName) {
+            this.activeCard = cardName;
+            if (['movie', 'show', 'anime'].includes(cardName)) {
+                this.tab = cardName;
+            }
+            localStorage.setItem('video_dashboard_tab', cardName);
+            const url = new URL(window.location);
+            url.searchParams.set('tab', cardName);
+            window.history.replaceState({}, '', url);
+        },
+        setTab(newTab) {
+            this.setCard(newTab);
+        },
+        hasVisibleRows(tier) {
+            const q = (this.search || '').trim().toLowerCase();
+            return this.items.some(i =>
+                i.category === this.tab &&
+                i.status_tier === tier &&
+                (!q || i.title.includes(q) || i.alt_title.includes(q) || i.ids.includes(q))
+            );
+        },
+        getTabCount(category) {
+            if (!this.search || !this.search.trim()) return 0;
+            const q = this.search.trim().toLowerCase();
+            return this.items.filter(i =>
+                i.category === category && (
+                    i.title.includes(q) ||
+                    i.alt_title.includes(q) ||
+                    i.ids.includes(q)
+                )
+            ).length;
+        },
+        sortBy(col) {
+            if (this.sortCol === col) {
+                this.sortDir = this.sortDir === 'asc' ? 'desc' : 'asc';
+            } else {
+                this.sortCol = col;
+                this.sortDir = 'asc';
+            }
+            this.applySort();
+        },
+        applySort() {
+            const bodyIds = [
+                'video-table-body-in-progress',
+                'video-table-body-ready-to-push',
+                'video-table-body-upcoming'
+            ];
+            bodyIds.forEach(id => {
+                const tbody = document.getElementById(id);
+                if (!tbody) return;
+                const rows = Array.from(tbody.querySelectorAll("tr[data-sortable='true']"));
+                if (!rows.length) return;
+                const emptyRow = tbody.querySelector("tr[data-empty-row='true']");
+                const col = this.sortCol;
+                const dir = this.sortDir;
+                const isNumeric = (col === 'year' || col === 'status-rank');
+
+                rows.sort((a, b) => {
+                    const valA = a.getAttribute('data-' + col) || '';
+                    const valB = b.getAttribute('data-' + col) || '';
+
+                    const aEmpty = (valA === '');
+                    const bEmpty = (valB === '');
+
+                    if (aEmpty && bEmpty) return 0;
+                    if (aEmpty) return 1;
+                    if (bEmpty) return -1;
+
+                    let cmp = 0;
+                    if (isNumeric) {
+                        const numA = parseFloat(valA);
+                        const numB = parseFloat(valB);
+                        if (isNaN(numA) && isNaN(numB)) cmp = 0;
+                        else if (isNaN(numA)) return 1;
+                        else if (isNaN(numB)) return -1;
+                        else cmp = numA - numB;
+                    } else {
+                        cmp = valA.localeCompare(valB, undefined, { numeric: true, sensitivity: 'base' });
+                    }
+                    return dir === 'asc' ? cmp : -cmp;
+                });
+                rows.forEach(r => tbody.appendChild(r));
+                if (emptyRow) tbody.appendChild(emptyRow);
+            });
+        },
+        sortHistoryBy(col) {
+            if (this.historySortCol === col) {
+                this.historySortDir = this.historySortDir === 'asc' ? 'desc' : 'asc';
+            } else {
+                this.historySortCol = col;
+                this.historySortDir = (col === 'pushed-at' || col === 'archived-at') ? 'desc' : 'asc';
+            }
+            this.applyHistorySort();
+        },
+        applyHistorySort() {
+            const tbody = document.getElementById('dashboard-history-table-body');
+            if (!tbody) return;
+            const rows = Array.from(tbody.querySelectorAll("tr[data-sortable='true']"));
+            if (!rows.length) return;
+            const col = this.historySortCol;
+            const dir = this.historySortDir;
+
+            rows.sort((a, b) => {
+                const valA = a.getAttribute('data-' + col) || '';
+                const valB = b.getAttribute('data-' + col) || '';
+
+                if (!valA && valB) return 1;
+                if (valA && !valB) return -1;
+                if (!valA && !valB) return 0;
+
+                const cmp = valA.localeCompare(valB, undefined, { numeric: true, sensitivity: 'base' });
+                return dir === 'asc' ? cmp : -cmp;
+            });
+            rows.forEach(r => tbody.appendChild(r));
+        },
+        getVisibleHistoryIds() {
+            const tbody = document.getElementById('dashboard-history-table-body');
+            if (!tbody) return [];
+            const rows = Array.from(tbody.querySelectorAll("tr[data-sortable='true']"));
+            const visibleIds = [];
+            rows.forEach(r => {
+                if (r.offsetParent !== null || r.style.display !== 'none') {
+                    const id = r.getAttribute('data-history-id');
+                    if (id) visibleIds.push(parseInt(id, 10));
+                }
+            });
+            return visibleIds;
+        },
+        toggleHistoryRowSelection(id, event) {
+            if (!this.isSelectingHistory) return;
+            if (event && event.target && event.target.closest('a, button, input')) return;
+            const numId = Number(id);
+            const idx = this.selectedHistoryIds.indexOf(numId);
+            if (idx === -1) {
+                this.selectedHistoryIds.push(numId);
+            } else {
+                this.selectedHistoryIds.splice(idx, 1);
+            }
+        },
+        toggleHistorySelectAll() {
+            const visibleIds = this.getVisibleHistoryIds();
+            if (!visibleIds.length) return;
+            const allSelected = visibleIds.every(id => this.selectedHistoryIds.includes(id));
+            if (allSelected) {
+                this.selectedHistoryIds = this.selectedHistoryIds.filter(id => !visibleIds.includes(id));
+            } else {
+                const set = new Set([...this.selectedHistoryIds, ...visibleIds]);
+                this.selectedHistoryIds = Array.from(set);
+            }
+        },
+        async batchDeleteHistory() {
+            const count = this.selectedHistoryIds.length;
+            if (count === 0) return;
+            if (!confirm(`Permanently remove ${count} selected history entries from the ledger?`)) return;
+            try {
+                const res = await fetch('/api/history/batch-delete', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'HX-Request': 'true'
+                    },
+                    body: JSON.stringify({ history_ids: this.selectedHistoryIds })
+                });
+                if (res.ok) {
+                    this.selectedHistoryIds = [];
+                    this.isSelectingHistory = false;
+                    if (window.htmx) {
+                        htmx.trigger(document.body, 'refreshDashboard');
+                    }
+                } else {
+                    const err = await res.json().catch(() => ({}));
+                    alert(err.error || 'Failed to delete selected entries.');
+                }
+            } catch (e) {
+                console.error('Batch delete history failed:', e);
+                alert('An error occurred during batch delete.');
+            }
+        },
+        async clearAllHistory() {
+            if (!confirm('Permanently clear all entries from the history ledger? This cannot be undone.')) return;
+            try {
+                const res = await fetch('/api/history/clear', {
+                    method: 'POST',
+                    headers: {
+                        'HX-Request': 'true'
+                    }
+                });
+                if (res.ok) {
+                    this.selectedHistoryIds = [];
+                    this.isSelectingHistory = false;
+                    if (window.htmx) {
+                        htmx.trigger(document.body, 'refreshDashboard');
+                    }
+                } else {
+                    const err = await res.json().catch(() => ({}));
+                    alert(err.error || 'Failed to clear history ledger.');
+                }
+            } catch (e) {
+                console.error('Clear history failed:', e);
+                alert('An error occurred while clearing history.');
+            }
+        }
+    };
+}
+window.videoDashboard = initVideoDashboard;
+document.addEventListener('alpine:init', () => {
+    Alpine.data('videoDashboard', initVideoDashboard);
+});
+</script>
+
+<div x-data="videoDashboard()">
+    <!-- 6-Card Interactive Top Deck -->
+    <div class="grid grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-4 mb-5 sm:mb-8">
+        <!-- Card 1: Movies -->
+        <div id="deck-card-count-movie" @click="setCard('movie')"
+             :class="activeCard === 'movie' ? 'md:translate-y-2 ring-2 ring-[#d40060] shadow-xl shadow-pink-950/40' : 'hover:-translate-y-0.5 opacity-90 hover:opacity-100'"
+             class="bg-[#24242b] border border-[#3f3f46] rounded-xl overflow-hidden flex flex-col cursor-pointer transition-all duration-300 ease-out select-none">
+            <div class="bg-gradient-to-r from-[#d40060] to-[#9d0047] px-2.5 py-2 sm:px-3.5 sm:py-2.5 flex items-center justify-between gap-1.5">
+                <div class="flex items-center gap-1.5 sm:gap-2 text-white min-w-0">
+                    <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 4v16M17 4v16M3 8h4m10 0h4M3 12h18M3 16h4m10 0h4M4 20h16a1 1 0 001-1V5a1 1 0 00-1-1H4a1 1 0 00-1 1v14a1 1 0 001 1z"></path></svg>
+                    <h2 class="text-[11px] sm:text-sm font-bold tracking-wider uppercase truncate">Movies</h2>
+                    <span x-show="search.trim().length > 0" x-cloak class="text-[10px] font-bold text-pink-200 bg-black/40 px-1.5 py-0.5 rounded">(<span x-text="getTabCount('movie')"></span>)</span>
+                </div>
+                <span class="text-xs font-bold text-white bg-black/35 px-2 py-0.5 rounded-md border border-white/10 shrink-0">{{ movie_stats.total }}</span>
+            </div>
+            <div class="hidden md:grid grid-cols-3 divide-x divide-[#3f3f46] bg-[#1e1e24] flex-1 text-center py-2.5">
+                <div>
+                    <div class="text-[10px] text-[#a1a1aa] uppercase font-semibold">Active</div>
+                    <div class="text-base font-bold text-amber-400">{{ movie_stats.in_progress }}</div>
+                </div>
+                <div>
+                    <div class="text-[10px] text-[#a1a1aa] uppercase font-semibold">Ready</div>
+                    <div class="text-base font-bold text-white">{{ movie_stats.ready_to_push }}</div>
+                </div>
+                <div>
+                    <div class="text-[10px] text-[#a1a1aa] uppercase font-semibold">Future</div>
+                    <div class="text-base font-bold text-blue-400">{{ movie_stats.upcoming }}</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Card 2: Series -->
+        <div id="deck-card-count-show" @click="setCard('show')"
+             :class="activeCard === 'show' ? 'md:translate-y-2 ring-2 ring-purple-500 shadow-xl shadow-purple-950/40' : 'hover:-translate-y-0.5 opacity-90 hover:opacity-100'"
+             class="bg-[#24242b] border border-[#3f3f46] rounded-xl overflow-hidden flex flex-col cursor-pointer transition-all duration-300 ease-out select-none">
+            <div class="bg-gradient-to-r from-purple-600 to-purple-800 px-2.5 py-2 sm:px-3.5 sm:py-2.5 flex items-center justify-between gap-1.5">
+                <div class="flex items-center gap-1.5 sm:gap-2 text-white min-w-0">
+                    <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path></svg>
+                    <h2 class="text-[11px] sm:text-sm font-bold tracking-wider uppercase truncate">Series</h2>
+                    <span x-show="search.trim().length > 0" x-cloak class="text-[10px] font-bold text-purple-200 bg-black/40 px-1.5 py-0.5 rounded">(<span x-text="getTabCount('show')"></span>)</span>
+                </div>
+                <span class="text-xs font-bold text-white bg-black/35 px-2 py-0.5 rounded-md border border-white/10 shrink-0">{{ series_stats.total }}</span>
+            </div>
+            <div class="hidden md:grid grid-cols-3 divide-x divide-[#3f3f46] bg-[#1e1e24] flex-1 text-center py-2.5">
+                <div>
+                    <div class="text-[10px] text-[#a1a1aa] uppercase font-semibold">Active</div>
+                    <div class="text-base font-bold text-amber-400">{{ series_stats.in_progress }}</div>
+                </div>
+                <div>
+                    <div class="text-[10px] text-[#a1a1aa] uppercase font-semibold">Ready</div>
+                    <div class="text-base font-bold text-white">{{ series_stats.ready_to_push }}</div>
+                </div>
+                <div>
+                    <div class="text-[10px] text-[#a1a1aa] uppercase font-semibold">Future</div>
+                    <div class="text-base font-bold text-blue-400">{{ series_stats.upcoming }}</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Card 3: Anime -->
+        <div id="deck-card-count-anime" @click="setCard('anime')"
+             :class="activeCard === 'anime' ? 'md:translate-y-2 ring-2 ring-amber-500 shadow-xl shadow-amber-950/40' : 'hover:-translate-y-0.5 opacity-90 hover:opacity-100'"
+             class="bg-[#24242b] border border-[#3f3f46] rounded-xl overflow-hidden flex flex-col cursor-pointer transition-all duration-300 ease-out select-none">
+            <div class="bg-gradient-to-r from-amber-500 to-amber-600 px-2.5 py-2 sm:px-3.5 sm:py-2.5 flex items-center justify-between gap-1.5">
+                <div class="flex items-center gap-1.5 sm:gap-2 text-white min-w-0">
+                    <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    <h2 class="text-[11px] sm:text-sm font-bold tracking-wider uppercase truncate">Anime</h2>
+                    <span x-show="search.trim().length > 0" x-cloak class="text-[10px] font-bold text-amber-100 bg-black/40 px-1.5 py-0.5 rounded">(<span x-text="getTabCount('anime')"></span>)</span>
+                </div>
+                <span class="text-xs font-bold text-white bg-black/35 px-2 py-0.5 rounded-md border border-white/10 shrink-0">{{ anime_stats.total }}</span>
+            </div>
+            <div class="hidden md:grid grid-cols-3 divide-x divide-[#3f3f46] bg-[#1e1e24] flex-1 text-center py-2.5">
+                <div>
+                    <div class="text-[10px] text-[#a1a1aa] uppercase font-semibold">Active</div>
+                    <div class="text-base font-bold text-amber-400">{{ anime_stats.in_progress }}</div>
+                </div>
+                <div>
+                    <div class="text-[10px] text-[#a1a1aa] uppercase font-semibold">Ready</div>
+                    <div class="text-base font-bold text-white">{{ anime_stats.ready_to_push }}</div>
+                </div>
+                <div>
+                    <div class="text-[10px] text-[#a1a1aa] uppercase font-semibold">Future</div>
+                    <div class="text-base font-bold text-blue-400">{{ anime_stats.upcoming }}</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Card 4: History -->
+        {% set ledger_rows = push_history_ledger | default([]) %}
+        <div id="deck-card-count-history" @click="setCard('history')"
+             :class="activeCard === 'history' ? 'md:translate-y-2 ring-2 ring-emerald-500 shadow-xl shadow-emerald-950/40' : 'hover:-translate-y-0.5 opacity-90 hover:opacity-100'"
+             class="bg-[#24242b] border border-[#3f3f46] rounded-xl overflow-hidden flex flex-col cursor-pointer transition-all duration-300 ease-out select-none">
+            <div class="bg-gradient-to-r from-emerald-600 to-teal-700 px-2.5 py-2 sm:px-3.5 sm:py-2.5 flex items-center justify-between gap-1.5">
+                <div class="flex items-center gap-1.5 sm:gap-2 text-white min-w-0">
+                    <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    <h2 class="text-[11px] sm:text-sm font-bold tracking-wider uppercase truncate">History</h2>
+                </div>
+                <span class="text-xs font-bold text-white bg-black/35 px-2 py-0.5 rounded-md border border-white/10 shrink-0">{{ ledger_rows | length }}</span>
+            </div>
+            <div class="hidden md:grid grid-cols-3 divide-x divide-[#3f3f46] bg-[#1e1e24] flex-1 text-center py-2.5">
+                <div>
+                    <div class="text-[10px] text-[#a1a1aa] uppercase font-semibold">Movies</div>
+                    <div class="text-base font-bold text-emerald-400">{{ ledger_rows | selectattr('category_key', 'equalto', 'movie') | list | length }}</div>
+                </div>
+                <div>
+                    <div class="text-[10px] text-[#a1a1aa] uppercase font-semibold">Series</div>
+                    <div class="text-base font-bold text-emerald-400">{{ ledger_rows | selectattr('category_key', 'equalto', 'show') | list | length }}</div>
+                </div>
+                <div>
+                    <div class="text-[10px] text-[#a1a1aa] uppercase font-semibold">Anime</div>
+                    <div class="text-base font-bold text-emerald-400">{{ ledger_rows | selectattr('category_key', 'equalto', 'anime') | list | length }}</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Card 5: Active Pushes -->
+        <div id="deck-card-count-active" @click="setCard('active_pushes')"
+             :class="activeCard === 'active_pushes' ? 'md:translate-y-2 ring-2 ring-cyan-500 shadow-xl shadow-cyan-950/40' : 'hover:-translate-y-0.5 opacity-90 hover:opacity-100'"
+             class="bg-[#24242b] border border-[#3f3f46] rounded-xl overflow-hidden flex flex-col cursor-pointer transition-all duration-300 ease-out select-none">
+            <div class="bg-gradient-to-r from-cyan-600 to-blue-700 px-2.5 py-2 sm:px-3.5 sm:py-2.5 flex items-center justify-between gap-1.5">
+                <div class="flex items-center gap-1.5 sm:gap-2 text-white min-w-0">
+                    <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
+                    <h2 class="text-[11px] sm:text-sm font-bold tracking-wider uppercase truncate">Active Pushes</h2>
+                </div>
+                <span id="card-active-pushes-total" class="text-xs font-bold text-white bg-black/35 px-2 py-0.5 rounded-md border border-white/10 shrink-0">{{ active_pushes_count | default(0) }}</span>
+            </div>
+            <div class="hidden md:grid grid-cols-2 divide-x divide-[#3f3f46] bg-[#1e1e24] flex-1 text-center py-2.5">
+                <div>
+                    <div class="text-[10px] text-[#a1a1aa] uppercase font-semibold">Downloading</div>
+                    <div id="card-active-pushes-downloading" class="text-base font-bold text-cyan-400">{{ downloading_count | default(0) }}</div>
+                </div>
+                <div>
+                    <div class="text-[10px] text-[#a1a1aa] uppercase font-semibold">Poller</div>
+                    <div id="card-active-pushes-poller" class="text-xs font-bold mt-1 {% if poller_awake %}text-emerald-400{% else %}text-gray-400{% endif %}">
+                        {{ "Awake" if poller_awake else "Sleeping" }}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Card 6: Manual Search -->
+        <div @click="setCard('manual_search')"
+             :class="activeCard === 'manual_search' ? 'md:translate-y-2 ring-2 ring-indigo-500 shadow-xl shadow-indigo-950/40' : 'hover:-translate-y-0.5 opacity-90 hover:opacity-100'"
+             class="bg-[#24242b] border border-[#3f3f46] rounded-xl overflow-hidden flex flex-col cursor-pointer transition-all duration-300 ease-out select-none">
+            <div class="bg-gradient-to-r from-indigo-600 to-slate-700 px-2.5 py-2 sm:px-3.5 sm:py-2.5 flex items-center justify-between gap-1.5">
+                <div class="flex items-center gap-1.5 sm:gap-2 text-white min-w-0">
+                    <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                    <h2 class="text-[11px] sm:text-sm font-bold tracking-wider uppercase truncate">Manual Search</h2>
+                </div>
+                <span class="hidden sm:inline-block text-[10px] font-bold text-indigo-200 bg-black/35 px-2 py-0.5 rounded-md border border-white/10 uppercase shrink-0">Ad-Hoc</span>
+            </div>
+            <div class="hidden md:flex flex-col items-center justify-center bg-[#1e1e24] flex-1 px-3 py-2.5 text-center">
+                <div class="text-xs font-medium text-gray-200">Direct Indexer Query</div>
+                <div class="text-[10px] text-[#a1a1aa] mt-0.5">Search outside watchlist</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- =================================================================== -->
+    <!-- CARDS 1–3 VIEW: MOVIES, SERIES & ANIME (3-TIER 5-COLUMN TABLES)     -->
+    <!-- =================================================================== -->
+    <div x-show="['movie', 'show', 'anime'].includes(activeCard)"
+         class="bg-[#24242b] border border-[#3f3f46] rounded-lg shadow overflow-hidden">
+
+        <!-- Toolbar: Left-Aligned Search Filter & Right-Aligned Status Legend -->
+        <div class="p-4 border-b border-[#3f3f46] flex flex-col md:flex-row justify-between items-center gap-4">
+            <div class="relative w-full md:w-72">
+                <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-[#a1a1aa]">
+                    <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                </div>
+                <input type="text" x-model="search" placeholder="Filter watchlist..." class="w-full bg-[#1e1e24] border border-[#3f3f46] focus:border-[#d40060] rounded-md pl-9 pr-8 py-2 text-white focus:outline-none transition-colors text-sm">
+                <!-- Clear-X button -->
+                <button x-show="search.trim().length > 0"
+                        x-cloak
+                        @click="search = ''"
+                        type="button"
+                        class="absolute inset-y-0 right-0 pr-3 flex items-center text-[#71717a] hover:text-white transition-colors focus:outline-none"
+                        title="Clear filter">
+                    <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
+                </button>
+            </div>
+
+            <div class="relative hidden md:block">
+                <button @click="showStatus = !showStatus" class="flex items-center gap-2 hover:text-white transition-colors cursor-pointer text-[#a1a1aa] text-sm focus:outline-none shrink-0 whitespace-nowrap">
+                    <svg class="w-4 h-4 shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"></path></svg>
+                    <span>Status Legend</span>
+                </button>
+                <div x-show="showStatus" @click.away="showStatus = false" style="display: none;" x-transition class="absolute top-full right-0 mt-2 w-80 bg-[#2a2a32] border border-[#3f3f46] rounded-lg shadow-xl p-4 z-10 text-xs text-gray-300">
+                    <div class="space-y-3">
+                        <div class="flex items-start gap-3">
+                            <span class="bg-amber-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider shrink-0 w-20 text-center">IN PROGRESS</span>
+                            <span>Currently downloading on TorBox, failed needing attention, or partially/fully downloaded on TorBox.</span>
+                        </div>
+                        <div class="flex items-start gap-3">
+                            <span class="bg-[#d40060] text-white text-[10px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider shrink-0 w-20 text-center">READY</span>
+                            <span>Released and ready for on-demand Search / Push to TorBox.</span>
+                        </div>
+                        <div class="flex items-start gap-3">
+                            <span class="bg-blue-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider shrink-0 w-20 text-center">FUTURE / TBA</span>
+                            <span>Upcoming release or unannounced release date (TBA).</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 5-Column Header Macro -->
+        {% macro render_v3_table_header() %}
+        <thead class="hidden md:table-header-group bg-[#1e1e24] text-[#a1a1aa] font-semibold text-xs uppercase tracking-wider border-b border-[#3f3f46]">
+            <tr>
+                <th class="px-6 py-3.5 w-full min-w-[260px] text-left cursor-pointer select-none group hover:text-white transition-colors" @click="sortBy('title')" title="Sort by Title">
+                    <div class="flex items-center gap-1.5">
+                        <span>Title</span>
+                        <span class="text-[10px] transition-colors" :class="sortCol === 'title' ? 'text-[#d40060]' : 'text-[#52525b] group-hover:text-[#a1a1aa]'">
+                            <span x-show="sortCol === 'title' && sortDir === 'desc'">▼</span>
+                            <span x-show="sortCol === 'title' && sortDir === 'asc'">▲</span>
+                            <span x-show="sortCol !== 'title'" class="opacity-0 group-hover:opacity-100">▲</span>
+                        </span>
+                    </div>
+                </th>
+                <th class="px-6 py-3.5 w-px whitespace-nowrap text-left cursor-pointer select-none group hover:text-white transition-colors" @click="sortBy('profile')" title="Sort by Profile">
+                    <div class="flex items-center gap-1.5">
+                        <span>Profile</span>
+                        <span class="text-[10px] transition-colors" :class="sortCol === 'profile' ? 'text-[#d40060]' : 'text-[#52525b] group-hover:text-[#a1a1aa]'">
+                            <span x-show="sortCol === 'profile' && sortDir === 'desc'">▼</span>
+                            <span x-show="sortCol === 'profile' && sortDir === 'asc'">▲</span>
+                            <span x-show="sortCol !== 'profile'" class="opacity-0 group-hover:opacity-100">▲</span>
+                        </span>
+                    </div>
+                </th>
+                <th class="px-6 py-3.5 w-px whitespace-nowrap text-left cursor-pointer select-none group hover:text-white transition-colors" @click="sortBy('release-date')" title="Sort by Release Date">
+                    <div class="flex items-center gap-1.5">
+                        <span>Release Date</span>
+                        <span class="text-[10px] transition-colors" :class="sortCol === 'release-date' ? 'text-[#d40060]' : 'text-[#52525b] group-hover:text-[#a1a1aa]'">
+                            <span x-show="sortCol === 'release-date' && sortDir === 'desc'">▼</span>
+                            <span x-show="sortCol === 'release-date' && sortDir === 'asc'">▲</span>
+                            <span x-show="sortCol !== 'release-date'" class="opacity-0 group-hover:opacity-100">▲</span>
+                        </span>
+                    </div>
+                </th>
+                <th class="px-6 py-3.5 w-px whitespace-nowrap text-left cursor-pointer select-none group hover:text-white transition-colors" @click="sortBy('status-rank')" title="Sort by Status & Progress">
+                    <div class="flex items-center gap-1.5">
+                        <span>Status &amp; Progress</span>
+                        <span class="text-[10px] transition-colors" :class="sortCol === 'status-rank' ? 'text-[#d40060]' : 'text-[#52525b] group-hover:text-[#a1a1aa]'">
+                            <span x-show="sortCol === 'status-rank' && sortDir === 'desc'">▼</span>
+                            <span x-show="sortCol === 'status-rank' && sortDir === 'asc'">▲</span>
+                            <span x-show="sortCol !== 'status-rank'" class="opacity-0 group-hover:opacity-100">▲</span>
+                        </span>
+                    </div>
+                </th>
+                <th class="px-6 py-3.5 text-right w-px whitespace-nowrap">Actions</th>
+            </tr>
+        </thead>
+        {% endmacro %}
+
+        <!-- 5-Column Row Macro -->
+        {% macro render_v3_item_row(item) %}
+        {% set display_category = 'anime' if (item.media_type.value == 'movie' and item.is_anime_movie) else item.media_type.value %}
+        {% set profile_name = item.provider.name if item.provider is defined and item.provider else 'SIMKL' %}
+        {% set eff_date = item.effective_release_date %}
+        <tr class="block md:table-row p-3 md:p-0 hover:bg-[#2a2a32] transition-colors group"
+            data-sortable="true"
+            data-tier="{{ item.status_tier }}"
+            data-title="{{ (item.title or '') | lower }}"
+            data-type="{% if item.media_type.value == 'movie' and item.is_anime_movie %}anime movie{% elif item.media_type.value == 'movie' %}movie{% elif item.media_type.value == 'anime' %}anime{% elif item.media_type.value == 'show' %}series{% endif %}"
+            data-profile="{{ profile_name | lower }}"
+            data-year="{{ item.year or '' }}"
+            data-release-date="{{ eff_date.strftime('%Y-%m-%d') if eff_date else '' }}"
+            data-status-rank="{% if item.status.value == 'failed' or item.status.value == 'manual_grab' %}1{% elif item.status.value == 'downloading' or item.status.value == 'rate_limited' %}2{% elif item.status.value == 'searching' or item.status.value == 'pending' %}3{% elif item.status.value == 'future' %}4{% elif item.status.value == 'downloaded' %}5{% elif item.status.value == 'completed' %}6{% else %}7{% endif %}"
+            data-last-checked="{{ item.updated_at | local_datetime('%Y-%m-%d %H:%M:%S') if item.updated_at else '' }}"
+            x-show="tab === '{{ display_category }}' && ('{{ item.title|replace('\'', '\\\'') }}'.toLowerCase().includes(search.toLowerCase()) || ('{{ item.alt_title|replace('\'', '\\\'') if item.alt_title else '' }}'.toLowerCase().includes(search.toLowerCase())) || '{{ item.tvdb_id or '' }}'.includes(search) || '{{ item.tmdb_id or '' }}'.includes(search) || '{{ item.imdb_id or '' }}'.includes(search) || '{{ item.simkl_id or '' }}'.includes(search) || '{{ item.anilist_id or '' }}'.includes(search))"
+            style="display: none;">
+
+            <!-- Col 1: Poster Thumbnail, Title, Mobile Category/Profile Badges, External Links & Mobile Metadata Row -->
+            <td class="block md:table-cell md:px-6 md:py-4 w-full md:min-w-[260px] break-words">
+                <div class="flex items-start gap-3">
+                    <div class="w-10 h-14 rounded bg-[#18181c] border border-[#3f3f46] overflow-hidden shrink-0 flex items-center justify-center">
+                        {% if item.poster_url %}
+                        <img src="{{ item.poster_url }}" alt="" loading="lazy" class="w-full h-full object-cover">
+                        {% else %}
+                        <svg class="w-4 h-4 text-[#52525b]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 4v16M17 4v16M3 8h4m10 0h4M3 12h18M3 16h4m10 0h4M4 20h16a1 1 0 001-1V5a1 1 0 00-1-1H4a1 1 0 00-1 1v14a1 1 0 001 1z"></path></svg>
+                        {% endif %}
+                    </div>
+                    <div class="min-w-0 flex-1">
+                        <div class="flex items-center gap-1.5 flex-wrap">
+                            <button type="button"
+                                    hx-get="/api/items/{{ item.id }}/push-modal"
+                                    hx-target="#modal-container"
+                                    hx-swap="innerHTML"
+                                    class="font-bold text-white hover:text-[#d40060] transition-colors text-left">
+                                {{ item.title }}
+                            </button>
+                            {% if item.year %}
+                            <span class="text-xs text-[#a1a1aa]">({{ item.year }})</span>
+                            {% endif %}
+                            <!-- Mobile-only category badge -->
+                            <span class="md:hidden text-[10px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider
+                                {% if item.media_type.value == 'movie' and item.is_anime_movie %}
+                                    bg-pink-500/10 text-pink-400 border border-pink-500/20
+                                {% elif item.media_type.value == 'movie' %}
+                                    bg-blue-500/10 text-blue-400 border border-blue-500/20
+                                {% elif item.media_type.value == 'show' %}
+                                    bg-purple-500/10 text-purple-400 border border-purple-500/20
+                                {% elif item.media_type.value == 'anime' %}
+                                    bg-amber-500/10 text-amber-400 border border-amber-500/20
+                                {% endif %}">
+                                {% if item.media_type.value == 'movie' and item.is_anime_movie %}ANIME MOVIE{% elif item.media_type.value == 'movie' %}MOVIE{% elif item.media_type.value == 'show' %}SERIES{% elif item.media_type.value == 'anime' %}ANIME{% endif %}
+                            </span>
+                        </div>
+                        {% if item.alt_title and item.alt_title | lower != item.title | lower %}
+                        <div class="text-[11px] text-slate-400 italic mt-0.5">{{ item.alt_title }}</div>
+                        {% endif %}
+                        <div class="flex flex-wrap gap-1.5 mt-1.5 text-[10px] font-bold">
+                            {% if item.simkl_id %}
+                            <a href="https://simkl.com/{{ 'movies' if (item.media_type.value == 'movie' and not item.is_anime_movie) else ('anime' if (item.media_type.value == 'anime' or item.is_anime_movie) else 'tv') }}/{{ item.simkl_id }}" target="_blank" rel="noopener noreferrer" class="bg-[#2a2a32] text-gray-400 hover:text-white px-2 py-0.5 rounded border border-[#3f3f46] transition-colors">SIMKL</a>
+                            {% endif %}
+                            {% if item.tmdb_id %}
+                            <a href="https://themoviedb.org/{{ 'movie' if item.media_type.value == 'movie' else 'tv' }}/{{ item.tmdb_id }}" target="_blank" rel="noopener noreferrer" class="bg-[#2a2a32] text-blue-400 hover:text-white px-2 py-0.5 rounded border border-[#3f3f46] transition-colors">TMDB</a>
+                            {% endif %}
+                            {% if item.imdb_id %}
+                            <a href="https://imdb.com/title/{{ item.imdb_id }}" target="_blank" rel="noopener noreferrer" class="bg-[#2a2a32] text-yellow-500 hover:text-white px-2 py-0.5 rounded border border-[#3f3f46] transition-colors">IMDB</a>
+                            {% endif %}
+                            {% if item.anilist_id %}
+                            <a href="https://anilist.co/anime/{{ item.anilist_id }}" target="_blank" rel="noopener noreferrer" class="bg-[#2a2a32] text-cyan-400 hover:text-white px-2 py-0.5 rounded border border-[#3f3f46] transition-colors">ANILIST</a>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Mobile-Only Dedicated Metadata & Progress Bar (< md) -->
+                <div class="md:hidden mt-2.5 px-2.5 py-1.5 bg-[#1e1e24]/70 rounded border border-[#3f3f46]/40 flex items-center justify-between flex-wrap gap-2 text-xs">
+                    <!-- Left: Release Date & Watchlist Source -->
+                    <div class="flex items-center gap-2 shrink-0">
+                        {% if eff_date %}
+                            <span class="text-gray-300 font-mono text-[11px] flex items-center gap-1.5">
+                                <svg class="w-3.5 h-3.5 text-gray-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+                                {{ eff_date.strftime('%Y-%m-%d') }}
+                            </span>
+                        {% else %}
+                            <span class="bg-indigo-950/80 text-indigo-300 border border-indigo-700/50 text-[10px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider flex items-center gap-1">
+                                <svg class="w-3 h-3 text-indigo-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                                TBA
+                            </span>
+                        {% endif %}
+                        <span class="text-[#52525b]">•</span>
+                        <span class="bg-[#2a2a32] text-gray-400 border border-[#3f3f46] text-[10px] font-semibold px-2 py-0.5 rounded uppercase">{{ profile_name }}</span>
+                    </div>
+
+                    <!-- Right: Season Progress & Active Status Badges -->
+                    <div class="flex items-center gap-1.5 flex-wrap">
+                        {% if item.status_tier == 'upcoming' or item.status.value == 'future' or item.is_tba %}
+                            <span class="bg-blue-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider shadow-sm">FUTURE</span>
+                        {% else %}
+                            {% if item.status.value == 'downloading' %}
+                                <span class="bg-cyan-600 animate-pulse text-white text-[10px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider shadow-sm">DOWNLOADING</span>
+                            {% elif item.status.value == 'rate_limited' %}
+                                <span class="bg-amber-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider shadow-sm" title="Paused by TorBox rate limit — resumes automatically">PAUSED</span>
+                            {% elif item.status.value == 'failed' %}
+                                <span class="bg-red-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider shadow-sm">FAILED</span>
+                            {% elif item.status.value == 'downloaded' or item.status.value == 'completed' %}
+                                <span class="bg-emerald-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider shadow-sm">DONE</span>
+                            {% endif %}
+
+                            {% for pill in item.progress_pills %}
+                                <span class="bg-[#1e1e24] text-purple-300 border border-purple-500/30 text-[10px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider shadow-sm">
+                                    {{ pill }}
+                                </span>
+                            {% endfor %}
+                        {% endif %}
+
+                        {% if item.is_fallback %}
+                        <span class="bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[10px] font-semibold px-1.5 py-0.5 rounded uppercase tracking-wider">Fallback</span>
+                        {% endif %}
+
+                        {% if item.failure_logs|length > 0 %}
+                        <span class="bg-red-900 text-white text-[10px] font-bold px-1.5 py-0.5 rounded cursor-help border border-red-700" title="{% for log in item.failure_logs[-5:] %}{{ log.created_at | local_datetime }}: {{ log.message }}&#10;{% endfor %}">❌ {{ item.failure_logs|length }} Fails</span>
+                        {% endif %}
+                    </div>
+                </div>
+            </td>
+
+            <!-- Desktop-Only Col 2: Profile -->
+            <td class="hidden md:table-cell md:px-6 md:py-4 md:w-px md:whitespace-nowrap">
+                <span class="bg-[#3f3f46] text-gray-200 text-xs font-bold px-2.5 py-1 rounded uppercase">{{ profile_name }}</span>
+            </td>
+
+            <!-- Desktop-Only Col 3: Release Date (Date or TBA) -->
+            <td class="hidden md:table-cell md:px-6 md:py-4 text-gray-300 md:w-px md:whitespace-nowrap">
+                {% if eff_date %}
+                    <div>{{ eff_date.strftime('%Y-%m-%d') }}</div>
+                    <div class="text-[#a1a1aa] text-xs mt-0.5">{{ eff_date | relative_date }}</div>
+                {% else %}
+                    <div class="flex items-center gap-1.5">
+                        <span class="bg-indigo-950/80 text-indigo-300 border border-indigo-700/50 text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wider">TBA</span>
+                        {% if item.year %}
+                        <span class="text-xs text-[#a1a1aa]">{{ item.year }}</span>
+                        {% endif %}
+                    </div>
+                {% endif %}
+            </td>
+
+            <!-- Desktop-Only Col 4: Status & Progress (Omitted entirely if searching with zero pills) -->
+            {% set has_status_content = (item.status_tier == 'upcoming' or item.status.value == 'future' or item.is_tba or item.status.value in ['downloading', 'rate_limited', 'failed', 'downloaded', 'completed'] or (item.progress_pills and item.progress_pills|length > 0) or item.is_fallback or (item.failure_logs and item.failure_logs|length > 0)) %}
+            <td class="hidden md:table-cell md:px-6 md:py-4 md:w-px md:whitespace-nowrap">
+                {% if has_status_content %}
+                <div class="flex flex-col items-start gap-1">
+                    {% if item.status_tier == 'upcoming' or item.status.value == 'future' or item.is_tba %}
+                        <span class="bg-blue-600 text-white text-[11px] font-bold px-2 py-0.5 rounded uppercase tracking-wider shadow-sm">FUTURE</span>
+                    {% else %}
+                        {% if item.status.value == 'downloading' %}
+                            <span class="bg-cyan-600 animate-pulse text-white text-[11px] font-bold px-2 py-0.5 rounded uppercase tracking-wider shadow-sm">DOWNLOADING</span>
+                        {% elif item.status.value == 'rate_limited' %}
+                            <span class="bg-amber-600 text-white text-[11px] font-bold px-2 py-0.5 rounded uppercase tracking-wider shadow-sm" title="Paused by TorBox rate limit — resumes automatically">PAUSED</span>
+                        {% elif item.status.value == 'failed' %}
+                            <span class="bg-red-600 text-white text-[11px] font-bold px-2 py-0.5 rounded uppercase tracking-wider shadow-sm">FAILED</span>
+                        {% elif item.status.value == 'downloaded' or item.status.value == 'completed' %}
+                            <span class="bg-emerald-600 text-white text-[11px] font-bold px-2 py-0.5 rounded uppercase tracking-wider shadow-sm">DONE</span>
+                        {% endif %}
+
+                        {% for pill in item.progress_pills %}
+                            <span class="bg-[#1e1e24] text-gray-200 border border-[#3f3f46] text-[10px] font-bold px-2 py-0.5 rounded whitespace-nowrap shadow-sm">
+                                {{ pill }}
+                            </span>
+                        {% endfor %}
+                    {% endif %}
+
+                    {% if item.is_fallback %}
+                    <span class="bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[10px] font-semibold px-2 py-0.5 rounded uppercase tracking-wider w-fit">Fallback Language</span>
+                    {% endif %}
+
+                    {% if item.failure_logs|length > 0 %}
+                    <span class="bg-red-900 text-white text-[10px] font-bold px-2 py-0.5 rounded cursor-help border border-red-700" title="{% for log in item.failure_logs[-5:] %}{{ log.created_at | local_datetime }}: {{ log.message }}&#10;{% endfor %}">❌ {{ item.failure_logs|length }} Fails</span>
+                    {% endif %}
+                </div>
+                {% endif %}
+            </td>
+
+            <!-- Col 5: Actions (Search / Push + Delete, Anchored Bottom Right on Mobile) -->
+            <td class="block md:table-cell pt-2.5 md:pt-0 border-t border-[#3f3f46]/40 md:border-t-0 md:px-6 md:py-4 text-right md:w-px md:whitespace-nowrap">
+                <div class="flex justify-end items-center gap-2">
+                    <button type="button"
+                            hx-get="/api/items/{{ item.id }}/push-modal"
+                            hx-target="#modal-container"
+                            hx-swap="innerHTML"
+                            title="Open Unified Push Modal for {{ item.title }}"
+                            class="bg-[#d40060] hover:bg-[#a3004a] text-white text-xs font-semibold px-3 py-1.5 rounded-md transition-colors flex items-center gap-1.5 shadow-sm shadow-pink-950/30">
+                        <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
+                        <span>Search / Push</span>
+                    </button>
+                    <button hx-delete="/items/{{ item.id }}"
+                            hx-target="closest tr"
+                            hx-swap="outerHTML"
+                            hx-confirm="Are you sure you want to delete this item?"
+                            title="Delete item"
+                            class="bg-transparent border border-red-800 text-red-500 hover:bg-red-600 hover:text-white transition-colors p-1.5 rounded-md">
+                        <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                    </button>
+                </div>
+            </td>
+        </tr>
+        {% endmacro %}
+
+        <!-- 3-Tier Horizontal Status Partitioning -->
+        <div class="p-4 space-y-6">
+            <!-- Section 1: Active / Partially Downloaded ("In Progress") -->
+            <div class="space-y-3">
+                <div class="flex items-center justify-between px-1">
+                    <div class="flex items-center gap-2">
+                        <span class="inline-flex rounded-full h-2.5 w-2.5 bg-amber-500"></span>
+                        <h3 class="text-sm font-bold text-white uppercase tracking-wider">In Progress</h3>
+                        <span class="text-xs text-[#a1a1aa]">(Active / Partially Downloaded)</span>
+                    </div>
+                </div>
+                <div class="border border-[#3f3f46] rounded-lg overflow-x-hidden md:overflow-x-auto bg-[#1e1e24]/40 min-h-[120px]">
+                    <table class="block md:table w-full text-left border-collapse table-fixed md:table-auto">
+                        {{ render_v3_table_header() }}
+                        <tbody id="video-table-body-in-progress" class="block md:table-row-group divide-y divide-[#3f3f46] text-sm w-full">
+                            {% for item in items if item.status_tier == 'in_progress' %}
+                                {{ render_v3_item_row(item) }}
+                            {% endfor %}
+                            <tr class="block md:table-row w-full" data-empty-row="true" x-show="!hasVisibleRows('in_progress')" style="display: none;">
+                                <td colspan="5" class="block md:table-cell px-6 py-6 text-center text-[#a1a1aa] w-full">
+                                    <p class="text-sm font-medium text-gray-400">No items currently in progress in this category</p>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Section 2: Ready to Push ("Wanted / Unpushed") -->
+            <div class="space-y-3">
+                <div class="flex items-center justify-between px-1">
+                    <div class="flex items-center gap-2">
+                        <span class="inline-flex rounded-full h-2.5 w-2.5 bg-[#d40060]"></span>
+                        <h3 class="text-sm font-bold text-white uppercase tracking-wider">Ready to Push</h3>
+                        <span class="text-xs text-[#a1a1aa]">(Wanted / Unpushed)</span>
+                    </div>
+                </div>
+                <div class="border border-[#3f3f46] rounded-lg overflow-x-hidden md:overflow-x-auto bg-[#1e1e24]/40 min-h-[140px]">
+                    <table class="block md:table w-full text-left border-collapse table-fixed md:table-auto">
+                        {{ render_v3_table_header() }}
+                        <tbody id="video-table-body-ready-to-push" class="block md:table-row-group divide-y divide-[#3f3f46] text-sm w-full">
+                            {% for item in items if item.status_tier == 'ready_to_push' %}
+                                {{ render_v3_item_row(item) }}
+                            {% endfor %}
+                            <tr class="block md:table-row w-full" data-empty-row="true" x-show="!hasVisibleRows('ready_to_push')" style="display: none;">
+                                <td colspan="5" class="block md:table-cell px-6 py-6 text-center text-[#a1a1aa] w-full">
+                                    <p class="text-sm font-medium text-gray-400">No released unpushed items in this category</p>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Section 3: Upcoming / Future ("Unreleased & TBA") -->
+            <div class="space-y-3">
+                <div class="flex items-center justify-between px-1">
+                    <div class="flex items-center gap-2">
+                        <span class="inline-flex rounded-full h-2.5 w-2.5 bg-blue-500"></span>
+                        <h3 class="text-sm font-bold text-white uppercase tracking-wider">Upcoming / Future</h3>
+                        <span class="text-xs text-[#a1a1aa]">(Unreleased &amp; TBA)</span>
+                    </div>
+                </div>
+                <div class="border border-[#3f3f46] rounded-lg overflow-x-hidden md:overflow-x-auto bg-[#1e1e24]/40 min-h-[120px]">
+                    <table class="block md:table w-full text-left border-collapse table-fixed md:table-auto">
+                        {{ render_v3_table_header() }}
+                        <tbody id="video-table-body-upcoming" class="block md:table-row-group divide-y divide-[#3f3f46] text-sm w-full">
+                            {% for item in items if item.status_tier == 'upcoming' %}
+                                {{ render_v3_item_row(item) }}
+                            {% endfor %}
+                            <tr class="block md:table-row w-full" data-empty-row="true" x-show="!hasVisibleRows('upcoming')" style="display: none;">
+                                <td colspan="5" class="block md:table-cell px-6 py-6 text-center text-[#a1a1aa] w-full">
+                                    <p class="text-sm font-medium text-gray-400">No upcoming or TBA items in this category</p>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- =================================================================== -->
+    <!-- CARD 4 VIEW: HISTORY (5-COLUMN PUSH HISTORY LEDGER)                 -->
+    <!-- =================================================================== -->
+    <div x-show="activeCard === 'history'" style="display: none;"
+         class="bg-[#24242b] border border-[#3f3f46] rounded-lg shadow overflow-hidden">
+        <div class="p-4 border-b border-[#3f3f46] bg-[#1e1e24] flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+            <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full md:w-auto">
+                <div class="relative w-full sm:w-80">
+                    <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-[#a1a1aa]">
+                        <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                    </div>
+                    <input x-model="historySearch" type="text" placeholder="Search push history ledger..."
+                           class="w-full bg-[#1e1e24] border border-[#3f3f46] focus:border-[#d40060] rounded-md pl-9 pr-8 py-2 text-white text-sm focus:outline-none">
+                    <!-- Clear-X button -->
+                    <button x-show="historySearch.trim().length > 0"
+                            x-cloak
+                            @click="historySearch = ''"
+                            type="button"
+                            class="absolute inset-y-0 right-0 pr-3 flex items-center text-[#71717a] hover:text-white transition-colors focus:outline-none"
+                            title="Clear filter">
+                        <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                        </svg>
+                    </button>
+                </div>
+
+                <!-- Select Entries Toggle Button (when not in selection mode) -->
+                <div id="history-toolbar-actions" x-show="!isSelectingHistory" class="flex flex-wrap items-center gap-2">
+                    {% if dry_run_history_count and dry_run_history_count > 0 %}
+                    <button type="button"
+                            hx-post="/api/history/delete-dry-run"
+                            hx-confirm="Are you sure you want to delete all simulated dry-run history entries?"
+                            hx-swap="none"
+                            class="bg-amber-500/20 hover:bg-amber-600 text-amber-300 hover:text-white border border-amber-500/40 rounded-md px-3 py-2 text-sm flex items-center justify-center gap-1.5 transition-colors whitespace-nowrap font-medium">
+                        <svg class="w-4 h-4 shrink-0 text-amber-300 group-hover:text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"></path></svg>
+                        <span>Delete Dry-Run ({{ dry_run_history_count }})</span>
+                    </button>
+                    {% endif %}
+                    <button type="button"
+                            @click="isSelectingHistory = true"
+                            class="bg-[#2a2a32] hover:bg-[#3f3f46] text-gray-200 border border-[#3f3f46] rounded-md px-3 py-2 text-sm flex items-center justify-center gap-1.5 transition-colors whitespace-nowrap">
+                        <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"></path></svg>
+                        <span>Select Entries</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Selection Action Bar (when isSelectingHistory is active) -->
+            <div x-show="isSelectingHistory"
+                 x-cloak
+                 class="flex flex-wrap items-center gap-2 w-full md:w-auto justify-start md:justify-end">
+                <span class="text-xs font-semibold text-gray-300 bg-[#2a2a32] border border-[#3f3f46] px-2.5 py-1.5 rounded-md whitespace-nowrap">
+                    Selected: <span class="text-emerald-400 font-bold" x-text="selectedHistoryIds.length"></span>
+                </span>
+
+                <button type="button"
+                        @click="toggleHistorySelectAll()"
+                        class="bg-[#2a2a32] hover:bg-[#3f3f46] text-gray-200 border border-[#3f3f46] px-3 py-1.5 rounded-md text-xs font-semibold transition-colors whitespace-nowrap">
+                    <span x-text="getVisibleHistoryIds().length > 0 && getVisibleHistoryIds().every(id => selectedHistoryIds.includes(id)) ? 'Deselect All' : 'Select All'">Select All</span>
+                </button>
+
+                <button type="button"
+                        x-show="selectedHistoryIds.length > 0"
+                        @click="batchDeleteHistory()"
+                        class="bg-red-500/20 hover:bg-red-600 text-red-300 hover:text-white border border-red-500/40 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors flex items-center gap-1.5 whitespace-nowrap">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                    <span>Delete Selected (<span x-text="selectedHistoryIds.length"></span>)</span>
+                </button>
+
+                <button type="button"
+                        @click="clearAllHistory()"
+                        class="bg-transparent hover:bg-red-900/40 text-red-400 hover:text-red-200 border border-red-700/60 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors whitespace-nowrap">
+                    Clear All History
+                </button>
+
+                <button type="button"
+                        @click="isSelectingHistory = false; selectedHistoryIds = [];"
+                        class="bg-[#2a2a32] hover:bg-[#3f3f46] text-gray-300 px-3 py-1.5 rounded-md text-xs font-semibold transition-colors whitespace-nowrap">
+                    Cancel / Done
+                </button>
+            </div>
+        </div>
+
+        <div class="overflow-x-hidden md:overflow-x-auto">
+            <table class="block md:table w-full md:min-w-full divide-y divide-[#3f3f46] table-fixed md:table-auto">
+                <thead class="hidden md:table-header-group bg-[#1e1e24]">
+                    <tr>
+                        <th x-show="isSelectingHistory" scope="col" class="px-3 py-3.5 w-10 text-center select-none"></th>
+                        <th scope="col" @click="sortHistoryBy('title')" class="px-4 py-3.5 w-full min-w-[260px] text-left text-xs font-semibold text-[#a1a1aa] uppercase tracking-wider cursor-pointer hover:text-white select-none">
+                            <div class="flex items-center gap-1">
+                                <span>Title &amp; Target</span>
+                                <span x-show="historySortCol === 'title'" x-text="historySortDir === 'asc' ? '▲' : '▼'" class="text-[#d40060] font-bold text-xs"></span>
+                            </div>
+                        </th>
+                        <th scope="col" @click="sortHistoryBy('release')" class="px-4 py-3.5 w-px whitespace-nowrap text-left text-xs font-semibold text-[#a1a1aa] uppercase tracking-wider cursor-pointer hover:text-white select-none">
+                            <div class="flex items-center gap-1">
+                                <span>Release &amp; Quality</span>
+                                <span x-show="historySortCol === 'release'" x-text="historySortDir === 'asc' ? '▲' : '▼'" class="text-[#d40060] font-bold text-xs"></span>
+                            </div>
+                        </th>
+                        <th scope="col" @click="sortHistoryBy('pushed-at')" class="px-4 py-3.5 w-px whitespace-nowrap text-left text-xs font-semibold text-[#a1a1aa] uppercase tracking-wider cursor-pointer hover:text-white select-none">
+                            <div class="flex items-center gap-1">
+                                <span>Pushed At</span>
+                                <span x-show="historySortCol === 'pushed-at'" x-text="historySortDir === 'asc' ? '▲' : '▼'" class="text-[#d40060] font-bold text-xs"></span>
+                            </div>
+                        </th>
+                        <th scope="col" @click="sortHistoryBy('status')" class="px-4 py-3.5 w-px whitespace-nowrap text-left text-xs font-semibold text-[#a1a1aa] uppercase tracking-wider cursor-pointer hover:text-white select-none">
+                            <div class="flex items-center gap-1">
+                                <span>TorBox Status</span>
+                                <span x-show="historySortCol === 'status'" x-text="historySortDir === 'asc' ? '▲' : '▼'" class="text-[#d40060] font-bold text-xs"></span>
+                            </div>
+                        </th>
+                        <th scope="col" class="px-4 py-3.5 w-px whitespace-nowrap text-right text-xs font-semibold text-[#a1a1aa] uppercase tracking-wider">Actions</th>
+                    </tr>
+                </thead>
+                <tbody class="block md:table-row-group divide-y divide-[#3f3f46] bg-[#24242b] w-full" id="dashboard-history-table-body">
+                    {% for h in (push_history_ledger | default([])) %}
+                    <tr class="block md:table-row p-3 md:p-0 transition-colors w-full max-w-full overflow-hidden {% if h.is_dry_run %}bg-amber-500/5 hover:bg-amber-500/10 border-l-2 border-l-amber-500/60{% else %}hover:bg-[#2a2a32]{% endif %}"
+                        :class="isSelectingHistory ? 'cursor-pointer' : ''"
+                        @click="toggleHistoryRowSelection({{ h.id }}, $event)"
+                        data-sortable="true"
+                        data-history-id="{{ h.id }}"
+                        data-title="{{ (h.media_title or '') | lower }} {{ (h.target_label or '') | lower }}"
+                        data-type="{{ (h.type_label or '') | lower }}"
+                        data-release="{{ (h.nzb_title or '') | lower }}"
+                        data-pushed-at="{{ h.pushed_at_str or '' }}"
+                        data-status="{{ (h.torbox_status or '') | lower }}"
+                        x-show="historySearch.trim() === '' || '{{ (h.media_title or '')|replace('\'', '\\\'') }}'.toLowerCase().includes(historySearch.toLowerCase()) || '{{ (h.alt_title or '')|replace('\'', '\\\'') }}'.toLowerCase().includes(historySearch.toLowerCase()) || '{{ (h.nzb_title or '')|replace('\'', '\\\'') }}'.toLowerCase().includes(historySearch.toLowerCase()) || '{{ (h.target_label or '')|replace('\'', '\\\'') }}'.toLowerCase().includes(historySearch.toLowerCase()) || '{{ (h.type_label or '') | lower }}'.includes(historySearch.toLowerCase()) || '{{ (h.torbox_status or '') | lower }}'.includes(historySearch.toLowerCase())">
+                        <!-- Desktop Selection Checkbox Col -->
+                        <td x-show="isSelectingHistory" class="hidden md:table-cell md:px-3 md:py-3.5 text-center w-10">
+                            <input type="checkbox"
+                                    :value="{{ h.id }}"
+                                    x-model.number="selectedHistoryIds"
+                                    class="w-5 h-5 rounded-full bg-[#1e1e24] border-[#3f3f46] text-[#d40060] accent-[#d40060] focus:ring-[#d40060] focus:ring-offset-0 focus:ring-1 cursor-pointer transition-colors">
+                        </td>
+                        <!-- Col 1: Poster Thumbnail, Title, Target & Type Badge (Plus Mobile In-Card Release & Status on < md) -->
+                        <td class="block md:table-cell md:px-4 md:py-3.5 w-full md:min-w-[260px] break-words max-w-full min-w-0">
+                            <div class="flex items-start gap-3 w-full min-w-0">
+                                <!-- Mobile Checkbox -->
+                                <div x-show="isSelectingHistory" class="md:hidden pt-0.5 shrink-0">
+                                    <input type="checkbox"
+                                           :value="{{ h.id }}"
+                                           x-model.number="selectedHistoryIds"
+                                           class="w-5 h-5 rounded-full bg-[#1e1e24] border-[#3f3f46] text-[#d40060] accent-[#d40060] focus:ring-[#d40060] focus:ring-offset-0 focus:ring-1 cursor-pointer transition-colors">
+                                </div>
+                                <div class="w-10 h-14 rounded bg-[#18181c] border border-[#3f3f46] overflow-hidden shrink-0 flex items-center justify-center">
+                                    {% if h.poster_url %}
+                                    <img src="{{ h.poster_url }}" alt="" loading="lazy" class="w-full h-full object-cover">
+                                    {% else %}
+                                    <svg class="w-4 h-4 text-[#52525b]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 4v16M17 4v16M3 8h4m10 0h4M3 12h18M3 16h4m10 0h4M4 20h16a1 1 0 001-1V5a1 1 0 00-1-1H4a1 1 0 00-1 1v14a1 1 0 001 1z"></path></svg>
+                                    {% endif %}
+                                </div>
+                                <div class="min-w-0 flex-1">
+                                    <div class="flex flex-wrap items-center gap-1.5">
+                                        {% if h.media_item_id %}
+                                        <button type="button"
+                                                hx-get="/api/items/{{ h.media_item_id }}/push-modal"
+                                                hx-target="#modal-container"
+                                                hx-swap="innerHTML"
+                                                class="font-bold text-white hover:text-[#d40060] transition-colors text-left">
+                                            {{ h.media_title }}
+                                        </button>
+                                        {% else %}
+                                        <span class="font-bold text-gray-200">{{ h.media_title }}</span>
+                                        {% endif %}
+                                        {% if h.media_year %}
+                                        <span class="text-xs text-[#a1a1aa]">({{ h.media_year }})</span>
+                                        {% endif %}
+                                        {% if h.target_label %}
+                                        <span class="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded bg-[#1e1e24] text-gray-300 border border-[#3f3f46] inline-flex items-center gap-1">{% if h.is_dry_run %}<svg class="w-3 h-3 shrink-0 text-amber-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"></path></svg>{% endif %}{{ h.target_label }}</span>
+                                        {% endif %}
+                                        {% if h.type_label == 'ANIME' %}
+                                        <span class="px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded bg-pink-500/10 text-pink-400 border border-pink-500/20">ANIME</span>
+                                        {% elif h.type_label == 'SERIES' %}
+                                        <span class="px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded bg-purple-500/10 text-purple-400 border border-purple-500/20">SERIES</span>
+                                        {% else %}
+                                        <span class="px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded bg-blue-500/10 text-blue-400 border border-blue-500/20">MOVIE</span>
+                                        {% endif %}
+                                        {% if h.is_detached %}
+                                        <span class="px-1.5 py-0.5 text-[10px] font-semibold rounded bg-zinc-500/15 text-zinc-400 border border-zinc-500/30">Pruned from Simkl</span>
+                                        {% endif %}
+                                    </div>
+                                    {% if h.alt_title and h.alt_title | lower != h.media_title | lower %}
+                                    <div class="text-[11px] text-slate-400 italic mt-0.5">{{ h.alt_title }}</div>
+                                    {% endif %}
+                                    <div class="flex flex-wrap gap-1.5 mt-2 text-[10px] font-bold">
+                                        {% if h.simkl_id %}
+                                        <a href="https://simkl.com/{{ 'movies' if h.category_key == 'movie' else ('anime' if h.category_key == 'anime' else 'tv') }}/{{ h.simkl_id }}" target="_blank" rel="noopener noreferrer" class="bg-[#2a2a32] text-gray-400 hover:text-white px-2 py-0.5 rounded border border-[#3f3f46] transition-colors">SIMKL</a>
+                                        {% endif %}
+                                        {% if h.tmdb_id %}
+                                        <a href="https://themoviedb.org/{{ 'movie' if h.category_key == 'movie' else 'tv' }}/{{ h.tmdb_id }}" target="_blank" rel="noopener noreferrer" class="bg-[#2a2a32] text-blue-400 hover:text-white px-2 py-0.5 rounded border border-[#3f3f46] transition-colors">TMDB</a>
+                                        {% endif %}
+                                        {% if h.imdb_id %}
+                                        <a href="https://imdb.com/title/{{ h.imdb_id }}" target="_blank" rel="noopener noreferrer" class="bg-[#2a2a32] text-yellow-500 hover:text-white px-2 py-0.5 rounded border border-[#3f3f46] transition-colors">IMDB</a>
+                                        {% endif %}
+                                        {% if h.anilist_id %}
+                                        <a href="https://anilist.co/anime/{{ h.anilist_id }}" target="_blank" rel="noopener noreferrer" class="bg-[#2a2a32] text-cyan-400 hover:text-white px-2 py-0.5 rounded border border-[#3f3f46] transition-colors">ANILIST</a>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Mobile-Only Release Details, Pills & Status Row (< md) -->
+                            <div class="md:hidden mt-2.5 space-y-2 w-full min-w-0 max-w-full overflow-hidden">
+                                <div class="text-xs font-mono text-gray-200 truncate max-w-full" title="{{ h.nzb_title }}">{{ h.nzb_title }}</div>
+                                {% set pills = h.feature_pills if h.feature_pills is defined else [] %}
+                                {% if pills %}
+                                <div class="flex flex-wrap items-center gap-1.5 mt-1.5 w-full">
+                                    {% for pill in pills %}
+                                    <span class="h-5 px-2 inline-flex items-center text-[10px] font-semibold rounded border whitespace-nowrap {{ pill.css }}">{{ pill.label }}</span>
+                                    {% endfor %}
+                                </div>
+                                {% endif %}
+                                <div class="flex flex-wrap items-center gap-2 pt-0.5 text-xs">
+                                    <span class="text-gray-400 font-mono text-[11px]">{{ h.pushed_at_str }}</span>
+                                    {% if h.is_dry_run %}
+                                    <span class="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded bg-amber-500/20 text-amber-300 border-amber-500/40 border">SIMULATED (DRY RUN)</span>
+                                    {% elif h.status_key == 'completed' %}
+                                    <span class="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">READY ON TORBOX</span>
+                                    {% elif h.status_key == 'deleted' %}
+                                    <span class="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded bg-zinc-500/15 text-zinc-400 border border-zinc-500/30">DELETED</span>
+                                    {% elif h.status_key == 'replaced' %}
+                                    <span class="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded bg-amber-500/15 text-amber-400 border border-amber-500/30">REPLACED</span>
+                                    {% elif h.status_key == 'failed' %}
+                                    <span class="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded bg-red-500/15 text-red-400 border border-red-500/30" {% if h.failure_reason %}title="{{ h.failure_reason }}"{% endif %}>FAILED</span>
+                                    {% elif h.status_key == 'canceled' %}
+                                    <span class="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded bg-orange-500/15 text-orange-400 border border-orange-500/30">CANCELED</span>
+                                    {% else %}
+                                    <span class="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded bg-cyan-500/15 text-cyan-400 border border-cyan-500/30">{{ h.torbox_status }}</span>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </td>
+                        <!-- Desktop-Only Col 2: Release & Quality -->
+                        <td class="hidden md:table-cell md:px-4 md:py-3.5 md:min-w-[220px] md:max-w-[380px] min-w-0">
+                            <div class="text-xs font-mono text-gray-200 truncate" title="{{ h.nzb_title }}">{{ h.nzb_title }}</div>
+                            {% set pills = h.feature_pills if h.feature_pills is defined else [] %}
+                            <div class="flex flex-wrap items-center gap-1.5 mt-1.5">
+                                {% for pill in pills %}
+                                <span class="h-5 px-2 inline-flex items-center text-[10px] font-semibold rounded border whitespace-nowrap {{ pill.css }}">{{ pill.label }}</span>
+                                {% endfor %}
+                            </div>
+                        </td>
+                        <!-- Desktop-Only Col 3: Pushed At -->
+                        <td class="hidden md:table-cell md:px-4 md:py-3.5 text-gray-400 text-xs font-mono md:w-px md:whitespace-nowrap">
+                            {{ h.pushed_at_str }}
+                        </td>
+                        <!-- Desktop-Only Col 4: TorBox Status -->
+                        <td class="hidden md:table-cell md:px-4 md:py-3.5 md:w-px md:whitespace-nowrap" id="ledger-status-{{ h.id }}">
+                            {% if h.is_dry_run %}
+                            <span class="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded bg-amber-500/20 text-amber-300 border-amber-500/40 border">SIMULATED (DRY RUN)</span>
+                            {% elif h.status_key == 'completed' %}
+                            <span class="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">READY ON TORBOX</span>
+                            {% elif h.status_key == 'deleted' %}
+                            <span class="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded bg-zinc-500/15 text-zinc-400 border border-zinc-500/30">DELETED</span>
+                            {% elif h.status_key == 'replaced' %}
+                            <span class="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded bg-amber-500/15 text-amber-400 border border-amber-500/30">REPLACED</span>
+                            {% elif h.status_key == 'failed' %}
+                            <span class="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded bg-red-500/15 text-red-400 border border-red-500/30" {% if h.failure_reason %}title="{{ h.failure_reason }}"{% endif %}>FAILED</span>
+                            {% elif h.status_key == 'canceled' %}
+                            <span class="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded bg-orange-500/15 text-orange-400 border border-orange-500/30">CANCELED</span>
+                            {% else %}
+                            <span class="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded bg-cyan-500/15 text-cyan-400 border border-cyan-500/30">{{ h.torbox_status }}</span>
+                            {% endif %}
+                        </td>
+                        <!-- Col 5: Actions (Compact Icon-Only Re-Push + Two-Stage Smart Trash, Anchored Bottom Action Bar on Mobile) -->
+                        <td class="block md:table-cell pt-2.5 md:pt-0 border-t border-[#3f3f46]/40 md:border-t-0 md:px-4 md:py-3.5 text-right md:w-px md:whitespace-nowrap w-full">
+                            <div class="flex justify-end items-center gap-1.5">
+                                {% if h.can_repush %}
+                                <button type="button"
+                                        hx-get="/api/items/{{ h.media_item_id }}/push-modal"
+                                        hx-target="#modal-container"
+                                        hx-swap="innerHTML"
+                                        title="Re-Push / Open Push Modal"
+                                        class="p-1.5 bg-[#2a2a32] hover:bg-[#d40060] text-gray-200 hover:text-white border border-[#3f3f46] rounded-md transition-colors flex items-center justify-center">
+                                    <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                                    <span class="sr-only">Re-Push</span>
+                                </button>
+                                {% endif %}
+                                {% if h.can_delete_torbox %}
+                                <button type="button"
+                                        hx-post="/api/history/{{ h.id }}/delete-torbox"
+                                        hx-target="#ledger-status-{{ h.id }}"
+                                        hx-swap="innerHTML"
+                                        hx-confirm="Delete this transfer from TorBox and reset target to Ready to Push?"
+                                        title="Delete from TorBox"
+                                        class="p-1.5 bg-red-500/10 hover:bg-red-600 text-red-400 hover:text-white border border-red-500/30 rounded-md transition-colors flex items-center justify-center">
+                                    <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                                    <span class="sr-only">Delete from TorBox</span>
+                                </button>
+                                {% else %}
+                                <button type="button"
+                                        hx-delete="/api/history/{{ h.id }}"
+                                        hx-target="closest tr"
+                                        hx-swap="outerHTML"
+                                        hx-confirm="Remove this entry from the history ledger?"
+                                        title="Remove History Entry"
+                                        class="p-1.5 bg-transparent border border-red-800 text-red-500 hover:bg-red-600 hover:text-white rounded-md transition-colors flex items-center justify-center">
+                                    <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                                    <span class="sr-only">Delete Entry</span>
+                                </button>
+                                {% endif %}
+                                <button type="button"
+                                        hx-post="/api/history/{{ h.id }}/blacklist"
+                                        hx-target="#ledger-status-{{ h.id }}"
+                                        hx-swap="innerHTML"
+                                        hx-confirm="Blacklist this release, delete from TorBox if present, and reset target to Ready to Push?"
+                                        title="Blacklist Release"
+                                        class="p-1.5 bg-zinc-800/60 hover:bg-red-900/50 text-zinc-400 hover:text-red-300 border border-zinc-700 hover:border-red-500/40 rounded-md transition-colors flex items-center justify-center">
+                                    <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"></path></svg>
+                                    <span class="sr-only">Blacklist Release</span>
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr class="block md:table-row w-full">
+                        <td :colspan="isSelectingHistory ? 6 : 5" class="block md:table-cell px-4 py-8 text-center text-sm text-[#a1a1aa] italic w-full">No push history entries recorded yet.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- =================================================================== -->
+    <!-- CARD 5 VIEW: ACTIVE PUSHES (6-COLUMN FLAT LIVE TRANSFER TABLE)      -->
+    <!-- =================================================================== -->
+    <div x-show="activeCard === 'active_pushes'" style="display: none;"
+         class="bg-[#24242b] border border-[#3f3f46] rounded-lg shadow overflow-hidden p-4 space-y-4">
+        <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <div>
+                <h3 class="text-base font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                    <span class="inline-flex rounded-full h-2.5 w-2.5 bg-cyan-400"></span>
+                    <span>Active Pushes — Live Transfer Monitor</span>
+                </h3>
+                <p class="text-xs text-[#a1a1aa] mt-0.5">Every active movie, season pack, or episode transfer updates live. Completed rows stay visible for 5 minutes as Ready on TorBox once Layer 3 video verification passes.</p>
+            </div>
+            <div class="flex items-center gap-2">
+                <button type="button"
+                        hx-post="/api/pushes/dismiss-all"
+                        hx-target="#active-pushes-container"
+                        hx-swap="innerHTML"
+                        x-show="lastActivePushesCount > 0"
+                        title="Dismiss all completed, failed, and simulated pushes from Active Pushes"
+                        class="px-3 py-1.5 bg-[#2a2a32] hover:bg-[#3f3f46] text-gray-200 border border-[#3f3f46] rounded-md text-xs font-semibold flex items-center gap-1.5 transition-colors">
+                    <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                    Dismiss All
+                </button>
+                <button type="button"
+                        hx-post="/api/pushes/abort-all"
+                        hx-target="#active-pushes-container"
+                        hx-swap="innerHTML"
+                        hx-confirm="Abort and delete all active transfers from TorBox?"
+                        x-show="lastDownloadingCount > 0 || pollerAwake"
+                        class="px-3 py-1.5 bg-transparent border border-red-800 text-red-400 hover:bg-red-700 hover:text-white rounded-md text-xs font-semibold flex items-center gap-1.5 transition-colors">
+                    <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                    Abort All
+                </button>
+                <button hx-get="/api/pushes/active?force=1"
+                        hx-target="#active-pushes-container"
+                        hx-swap="innerHTML"
+                        class="px-3 py-1.5 bg-[#2a2a32] hover:bg-[#3f3f46] text-gray-200 border border-[#3f3f46] rounded-md text-xs font-semibold flex items-center gap-1.5 transition-colors">
+                    <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                    Refresh Transfers
+                </button>
+            </div>
+        </div>
+
+        <div id="active-pushes-container"
+             hx-get="/api/pushes/active"
+             hx-trigger="load, refreshActivePushes"
+             hx-swap="innerHTML">
+            {% include "partials/active_pushes_table.html" %}
+        </div>
+    </div>
+
+    <!-- =================================================================== -->
+    <!-- CARD 6 VIEW: MANUAL SEARCH (AD-HOC INDEXER QUERY)                   -->
+    <!-- =================================================================== -->
+    <div x-show="activeCard === 'manual_search'" style="display: none;"
+         class="bg-[#24242b] border border-[#3f3f46] rounded-lg shadow overflow-hidden p-5">
+        <div class="mb-4 border-b border-[#3f3f46] pb-3">
+            <h3 class="text-base font-bold text-white uppercase tracking-wider">Ad-Hoc Manual Search</h3>
+            <p class="text-xs text-[#a1a1aa] mt-0.5">Query configured Newznab indexers directly for any title or External ID outside your Simkl watchlist.</p>
+        </div>
+
+        <div class="flex flex-col lg:flex-row gap-6">
+            <div class="w-full lg:w-[360px] shrink-0">
+                <form hx-post="/api/search/manual" hx-target="#search-results" hx-indicator="#search-loading" class="bg-[#1e1e24] border border-[#3f3f46] rounded-xl p-4 flex flex-col gap-3.5">
+                    <!-- 1. Search Preset Quick-Fill Selector -->
+                    <div class="pb-3 border-b border-[#3f3f46]">
+                        <label class="block text-xs font-semibold text-[#d40060] uppercase tracking-wider mb-1">Quick-Fill Search Preset</label>
+                        <select x-model="manualPresetId"
+                                @change="applySearchPreset($event.target.value)"
+                                class="w-full bg-[#24242b] border border-[#3f3f46] rounded-md px-3 py-2 text-white text-sm focus:outline-none focus:border-[#d40060]">
+                            <option value="">-- Custom / Saved Defaults --</option>
+                            {% for preset in presets | default([]) %}
+                            <option value="{{ preset.id }}">{{ preset.name }}{% if preset.is_default %} (Default){% endif %}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <!-- 2. Search Query, Category, Season & Episode -->
+                    <div>
+                        <label class="block text-xs font-semibold text-[#a1a1aa] uppercase tracking-wider mb-1">Search Query</label>
+                        <input type="text" name="query" value="{{ defaults.get('query', '') if defaults is defined else '' }}" class="w-full bg-[#1e1e24] border border-[#3f3f46] rounded-md px-3 py-2 text-white text-sm focus:outline-none focus:border-[#d40060]" placeholder="Movie or Series title (optional with IDs)...">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-[#a1a1aa] uppercase tracking-wider mb-1">Category</label>
+                        <select name="category" x-model="manualCategory" class="w-full bg-[#24242b] border border-[#3f3f46] rounded-md px-3 py-2 text-white text-sm focus:outline-none focus:border-[#d40060]">
+                            <option value="any">Any</option>
+                            <option value="movie">Movie</option>
+                            <option value="series">Series</option>
+                            <option value="anime">Anime</option>
+                            <option value="anime-movie">Anime Movie</option>
+                        </select>
+                    </div>
+                    <div class="grid grid-cols-2 gap-3" x-show="['any', 'series', 'anime'].includes(manualCategory)">
+                        <div>
+                            <label class="block text-xs font-semibold text-[#a1a1aa] uppercase tracking-wider mb-1">Season</label>
+                            <input type="number" name="season" min="1" class="w-full bg-[#1e1e24] border border-[#3f3f46] rounded-md px-3 py-2 text-white text-sm focus:outline-none focus:border-[#d40060]" placeholder="e.g. 1">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-[#a1a1aa] uppercase tracking-wider mb-1">Episode</label>
+                            <input type="text" name="episode" class="w-full bg-[#1e1e24] border border-[#3f3f46] rounded-md px-3 py-2 text-white text-sm focus:outline-none focus:border-[#d40060]" placeholder="e.g. 1">
+                        </div>
+                    </div>
+
+                    <!-- 3. External IDs (Optional) -->
+                    <div class="pt-2 border-t border-[#3f3f46] space-y-2.5">
+                        <div class="text-[11px] font-bold text-gray-300 uppercase tracking-wider">External IDs (Optional)</div>
+                        <div class="grid grid-cols-3 gap-2">
+                            <div>
+                                <label class="block text-[10px] font-semibold text-[#a1a1aa] uppercase mb-1">IMDb ID</label>
+                                <input type="text" name="imdb_id" class="w-full bg-[#1e1e24] border border-[#3f3f46] rounded-md px-2.5 py-1.5 text-white text-xs focus:outline-none focus:border-[#d40060]" placeholder="tt123456">
+                            </div>
+                            <div>
+                                <label class="block text-[10px] font-semibold text-[#a1a1aa] uppercase mb-1">TMDb ID</label>
+                                <input type="text" name="tmdb_id" class="w-full bg-[#1e1e24] border border-[#3f3f46] rounded-md px-2.5 py-1.5 text-white text-xs focus:outline-none focus:border-[#d40060]" placeholder="e.g. 603">
+                            </div>
+                            <div>
+                                <label class="block text-[10px] font-semibold text-[#a1a1aa] uppercase mb-1">TVDb ID</label>
+                                <input type="text" name="tvdb_id" class="w-full bg-[#1e1e24] border border-[#3f3f46] rounded-md px-2.5 py-1.5 text-white text-xs focus:outline-none focus:border-[#d40060]" placeholder="e.g. 81189">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 4. Language Preferences -->
+                    <div class="pt-2 border-t border-[#3f3f46] space-y-2.5">
+                        <div class="text-[11px] font-bold text-gray-300 uppercase tracking-wider">Language Preferences</div>
+                        <div class="grid grid-cols-2 gap-2.5">
+                            <div>
+                                <label class="block text-[10px] font-semibold text-[#a1a1aa] uppercase mb-1">Primary Language</label>
+                                <select name="primary_language" x-model="manualPrimaryLanguage" class="w-full bg-[#24242b] border border-[#3f3f46] rounded-md px-2.5 py-1.5 text-white text-xs focus:outline-none focus:border-[#d40060]">
+                                    <option value="any">Any</option>
+                                    <option value="en">English (en)</option>
+                                    <option value="de">German (de)</option>
+                                    <option value="ja">Japanese (ja)</option>
+                                    <option value="fr">French (fr)</option>
+                                    <option value="es">Spanish (es)</option>
+                                    <option value="it">Italian (it)</option>
+                                    <option value="nl">Dutch (nl)</option>
+                                    <option value="pl">Polish (pl)</option>
+                                    <option value="pt">Portuguese (pt)</option>
+                                    <option value="ru">Russian (ru)</option>
+                                    <option value="ko">Korean (ko)</option>
+                                    <option value="zh">Chinese (zh)</option>
+                                    <option value="multi">Multi</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-[10px] font-semibold text-[#a1a1aa] uppercase mb-1">Fallback Language</label>
+                                <select name="fallback_language" x-model="manualFallbackLanguage" class="w-full bg-[#24242b] border border-[#3f3f46] rounded-md px-2.5 py-1.5 text-white text-xs focus:outline-none focus:border-[#d40060]">
+                                    <option value="none">None (Strict Primary Only)</option>
+                                    <option value="en">English (en)</option>
+                                    <option value="de">German (de)</option>
+                                    <option value="ja">Japanese (ja)</option>
+                                    <option value="fr">French (fr)</option>
+                                    <option value="es">Spanish (es)</option>
+                                    <option value="it">Italian (it)</option>
+                                    <option value="nl">Dutch (nl)</option>
+                                    <option value="pl">Polish (pl)</option>
+                                    <option value="pt">Portuguese (pt)</option>
+                                    <option value="ru">Russian (ru)</option>
+                                    <option value="ko">Korean (ko)</option>
+                                    <option value="zh">Chinese (zh)</option>
+                                    <option value="multi">Multi</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 5. Video Requirements -->
+                    <div class="pt-2 border-t border-[#3f3f46] space-y-2.5">
+                        <div class="text-[11px] font-bold text-gray-300 uppercase tracking-wider">Video Requirements</div>
+                        <div class="grid grid-cols-2 gap-2.5">
+                            <div>
+                                <label class="block text-[10px] font-semibold text-[#a1a1aa] uppercase mb-1">Resolution</label>
+                                <select name="resolution" x-model="manualResolution" class="w-full bg-[#24242b] border border-[#3f3f46] rounded-md px-2.5 py-1.5 text-white text-xs focus:outline-none focus:border-[#d40060]">
+                                    <option value="any">Any</option>
+                                    <option value="2160p">4K / 2160p</option>
+                                    <option value="1080p">1080p</option>
+                                    <option value="720p">720p</option>
+                                    <option value="480p">480p</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-[10px] font-semibold text-[#a1a1aa] uppercase mb-1">Source</label>
+                                <select name="source" x-model="manualSource" class="w-full bg-[#24242b] border border-[#3f3f46] rounded-md px-2.5 py-1.5 text-white text-xs focus:outline-none focus:border-[#d40060]">
+                                    <option value="any">Any</option>
+                                    <option value="remux">Remux</option>
+                                    <option value="bluray">BluRay</option>
+                                    <option value="web">WEB-DL / WEBRip</option>
+                                    <option value="hdtv">HDTV</option>
+                                    <option value="dvd">DVD</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-[10px] font-semibold text-[#a1a1aa] uppercase mb-1">Video Codec</label>
+                                <select name="video_codec" x-model="manualVideoCodec" class="w-full bg-[#24242b] border border-[#3f3f46] rounded-md px-2.5 py-1.5 text-white text-xs focus:outline-none focus:border-[#d40060]">
+                                    <option value="any">Any</option>
+                                    <option value="av1">AV1</option>
+                                    <option value="hevc">HEVC / x265</option>
+                                    <option value="x264">AVC / x264</option>
+                                    <option value="xvid">XviD</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-[10px] font-semibold text-[#a1a1aa] uppercase mb-1">HDR / Dynamic Range</label>
+                                <select name="hdr" x-model="manualHdr" class="w-full bg-[#24242b] border border-[#3f3f46] rounded-md px-2.5 py-1.5 text-white text-xs focus:outline-none focus:border-[#d40060]">
+                                    <option value="any">Any</option>
+                                    <option value="dv">Dolby Vision (DV)</option>
+                                    <option value="hdr10plus">HDR10+</option>
+                                    <option value="hdr10">HDR10</option>
+                                    <option value="sdr">SDR</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 6. Audio Requirements -->
+                    <div class="pt-2 border-t border-[#3f3f46] space-y-2.5">
+                        <div class="text-[11px] font-bold text-gray-300 uppercase tracking-wider">Audio Requirements</div>
+                        <div class="grid grid-cols-2 gap-2.5">
+                            <div>
+                                <label class="block text-[10px] font-semibold text-[#a1a1aa] uppercase mb-1">Audio Tier</label>
+                                <select name="audio_tier" x-model="manualAudioTier" class="w-full bg-[#24242b] border border-[#3f3f46] rounded-md px-2.5 py-1.5 text-white text-xs focus:outline-none focus:border-[#d40060]">
+                                    <option value="any">Any</option>
+                                    <option value="lossless">Lossless / Atmos (TrueHD, DTS:X, DTS-HD)</option>
+                                    <option value="dts">DTS</option>
+                                    <option value="ddp">DD+ / EAC3 / AC3</option>
+                                    <option value="aac">AAC / Opus / MP3</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-[10px] font-semibold text-[#a1a1aa] uppercase mb-1">Audio Channels</label>
+                                <select name="audio_channels" x-model="manualAudioChannels" class="w-full bg-[#24242b] border border-[#3f3f46] rounded-md px-2.5 py-1.5 text-white text-xs focus:outline-none focus:border-[#d40060]">
+                                    <option value="any">Any</option>
+                                    <option value="7.1">7.1</option>
+                                    <option value="5.1">5.1</option>
+                                    <option value="2.0">2.0</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 7. Results Limit & Sticky Defaults -->
+                    <div class="pt-2 border-t border-[#3f3f46] flex items-center justify-between gap-3">
+                        <div class="w-28">
+                            <label class="block text-[10px] font-semibold text-[#a1a1aa] uppercase mb-1">Results Limit</label>
+                            <select name="limit" x-model="manualLimit" class="w-full bg-[#24242b] border border-[#3f3f46] rounded-md px-2.5 py-1.5 text-white text-xs focus:outline-none focus:border-[#d40060]">
+                                <option value="10">10</option>
+                                <option value="25">25</option>
+                                <option value="50">50</option>
+                            </select>
+                        </div>
+                        <label class="flex items-center gap-2 text-xs text-gray-300 cursor-pointer select-none mt-4">
+                            <input type="checkbox" name="save_defaults" value="true" class="rounded bg-[#24242b] border-[#3f3f46] text-[#d40060] focus:ring-[#d40060]">
+                            <span>💾 Save as Default</span>
+                        </label>
+                    </div>
+
+                    <button type="submit" class="w-full mt-2 bg-[#d40060] hover:bg-[#a3004a] text-white font-semibold py-2 px-4 rounded-md shadow-md transition-all flex items-center justify-center gap-2 text-sm">
+                        <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                        Execute Search
+                    </button>
+                </form>
+            </div>
+            <div class="flex-1 min-w-0">
+                <div id="search-loading" class="htmx-indicator flex flex-col items-center justify-center py-12">
+                    <p class="text-[#a1a1aa] font-medium animate-pulse">Querying indexers and evaluating releases...</p>
+                </div>
+                <div id="search-results" class="flex flex-col gap-3">
+                    <div class="p-8 text-center border-2 border-dashed border-[#3f3f46] rounded-xl text-[#a1a1aa]">
+                        <p>Enter a query or External ID and execute a search to see scored releases here.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,46 @@
+<div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6" id="presets-list">
+    {% for preset in presets %}
+    <div class="bg-[#1e1e24] border {% if preset.is_default %}border-[#d40060]{% else %}border-[#3f3f46]{% endif %} rounded-xl p-5 flex flex-col justify-between shadow-lg">
+        <div>
+            <div class="flex items-center justify-between gap-2 mb-3">
+                <div class="flex items-center gap-2">
+                    <h3 class="text-base font-bold text-white">{{ preset.name }}</h3>
+                    {% if preset.is_default %}
+                    <span class="px-2 py-0.5 text-[10px] font-bold uppercase rounded bg-[#d40060]/20 text-[#d40060] border border-[#d40060]/40">Default</span>
+                    {% endif %}
+                </div>
+                <div class="flex items-center gap-1.5">
+                    <button type="button"
+                            hx-get="/settings/preset/{{ preset.id }}/edit/modal"
+                            hx-target="#modal-container"
+                            class="p-1.5 bg-[#2a2a32] hover:bg-[#3f3f46] border border-[#3f3f46] rounded-md text-[#a1a1aa] hover:text-white transition-colors"
+                            title="Edit preset">
+                        <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
+                    </button>
+                    <button type="button"
+                            hx-delete="/api/presets/{{ preset.id }}"
+                            hx-target="#presets-list-container"
+                            hx-confirm="Are you sure you want to delete this preset?"
+                            class="p-1.5 bg-transparent border border-red-800/80 text-red-500 hover:bg-red-600 hover:text-white rounded-md transition-colors"
+                            title="Delete preset">
+                        <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                    </button>
+                </div>
+            </div>
+            <div class="text-xs text-[#a1a1aa] space-y-1">
+                <div>Primary Language: <span class="text-white font-semibold uppercase">{{ preset.primary_language }}</span> • Fallback: <span class="text-white font-semibold uppercase">{{ preset.fallback_language or 'None' }}</span></div>
+                <div>Video Mode: <span class="text-emerald-400 font-semibold uppercase">{{ preset.video_quality_mode }}</span> • Audio Mode: <span class="text-indigo-400 font-semibold uppercase">{{ preset.audio_quality_mode }}</span></div>
+                <div>Season Packs: <span class="text-white font-semibold">{% if preset.allow_season_packs and preset.prefer_season_packs %}Prefer Pack{% elif preset.allow_season_packs %}Score Decides{% else %}Episodes Only (Off){% endif %}</span></div>
+            </div>
+        </div>
+        {% if not preset.is_default %}
+        <div class="pt-3 mt-3 border-t border-[#2a2a32] flex justify-end">
+            <button type="button"
+                    hx-post="/api/presets/{{ preset.id }}/default"
+                    hx-target="#presets-list-container"
+                    class="text-xs text-[#d40060] hover:underline font-semibold">Set as Default</button>
+        </div>
+        {% endif %}
+    </div>
+    {% endfor %}
+</div>

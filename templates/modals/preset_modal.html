@@ -1,0 +1,219 @@
+<!-- Search Preset Dialog Modal -->
+<div class="nzb-modal-backdrop fixed inset-0 z-[100] flex items-center justify-center p-2 sm:p-4 bg-black/80 backdrop-blur-sm animate-fade-in"
+     id="preset-modal-backdrop"
+     x-data='{
+         presetId: {{ (preset.id if preset else "") | tojson }},
+         presetName: {{ (preset.name if preset else "") | tojson }},
+         presetDefault: {{ (preset.is_default if preset else false) | tojson }},
+         presetPrimaryLang: {{ (preset.primary_language if preset else "en") | tojson }},
+         presetFallbackLang: {{ ((preset.fallback_language or "none") if preset else "none") | tojson }},
+         presetVideoMode: {{ (preset.video_quality_mode if preset else "best") | tojson }},
+         presetAudioMode: {{ (preset.audio_quality_mode if preset else "best") | tojson }},
+         presetAllowSeasonPacks: {{ (preset.allow_season_packs if preset else false) | tojson }},
+         presetPreferSeasonPacks: {{ ((preset.allow_season_packs and preset.prefer_season_packs) if preset else false) | tojson }},
+         presetResolutions: {{ (custom_config.get("resolutions") or []) | tojson }},
+         presetSources: {{ (custom_config.get("sources") or []) | tojson }},
+         presetVideoCodecs: {{ (custom_config.get("video_codecs") or []) | tojson }},
+         presetAudioFormats: {{ (custom_config.get("audio_formats") or []) | tojson }},
+         presetMinSizeGb: {{ (custom_config.get("min_size_gb") | string if custom_config.get("min_size_gb") is not none else "") | tojson }},
+         presetMaxSizeGb: {{ (custom_config.get("max_size_gb") | string if custom_config.get("max_size_gb") is not none else "") | tojson }},
+         presetRequiredKw: {{ ((custom_config.get("required_keywords") or []) | join(", ")) | tojson }},
+         presetExcludedKw: {{ ((custom_config.get("excluded_keywords") or []) | join(", ")) | tojson }},
+         togglePresetList(list, val) {
+             const idx = list.indexOf(val);
+             if (idx > -1) list.splice(idx, 1);
+             else list.push(val);
+         },
+         closeModal() {
+             const container = document.getElementById("modal-container");
+             if (container) container.innerHTML = "";
+         }
+     }'>
+    <div class="nzb-modal-dialog bg-[#1e1e24] border border-[#3f3f46] rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden text-[#d1d5db]"
+         style="width: 100%; max-width: 56rem; max-height: 90vh; display: flex; flex-direction: column; overflow: hidden; background-color: #1e1e24; border: 1px solid #3f3f46; border-radius: 0.75rem;"
+         @click.outside="closeModal()"
+         @keydown.escape.window="closeModal()">
+        
+        <!-- Modal Header -->
+        <div class="px-6 py-4 bg-[#2a2a32] border-b border-[#3f3f46] flex items-center justify-between">
+            <h3 class="text-lg font-bold text-white">
+                {% if preset %}Edit Search Preset{% else %}New Search Preset{% endif %}
+            </h3>
+            <button type="button" @click="closeModal()" class="p-1.5 text-[#a1a1aa] hover:text-white hover:bg-[#3f3f46]/50 rounded-lg transition-colors" title="Close">
+                <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+            </button>
+        </div>
+
+        <!-- Modal Body Form -->
+        <form {% if preset %}hx-put="/api/presets/{{ preset.id }}"{% else %}hx-post="/api/presets"{% endif %}
+              hx-target="#presets-list-container"
+              hx-swap="innerHTML"
+              class="p-6 space-y-5 overflow-y-auto flex-1">
+            
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                    <label class="block text-xs font-semibold text-[#a1a1aa] mb-1">Preset Name</label>
+                    <input type="text" name="name" x-model="presetName" required placeholder="e.g. 4K Remux DE/EN" class="w-full bg-[#111115] border border-[#3f3f46] rounded-lg px-3 py-2 text-white focus:border-[#d40060] focus:outline-none">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-[#a1a1aa] mb-1">Primary Language</label>
+                    <select name="primary_language" x-model="presetPrimaryLang" class="w-full bg-[#111115] border border-[#3f3f46] rounded-lg px-3 py-2 text-white focus:border-[#d40060] focus:outline-none">
+                        <option value="en">English (en)</option>
+                        <option value="de">German (de)</option>
+                        <option value="fr">French (fr)</option>
+                        <option value="es">Spanish (es)</option>
+                        <option value="it">Italian (it)</option>
+                        <option value="ja">Japanese (ja)</option>
+                        <option value="multi">Multi (multi)</option>
+                        <option value="any">Any (any)</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-[#a1a1aa] mb-1">Fallback Language</label>
+                    <select name="fallback_language" x-model="presetFallbackLang" class="w-full bg-[#111115] border border-[#3f3f46] rounded-lg px-3 py-2 text-white focus:border-[#d40060] focus:outline-none">
+                        <option value="none">None (Strict)</option>
+                        <option value="en">English (en)</option>
+                        <option value="de">German (de)</option>
+                        <option value="fr">French (fr)</option>
+                        <option value="es">Spanish (es)</option>
+                        <option value="it">Italian (it)</option>
+                        <option value="ja">Japanese (ja)</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Two-Checkbox Season Pack Acquisition Matrix -->
+            <div class="p-3.5 rounded-xl bg-[#111115] border border-[#3f3f46] flex flex-wrap items-center gap-6">
+                <label class="inline-flex items-center gap-2 cursor-pointer text-xs text-white">
+                    <input type="checkbox"
+                           name="allow_season_packs"
+                           value="true"
+                           x-model="presetAllowSeasonPacks"
+                           @change="if (!presetAllowSeasonPacks) presetPreferSeasonPacks = false"
+                           class="accent-[#d40060]">
+                    <span class="font-semibold">Allow Season Pack</span>
+                    <span class="text-[#a1a1aa] text-[11px]">(Score decides between Season Pack &amp; Episodes)</span>
+                </label>
+                <label class="inline-flex items-center gap-2 text-xs transition"
+                       :class="presetAllowSeasonPacks ? 'cursor-pointer text-white' : 'cursor-not-allowed text-[#71717a] opacity-60'">
+                    <input type="checkbox"
+                           name="prefer_season_packs"
+                           value="true"
+                           x-model="presetPreferSeasonPacks"
+                           :disabled="!presetAllowSeasonPacks"
+                           class="accent-[#d40060] disabled:opacity-50">
+                    <span class="font-semibold">Prefer Season Pack</span>
+                    <span class="text-[#a1a1aa] text-[11px]">(Always grab Season Pack if available)</span>
+                </label>
+            </div>
+
+            <!-- Video Quality Mode -->
+            <div class="space-y-3 pt-2 border-t border-[#2a2a32]">
+                <div class="flex items-center justify-between">
+                    <span class="text-xs font-bold uppercase text-white">Video Quality Mode</span>
+                    <div class="inline-flex rounded-lg bg-[#111115] p-0.5 border border-[#3f3f46]">
+                        <button type="button" @click="presetVideoMode = 'best'" :class="presetVideoMode === 'best' ? 'bg-[#d40060] text-white' : 'text-[#a1a1aa]'" class="px-3 py-1 rounded-md text-xs font-semibold">Best</button>
+                        <button type="button" @click="presetVideoMode = 'balanced'" :class="presetVideoMode === 'balanced' ? 'bg-[#d40060] text-white' : 'text-[#a1a1aa]'" class="px-3 py-1 rounded-md text-xs font-semibold">Balanced</button>
+                        <button type="button" @click="presetVideoMode = 'efficiency'" :class="presetVideoMode === 'efficiency' ? 'bg-[#d40060] text-white' : 'text-[#a1a1aa]'" class="px-3 py-1 rounded-md text-xs font-semibold">Efficiency</button>
+                        <button type="button" @click="presetVideoMode = 'custom'" :class="presetVideoMode === 'custom' ? 'bg-[#d40060] text-white' : 'text-[#a1a1aa]'" class="px-3 py-1 rounded-md text-xs font-semibold">Custom</button>
+                    </div>
+                </div>
+                <input type="hidden" name="video_quality_mode" :value="presetVideoMode">
+
+                <!-- Custom Video Config -->
+                <div x-show="presetVideoMode === 'custom'" x-cloak class="p-4 rounded-xl bg-[#111115] border border-[#3f3f46] space-y-3">
+                    <div>
+                        <label class="block text-[11px] text-[#a1a1aa] font-semibold mb-1.5 uppercase">Resolutions</label>
+                        <div class="flex flex-wrap gap-2">
+                            {% for rval, rlabel in [('2160p', '2160p/4K'), ('1080p', '1080p'), ('720p', '720p')] %}
+                            <button type="button" @click="togglePresetList(presetResolutions, '{{ rval }}')" :class="presetResolutions.includes('{{ rval }}') ? 'bg-[#d40060]/30 border-[#d40060] text-white' : 'bg-[#1e1e24] border-[#3f3f46] text-[#a1a1aa]'" class="px-2.5 py-1 rounded border text-xs font-medium">{{ rlabel }}</button>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-[11px] text-[#a1a1aa] font-semibold mb-1.5 uppercase">Sources</label>
+                        <div class="flex flex-wrap gap-2">
+                            {% for sval, slabel in [('remux', 'Remux'), ('bluray', 'BluRay'), ('web-dl', 'WEB-DL'), ('webrip', 'WEBRip'), ('hdtv', 'HDTV')] %}
+                            <button type="button" @click="togglePresetList(presetSources, '{{ sval }}')" :class="presetSources.includes('{{ sval }}') ? 'bg-[#d40060]/30 border-[#d40060] text-white' : 'bg-[#1e1e24] border-[#3f3f46] text-[#a1a1aa]'" class="px-2.5 py-1 rounded border text-xs font-medium">{{ slabel }}</button>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-[11px] text-[#a1a1aa] font-semibold mb-1.5 uppercase">Video Codecs</label>
+                        <div class="flex flex-wrap gap-2">
+                            {% for cval, clabel in [('hevc', 'HEVC / x265'), ('av1', 'AV1'), ('avc', 'AVC / x264'), ('vp9', 'VP9'), ('mpeg2', 'MPEG2')] %}
+                            <button type="button" @click="togglePresetList(presetVideoCodecs, '{{ cval }}')" :class="presetVideoCodecs.includes('{{ cval }}') ? 'bg-[#d40060]/30 border-[#d40060] text-white' : 'bg-[#1e1e24] border-[#3f3f46] text-[#a1a1aa]'" class="px-2.5 py-1 rounded border text-xs font-medium">{{ clabel }}</button>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-xs text-[#a1a1aa] mb-1">Min Size (GB)</label>
+                            <input type="number" step="0.1" name="min_size_gb" x-model="presetMinSizeGb" class="w-full bg-[#1e1e24] border border-[#3f3f46] rounded px-2.5 py-1.5 text-white focus:border-[#d40060] focus:outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-xs text-[#a1a1aa] mb-1">Max Size (GB)</label>
+                            <input type="number" step="0.5" name="max_size_gb" x-model="presetMaxSizeGb" class="w-full bg-[#1e1e24] border border-[#3f3f46] rounded px-2.5 py-1.5 text-white focus:border-[#d40060] focus:outline-none">
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-xs text-[#a1a1aa] mb-1">Must Contain Keywords</label>
+                            <input type="text" name="required_keywords" x-model="presetRequiredKw" placeholder="e.g. MULTi, Atmos" class="w-full bg-[#1e1e24] border border-[#3f3f46] rounded px-2.5 py-1.5 text-white focus:border-[#d40060] focus:outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-xs text-[#a1a1aa] mb-1">Ignore / Reject Keywords</label>
+                            <input type="text" name="excluded_keywords" x-model="presetExcludedKw" placeholder="e.g. CAM, TeleSync" class="w-full bg-[#1e1e24] border border-[#3f3f46] rounded px-2.5 py-1.5 text-white focus:border-[#d40060] focus:outline-none">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Audio Quality Mode -->
+            <div class="space-y-3 pt-2 border-t border-[#2a2a32]">
+                <div class="flex items-center justify-between">
+                    <span class="text-xs font-bold uppercase text-white">Audio Quality Mode</span>
+                    <div class="inline-flex rounded-lg bg-[#111115] p-0.5 border border-[#3f3f46]">
+                        <button type="button" @click="presetAudioMode = 'best'" :class="presetAudioMode === 'best' ? 'bg-[#d40060] text-white' : 'text-[#a1a1aa]'" class="px-3 py-1 rounded-md text-xs font-semibold">Best</button>
+                        <button type="button" @click="presetAudioMode = 'balanced'" :class="presetAudioMode === 'balanced' ? 'bg-[#d40060] text-white' : 'text-[#a1a1aa]'" class="px-3 py-1 rounded-md text-xs font-semibold">Balanced</button>
+                        <button type="button" @click="presetAudioMode = 'efficiency'" :class="presetAudioMode === 'efficiency' ? 'bg-[#d40060] text-white' : 'text-[#a1a1aa]'" class="px-3 py-1 rounded-md text-xs font-semibold">Efficiency</button>
+                        <button type="button" @click="presetAudioMode = 'custom'" :class="presetAudioMode === 'custom' ? 'bg-[#d40060] text-white' : 'text-[#a1a1aa]'" class="px-3 py-1 rounded-md text-xs font-semibold">Custom</button>
+                    </div>
+                </div>
+                <input type="hidden" name="audio_quality_mode" :value="presetAudioMode">
+
+                <!-- Custom Audio Formats -->
+                <div x-show="presetAudioMode === 'custom'" x-cloak class="p-4 rounded-xl bg-[#111115] border border-[#3f3f46] space-y-2">
+                    <label class="block text-[11px] text-[#a1a1aa] font-semibold mb-1.5 uppercase">Audio Formats</label>
+                    <div class="flex flex-wrap gap-2">
+                        {% for aval, alabel in [('truehd', 'TrueHD Atmos'), ('dts-hd', 'DTS-HD MA / DTS:X'), ('eac3', 'DD+ Atmos / EAC3'), ('flac', 'FLAC / PCM'), ('ac3', 'AC3 / DD 5.1'), ('aac', 'AAC / Stereo')] %}
+                        <button type="button" @click="togglePresetList(presetAudioFormats, '{{ aval }}')" :class="presetAudioFormats.includes('{{ aval }}') ? 'bg-[#d40060]/30 border-[#d40060] text-white' : 'bg-[#1e1e24] border-[#3f3f46] text-[#a1a1aa]'" class="px-2.5 py-1 rounded border text-xs font-medium">{{ alabel }}</button>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+
+            <!-- Hidden inputs to submit array fields in form data -->
+            <input type="hidden" name="resolutions" :value="presetResolutions.join(',')">
+            <input type="hidden" name="sources" :value="presetSources.join(',')">
+            <input type="hidden" name="video_codecs" :value="presetVideoCodecs.join(',')">
+            <input type="hidden" name="audio_formats" :value="presetAudioFormats.join(',')">
+
+            <!-- Footer Controls -->
+            <div class="flex items-center justify-between pt-4 border-t border-[#2a2a32]">
+                <label class="inline-flex items-center gap-2 text-xs text-white cursor-pointer">
+                    <input type="checkbox" name="is_default" value="true" x-model="presetDefault" class="accent-[#d40060]">
+                    <span>Set as Default Preset</span>
+                </label>
+                <div class="flex items-center gap-3">
+                    <button type="button" @click="closeModal()" class="px-4 py-2 rounded-lg text-xs font-semibold text-[#a1a1aa] hover:text-white hover:bg-[#3f3f46]/50 transition-colors">
+                        Cancel
+                    </button>
+                    <button type="submit" class="bg-[#d40060] hover:bg-[#a3004a] text-white px-5 py-2 rounded-lg text-xs font-bold shadow-lg shadow-[#d40060]/20 transition-colors">
+                        Save Preset
+                    </button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>

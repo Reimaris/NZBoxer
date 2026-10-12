@@ -1,0 +1,268 @@
+{% set active_in_flight = in_flight_titles if in_flight_titles is defined else [] %}
+{% if active_in_flight %}
+<div class="mb-3 px-4 py-2.5 rounded-lg bg-cyan-950/60 border border-cyan-600/50 text-cyan-200 text-xs font-medium flex items-center gap-2.5 animate-pulse" data-in-flight-banner="true">
+    <span class="inline-flex rounded-full h-2 w-2 bg-cyan-400 shrink-0"></span>
+    <span class="truncate">Searching indexers &amp; dispatching to TorBox: <strong class="text-white">{{ active_in_flight | join(", ") }}</strong>...</span>
+</div>
+{% endif %}
+
+{% set active_rl_count = rate_limited_count if rate_limited_count is defined else (active_pushes | selectattr("is_rate_limited") | list | length) %}
+{% if active_rl_count > 0 %}
+<div class="mb-3 px-4 py-2.5 rounded-lg bg-amber-950/60 border border-amber-600/50 text-amber-200 text-xs font-medium flex flex-wrap items-center justify-between gap-3 shadow-sm" data-rate-limit-banner="true">
+    <div class="flex items-center gap-2.5">
+        <span class="inline-flex rounded-full h-2 w-2 bg-amber-400 shrink-0 animate-ping"></span>
+        <span>{{ active_rl_count }} push(es) paused: Provider rate limit active.</span>
+    </div>
+    <button type="button"
+            hx-post="/api/pushes/resume-rate-limited"
+            hx-target="#active-pushes-container"
+            hx-swap="innerHTML"
+            class="px-3 py-1 bg-amber-500 hover:bg-amber-400 text-gray-950 rounded text-xs font-bold transition-colors shadow-sm flex items-center gap-1.5 shrink-0">
+        ⚡ Resume Queue ({{ active_rl_count }})
+    </button>
+</div>
+{% endif %}
+
+<div class="border border-[#3f3f46] rounded-lg overflow-x-hidden md:overflow-x-auto bg-[#1e1e24]/40 min-h-[160px]">
+    <table class="block md:table w-full md:min-w-full text-left border-collapse table-fixed md:table-auto">
+        <thead class="hidden md:table-header-group bg-[#1e1e24] text-[#a1a1aa] font-semibold text-xs uppercase tracking-wider border-b border-[#3f3f46]">
+            <tr>
+                <th class="px-6 py-3.5">Title &amp; Target</th>
+                <th class="px-6 py-3.5">Release Name</th>
+                <th class="px-6 py-3.5">Progress Bar (%)</th>
+                <th class="px-6 py-3.5">Speed &amp; ETA</th>
+                <th class="px-6 py-3.5">Status</th>
+                <th class="px-6 py-3.5 text-right whitespace-nowrap w-1">Actions</th>
+            </tr>
+        </thead>
+        <tbody class="block md:table-row-group divide-y divide-[#3f3f46] text-sm w-full">
+            {% for p in active_pushes %}
+            <tr class="block md:table-row p-3 md:p-0 hover:bg-[#2a2a32] transition-colors w-full max-w-full overflow-hidden" data-push-row="true" data-history-id="{{ p.history_id }}">
+                <!-- Col 1: Title & Target, Target Label, Push Mode + Mobile In-Card Details on < md -->
+                <td class="block md:table-cell md:px-6 md:py-4 w-full md:max-w-[260px] break-words max-w-full min-w-0">
+                    <div class="flex items-center justify-between gap-2 md:block">
+                        <div class="font-bold text-white">{{ p.title_and_target }}</div>
+                        <!-- Mobile-only status badge displayed in header if desired or keep with progress -->
+                    </div>
+                    <div class="flex items-center gap-1.5 mt-1">
+                        <span class="bg-[#2a2a32] text-gray-300 border border-[#3f3f46] text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wider">{{ p.target_label }}</span>
+                        <span class="bg-[#1e1e24] text-gray-400 border border-[#3f3f46] text-[10px] font-mono px-1.5 py-0.5 rounded uppercase">{{ p.push_mode }}</span>
+                        {% if p.is_upgrade %}<span class="bg-purple-500/15 text-purple-300 border border-purple-500/40 text-[10px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider">UPGRADE</span>{% endif %}
+                    </div>
+
+                    <!-- Mobile-Only Release Details, Progress & Status (< md) -->
+                    <div class="md:hidden mt-2.5 space-y-2 w-full min-w-0 max-w-full overflow-hidden">
+                        <div class="text-xs font-mono text-gray-200 truncate max-w-full" title="{{ p.release_name }}">{{ p.release_name }}</div>
+                        {% set pills = p.feature_pills if p.feature_pills is defined else [] %}
+                        {% if pills %}
+                        <div class="flex flex-wrap items-center gap-1.5 mt-1.5 w-full">
+                            {% for pill in pills %}
+                            <span class="h-5 px-2 inline-flex items-center text-[10px] font-semibold rounded border whitespace-nowrap {{ pill.css }}">{{ pill.label }}</span>
+                            {% endfor %}
+                        </div>
+                        {% endif %}
+
+                        <!-- Integrated Progress Bar, Percentage, Speed/ETA & Status Badge -->
+                        <div class="space-y-1.5 pt-1">
+                            <div class="flex items-center gap-3">
+                                <div class="w-full bg-[#1e1e24] border border-[#3f3f46] rounded-full h-2.5 overflow-hidden">
+                                    <div class="h-full rounded-full transition-all duration-300 {% if p.is_dry_run %}bg-amber-500{% elif p.is_failed %}bg-red-600{% elif p.is_completed or p.progress_pct >= 100 %}bg-emerald-500{% else %}bg-gradient-to-r from-[#d40060] to-pink-500{% endif %}"
+                                         style="width: {{ p.progress_pct }}%"></div>
+                                </div>
+                                <span class="text-xs font-mono font-bold text-white {% if p.is_dry_run %}w-auto text-amber-300 whitespace-nowrap{% else %}w-12 text-right{% endif %}">
+                                    {% if p.is_dry_run %}100% Simulated{% else %}{{ p.progress_pct }}%{% endif %}
+                                </span>
+                            </div>
+
+                            <div class="flex flex-wrap items-center justify-between gap-2 pt-0.5">
+                                <span class="text-xs font-mono text-gray-300">{{ p.speed_and_eta }}</span>
+                                <div>
+                                    {% if p.is_dry_run %}
+                                        <span class="bg-amber-900/80 text-amber-200 border border-amber-500 text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wider shadow-sm inline-flex items-center gap-1">
+                                            <svg class="w-3 h-3 shrink-0 text-amber-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"></path></svg>
+                                            <span>DRY RUN</span>
+                                        </span>
+                                    {% elif p.is_failed %}
+                                        <span class="bg-red-900/90 text-red-200 border border-red-700 text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wider shadow-sm">{{ p.status }}</span>
+                                    {% elif p.is_rate_limited %}
+                                        <span class="bg-amber-900/80 text-amber-200 border border-amber-600 text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wider shadow-sm" title="{{ p.status_detail if p.status_detail else 'Provider rate limit active — resumes automatically' }}">{{ p.status }}</span>
+                                    {% elif p.is_completed %}
+                                        <span class="bg-emerald-600 text-white text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wider shadow-sm">{{ p.status }}</span>
+                                    {% elif p.status == 'Unpacking' or p.status == 'Verifying' %}
+                                        <span class="bg-indigo-600 text-white text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wider shadow-sm animate-pulse">{{ p.status }}</span>
+                                    {% else %}
+                                        <span class="bg-cyan-600 text-white text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wider shadow-sm animate-pulse">{{ p.status }}</span>
+                                    {% endif %}
+                                </div>
+                            </div>
+                            {% if p.status_detail %}
+                            <div class="text-[10px] {% if p.is_dry_run %}text-amber-400{% elif p.is_failed %}text-red-400{% else %}text-gray-400{% endif %} truncate max-w-full" title="{{ p.status_detail }}">{{ p.status_detail }}</div>
+                            {% endif %}
+                        </div>
+                    </div>
+                </td>
+
+                <!-- Desktop-Only Col 2: Release Name & Quality/Language Pills -->
+                <td class="hidden md:table-cell md:px-6 md:py-4 md:max-w-[320px] break-words">
+                    <div class="text-xs font-mono text-gray-200 truncate" title="{{ p.release_name }}">{{ p.release_name }}</div>
+                    {% set pills = p.feature_pills if p.feature_pills is defined else [] %}
+                    <div class="flex flex-wrap items-center gap-1.5 mt-1.5">
+                        {% for pill in pills %}
+                        <span class="h-5 px-2 inline-flex items-center text-[10px] font-semibold rounded border whitespace-nowrap {{ pill.css }}">{{ pill.label }}</span>
+                        {% endfor %}
+                    </div>
+                </td>
+
+                <!-- Desktop-Only Col 3: Progress Bar (%) -->
+                <td class="hidden md:table-cell md:px-6 md:py-4 whitespace-nowrap md:min-w-[180px]">
+                    <div class="flex items-center gap-3">
+                        <div class="w-full bg-[#1e1e24] border border-[#3f3f46] rounded-full h-2.5 overflow-hidden">
+                            <div class="h-full rounded-full transition-all duration-300 {% if p.is_dry_run %}bg-amber-500{% elif p.is_failed %}bg-red-600{% elif p.is_completed or p.progress_pct >= 100 %}bg-emerald-500{% else %}bg-gradient-to-r from-[#d40060] to-pink-500{% endif %}"
+                                 style="width: {{ p.progress_pct }}%"></div>
+                        </div>
+                        <span class="text-xs font-mono font-bold text-white {% if p.is_dry_run %}w-auto text-amber-300 whitespace-nowrap{% else %}w-12 text-right{% endif %}">
+                            {% if p.is_dry_run %}100% Simulated{% else %}{{ p.progress_pct }}%{% endif %}
+                        </span>
+                    </div>
+                </td>
+
+                <!-- Desktop-Only Col 4: Speed & ETA -->
+                <td class="hidden md:table-cell md:px-6 md:py-4 whitespace-nowrap text-xs font-mono text-gray-300">
+                    {{ p.speed_and_eta }}
+                </td>
+
+                <!-- Desktop-Only Col 5: Status -->
+                <td class="hidden md:table-cell md:px-6 md:py-4 whitespace-nowrap">
+                    {% if p.is_dry_run %}
+                        <span class="bg-amber-900/80 text-amber-200 border border-amber-500 text-[11px] font-bold px-2.5 py-1 rounded uppercase tracking-wider shadow-sm flex items-center gap-1.5">
+                            <svg class="w-3.5 h-3.5 shrink-0 text-amber-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"></path></svg>
+                            <span>DRY RUN (SIMULATED)</span>
+                        </span>
+                        {% if p.status_detail %}
+                        <div class="text-[10px] text-amber-400 mt-1 max-w-[180px] truncate" title="{{ p.status_detail }}">{{ p.status_detail }}</div>
+                        {% endif %}
+                    {% elif p.is_failed %}
+                        <span class="bg-red-900/90 text-red-200 border border-red-700 text-[11px] font-bold px-2.5 py-1 rounded uppercase tracking-wider shadow-sm">{{ p.status }}</span>
+                        {% if p.status_detail %}
+                        <div class="text-[10px] text-red-400 mt-1 max-w-[180px] truncate" title="{{ p.status_detail }}">{{ p.status_detail }}</div>
+                        {% endif %}
+                    {% elif p.is_rate_limited %}
+                        <span class="bg-amber-900/80 text-amber-200 border border-amber-600 text-[11px] font-bold px-2.5 py-1 rounded uppercase tracking-wider shadow-sm" title="{{ p.status_detail if p.status_detail else 'Provider rate limit active — resumes automatically' }}">{{ p.status }}</span>
+                    {% elif p.is_completed %}
+                        <span class="bg-emerald-600 text-white text-[11px] font-bold px-2.5 py-1 rounded uppercase tracking-wider shadow-sm">{{ p.status }}</span>
+                    {% elif p.status == 'Unpacking' or p.status == 'Verifying' %}
+                        <span class="bg-indigo-600 text-white text-[11px] font-bold px-2.5 py-1 rounded uppercase tracking-wider shadow-sm animate-pulse">{{ p.status }}</span>
+                    {% else %}
+                        <span class="bg-cyan-600 text-white text-[11px] font-bold px-2.5 py-1 rounded uppercase tracking-wider shadow-sm animate-pulse">{{ p.status }}</span>
+                    {% endif %}
+                </td>
+
+                <!-- Col 6: Actions (Anchored Bottom Action Bar on Mobile) -->
+                <td class="block md:table-cell pt-2.5 md:pt-0 border-t border-[#3f3f46]/40 md:border-t-0 md:px-6 md:py-4 text-right whitespace-nowrap md:w-1 w-full">
+                    <div class="flex flex-wrap md:flex-nowrap justify-end gap-2">
+                        {% if p.is_dry_run %}
+                        <button hx-post="/api/pushes/{{ p.history_id }}/dismiss"
+                                hx-target="#active-pushes-container"
+                                hx-swap="innerHTML"
+                                title="Dismiss simulated push"
+                                class="bg-[#2a2a32] hover:bg-[#3f3f46] text-amber-300 hover:text-white border border-amber-600/50 text-xs font-semibold px-3 py-1.5 rounded-md transition-colors flex items-center gap-1.5">
+                            <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                            Dismiss
+                        </button>
+                        {% elif p.is_failed %}
+                        <button hx-get="/api/items/{{ p.media_item_id }}/push-modal"
+                                hx-target="#modal-container"
+                                hx-swap="innerHTML"
+                                class="bg-[#d40060] hover:bg-[#a3004a] text-white text-xs font-semibold px-3 py-1.5 rounded-md transition-colors flex items-center gap-1.5 shadow-sm">
+                            <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                            Re-Search &amp; Pick
+                        </button>
+                        <button hx-post="/api/pushes/{{ p.history_id }}/dismiss"
+                                hx-target="#active-pushes-container"
+                                hx-swap="innerHTML"
+                                class="bg-[#2a2a32] hover:bg-[#3f3f46] text-gray-300 hover:text-white border border-[#3f3f46] text-xs font-semibold px-3 py-1.5 rounded-md transition-colors flex items-center gap-1.5">
+                            <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                            Dismiss
+                        </button>
+                        {% elif p.is_rate_limited %}
+                        <button hx-post="/api/pushes/{{ p.history_id }}/dismiss"
+                                hx-target="#active-pushes-container"
+                                hx-swap="innerHTML"
+                                hx-confirm="Cancel this paused push?"
+                                class="bg-transparent border border-amber-700 text-amber-300 hover:bg-amber-700 hover:text-white text-xs font-semibold px-3 py-1.5 rounded-md transition-colors flex items-center gap-1.5">
+                            Cancel
+                        </button>
+                        {% elif p.is_completed %}
+                        <button hx-post="/api/pushes/{{ p.history_id }}/dismiss"
+                                hx-target="#active-pushes-container"
+                                hx-swap="innerHTML"
+                                title="Dismiss from Active Pushes (keeps in History)"
+                                class="bg-[#2a2a32] hover:bg-[#3f3f46] text-gray-300 hover:text-white border border-[#3f3f46] text-xs font-semibold px-3 py-1.5 rounded-md transition-colors flex items-center gap-1.5">
+                            <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                            Dismiss
+                        </button>
+                        <button hx-post="/api/pushes/{{ p.history_id }}/delete-torbox"
+                                hx-target="#active-pushes-container"
+                                hx-swap="innerHTML"
+                                hx-confirm="Delete this transfer from TorBox and reset target to Ready to Push?"
+                                title="Delete from TorBox"
+                                class="bg-transparent border border-red-800 text-red-400 hover:bg-red-600 hover:text-white text-xs font-semibold px-3 py-1.5 rounded-md transition-colors flex items-center gap-1.5">
+                            <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                            Delete from TorBox
+                        </button>
+                        <button hx-post="/api/pushes/{{ p.history_id }}/blacklist"
+                                hx-target="#active-pushes-container"
+                                hx-swap="innerHTML"
+                                hx-confirm="Blacklist this release, cancel/delete on TorBox, and reset target to Ready to Push?"
+                                title="Blacklist Release"
+                                class="bg-zinc-800/60 hover:bg-red-900/50 text-zinc-400 hover:text-red-300 border border-zinc-700 hover:border-red-500/40 text-xs font-semibold p-1.5 rounded-md transition-colors flex items-center justify-center">
+                            <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"></path></svg>
+                            <span class="sr-only">Blacklist Release</span>
+                        </button>
+                        {% else %}
+                        <button hx-post="/api/pushes/{{ p.history_id }}/cancel"
+                                hx-target="#active-pushes-container"
+                                hx-swap="innerHTML"
+                                hx-confirm="Cancel and delete this active transfer from TorBox?"
+                                class="bg-transparent border border-red-800 text-red-400 hover:bg-red-600 hover:text-white text-xs font-semibold px-3 py-1.5 rounded-md transition-colors flex items-center gap-1.5">
+                            <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                            Cancel &amp; Delete
+                        </button>
+                        {% if not p.is_dry_run %}
+                        <button hx-post="/api/pushes/{{ p.history_id }}/blacklist"
+                                hx-target="#active-pushes-container"
+                                hx-swap="innerHTML"
+                                hx-confirm="Blacklist this release, cancel/delete on TorBox, and reset target to Ready to Push?"
+                                title="Blacklist Release"
+                                class="bg-zinc-800/60 hover:bg-red-900/50 text-zinc-400 hover:text-red-300 border border-zinc-700 hover:border-red-500/40 text-xs font-semibold p-1.5 rounded-md transition-colors flex items-center justify-center">
+                            <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"></path></svg>
+                            <span class="sr-only">Blacklist Release</span>
+                        </button>
+                        {% endif %}
+                        {% endif %}
+                    </div>
+                </td>
+            </tr>
+            {% else %}
+            <tr data-empty-row="true">
+                <td colspan="6" class="px-6 py-10 text-center text-[#a1a1aa]">
+                    <div class="flex flex-col items-center justify-center gap-1">
+                        {% if active_in_flight %}
+                        <p class="text-sm font-medium text-cyan-300">Searching indexers for best releases — episodes will appear here momentarily...</p>
+                        <p class="text-xs text-[#71717a]">Transfer poller is awake and monitoring background dispatch for {{ active_in_flight | join(", ") }}.</p>
+                        {% else %}
+                        <p class="text-sm font-medium text-gray-300">No active TorBox transfers</p>
+                        <p class="text-xs text-[#71717a]">Transfer poller is sleeping (0 background API calls). Push any movie, season, or episode to wake it automatically.</p>
+                        {% endif %}
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% if downloading_count is defined %}
+<span id="card-active-pushes-total" hx-swap-oob="true" class="text-xs font-bold text-white bg-black/35 px-2 py-0.5 rounded-md border border-white/10">{{ active_pushes | length }}</span>
+<div id="card-active-pushes-downloading" hx-swap-oob="true" class="text-base font-bold text-cyan-400">{{ downloading_count }}</div>
+<div id="card-active-pushes-poller" hx-swap-oob="true" class="text-xs font-bold mt-1 {% if poller_awake %}text-emerald-400{% else %}text-gray-400{% endif %}">{{ "Awake" if poller_awake else "Sleeping" }}</div>
+{% endif %}

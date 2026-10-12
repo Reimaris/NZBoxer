@@ -1,0 +1,121 @@
+{% macro render_card(result, tier="primary") %}
+{% set pills = result.feature_pills if result.feature_pills is defined else [] %}
+
+<div class="bg-[#2a2a32] border {% if tier == 'fallback' %}border-amber-500/30 hover:border-amber-500/60{% elif tier == 'mismatch' %}border-red-500/30 hover:border-red-500/60{% else %}border-[#3f3f46] hover:border-[#52525b]{% endif %} rounded-xl shadow-lg p-3.5 flex items-center justify-between gap-4 transition-all">
+    <!-- Details -->
+    <div class="flex-1 min-w-0 flex flex-col justify-between">
+        <div class="flex items-center gap-2">
+            <h3 class="text-white text-sm font-semibold truncate" title="{{ result.title }}">{{ result.title }}</h3>
+            {% if tier == 'fallback' %}
+            <span class="px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 text-[10px] font-semibold border border-amber-500/30 whitespace-nowrap">Fallback</span>
+            {% elif tier == 'mismatch' %}
+            <span class="px-2 py-0.5 rounded bg-red-500/20 text-red-300 text-[10px] font-semibold border border-red-500/30 whitespace-nowrap">Language Mismatch</span>
+            {% endif %}
+        </div>
+
+        <!-- Unified 12-Slot Atomic 5-Tier Pill Row -->
+        <div class="flex flex-wrap items-center gap-1.5 mt-1.5">
+            {% for pill in pills %}
+            <span class="h-5 px-2 inline-flex items-center text-[10px] font-semibold rounded border whitespace-nowrap {{ pill.css }}">{{ pill.label }}</span>
+            {% endfor %}
+        </div>
+    </div>
+
+    <!-- Actions -->
+    <div class="shrink-0 pl-2 border-l border-[#3f3f46] flex items-center gap-2">
+        <button 
+            hx-post="/api/torbox/add" 
+            hx-vals='{"magnet": "{{ result.link }}"}' 
+            hx-swap="outerHTML"
+            onclick="this.innerHTML='<svg class=\'w-4 h-4 animate-spin shrink-0\' fill=\'none\' stroke=\'currentColor\' viewBox=\'0 0 24 24\'><circle class=\'opacity-25\' cx=\'12\' cy=\'12\' r=\'10\' stroke=\'currentColor\' stroke-width=\'4\'></circle><path class=\'opacity-75\' fill=\'currentColor\' d=\'M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z\'></path></svg> Sending...'; this.classList.add('opacity-75', 'pointer-events-none', 'cursor-wait');"
+            class="flex items-center justify-center gap-1.5 px-3 py-2 bg-[#d40060] hover:bg-[#a3004a] text-white rounded-md transition-colors text-xs font-medium shadow-md shadow-pink-900/20 min-w-[130px]">
+            <svg width="16" height="16" class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10"></path></svg>
+            <span>Push to TorBox</span>
+        </button>
+        <button type="button"
+            hx-post="/api/blacklist"
+            hx-vals='{{ {"media_item_id": none, "nzb_guid": result.link, "nzb_title": result.title, "reason": "Manually blacklisted from Ad-Hoc Search"} | tojson }}'
+            hx-swap="outerHTML"
+            title="Blacklist Release"
+            class="p-2 bg-[#1e1e24] hover:bg-red-900/40 text-[#a1a1aa] hover:text-red-300 border border-[#3f3f46] hover:border-red-500/40 rounded-md transition-colors flex items-center justify-center">
+            <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"></path></svg>
+            <span class="sr-only">Blacklist Release</span>
+        </button>
+    </div>
+</div>
+{% endmacro %}
+
+{% if error_message %}
+<div class="p-8 text-center border border-red-500/30 bg-red-500/10 rounded-xl text-red-400">
+    <div class="mb-3 flex justify-center">
+        <svg class="w-6 h-6 shrink-0 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+    </div>
+    <h3 class="text-lg font-bold mb-1">Search Error</h3>
+    <p>{{ error_message }}</p>
+</div>
+{% elif (primary_results is defined and (primary_results|length > 0 or fallback_results|length > 0 or mismatched_results|length > 0)) %}
+
+<div class="flex flex-col gap-4">
+    <!-- Section 1: Primary Language Releases -->
+    {% if primary_results and primary_results|length > 0 %}
+    <div>
+        <div class="flex items-center gap-2 mb-3 mt-1 text-emerald-400 font-bold text-sm tracking-wide uppercase">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            <span>Primary Language Releases ({{ primary_results|length }})</span>
+        </div>
+        <div class="flex flex-col gap-3">
+            {% for result in primary_results %}
+                {{ render_card(result, 'primary') }}
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Section 2: Fallback Language Releases -->
+    {% if fallback_results and fallback_results|length > 0 %}
+    <div>
+        <div class="flex items-center gap-2 mb-3 mt-4 text-amber-400 font-bold text-sm tracking-wide uppercase">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+            <span>Fallback Language Releases ({{ fallback_results|length }})</span>
+        </div>
+        <div class="flex flex-col gap-3">
+            {% for result in fallback_results %}
+                {{ render_card(result, 'fallback') }}
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Section 3: Mismatched Language Releases -->
+    {% if mismatched_results and mismatched_results|length > 0 %}
+    <div x-data="{ open: false }" class="mt-4 border border-red-500/20 rounded-xl bg-red-950/10 p-4">
+        <button type="button" @click="open = !open" class="flex items-center justify-between w-full text-left text-red-400 font-bold text-sm tracking-wide uppercase hover:text-red-300 transition-colors">
+            <div class="flex items-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/></svg>
+                <span>Mismatched Language Releases ({{ mismatched_results|length }})</span>
+                <span class="text-xs normal-case text-red-400/70 font-normal ml-2">Rejected by language filter</span>
+            </div>
+            <span x-text="open ? 'Hide ▲' : 'Show ▼'" class="text-xs font-mono"></span>
+        </button>
+        <div x-show="open" class="flex flex-col gap-3 mt-4 opacity-80 hover:opacity-100 transition-opacity">
+            {% for result in mismatched_results %}
+                {{ render_card(result, 'mismatch') }}
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+{% elif results and results|length > 0 %}
+<div class="flex flex-col gap-3">
+    {% for result in results %}
+        {{ render_card(result, 'primary') }}
+    {% endfor %}
+</div>
+{% else %}
+<div class="p-8 text-center border border-[#3f3f46] bg-[#2a2a32] rounded-xl text-[#a1a1aa]">
+    <div class="mb-3 text-3xl">🛸</div>
+    <h3 class="text-lg font-bold text-white mb-1">No items found</h3>
+    <p>Try loosening your search filters.</p>
+</div>
+{% endif %}

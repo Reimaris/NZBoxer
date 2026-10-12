@@ -1,0 +1,58 @@
+# Environment and Python
+.env
+.env.*
+!.env.example
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.venv/
+venv/
+env/
+dist/
+build/
+*.egg-info/
+
+# Databases and Runtime Logs
+config/
+*.db
+*.db-shm
+*.db-wal
+*.bak
+*.sqlite
+*.sqlite3
+file:testdb*
+*.log
+config/logs/*.log
+logs/*.log
+
+# Agent Configuration, Memory, and Tickets
+docs/
+AGENT_INSTRUCTIONS.md
+docs/AGENT_INSTRUCTIONS.md
+.agents/
+docs/agent_memory/
+docs/tickets/
+context.md
+usage.md
+
+# Desktop / OS metadata
+.directory
+.DS_Store
+
+# Testing and Coverage (Strict Local)
+tests/
+test_*.py
+TESTING_CHECKLIST.md
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+coverage.xml
+.scratch/
+scratch/
+
+# Docker Local Overrides
+compose.override.yaml
+compose.dev.yaml
