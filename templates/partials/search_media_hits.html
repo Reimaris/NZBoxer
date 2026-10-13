@@ -1,4 +1,5 @@
 {# Tier 1 media hits (m52). Context: hits, error_message, category, query, force_title, numeric_query #}
+{% from "partials/_release_row.html" import search_button, drawer_slot %}
 {% if error_message %}
 <div class="p-4 bg-red-900/20 border border-red-500/30 rounded-xl text-sm text-red-300">{{ error_message }}</div>
 {% endif %}
@@ -23,7 +24,7 @@
 
 {% for hit in hits %}
 {% set has_seasons = hit.kind in ['series', 'anime'] %}
-<div x-data="{ open: false }" class="bg-[#2a2a32] border border-[#3f3f46] rounded-xl shadow-lg overflow-hidden">
+<div x-data="{ open: false, searched: false }" class="bg-[#2a2a32] border border-[#3f3f46] rounded-xl shadow-lg overflow-hidden">
     <div class="p-3.5 flex items-start gap-3">
         {% if hit.poster_url %}
         <img src="{{ hit.poster_url }}" alt="" loading="lazy" class="w-12 h-[72px] rounded object-cover shrink-0 bg-[#1e1e24]">
@@ -41,6 +42,8 @@
             </div>
             {% if hit.overview %}<p class="text-xs text-[#a1a1aa] mt-1 line-clamp-2">{{ hit.overview }}</p>{% endif %}
         </div>
+        <div class="shrink-0 flex items-center gap-2">
+        {{ search_button(hit, 'item') }}
         {% if has_seasons %}
         <button type="button" @click="open = !open"
                 hx-get="/api/search/manual/media/{{ hit.provider }}/{{ hit.ext_id }}/seasons?kind={{ hit.kind }}&{{ hit | hit_qs }}"
@@ -49,7 +52,9 @@
             <span x-text="open ? 'Hide seasons' : 'Seasons'">Seasons</span>
         </button>
         {% endif %}
+        </div>
     </div>
+    {{ drawer_slot(hit) }}
     {% if has_seasons %}
     <div x-show="open" style="display: none;" id="seasons-{{ hit.provider }}-{{ hit.ext_id }}" class="border-t border-[#3f3f46] bg-[#24242b]"></div>
     {% endif %}

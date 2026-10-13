@@ -1,0 +1,49 @@
+{# Tier 3 inline release drawer (m52). Context: drawer_id, scope, primary_results, fallback_results, mismatched_results, error_message, hit, season_number, episode_number, push_context #}
+{% from "partials/_release_row.html" import render_card %}
+<div class="mt-2 border border-[#3f3f46] rounded-xl bg-[#1e1e24] p-3 flex flex-col gap-3">
+    <div class="flex items-center justify-between gap-2">
+        <span class="text-xs font-semibold text-gray-300 uppercase tracking-wider">
+            {{ hit.title }}{% if scope == 'season' and season_number is not none %} · Season {{ season_number }}{% elif scope == 'episode' and season_number is not none and episode_number is not none %} · S{{ '%02d' % season_number }}E{{ '%02d' % episode_number }}{% endif %}
+        </span>
+        <div class="flex items-center gap-2">
+            {# Auto-Push Best is wired in ticket 11 #}
+            <button type="button" disabled data-auto-push-placeholder
+                    class="px-2.5 py-1 bg-[#2a2a32] text-[#71717a] border border-[#3f3f46] rounded-md text-xs cursor-not-allowed">Auto-Push Best</button>
+            <button type="button" @click="document.getElementById('{{ drawer_id }}').innerHTML = ''; searched = false"
+                    class="px-2.5 py-1 bg-[#2a2a32] hover:bg-[#33333b] text-white border border-[#3f3f46] rounded-md text-xs">Close</button>
+        </div>
+    </div>
+
+    {% if error_message %}
+    <div class="p-3 border border-red-500/30 bg-red-500/10 rounded-lg text-sm text-red-400">{{ error_message }}</div>
+    {% elif not (primary_results or fallback_results or mismatched_results) %}
+    <div class="p-4 text-center border border-[#3f3f46] bg-[#2a2a32] rounded-lg text-[#a1a1aa] text-sm">
+        <h3 class="text-white font-semibold mb-1">No items found</h3>
+        <p>Try loosening your search filters.</p>
+    </div>
+    {% else %}
+    {% if primary_results %}
+    <div>
+        <div class="mb-2 text-emerald-400 font-bold text-xs tracking-wide uppercase">Primary Language Releases ({{ primary_results|length }})</div>
+        <div class="flex flex-col gap-2">{% for result in primary_results %}{{ render_card(result, 'primary') }}{% endfor %}</div>
+    </div>
+    {% endif %}
+    {% if fallback_results %}
+    <div>
+        <div class="mb-2 text-amber-400 font-bold text-xs tracking-wide uppercase">Fallback Language Releases ({{ fallback_results|length }})</div>
+        <div class="flex flex-col gap-2">{% for result in fallback_results %}{{ render_card(result, 'fallback') }}{% endfor %}</div>
+    </div>
+    {% endif %}
+    {% if mismatched_results %}
+    <div x-data="{ open: false }" class="border border-red-500/20 rounded-lg bg-red-950/10 p-3">
+        <button type="button" @click="open = !open" class="flex items-center justify-between w-full text-left text-red-400 font-bold text-xs tracking-wide uppercase">
+            <span>Mismatched Language Releases ({{ mismatched_results|length }})</span>
+            <span x-text="open ? 'Hide ▲' : 'Show ▼'" class="font-mono"></span>
+        </button>
+        <div x-show="open" style="display: none;" class="flex flex-col gap-2 mt-3">{% for result in mismatched_results %}{{ render_card(result, 'mismatch') }}{% endfor %}</div>
+    </div>
+    {% endif %}
+    {% endif %}
+
+    <div id="{{ drawer_id }}-push-context" class="hidden" data-push-context='{{ push_context | tojson }}'></div>
+</div>

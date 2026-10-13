@@ -1,15 +1,20 @@
 {# Tier 2b episode rows (m52). Context: episodes, hit, season_number, error_message #}
+{% from "partials/_release_row.html" import search_button, drawer_slot %}
 {% if error_message %}
 <div class="p-3 text-xs text-red-300">{{ error_message }}</div>
 {% elif not episodes %}
 <div class="p-3 text-xs text-[#a1a1aa]">No episodes available for this season.</div>
 {% endif %}
 {% for ep in episodes %}
-<div class="px-6 py-2 flex items-center justify-between gap-3 border-b border-[#2a2a32] last:border-b-0">
+<div x-data="{ searched: false }" class="border-b border-[#2a2a32] last:border-b-0">
+<div class="px-6 py-2 flex items-center justify-between gap-3">
     <div class="min-w-0 text-xs">
         <span class="text-[#a1a1aa] mr-2">E{{ '%02d' % ep.episode_number }}</span>
         <span class="text-white">{{ ep.name }}</span>
         {% if ep.air_date %}<span class="text-[#71717a] ml-2">{{ ep.air_date }}</span>{% endif %}
     </div>
+    {{ search_button(hit, 'episode', season_number, ep.episode_number) }}
+</div>
+{{ drawer_slot(hit, season_number, ep.episode_number) }}
 </div>
 {% endfor %}

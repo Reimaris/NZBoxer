@@ -707,6 +707,129 @@ async def manual_search_episodes(
     )
 
 
+@app.post("/api/search/manual/releases", response_class=HTMLResponse)
+async def manual_search_releases(
+    request: Request,
+    scope: str = Form(""),
+    kind: str = Form(""),
+    title: str = Form(""),
+    alt_titles: str = Form(""),
+    year: str = Form(""),
+    imdb_id: str = Form(""),
+    tmdb_id: str = Form(""),
+    tvdb_id: str = Form(""),
+    anilist_id: str = Form(""),
+    poster_url: str = Form(""),
+    season: str = Form(""),
+    episode: str = Form(""),
+    drawer_id: str = Form("drawer"),
+    language: str = Form("any"),
+    primary_language: str = Form("any"),
+    fallback_language: str = Form("none"),
+    resolution: str = Form("any"),
+    source: str = Form("any"),
+    hdr: str = Form("any"),
+    video_codec: str = Form("any"),
+    audio_tier: str = Form("any"),
+    audio_channels: str = Form("any"),
+    limit: int = Form(10),
+):
+    """Tier 3: scoped NZB search + scoring rendered into an inline drawer."""
+    from app.core.adhoc_search import AdHocFilters, search_and_score_releases
+
+    title = title.strip()
+    season_n, episode_n = _opt_int(season), _opt_int(episode)
+    if scope not in ("item", "season", "episode") or not title:
+        error: str | None = "Invalid search scope or missing title."
+    elif scope != "item" and season_n is None:
+        error = "A season number is required."
+    elif scope == "episode" and episode_n is None:
+        error = "An episode number is required."
+    else:
+        error = None
+
+    if scope == "item":
+        season_n = episode_n = None
+    elif scope == "season":
+        episode_n = None
+
+    hit = _hit_snapshot(
+        "anilist" if anilist_id.strip() else "tmdb",
+        _opt_int(anilist_id) or _opt_int(tmdb_id) or 0,
+        kind,
+        title=title,
+        alt_titles=alt_titles,
+        year=year,
+        imdb_id=imdb_id.strip(),
+        tmdb_id=tmdb_id,
+        tvdb_id=tvdb_id,
+        poster_url=poster_url,
+    )
+    primary: list[dict[str, Any]] = []
+    fallback: list[dict[str, Any]] = []
+    mismatched: list[dict[str, Any]] = []
+    if error is None:
+        titles = list(
+            dict.fromkeys(
+                [title, *(t.strip() for t in alt_titles.split("\n") if t.strip())]
+            )
+        )
+        result = await search_and_score_releases(
+            kind=kind,
+            scope=scope,
+            titles=titles,
+            year=_opt_int(year),
+            imdb_id=imdb_id.strip() or None,
+            tmdb_id=_opt_int(tmdb_id),
+            tvdb_id=_opt_int(tvdb_id),
+            season=season_n,
+            episode=episode_n,
+            filters=AdHocFilters(
+                primary_language=primary_language,
+                fallback_language=fallback_language,
+                language=language,
+                resolution=resolution,
+                source=source,
+                hdr=hdr,
+                video_codec=video_codec,
+                audio_tier=audio_tier,
+                audio_channels=audio_channels,
+            ),
+            limit=limit,
+        )
+        error = result.error_message
+        primary = result.primary_results
+        fallback = result.fallback_results
+        mismatched = result.mismatched_results
+
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/search_release_drawer.html",
+        context={
+            "drawer_id": drawer_id,
+            "scope": scope,
+            "primary_results": primary,
+            "fallback_results": fallback,
+            "mismatched_results": mismatched,
+            "error_message": error,
+            "hit": hit,
+            "season_number": season_n,
+            "episode_number": episode_n,
+            "push_context": {
+                "media_title": title,
+                "media_year": year,
+                "media_kind": kind,
+                "poster_url": poster_url,
+                "tmdb_id": tmdb_id,
+                "imdb_id": imdb_id,
+                "anilist_id": anilist_id,
+                "season": season_n if season_n is not None else "",
+                "episode": episode_n if episode_n is not None else "",
+            },
+        },
+    )
+
+
 @app.post("/items/{item_id}/reset-metadata")
 async def reset_anime_metadata_endpoint(request: Request, item_id: int):
     """Rebuilds anime metadata cleanly from AniList, purges phantom episodes, and resets backoff counters."""
