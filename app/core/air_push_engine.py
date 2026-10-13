@@ -15,8 +15,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.config import settings
-from app.core.logging_config import log_process_end, log_process_start
 from app.core.parser import parse_release_name
+from app.core.phase_stats import AirPushStats
 from app.core.push_engine import (
     _dispatch_candidate_list_to_torbox,
     _load_blacklisted_sets,
@@ -138,7 +138,9 @@ def is_candidate_valid_upgrade(
     )
 
 
-async def run_initial_air_push(session: AsyncSession, now_utc: datetime) -> int:
+async def run_initial_air_push(
+    session: AsyncSession, now_utc: datetime, *, stats: AirPushStats | None = None
+) -> int:
     """Auto-push due SEARCHING episodes of opted-in series; returns episodes dispatched."""
     from app.core.transfer_poller import transfer_poller
 
@@ -170,21 +172,25 @@ async def run_initial_air_push(session: AsyncSession, now_utc: datetime) -> int:
         if due_ids:
             work.append((item.id, item.title, due_ids))
 
+    if stats is not None:
+        stats.eligible = sum(len(due_ids) for _, _, due_ids in work)
     dispatched = 0
     for item_id, title, due_ids in work:
         if not item_lock_manager.try_acquire(item_id, owner="air_push"):
-            logger.debug("[AIR_PUSH] '%s' is busy; retrying next tick.", title)
+            logger.debug("[AIR-PUSH] '%s' is busy; retrying next tick.", title)
             continue
         try:
             transfer_poller.register_in_flight_push(item_id, title)
             res = await execute_auto_push(session, item_id, {"episode_ids": due_ids})
             dispatched += min(int(res.get("dispatched_count") or 0), len(due_ids))
         except Exception as exc:  # noqa: BLE001
-            logger.exception("[AIR_PUSH] Auto-push failed for '%s': %s", title, exc)
+            logger.exception("[AIR-PUSH] Auto-push failed for '%s': %s", title, exc)
             await session.rollback()
         finally:
             transfer_poller.unregister_in_flight_push(item_id)
             item_lock_manager.release(item_id)
+    if stats is not None:
+        stats.dispatched = dispatched
     return dispatched
 
 
@@ -310,7 +316,9 @@ async def _evaluate_episode_upgrade(
     return dispatched
 
 
-async def run_episode_upgrades(session: AsyncSession, now_utc: datetime) -> int:
+async def run_episode_upgrades(
+    session: AsyncSession, now_utc: datetime, *, stats: AirPushStats | None = None
+) -> int:
     """Re-search completed in-window episodes of opted-in series; returns upgrades dispatched."""
     if settings.dry_run or _upgrade_rate_limited():
         return 0
@@ -341,6 +349,8 @@ async def run_episode_upgrades(session: AsyncSession, now_utc: datetime) -> int:
         if ids:
             work.append((item.id, item.title, ids))
 
+    if stats is not None:
+        stats.eligible = sum(len(ids) for _, _, ids in work)
     upgraded = 0
     for item_id, title, ep_ids in work:
         if not item_lock_manager.try_acquire(item_id, owner="air_upgrade"):
@@ -363,18 +373,37 @@ async def run_episode_upgrades(session: AsyncSession, now_utc: datetime) -> int:
 async def run_air_date_push_and_upgrade_tick(now_utc: datetime | None = None) -> None:
     """Hourly job: initial air pushes, then upgrades; each step's failure is isolated."""
     now = now_utc or datetime.now(timezone.utc)
-    log_process_start(logger, "Air-Date Push & Upgrade Tick")
     async with async_session_factory() as session:
+        push_stats = AirPushStats()
         try:
-            await run_initial_air_push(session, now)
+            await run_initial_air_push(session, now, stats=push_stats)
+            logger.info(
+                "[AIR-PUSH] [1/2] Air-date auto-push: %d eligible episodes found across active series",
+                push_stats.eligible,
+            )
         except Exception as exc:
             logger.error(
                 "[AIR-PUSH] Initial air push step failed: %s", exc, exc_info=True
             )
+            logger.info("[AIR-PUSH] [1/2] Air-date auto-push: failed (see error above)")
+        upgrade_stats = AirPushStats()
+        suffix = ""
+        if settings.dry_run:
+            suffix = " (dry-run)"
+        elif _upgrade_rate_limited():
+            suffix = " (rate-limited)"
         try:
-            await run_episode_upgrades(session, now)
+            await run_episode_upgrades(session, now, stats=upgrade_stats)
+            logger.info(
+                "[AIR-PUSH] [2/2] Quality upgrade pass: %d eligible upgrade candidates found%s",
+                upgrade_stats.eligible,
+                suffix,
+            )
         except Exception as exc:
             logger.error(
                 "[UPGRADE] Episode upgrade step failed: %s", exc, exc_info=True
             )
-    log_process_end(logger, "Air-Date Push & Upgrade Tick")
+            logger.info(
+                "[AIR-PUSH] [2/2] Quality upgrade pass: failed (see error above)"
+            )
+    logger.info("[AIR-PUSH] Hourly pass complete")
