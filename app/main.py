@@ -2343,6 +2343,67 @@ async def onboarding_step1(request: Request) -> Response:
     return JSONResponse({"ok": True, "provider_ids": provider_ids})
 
 
+@app.post("/api/onboarding/step2")
+async def onboarding_step2(request: Request) -> Response:
+    """Atomically save optional Discord (SystemSettings) and Telegram (NotificationChannel)."""
+    from sqlalchemy import select
+
+    from app.config import reload_settings_from_db
+    from app.db.models import NotificationChannel, SystemSettings
+
+    payload = await _parse_request_payload(request)
+
+    def _f(key: str) -> str:
+        return str(payload.get(key) or "").strip()
+
+    discord_url = _f("discord_webhook_url")
+    discord_enabled = _f("discord_enabled").lower() in ("1", "true", "on", "yes")
+    tg_name, tg_token, tg_chat = (
+        _f("telegram_name"),
+        _f("telegram_bot_token"),
+        _f("telegram_chat_id"),
+    )
+
+    telegram_provided = bool(tg_token or tg_chat)
+    if telegram_provided and not (tg_token and tg_chat):
+        return JSONResponse(
+            {"ok": False, "error": "Telegram requires both Bot Token and Chat ID."},
+            status_code=400,
+        )
+
+    async with async_session_factory() as session:
+        if discord_url:
+            row = await session.get(SystemSettings, 1)
+            if row is None:
+                row = SystemSettings(id=1)
+                session.add(row)
+            row.discord_webhook_url = discord_url
+            row.discord_enabled = discord_enabled
+
+        if telegram_provided:
+            channel = (
+                (
+                    await session.execute(
+                        select(NotificationChannel)
+                        .where(NotificationChannel.type == "telegram")
+                        .order_by(NotificationChannel.id)
+                    )
+                )
+                .scalars()
+                .first()
+            )
+            if channel is None:
+                channel = NotificationChannel(type="telegram", name="Telegram")
+                session.add(channel)
+            channel.name = tg_name or "Telegram"
+            channel.bot_token = tg_token
+            channel.chat_id = tg_chat
+
+        await session.commit()
+        await reload_settings_from_db(session)
+    return JSONResponse({"ok": True})
+
+
 @app.post("/api/onboarding/complete")
 async def onboarding_complete() -> Response:
     """Permanently mark first-run onboarding as completed/skipped (idempotent)."""
