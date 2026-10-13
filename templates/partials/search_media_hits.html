@@ -1,0 +1,57 @@
+{# Tier 1 media hits (m52). Context: hits, error_message, category, query, force_title, numeric_query #}
+{% if error_message %}
+<div class="p-4 bg-red-900/20 border border-red-500/30 rounded-xl text-sm text-red-300">{{ error_message }}</div>
+{% endif %}
+
+{% if numeric_query and not force_title %}
+<form hx-post="/api/search/manual" hx-target="#search-results" hx-include="#manual-search-form" hx-indicator="#search-loading"
+      class="flex items-center justify-between gap-3 px-3 py-2 bg-[#1e1e24] border border-[#3f3f46] rounded-lg text-xs text-[#a1a1aa]">
+    <span>Treated <span class="text-white font-semibold">{{ query }}</span> as an ID.</span>
+    <input type="hidden" name="query" value="{{ query }}">
+    <input type="hidden" name="force_title" value="1">
+    <button type="submit" class="text-[#d40060] hover:underline">Search as title instead</button>
+</form>
+{% endif %}
+
+{% if not hits and not error_message %}
+<div class="p-6 bg-[#2a2a32] border border-[#3f3f46] rounded-xl text-center text-[#a1a1aa] shadow-lg">
+    <div class="text-4xl mb-4">🛸</div>
+    <h3 class="text-xl text-white font-semibold mb-2">No titles found</h3>
+    <p>Try a different title, category or ID.</p>
+</div>
+{% endif %}
+
+{% for hit in hits %}
+{% set has_seasons = hit.kind in ['series', 'anime'] %}
+<div x-data="{ open: false }" class="bg-[#2a2a32] border border-[#3f3f46] rounded-xl shadow-lg overflow-hidden">
+    <div class="p-3.5 flex items-start gap-3">
+        {% if hit.poster_url %}
+        <img src="{{ hit.poster_url }}" alt="" loading="lazy" class="w-12 h-[72px] rounded object-cover shrink-0 bg-[#1e1e24]">
+        {% else %}
+        <div class="w-12 h-[72px] rounded shrink-0 bg-[#1e1e24] border border-[#3f3f46]"></div>
+        {% endif %}
+        <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2 flex-wrap">
+                <h3 class="text-white text-sm font-semibold truncate" title="{{ hit.title }}">{{ hit.title }}</h3>
+                {% if hit.year %}<span class="text-xs text-[#a1a1aa]">{{ hit.year }}</span>{% endif %}
+                <span class="px-2 py-0.5 rounded bg-[#1e1e24] border border-[#3f3f46] text-[10px] font-semibold text-gray-300 uppercase">{{ hit.kind }}</span>
+                {% if hit.tmdb_id %}<span class="px-2 py-0.5 rounded bg-sky-500/10 border border-sky-500/30 text-[10px] text-sky-300">TMDb {{ hit.tmdb_id }}</span>{% endif %}
+                {% if hit.imdb_id %}<span class="px-2 py-0.5 rounded bg-amber-500/10 border border-amber-500/30 text-[10px] text-amber-300">{{ hit.imdb_id }}</span>{% endif %}
+                {% if hit.anilist_id %}<span class="px-2 py-0.5 rounded bg-indigo-500/10 border border-indigo-500/30 text-[10px] text-indigo-300">AniList {{ hit.anilist_id }}</span>{% endif %}
+            </div>
+            {% if hit.overview %}<p class="text-xs text-[#a1a1aa] mt-1 line-clamp-2">{{ hit.overview }}</p>{% endif %}
+        </div>
+        {% if has_seasons %}
+        <button type="button" @click="open = !open"
+                hx-get="/api/search/manual/media/{{ hit.provider }}/{{ hit.ext_id }}/seasons?kind={{ hit.kind }}&{{ hit | hit_qs }}"
+                hx-trigger="click once" hx-target="#seasons-{{ hit.provider }}-{{ hit.ext_id }}" hx-swap="innerHTML"
+                class="shrink-0 px-3 py-1.5 bg-[#1e1e24] hover:bg-[#33333b] border border-[#3f3f46] rounded-md text-xs text-white">
+            <span x-text="open ? 'Hide seasons' : 'Seasons'">Seasons</span>
+        </button>
+        {% endif %}
+    </div>
+    {% if has_seasons %}
+    <div x-show="open" style="display: none;" id="seasons-{{ hit.provider }}-{{ hit.ext_id }}" class="border-t border-[#3f3f46] bg-[#24242b]"></div>
+    {% endif %}
+</div>
+{% endfor %}

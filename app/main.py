@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from fastapi import BackgroundTasks, FastAPI, Form, Request, Response
+from fastapi import BackgroundTasks, FastAPI, Form, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -442,6 +442,25 @@ async def dashboard(request: Request, background_tasks: BackgroundTasks):
     )
 
 
+def _hit_query_string(hit: dict[str, Any]) -> str:
+    """Encode the parent-hit snapshot carried by Tier 2 lazy-load URLs."""
+    from urllib.parse import urlencode
+
+    params = {
+        "title": hit.get("title") or "",
+        "alt_titles": "\n".join(hit.get("alt_titles") or []),
+        "year": hit.get("year"),
+        "imdb_id": hit.get("imdb_id"),
+        "tmdb_id": hit.get("tmdb_id"),
+        "tvdb_id": hit.get("tvdb_id"),
+        "poster_url": hit.get("poster_url"),
+    }
+    return urlencode({k: v for k, v in params.items() if v not in (None, "")})
+
+
+templates.env.filters["hit_qs"] = _hit_query_string
+
+
 @app.post("/api/search/manual", response_class=HTMLResponse)
 async def manual_search(
     request: Request,
@@ -458,12 +477,12 @@ async def manual_search(
     audio_channels: str = Form("any"),
     limit: int = Form(10),
     save_defaults: bool = Form(False),
-    season: str = Form(""),
-    episode: str = Form(""),
     imdb_id: str = Form(""),
     tmdb_id: str = Form(""),
     tvdb_id: str = Form(""),
+    force_title: bool = Form(False),
 ):
+    """Tier 1: smart-box media search returning expandable media hits."""
     import copy
 
     from sqlalchemy import select
@@ -499,81 +518,191 @@ async def manual_search(
                 db_settings.scoring_settings = current
                 await session.commit()
 
+    import re
+
+    from app.services import media_search, tmdb
+
+    clean_category = media_search.normalize_category(category)
     clean_query = query.strip()
-    clean_imdb = imdb_id.strip()
-    clean_tmdb = tmdb_id.strip()
-    clean_tvdb = tvdb_id.strip()
-    if not clean_query and not clean_imdb and not clean_tmdb and not clean_tvdb:
+    clean_imdb = imdb_id.strip().lower()
+    imdb_val = clean_imdb if re.fullmatch(r"tt\d+", clean_imdb) else None
+    tmdb_val = _opt_int(tmdb_id)
+    tvdb_val = _opt_int(tvdb_id)
+
+    def _render(hits: list[Any], error_message: str | None = None):
         return templates.TemplateResponse(
             request=request,
-            name="partials/search_results.html",
+            name="partials/search_media_hits.html",
             context={
-                "results": [],
-                "error_message": "Please enter a search query or at least one External ID (IMDb, TMDb, or TVDb).",
+                "hits": hits,
+                "error_message": error_message,
+                "category": clean_category,
+                "query": clean_query,
+                "force_title": force_title,
+                "numeric_query": media_search.classify_query(clean_query).mode
+                == "numeric",
             },
         )
 
-    from app.core.adhoc_search import AdHocFilters, search_and_score_releases
-
-    season_val = int(season) if season and season.isdigit() else None
-    ep_val = int(episode) if episode and episode.isdigit() else None
-    tmdb_val = int(clean_tmdb) if clean_tmdb and clean_tmdb.isdigit() else None
-    tvdb_val = int(clean_tvdb) if clean_tvdb and clean_tvdb.isdigit() else None
-    if ep_val is not None:
-        scope = "episode"
-    elif season_val is not None:
-        scope = "season"
-    else:
-        scope = "item"
-
-    search = await search_and_score_releases(
-        kind=(category or "any").strip().lower(),
-        scope=scope,
-        titles=[clean_query] if clean_query else [],
-        year=None,
-        imdb_id=clean_imdb or None,
-        tmdb_id=tmdb_val,
-        tvdb_id=tvdb_val,
-        season=season_val,
-        episode=ep_val,
-        filters=AdHocFilters(
-            primary_language=primary_language,
-            fallback_language=fallback_language,
-            language=language,
-            resolution=resolution,
-            source=source,
-            hdr=hdr,
-            video_codec=video_codec,
-            audio_tier=audio_tier,
-            audio_channels=audio_channels,
-        ),
-        limit=limit,
-    )
-    if search.error_message:
-        return templates.TemplateResponse(
-            request=request,
-            name="partials/search_results.html",
-            context={"results": [], "error_message": search.error_message},
-        )
-    primary_results = search.primary_results
-    fallback_results = search.fallback_results
-    mismatched_results = search.mismatched_results
-
-    all_results = primary_results + fallback_results + mismatched_results
-
-    if not all_results:
-        return HTMLResponse(
-            content='<div class="p-6 bg-[#2a2a32] border border-[#3f3f46] rounded-xl text-center text-[#a1a1aa] shadow-lg"><div class="text-4xl mb-4">🛸</div><h3 class="text-xl text-white font-semibold mb-2">No items found</h3><p>Try loosening your search filters.</p></div>'
+    if not (clean_query or imdb_val or tmdb_val or tvdb_val):
+        return _render([], "Please enter a title or ID.")
+    if tvdb_val and not (clean_query or imdb_val or tmdb_val):
+        return _render(
+            [],
+            "TVDb IDs cannot be resolved to a title. Add a title or an IMDb/TMDb ID.",
         )
 
+    async with async_session_factory() as session:
+        hits = await media_search.search_media(
+            clean_query,
+            clean_category,
+            imdb_id=imdb_val,
+            tmdb_id=tmdb_val,
+            tvdb_id=tvdb_val,
+            session=session,
+            force_title=force_title,
+        )
+        tmdb_key = await tmdb.resolve_api_key(session)
+
+    error_message = None
+    if not hits and not tmdb_key and clean_category in {"any", "movie", "series"}:
+        error_message = "TMDB API key is not configured (Settings → Metadata)."
+    return _render(list(hits), error_message)
+
+
+def _media_provider_or_404(provider: str) -> str:
+    if provider not in {"tmdb", "anilist"}:
+        raise HTTPException(status_code=404, detail="Unknown metadata provider")
+    return provider
+
+
+def _hit_snapshot(
+    provider: str,
+    ext_id: int,
+    kind: str,
+    *,
+    title: str,
+    alt_titles: str,
+    year: str,
+    imdb_id: str,
+    tmdb_id: str,
+    tvdb_id: str,
+    poster_url: str,
+) -> dict[str, Any]:
+    return {
+        "provider": provider,
+        "ext_id": ext_id,
+        "kind": kind,
+        "title": title,
+        "alt_titles": [t for t in alt_titles.split("\n") if t],
+        "year": _opt_int(year),
+        "imdb_id": imdb_id or None,
+        "tmdb_id": _opt_int(tmdb_id) or (ext_id if provider == "tmdb" else None),
+        "tvdb_id": _opt_int(tvdb_id),
+        "anilist_id": ext_id if provider == "anilist" else None,
+        "poster_url": poster_url or None,
+    }
+
+
+@app.get(
+    "/api/search/manual/media/{provider}/{ext_id}/seasons",
+    response_class=HTMLResponse,
+)
+async def manual_search_seasons(
+    request: Request,
+    provider: str,
+    ext_id: int,
+    kind: str = "series",
+    title: str = "",
+    alt_titles: str = "",
+    year: str = "",
+    imdb_id: str = "",
+    tmdb_id: str = "",
+    tvdb_id: str = "",
+    poster_url: str = "",
+):
+    """Tier 2a: lazily load the season rows of a series/anime hit."""
+    from app.services import media_search
+
+    _media_provider_or_404(provider)
+    async with async_session_factory() as session:
+        seasons = await media_search.list_seasons(
+            provider,
+            ext_id,
+            kind,  # type: ignore[arg-type]
+            session,
+        )
     return templates.TemplateResponse(
         request=request,
-        name="partials/search_results.html",
+        name="partials/search_seasons.html",
         context={
-            "results": all_results,
-            "primary_results": primary_results,
-            "fallback_results": fallback_results,
-            "mismatched_results": mismatched_results,
+            "seasons": seasons,
+            "hit": _hit_snapshot(
+                provider,
+                ext_id,
+                kind,
+                title=title,
+                alt_titles=alt_titles,
+                year=year,
+                imdb_id=imdb_id,
+                tmdb_id=tmdb_id,
+                tvdb_id=tvdb_id,
+                poster_url=poster_url,
+            ),
+            "error_message": None,
+        },
+    )
+
+
+@app.get(
+    "/api/search/manual/media/{provider}/{ext_id}/seasons/{season_number}/episodes",
+    response_class=HTMLResponse,
+)
+async def manual_search_episodes(
+    request: Request,
+    provider: str,
+    ext_id: int,
+    season_number: int,
+    kind: str = "series",
+    title: str = "",
+    alt_titles: str = "",
+    year: str = "",
+    imdb_id: str = "",
+    tmdb_id: str = "",
+    tvdb_id: str = "",
+    poster_url: str = "",
+):
+    """Tier 2b: lazily load the episode rows of one season."""
+    from app.services import media_search
+
+    _media_provider_or_404(provider)
+    async with async_session_factory() as session:
+        episodes = await media_search.list_episodes(
+            provider,
+            ext_id,
+            kind,  # type: ignore[arg-type]
+            season_number,
+            session,
+        )
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/search_episodes.html",
+        context={
+            "episodes": episodes,
+            "season_number": season_number,
+            "hit": _hit_snapshot(
+                provider,
+                ext_id,
+                kind,
+                title=title,
+                alt_titles=alt_titles,
+                year=year,
+                imdb_id=imdb_id,
+                tmdb_id=tmdb_id,
+                tvdb_id=tvdb_id,
+                poster_url=poster_url,
+            ),
+            "error_message": None,
         },
     )
 
