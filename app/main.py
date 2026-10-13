@@ -468,12 +468,8 @@ async def manual_search(
 
     from sqlalchemy import select
 
-    from app.core.fake_detector import is_indexer_metadata_fake
-    from app.core.parser import build_release_feature_pills, parse_release_name
-    from app.core.scorer import score_release
     from app.db.database import async_session_factory
-    from app.db.models import BlacklistedRelease, SystemSettings
-    from app.services import treasure_maps
+    from app.db.models import SystemSettings
 
     # Save defaults
     if save_defaults:
@@ -517,302 +513,51 @@ async def manual_search(
             },
         )
 
-    cat_id = None
-    if category == "movie":
-        cat_id = 2000
-    elif category == "series":
-        cat_id = 5000
-    elif category in ("anime", "anime-movie"):
-        cat_id = 5070
+    from app.core.adhoc_search import AdHocFilters, search_and_score_releases
 
-    # Convert numeric fields
     season_val = int(season) if season and season.isdigit() else None
-    ep_val = None
-    if episode:
-        ep_val = int(episode) if episode.isdigit() else episode
+    ep_val = int(episode) if episode and episode.isdigit() else None
     tmdb_val = int(clean_tmdb) if clean_tmdb and clean_tmdb.isdigit() else None
     tvdb_val = int(clean_tvdb) if clean_tvdb and clean_tvdb.isdigit() else None
-    imdb_val = clean_imdb if clean_imdb else None
+    if ep_val is not None:
+        scope = "episode"
+    elif season_val is not None:
+        scope = "season"
+    else:
+        scope = "item"
 
-    # Call the right function based on inputs
-    try:
-        if category == "movie":
-            raw_results = await treasure_maps.search_movie(
-                title=clean_query or None,
-                category=cat_id,
-                tmdb_id=tmdb_val,
-                imdb_id=imdb_val,
-            )
-        elif category == "series":
-            raw_results = await treasure_maps.search_show(
-                title=clean_query or None,
-                category=cat_id,
-                season=season_val,
-                ep=ep_val,
-                tvdb_id=tvdb_val,
-                tmdb_id=tmdb_val,
-                imdb_id=imdb_val,
-            )
-        else:
-            raw_results = await treasure_maps.search_raw(
-                query=clean_query or None,
-                category=cat_id,
-                season=season_val,
-                ep=ep_val,
-                imdb_id=imdb_val,
-                tmdb_id=tmdb_val,
-                tvdb_id=tvdb_val,
-            )
-    except treasure_maps.IndexerError as e:
+    search = await search_and_score_releases(
+        kind=(category or "any").strip().lower(),
+        scope=scope,
+        titles=[clean_query] if clean_query else [],
+        year=None,
+        imdb_id=clean_imdb or None,
+        tmdb_id=tmdb_val,
+        tvdb_id=tvdb_val,
+        season=season_val,
+        episode=ep_val,
+        filters=AdHocFilters(
+            primary_language=primary_language,
+            fallback_language=fallback_language,
+            language=language,
+            resolution=resolution,
+            source=source,
+            hdr=hdr,
+            video_codec=video_codec,
+            audio_tier=audio_tier,
+            audio_channels=audio_channels,
+        ),
+        limit=limit,
+    )
+    if search.error_message:
         return templates.TemplateResponse(
             request=request,
             name="partials/search_results.html",
-            context={"results": [], "error_message": str(e)},
+            context={"results": [], "error_message": search.error_message},
         )
-
-    primary_results = []
-    fallback_results = []
-    mismatched_results = []
-
-    def is_match(filter_val: str, parsed_val: str | None, orig_title: str = "") -> bool:
-        fv = (filter_val or "any").lower()
-        if fv == "any":
-            return True
-        combined = f"{parsed_val or ''} {orig_title}".lower()
-        if fv == "sdr":
-            return not any(k in combined for k in ["hdr", "dv", "dolby vision", "dovi"])
-        if fv in ("hdr10plus", "hdr10+"):
-            return any(k in combined for k in ["hdr10plus", "hdr10+"])
-        if fv in ("dv", "dolby vision"):
-            return any(k in combined for k in ["dv", "dolby vision", "dovi"])
-        if fv in ("hevc", "h265", "x265"):
-            return any(k in combined for k in ["hevc", "h265", "x265", "h.265"])
-        if fv in ("x264", "h264", "avc"):
-            return any(k in combined for k in ["x264", "h264", "avc", "h.264"])
-        if fv in ("bluray", "blu-ray"):
-            return any(k in combined for k in ["bluray", "blu-ray", "bdrip", "brrip"])
-        if fv in ("web", "web-dl", "webrip"):
-            return any(k in combined for k in ["web", "web-dl", "webdl", "webrip"])
-        return fv in combined
-
-    def check_audio_tier(
-        filter_val: str, parsed_codec: str | None, orig_title: str = ""
-    ) -> bool:
-        fv = (filter_val or "any").lower()
-        if fv == "any":
-            return True
-        pc = f"{parsed_codec or ''} {orig_title}".lower()
-        if fv == "lossless" and any(
-            x in pc
-            for x in [
-                "truehd",
-                "dts:x",
-                "dts-x",
-                "dtsx",
-                "dts-hd",
-                "dtshd",
-                "lpcm",
-                "pcm",
-                "flac",
-                "atmos",
-            ]
-        ):
-            return True
-        if fv == "dts" and "dts" in pc:
-            return True
-        if fv in ("ddp", "dd+", "eac3", "ac3") and any(
-            x in pc for x in ["eac3", "e-ac-3", "dd+", "ddp", "ac3", "dolby"]
-        ):
-            return True
-        if fv == "aac" and any(x in pc for x in ["aac", "opus", "mp3"]):
-            return True
-        if fv == "tier1" and any(x in pc for x in ["truehd", "dts:x", "auro"]):
-            return True
-        if fv == "tier2" and any(x in pc for x in ["dts-hd", "lpcm", "flac"]):
-            return True
-        if fv == "tier3" and "atmos" in pc and ("eac3" in pc or "dd+" in pc):
-            return True
-        if fv == "tier4" and any(
-            x in pc for x in ["eac3", "dts", "ac3", "dolby digital"]
-        ):
-            return True
-        if fv == "tier5" and any(x in pc for x in ["aac", "opus", "mp3"]):
-            return True
-        if fv == "tier1" and "truehd atmos" in pc:
-            return True
-        return fv in pc
-
-    prim_lang = (
-        primary_language
-        if primary_language not in ("any", "")
-        else (language if language not in ("any", "") else None)
-    )
-    fall_lang = (
-        fallback_language if fallback_language not in ("none", "any", "") else None
-    )
-
-    from app.core.push_engine import _load_blacklisted_sets
-
-    async with async_session_factory() as session:
-        blacklisted_guids, blacklisted_titles = await _load_blacklisted_sets(
-            session, None
-        )
-
-    seen_guids: set[str] = set()
-    seen_titles: set[str] = set()
-
-    cat_norm = (category or "any").strip().lower()
-    if cat_norm in ("movie", "anime-movie"):
-        ad_hoc_media_type: str | None = "movie"
-    elif cat_norm == "anime":
-        ad_hoc_media_type = "anime"
-    elif cat_norm == "series" or season_val is not None or ep_val is not None:
-        ad_hoc_media_type = "show"
-    else:
-        ad_hoc_media_type = None
-
-    for item in raw_results:
-        title = str(item.get("title") or "")
-        if not title:
-            continue
-        guid_or_link = str(item.get("guid") or item.get("link") or "")
-        norm_title = title.strip().lower()
-        if (guid_or_link and guid_or_link in seen_guids) or norm_title in seen_titles:
-            continue
-        if guid_or_link:
-            seen_guids.add(guid_or_link)
-        seen_titles.add(norm_title)
-
-        if (
-            (guid_or_link and guid_or_link in blacklisted_guids)
-            or title in blacklisted_titles
-            or norm_title in blacklisted_titles
-        ):
-            continue
-
-        parsed = parse_release_name(title)
-
-        # Layer 1: Indexer metadata filtering (drop and globally blacklist fake releases)
-        is_sp = season_val is not None and ep_val is None
-        is_fake, fake_reason = is_indexer_metadata_fake(
-            raw_item=item,
-            parsed_resolution=parsed.resolution,
-            media_type=ad_hoc_media_type or "movie",
-            is_season_pack=is_sp,
-        )
-        if is_fake:
-            logger.warning(
-                "Rejected Layer 1 fake release in manual search '%s': %s",
-                title,
-                fake_reason,
-            )
-            if guid_or_link:
-                blacklisted_guids.add(guid_or_link)
-            blacklisted_titles.add(title)
-            blacklisted_titles.add(norm_title)
-            async with async_session_factory() as bl_session:
-                new_bl = BlacklistedRelease(
-                    media_item_id=None,
-                    nzb_guid=guid_or_link or None,
-                    nzb_title=title,
-                    reason=f"Layer 1 Fake: {fake_reason}",
-                )
-                bl_session.add(new_bl)
-                await bl_session.commit()
-            continue
-
-        # If user specified a season but NO episode, exclude individual episodes
-        if season_val is not None and ep_val is None:
-            if parsed.episode is not None:
-                continue
-
-        if not is_match(resolution, parsed.resolution, title):
-            continue
-        if not is_match(source, parsed.source, title):
-            continue
-        if not is_match(hdr, parsed.hdr, title):
-            continue
-        if not is_match(video_codec, parsed.video_codec, title):
-            continue
-        if not is_match(audio_channels, parsed.audio_channels, title):
-            continue
-        if not check_audio_tier(audio_tier, parsed.audio_codec, title):
-            continue
-
-        size_bytes = int(item.get("size") or item.get("size_bytes") or 0)
-        ep_int = ep_val if isinstance(ep_val, int) else None
-        sr = score_release(
-            parsed,
-            size_bytes=size_bytes,
-            age_days=0,
-            expected_season=season_val,
-            expected_episode=ep_int,
-            primary_language=prim_lang,
-            fallback_language=fall_lang,
-            api_language=item.get("api_language"),
-            media_type=ad_hoc_media_type,
-        )
-
-        if sr.is_rejected:
-            if sr.reject_reason and "Language mismatch" in sr.reject_reason:
-                sr_mismatch = score_release(
-                    parsed,
-                    size_bytes=size_bytes,
-                    age_days=0,
-                    expected_season=season_val,
-                    expected_episode=ep_int,
-                    primary_language=None,
-                    fallback_language=None,
-                    api_language=item.get("api_language"),
-                    media_type=ad_hoc_media_type,
-                )
-                item["score"] = sr_mismatch.score
-                item["parsed"] = parsed
-                item["is_mismatch"] = True
-                item["reject_reason"] = sr.reject_reason
-                item["feature_pills"] = build_release_feature_pills(
-                    parsed=parsed,
-                    score=sr_mismatch.score,
-                    size_bytes=size_bytes,
-                    is_fallback=False,
-                    is_mismatch=True,
-                    matched_language=sr_mismatch.matched_language,
-                    api_language=item.get("api_language"),
-                    bitrate_mbps=sr_mismatch.bitrate_mbps,
-                    normalized_bitrate_mbps=sr_mismatch.normalized_bitrate_mbps,
-                    media_type=ad_hoc_media_type,
-                )
-                mismatched_results.append(item)
-            continue
-
-        item["score"] = sr.score
-        item["parsed"] = parsed
-        item["is_primary"] = sr.is_primary
-        item["is_fallback"] = sr.is_fallback
-        item["feature_pills"] = build_release_feature_pills(
-            parsed=parsed,
-            score=sr.score,
-            size_bytes=size_bytes,
-            is_fallback=bool(sr.is_fallback),
-            is_mismatch=False,
-            matched_language=sr.matched_language,
-            api_language=item.get("api_language"),
-            bitrate_mbps=sr.bitrate_mbps,
-            normalized_bitrate_mbps=sr.normalized_bitrate_mbps,
-            media_type=ad_hoc_media_type,
-        )
-        if sr.is_fallback:
-            fallback_results.append(item)
-        else:
-            primary_results.append(item)
-
-    primary_results.sort(key=lambda x: x["score"], reverse=True)
-    fallback_results.sort(key=lambda x: x["score"], reverse=True)
-    mismatched_results.sort(key=lambda x: x["score"], reverse=True)
-
-    primary_results = primary_results[:limit]
-    fallback_results = fallback_results[:limit]
-    mismatched_results = mismatched_results[:limit]
+    primary_results = search.primary_results
+    fallback_results = search.fallback_results
+    mismatched_results = search.mismatched_results
 
     all_results = primary_results + fallback_results + mismatched_results
 

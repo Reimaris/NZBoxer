@@ -1,0 +1,400 @@
+"""Scoped ad-hoc release search and scoring pipeline (m52).
+
+Extracted from the manual search endpoint: Newznab dispatch per row scope,
+dedup, blacklist, Layer 1 fake detection, filtering, scoring and bucketing.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+from dataclasses import dataclass
+from typing import Any
+
+from app.services import treasure_maps
+
+logger = logging.getLogger(__name__)
+
+_CATEGORY_IDS = {"movie": 2000, "series": 5000, "anime": 5070, "anime-movie": 5070}
+
+
+@dataclass
+class AdHocFilters:
+    primary_language: str = "any"
+    fallback_language: str = "none"
+    language: str = "any"
+    resolution: str = "any"
+    source: str = "any"
+    hdr: str = "any"
+    video_codec: str = "any"
+    audio_tier: str = "any"
+    audio_channels: str = "any"
+
+
+@dataclass
+class AdHocSearchResult:
+    primary_results: list[dict[str, Any]]
+    fallback_results: list[dict[str, Any]]
+    mismatched_results: list[dict[str, Any]]
+    error_message: str | None = None
+
+
+def is_match(filter_val: str, parsed_val: str | None, orig_title: str = "") -> bool:
+    fv = (filter_val or "any").lower()
+    if fv == "any":
+        return True
+    combined = f"{parsed_val or ''} {orig_title}".lower()
+    if fv == "sdr":
+        return not any(k in combined for k in ["hdr", "dv", "dolby vision", "dovi"])
+    if fv in ("hdr10plus", "hdr10+"):
+        return any(k in combined for k in ["hdr10plus", "hdr10+"])
+    if fv in ("dv", "dolby vision"):
+        return any(k in combined for k in ["dv", "dolby vision", "dovi"])
+    if fv in ("hevc", "h265", "x265"):
+        return any(k in combined for k in ["hevc", "h265", "x265", "h.265"])
+    if fv in ("x264", "h264", "avc"):
+        return any(k in combined for k in ["x264", "h264", "avc", "h.264"])
+    if fv in ("bluray", "blu-ray"):
+        return any(k in combined for k in ["bluray", "blu-ray", "bdrip", "brrip"])
+    if fv in ("web", "web-dl", "webrip"):
+        return any(k in combined for k in ["web", "web-dl", "webdl", "webrip"])
+    return fv in combined
+
+
+def check_audio_tier(
+    filter_val: str, parsed_codec: str | None, orig_title: str = ""
+) -> bool:
+    fv = (filter_val or "any").lower()
+    if fv == "any":
+        return True
+    pc = f"{parsed_codec or ''} {orig_title}".lower()
+    if fv == "lossless" and any(
+        x in pc
+        for x in [
+            "truehd",
+            "dts:x",
+            "dts-x",
+            "dtsx",
+            "dts-hd",
+            "dtshd",
+            "lpcm",
+            "pcm",
+            "flac",
+            "atmos",
+        ]
+    ):
+        return True
+    if fv == "dts" and "dts" in pc:
+        return True
+    if fv in ("ddp", "dd+", "eac3", "ac3") and any(
+        x in pc for x in ["eac3", "e-ac-3", "dd+", "ddp", "ac3", "dolby"]
+    ):
+        return True
+    if fv == "aac" and any(x in pc for x in ["aac", "opus", "mp3"]):
+        return True
+    if fv == "tier1" and any(x in pc for x in ["truehd", "dts:x", "auro"]):
+        return True
+    if fv == "tier2" and any(x in pc for x in ["dts-hd", "lpcm", "flac"]):
+        return True
+    if fv == "tier3" and "atmos" in pc and ("eac3" in pc or "dd+" in pc):
+        return True
+    if fv == "tier4" and any(x in pc for x in ["eac3", "dts", "ac3", "dolby digital"]):
+        return True
+    if fv == "tier5" and any(x in pc for x in ["aac", "opus", "mp3"]):
+        return True
+    if fv == "tier1" and "truehd atmos" in pc:
+        return True
+    return fv in pc
+
+
+def _media_type_for(kind: str, season: int | None, episode: int | None) -> str | None:
+    kind_norm = (kind or "any").strip().lower()
+    if kind_norm in ("movie", "anime-movie"):
+        return "movie"
+    if kind_norm == "anime":
+        return "anime"
+    if kind_norm == "series" or season is not None or episode is not None:
+        return "show"
+    return None
+
+
+async def _fetch_raw_releases(
+    *,
+    kind: str,
+    titles: list[str],
+    imdb_id: str | None,
+    tmdb_id: int | None,
+    tvdb_id: int | None,
+    season: int | None,
+    episode: int | None,
+) -> tuple[list[dict[str, Any]], str | None]:
+    """Run one Newznab search per distinct title and merge by guid/title."""
+    cat_id = _CATEGORY_IDS.get(kind)
+    distinct: list[str | None] = []
+    seen_norm: set[str] = set()
+    for t in titles:
+        clean = (t or "").strip()
+        if clean and clean.lower() not in seen_norm:
+            seen_norm.add(clean.lower())
+            distinct.append(clean)
+    if not distinct:
+        distinct = [None]
+
+    def call(title: str | None) -> Any:
+        if kind in ("movie", "anime-movie"):
+            return treasure_maps.search_movie(
+                title=title, category=cat_id, tmdb_id=tmdb_id, imdb_id=imdb_id
+            )
+        if kind == "series":
+            return treasure_maps.search_show(
+                title=title,
+                category=cat_id,
+                season=season,
+                ep=episode,
+                tvdb_id=tvdb_id,
+                tmdb_id=tmdb_id,
+                imdb_id=imdb_id,
+            )
+        return treasure_maps.search_raw(
+            query=title,
+            category=cat_id,
+            season=season,
+            ep=episode,
+            imdb_id=imdb_id,
+            tmdb_id=tmdb_id,
+            tvdb_id=tvdb_id,
+        )
+
+    outcomes = await asyncio.gather(
+        *(call(t) for t in distinct), return_exceptions=True
+    )
+    merged: list[dict[str, Any]] = []
+    errors: list[treasure_maps.IndexerError] = []
+    for outcome in outcomes:
+        if isinstance(outcome, treasure_maps.IndexerError):
+            errors.append(outcome)
+        elif isinstance(outcome, BaseException):
+            raise outcome
+        else:
+            merged.extend(outcome)
+    if errors and len(errors) == len(outcomes):
+        return [], str(errors[0])
+    for err in errors:
+        logger.warning("Partial ad-hoc search failure ignored: %s", err)
+    return merged, None
+
+
+async def search_and_score_releases(
+    *,
+    kind: str,
+    scope: str,
+    titles: list[str],
+    year: int | None,
+    imdb_id: str | None,
+    tmdb_id: int | None,
+    tvdb_id: int | None,
+    season: int | None,
+    episode: int | None,
+    filters: AdHocFilters,
+    limit: int,
+) -> AdHocSearchResult:
+    """Search the indexers for ``scope`` and return scored, bucketed releases.
+
+    ``scope`` is ``item``, ``season`` or ``episode``. A ``season`` scope keeps
+    both season packs and single episodes of that season. ``year`` is accepted
+    for caller symmetry; Newznab dispatch does not use it.
+    """
+    from app.core.fake_detector import is_indexer_metadata_fake
+    from app.core.parser import build_release_feature_pills, parse_release_name
+    from app.core.push_engine import _load_blacklisted_sets
+    from app.core.scorer import score_release
+    from app.db.database import async_session_factory
+    from app.db.models import BlacklistedRelease
+
+    kind = (kind or "any").strip().lower()
+    if scope == "item":
+        season = episode = None
+    elif scope == "season":
+        episode = None
+
+    raw_results, error_message = await _fetch_raw_releases(
+        kind=kind,
+        titles=titles,
+        imdb_id=imdb_id,
+        tmdb_id=tmdb_id,
+        tvdb_id=tvdb_id,
+        season=season,
+        episode=episode,
+    )
+    if error_message:
+        return AdHocSearchResult([], [], [], error_message)
+
+    primary_results: list[dict[str, Any]] = []
+    fallback_results: list[dict[str, Any]] = []
+    mismatched_results: list[dict[str, Any]] = []
+
+    prim_lang = (
+        filters.primary_language
+        if filters.primary_language not in ("any", "")
+        else (filters.language if filters.language not in ("any", "") else None)
+    )
+    fall_lang = (
+        filters.fallback_language
+        if filters.fallback_language not in ("none", "any", "")
+        else None
+    )
+
+    async with async_session_factory() as session:
+        blacklisted_guids, blacklisted_titles = await _load_blacklisted_sets(
+            session, None
+        )
+
+    seen_guids: set[str] = set()
+    seen_titles: set[str] = set()
+    ad_hoc_media_type = _media_type_for(kind, season, episode)
+    season_scope = scope == "season" and season is not None
+
+    for item in raw_results:
+        title = str(item.get("title") or "")
+        if not title:
+            continue
+        guid_or_link = str(item.get("guid") or item.get("link") or "")
+        norm_title = title.strip().lower()
+        if (guid_or_link and guid_or_link in seen_guids) or norm_title in seen_titles:
+            continue
+        if guid_or_link:
+            seen_guids.add(guid_or_link)
+        seen_titles.add(norm_title)
+
+        if (
+            (guid_or_link and guid_or_link in blacklisted_guids)
+            or title in blacklisted_titles
+            or norm_title in blacklisted_titles
+        ):
+            continue
+
+        parsed = parse_release_name(title)
+
+        # Layer 1: Indexer metadata filtering (drop and globally blacklist fake releases)
+        is_sp = season is not None and episode is None and parsed.episode is None
+        is_fake, fake_reason = is_indexer_metadata_fake(
+            raw_item=item,
+            parsed_resolution=parsed.resolution,
+            media_type=ad_hoc_media_type or "movie",
+            is_season_pack=is_sp,
+        )
+        if is_fake:
+            logger.warning(
+                "Rejected Layer 1 fake release in manual search '%s': %s",
+                title,
+                fake_reason,
+            )
+            if guid_or_link:
+                blacklisted_guids.add(guid_or_link)
+            blacklisted_titles.add(title)
+            blacklisted_titles.add(norm_title)
+            async with async_session_factory() as bl_session:
+                new_bl = BlacklistedRelease(
+                    media_item_id=None,
+                    nzb_guid=guid_or_link or None,
+                    nzb_title=title,
+                    reason=f"Layer 1 Fake: {fake_reason}",
+                )
+                bl_session.add(new_bl)
+                await bl_session.commit()
+            continue
+
+        if not is_match(filters.resolution, parsed.resolution, title):
+            continue
+        if not is_match(filters.source, parsed.source, title):
+            continue
+        if not is_match(filters.hdr, parsed.hdr, title):
+            continue
+        if not is_match(filters.video_codec, parsed.video_codec, title):
+            continue
+        if not is_match(filters.audio_channels, parsed.audio_channels, title):
+            continue
+        if not check_audio_tier(filters.audio_tier, parsed.audio_codec, title):
+            continue
+
+        size_bytes = int(item.get("size") or item.get("size_bytes") or 0)
+        # Season scope keeps single episodes: score them against their own episode
+        # number so season isolation still applies but they are not rejected as
+        # "not a season pack".
+        ep_int = (
+            parsed.episode if season_scope and parsed.episode is not None else episode
+        )
+        sr = score_release(
+            parsed,
+            size_bytes=size_bytes,
+            age_days=0,
+            expected_season=season,
+            expected_episode=ep_int,
+            primary_language=prim_lang,
+            fallback_language=fall_lang,
+            api_language=item.get("api_language"),
+            media_type=ad_hoc_media_type,
+        )
+
+        if sr.is_rejected:
+            if sr.reject_reason and "Language mismatch" in sr.reject_reason:
+                sr_mismatch = score_release(
+                    parsed,
+                    size_bytes=size_bytes,
+                    age_days=0,
+                    expected_season=season,
+                    expected_episode=ep_int,
+                    primary_language=None,
+                    fallback_language=None,
+                    api_language=item.get("api_language"),
+                    media_type=ad_hoc_media_type,
+                )
+                item["score"] = sr_mismatch.score
+                item["parsed"] = parsed
+                item["is_mismatch"] = True
+                item["reject_reason"] = sr.reject_reason
+                item["feature_pills"] = build_release_feature_pills(
+                    parsed=parsed,
+                    score=sr_mismatch.score,
+                    size_bytes=size_bytes,
+                    is_fallback=False,
+                    is_mismatch=True,
+                    matched_language=sr_mismatch.matched_language,
+                    api_language=item.get("api_language"),
+                    bitrate_mbps=sr_mismatch.bitrate_mbps,
+                    normalized_bitrate_mbps=sr_mismatch.normalized_bitrate_mbps,
+                    media_type=ad_hoc_media_type,
+                )
+                mismatched_results.append(item)
+            continue
+
+        item["score"] = sr.score
+        item["parsed"] = parsed
+        item["is_primary"] = sr.is_primary
+        item["is_fallback"] = sr.is_fallback
+        item["feature_pills"] = build_release_feature_pills(
+            parsed=parsed,
+            score=sr.score,
+            size_bytes=size_bytes,
+            is_fallback=bool(sr.is_fallback),
+            is_mismatch=False,
+            matched_language=sr.matched_language,
+            api_language=item.get("api_language"),
+            bitrate_mbps=sr.bitrate_mbps,
+            normalized_bitrate_mbps=sr.normalized_bitrate_mbps,
+            media_type=ad_hoc_media_type,
+        )
+        if sr.is_fallback:
+            fallback_results.append(item)
+        else:
+            primary_results.append(item)
+
+    for bucket in (primary_results, fallback_results, mismatched_results):
+        bucket.sort(key=lambda x: x["score"], reverse=True)
+
+    return AdHocSearchResult(
+        primary_results[:limit],
+        fallback_results[:limit],
+        mismatched_results[:limit],
+        None,
+    )
