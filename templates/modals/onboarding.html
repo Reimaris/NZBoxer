@@ -44,8 +44,7 @@
          }
      }">
     <div class="nzb-modal-dialog nzb-modal-dialog-lg bg-[#1e1e24] border border-[#3f3f46] rounded-xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden text-[#d1d5db]"
-         style="width: 100%; max-width: 48rem; max-height: 90vh; display: flex; flex-direction: column; overflow: hidden; background-color: #1e1e24; border: 1px solid #3f3f46; border-radius: 0.75rem;"
-         @click.away="dismiss()">
+         style="width: 100%; max-width: 48rem; max-height: 90vh; display: flex; flex-direction: column; overflow: hidden; background-color: #1e1e24; border: 1px solid #3f3f46; border-radius: 0.75rem;">
 
         <div class="px-6 py-4 bg-[#2a2a32] border-b border-[#3f3f46] flex items-center justify-between">
             <div>
@@ -163,8 +162,7 @@
 
         <div class="px-6 py-4 bg-[#2a2a32] border-t border-[#3f3f46] flex flex-col sm:flex-row gap-2 sm:items-center">
             <div class="flex gap-3 sm:mr-auto text-xs">
-                <button type="button" @click="dismiss()" class="text-[#a1a1aa] hover:text-white underline-offset-2 hover:underline">Skip for now</button>
-                <button type="button" hx-post="/api/onboarding/complete" hx-target="#modal-container" hx-swap="innerHTML"
+                <button type="button" x-show="step < 3" hx-post="/api/onboarding/complete" hx-target="#modal-container" hx-swap="innerHTML"
                         class="text-[#a1a1aa] hover:text-white underline-offset-2 hover:underline">Skip Setup</button>
             </div>
             <button type="button" x-show="step > 1" @click="step = step - 1; error = ''"
@@ -173,10 +171,6 @@
                     class="w-full sm:w-auto bg-[#d40060] hover:bg-[#a3004a] text-white px-4 py-2 rounded-lg text-xs font-bold transition-all shadow-lg shadow-[#d40060]/20 disabled:opacity-50">Save &amp; Next</button>
             <button type="button" x-show="step === 2" x-cloak @click="saveStep2()" :disabled="saving"
                     class="w-full sm:w-auto bg-[#d40060] hover:bg-[#a3004a] text-white px-4 py-2 rounded-lg text-xs font-bold transition-all shadow-lg shadow-[#d40060]/20 disabled:opacity-50">Save &amp; Next</button>
-            <button type="button" x-show="step < 3" @click="step = step + 1; error = ''"
-                    class="w-full sm:w-auto bg-[#2a2a32] hover:bg-[#3f3f46] border border-[#3f3f46] text-white px-4 py-2 rounded-lg text-xs font-bold transition-colors">Skip this Step</button>
-            <button type="button" x-show="step === 2" x-cloak hx-post="/api/onboarding/complete" hx-target="#modal-container" hx-swap="innerHTML"
-                    class="w-full sm:w-auto bg-[#2a2a32] hover:bg-[#3f3f46] border border-[#3f3f46] text-white px-4 py-2 rounded-lg text-xs font-bold transition-colors">Finish Later</button>
             <button type="button" x-show="step === 3" x-cloak hx-post="/api/onboarding/complete" hx-target="#modal-container" hx-swap="innerHTML"
                     class="w-full sm:w-auto bg-[#d40060] hover:bg-[#a3004a] text-white px-4 py-2 rounded-lg text-xs font-bold transition-all shadow-lg shadow-[#d40060]/20">Finish Setup</button>
         </div>
