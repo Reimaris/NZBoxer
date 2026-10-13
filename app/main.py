@@ -725,6 +725,172 @@ async def manual_push_adhoc(
     return _status_span(outcome.message, outcome.ok, outcome.status_code)
 
 
+@app.post("/api/search/manual/auto-push", response_class=HTMLResponse)
+async def manual_auto_push(
+    scope: str = Form(...),
+    kind: str = Form(""),
+    title: str = Form(""),
+    alt_titles: str = Form(""),
+    year: str = Form(""),
+    imdb_id: str = Form(""),
+    tmdb_id: str = Form(""),
+    tvdb_id: str = Form(""),
+    season: str = Form(""),
+    episode: str = Form(""),
+    poster_url: str = Form(""),
+    language: str = Form("any"),
+    primary_language: str = Form("any"),
+    fallback_language: str = Form("none"),
+    resolution: str = Form("any"),
+    source: str = Form("any"),
+    hdr: str = Form("any"),
+    video_codec: str = Form("any"),
+    audio_tier: str = Form("any"),
+    audio_channels: str = Form("any"),
+    limit: int = Form(10),
+):
+    """Search one scope and push the best primary (else fallback) release."""
+    from app.core.adhoc_search import (
+        AdHocFilters,
+        push_adhoc_release,
+        search_and_score_releases,
+    )
+
+    title = title.strip()
+    season_n, episode_n = _opt_int(season), _opt_int(episode)
+    if scope not in ("item", "season", "episode") or not title:
+        return _status_span("Invalid search scope or missing title.", False)
+    if scope != "item" and season_n is None:
+        return _status_span("A season number is required.", False)
+    if scope == "episode" and episode_n is None:
+        return _status_span("An episode number is required.", False)
+
+    titles = list(
+        dict.fromkeys(
+            [title, *(t.strip() for t in alt_titles.split("\n") if t.strip())]
+        )
+    )
+    result = await search_and_score_releases(
+        kind=kind,
+        scope=scope,
+        titles=titles,
+        year=_opt_int(year),
+        imdb_id=imdb_id or None,
+        tmdb_id=_opt_int(tmdb_id),
+        tvdb_id=_opt_int(tvdb_id),
+        season=season_n if scope != "item" else None,
+        episode=episode_n if scope == "episode" else None,
+        filters=AdHocFilters(
+            primary_language=primary_language,
+            fallback_language=fallback_language,
+            language=language,
+            resolution=resolution,
+            source=source,
+            hdr=hdr,
+            video_codec=video_codec,
+            audio_tier=audio_tier,
+            audio_channels=audio_channels,
+        ),
+        limit=limit,
+    )
+    if result.error_message:
+        return _status_span(result.error_message, False)
+    candidates = result.primary_results or result.fallback_results
+    if not candidates:
+        return _status_span("No suitable release found.", False)
+    best = candidates[0]
+
+    async with async_session_factory() as session:
+        outcome = await push_adhoc_release(
+            session,
+            release_link=str(best.get("link") or best.get("guid") or ""),
+            nzb_title=best["title"],
+            nzb_guid=best.get("guid") or None,
+            score=best.get("score"),
+            size_bytes=int(best.get("size") or 0),
+            is_fallback=bool(best.get("is_fallback")),
+            matched_language=best.get("matched_language"),
+            media_title=title,
+            media_year=_opt_int(year),
+            media_kind=kind or None,
+            poster_url=poster_url or None,
+            tmdb_id=_opt_int(tmdb_id),
+            imdb_id=imdb_id or None,
+            season=season_n if scope != "item" else None,
+            episode=episode_n if scope == "episode" else None,
+        )
+    if not outcome.ok:
+        return _status_span(outcome.message, False, outcome.status_code)
+    return _status_span(f"Pushed best: {best['title']}", True)
+
+
+@app.post("/api/watchlist/promote", response_class=HTMLResponse)
+async def promote_to_watchlist(
+    kind: str = Form(...),
+    title: str = Form(...),
+    year: str = Form(""),
+    tmdb_id: str = Form(""),
+    imdb_id: str = Form(""),
+    anilist_id: str = Form(""),
+    poster_url: str = Form(""),
+):
+    """Create a permanent watchlist MediaItem from an ad-hoc hit or history snapshot."""
+    from sqlalchemy import or_, select
+
+    from app.db.models import MediaItem, MediaStatus, MediaType
+    from app.services import provider_service
+
+    if kind not in ("movie", "series", "anime", "anime-movie"):
+        return _status_span("Invalid media kind.", False, 400)
+    tmdb_n, anilist_n = _opt_int(tmdb_id), _opt_int(anilist_id)
+    imdb = imdb_id.strip() or None
+
+    async with async_session_factory() as session:
+        providers = await provider_service.get_providers_by_category(
+            session, "watchlist"
+        )
+        if not providers:
+            return _status_span("No watchlist provider configured.", False, 400)
+
+        conds = []
+        if tmdb_n is not None:
+            conds.append(MediaItem.tmdb_id == tmdb_n)
+        if anilist_n is not None:
+            conds.append(MediaItem.anilist_id == anilist_n)
+        if imdb:
+            conds.append(MediaItem.imdb_id == imdb)
+        if conds:
+            existing = (
+                await session.execute(select(MediaItem.id).where(or_(*conds)).limit(1))
+            ).first()
+            if existing:
+                return _status_span("Already in watchlist", True)
+
+        media_type = {
+            "movie": MediaType.MOVIE,
+            "anime-movie": MediaType.MOVIE,
+            "series": MediaType.SHOW,
+            "anime": MediaType.ANIME,
+        }[kind]
+        session.add(
+            MediaItem(
+                provider_id=providers[0].id,
+                simkl_id=0,
+                title=title.strip(),
+                year=_opt_int(year),
+                media_type=media_type,
+                is_anime_movie=(kind == "anime-movie"),
+                status=MediaStatus.PENDING,
+                tmdb_id=tmdb_n,
+                imdb_id=imdb,
+                anilist_id=anilist_n,
+                poster_url=poster_url or None,
+            )
+        )
+        await session.commit()
+    return _status_span("Added to watchlist", True)
+
+
 @app.post("/api/items/{item_id}/change-type")
 async def change_type_endpoint(
     request: Request,
