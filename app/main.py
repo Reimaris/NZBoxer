@@ -16,7 +16,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import BackgroundTasks, FastAPI, Form, Request, Response
@@ -1935,6 +1935,33 @@ async def system_check_modal(request: Request):
     """Render the system check modal."""
     return templates.TemplateResponse(
         request=request, name="modals/system_check.html", context={}
+    )
+
+
+@app.get("/feedback/modal", response_class=HTMLResponse)
+async def feedback_modal(
+    request: Request, type: Literal["bug", "feature"] = "bug"
+) -> Response:
+    """Render the bug report / feature request modal with privacy-safe diagnostics."""
+    from app.core.diagnostics import (
+        GITHUB_NEW_ISSUE_URL,
+        build_bug_markdown,
+        build_feature_markdown,
+        collect_feedback_diagnostics,
+    )
+
+    async with async_session_factory() as session:
+        diag = await collect_feedback_diagnostics(session)
+    return templates.TemplateResponse(
+        request=request,
+        name="modals/feedback_modal.html",
+        context={
+            "initial_tab": type,
+            "diagnostics": diag,
+            "bug_markdown": build_bug_markdown(diag),
+            "feature_markdown": build_feature_markdown(diag),
+            "github_issues_url": GITHUB_NEW_ISSUE_URL,
+        },
     )
 
 

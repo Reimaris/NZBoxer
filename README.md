@@ -139,6 +139,7 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000
 - **Database:** SQLite in WAL mode (stored persistently in `./config/nzboxer.db`)
 - **Release Verification & Scoring:** GuessIt + custom 3-layer fake detection pipeline, archive unpack grace monitor, and weighted release scoring engine
 - **Frontend:** Jinja2, HTMX, Alpine.js, TailwindCSS (mobile-optimized card and deck layouts)
+- **Feedback Helper:** *Report a Bug* / *Request a Feature* buttons on the Settings page open a pre-filled GitHub issue template with privacy-safe diagnostics (version, Python, OS, deployment, active provider types — no keys, URLs or names). Copy it and paste it into a new issue; NZBoxer never contacts GitHub itself.
 
 ---
 
