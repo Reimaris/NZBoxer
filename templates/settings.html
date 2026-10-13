@@ -676,6 +676,14 @@
                         <svg class="w-4 h-4 shrink-0 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
                         Run Health Check
                     </button>
+                    <button type="button"
+                            hx-get="/onboarding/modal"
+                            hx-target="#modal-container"
+                            hx-swap="innerHTML"
+                            class="bg-[#1e1e24] hover:bg-[#2a2a32] border border-[#3f3f46] text-white px-4 py-2 rounded-lg text-xs font-bold transition-colors flex items-center gap-2">
+                        <svg class="w-4 h-4 shrink-0 text-[#d40060]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                        Launch Setup Wizard
+                    </button>
                 </div>
             </div>
         </div>

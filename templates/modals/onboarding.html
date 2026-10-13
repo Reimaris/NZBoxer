@@ -145,9 +145,19 @@
                 </form>
             </div>
             <div x-show="step === 3" x-cloak id="onboarding-step-3" class="space-y-4">
-                <!-- Step 3: Verification & First Sync (ticket 07) -->
-                <div id="onboarding-check-results"></div>
-                <div id="onboarding-sync-result"></div>
+                <p class="text-xs text-[#a1a1aa]">Your settings are saved. Verify the connections and run a first watchlist sync, or finish and do it later — neither is required.</p>
+                <div class="bg-[#111115] border border-[#3f3f46] rounded-lg p-4 space-y-3">
+                    <h4 class="text-sm font-bold text-white">Diagnostics</h4>
+                    <button type="button" hx-get="/system/check/run" hx-target="#onboarding-check-results" hx-swap="innerHTML" hx-indicator="#onboarding-check-indicator" class="bg-[#2a2a32] hover:bg-[#3f3f46] border border-[#3f3f46] text-white px-4 py-2 rounded-lg text-xs font-bold transition-colors">Run Diagnostics</button>
+                    <span id="onboarding-check-indicator" class="htmx-indicator text-xs text-[#a1a1aa]">Running…</span>
+                    <div id="onboarding-check-results"></div>
+                </div>
+                <div class="bg-[#111115] border border-[#3f3f46] rounded-lg p-4 space-y-3">
+                    <h4 class="text-sm font-bold text-white">First Sync</h4>
+                    <button type="button" hx-post="/sync" hx-target="#onboarding-sync-result" hx-swap="innerHTML" hx-indicator="#onboarding-sync-indicator" class="bg-[#2a2a32] hover:bg-[#3f3f46] border border-[#3f3f46] text-white px-4 py-2 rounded-lg text-xs font-bold transition-colors">Sync Watchlist</button>
+                    <span id="onboarding-sync-indicator" class="htmx-indicator text-xs text-[#a1a1aa]">Syncing…</span>
+                    <div id="onboarding-sync-result"></div>
+                </div>
             </div>
         </div>
 
