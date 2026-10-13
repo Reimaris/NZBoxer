@@ -7,7 +7,7 @@
 {% endif %}
 {% for ep in episodes %}
 <div x-data="{ searched: false }" class="border-b border-[#2a2a32] last:border-b-0">
-<div class="px-6 py-2 flex items-center justify-between gap-3">
+<div class="px-6 py-2 flex items-center justify-between gap-3 min-h-[44px]">
     <div class="min-w-0 text-xs">
         <span class="text-[#a1a1aa] mr-2">E{{ '%02d' % ep.episode_number }}</span>
         <span class="text-white">{{ ep.name }}</span>

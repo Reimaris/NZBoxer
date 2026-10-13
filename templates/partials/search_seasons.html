@@ -7,16 +7,17 @@
 {% endif %}
 {% for season in seasons %}
 <div x-data="{ open: false, searched: false }" class="border-b border-[#3f3f46] last:border-b-0">
-    <div class="px-4 py-2.5 flex items-center justify-between gap-3">
+    <div class="px-4 py-2.5 flex items-center justify-between gap-3 cursor-pointer hover:bg-[#2a2a32]"
+         @click="open = !open"
+         hx-get="/api/search/manual/media/{{ hit.provider }}/{{ hit.ext_id }}/seasons/{{ season.season_number }}/episodes?kind={{ hit.kind }}&{{ hit | hit_qs }}"
+         hx-trigger="click once" hx-target="#episodes-{{ hit.provider }}-{{ hit.ext_id }}-s{{ season.season_number }}" hx-swap="innerHTML">
         <div class="min-w-0">
             <span class="text-sm text-white font-medium">{{ season.name }}</span>
             <span class="text-xs text-[#a1a1aa] ml-2">{{ season.episode_count }} episode{{ '' if season.episode_count == 1 else 's' }}{% if season.air_year %} · {{ season.air_year }}{% endif %}</span>
         </div>
         <div class="shrink-0 flex items-center gap-2">
         {{ search_button(hit, 'season', season.season_number) }}
-        <button type="button" @click="open = !open"
-                hx-get="/api/search/manual/media/{{ hit.provider }}/{{ hit.ext_id }}/seasons/{{ season.season_number }}/episodes?kind={{ hit.kind }}&{{ hit | hit_qs }}"
-                hx-trigger="click once" hx-target="#episodes-{{ hit.provider }}-{{ hit.ext_id }}-s{{ season.season_number }}" hx-swap="innerHTML"
+        <button type="button"
                 class="shrink-0 px-3 py-1 bg-[#1e1e24] hover:bg-[#33333b] border border-[#3f3f46] rounded-md text-xs text-white">
             <span x-text="open ? 'Hide episodes' : 'Episodes'">Episodes</span>
         </button>
