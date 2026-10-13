@@ -71,7 +71,7 @@ class DryRunPushRecord:
 
     id: str
     timestamp: datetime
-    media_item_id: int
+    media_item_id: int | None
     media_title: str
     release_title: str
     target_badge: str
@@ -92,7 +92,7 @@ _dry_run_registry: dict[str, DryRunPushRecord] = {}
 
 def register_dry_run_push(
     *,
-    media_item_id: int,
+    media_item_id: int | None,
     media_title: str,
     release_title: str,
     target_badge: str,

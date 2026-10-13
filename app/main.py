@@ -660,6 +660,71 @@ async def manual_push_to_torbox(magnet: str = Form(...)):
         )
 
 
+def _status_span(message: str, ok: bool, status_code: int = 200) -> HTMLResponse:
+    from html import escape
+
+    msg = escape(message)
+    if ok:
+        cls = "text-emerald-400 font-medium text-xs px-2 py-1.5 bg-emerald-500/10 border border-emerald-500/20 rounded-md"
+        return HTMLResponse(
+            f'<span class="{cls}">{msg}</span>', status_code=status_code
+        )
+    cls = "text-red-400 font-medium text-xs px-2 py-1.5 bg-red-500/10 border border-red-500/20 rounded-md"
+    return HTMLResponse(
+        f'<span class="{cls}" title="{msg}">{msg}</span>', status_code=status_code
+    )
+
+
+def _opt_int(value: str) -> int | None:
+    value = (value or "").strip()
+    return int(value) if value.isdigit() else None
+
+
+@app.post("/api/search/manual/push", response_class=HTMLResponse)
+async def manual_push_adhoc(
+    release_link: str = Form(...),
+    nzb_title: str = Form(...),
+    nzb_guid: str = Form(""),
+    score: float = Form(0.0),
+    size_bytes: int = Form(0),
+    is_fallback: bool = Form(False),
+    matched_language: str = Form(""),
+    media_title: str = Form(""),
+    media_year: str = Form(""),
+    media_kind: str = Form(""),
+    poster_url: str = Form(""),
+    tmdb_id: str = Form(""),
+    imdb_id: str = Form(""),
+    anilist_id: str = Form(""),
+    season: str = Form(""),
+    episode: str = Form(""),
+):
+    """Dispatch one ad-hoc release to TorBox and record a detached history row."""
+    from app.core.adhoc_search import push_adhoc_release
+
+    async with async_session_factory() as session:
+        outcome = await push_adhoc_release(
+            session,
+            release_link=release_link.strip(),
+            nzb_title=nzb_title,
+            nzb_guid=nzb_guid or None,
+            score=score,
+            size_bytes=size_bytes,
+            is_fallback=is_fallback,
+            matched_language=matched_language or None,
+            media_title=media_title or None,
+            media_year=_opt_int(media_year),
+            media_kind=media_kind or None,
+            poster_url=poster_url or None,
+            tmdb_id=_opt_int(tmdb_id),
+            imdb_id=imdb_id or None,
+            anilist_id=_opt_int(anilist_id),
+            season=_opt_int(season),
+            episode=_opt_int(episode),
+        )
+    return _status_span(outcome.message, outcome.ok, outcome.status_code)
+
+
 @app.post("/api/items/{item_id}/change-type")
 async def change_type_endpoint(
     request: Request,

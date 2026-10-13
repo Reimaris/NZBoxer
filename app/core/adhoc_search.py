@@ -9,9 +9,17 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Any
+from urllib.parse import urlparse
 
-from app.services import treasure_maps
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.config import settings
+from app.core.fake_detector import extract_nzb_password
+from app.core.parser import parse_release_name
+from app.db.models import DownloadHistory
+from app.services import provider_service, torbox, treasure_maps
 
 logger = logging.getLogger(__name__)
 
@@ -398,3 +406,164 @@ async def search_and_score_releases(
         mismatched_results[:limit],
         None,
     )
+
+
+@dataclass
+class AdHocPushOutcome:
+    ok: bool
+    message: str
+    status_code: int = 200
+    history: DownloadHistory | None = None
+
+
+def _target_label(season: int | None, episode: int | None) -> str | None:
+    """Match push_engine.build_history_target_label for attached rows."""
+    if season is not None and episode is not None:
+        return f"S{season:02d}E{episode:02d}"
+    if episode is not None:
+        return f"E{episode:02d}"
+    if season is not None:
+        return f"Season {season} Pack"
+    return None
+
+
+async def push_adhoc_release(
+    session: AsyncSession,
+    *,
+    release_link: str,
+    nzb_title: str,
+    nzb_guid: str | None = None,
+    score: float | None = None,
+    size_bytes: int | None = None,
+    is_fallback: bool = False,
+    matched_language: str | None = None,
+    media_title: str | None = None,
+    media_year: int | None = None,
+    media_kind: str | None = None,
+    poster_url: str | None = None,
+    tmdb_id: int | None = None,
+    imdb_id: str | None = None,
+    anilist_id: int | None = None,
+    season: int | None = None,
+    episode: int | None = None,
+) -> AdHocPushOutcome:
+    """Send one release to TorBox and record a detached ad-hoc DownloadHistory row.
+
+    No row is written on failure. Links are restricted to ``magnet:`` URIs and
+    http(s) URLs hosted on a configured indexer (SSRF guard).
+    """
+    is_magnet = release_link.startswith("magnet:")
+    indexer = None
+    if not is_magnet:
+        parsed_url = urlparse(release_link)
+        host = (parsed_url.hostname or "").lower()
+        if parsed_url.scheme not in ("http", "https") or not host:
+            return AdHocPushOutcome(False, "Invalid release link.", 400)
+        for candidate in await provider_service.get_active_indexers(session):
+            if urlparse(candidate.api_url or "").hostname == host:
+                indexer = candidate
+                break
+        if indexer is None:
+            return AdHocPushOutcome(
+                False, "Release link host is not a configured indexer.", 400
+            )
+
+    cooldown = torbox.get_cooldown_remaining(is_manual=True)
+    if cooldown > 0:
+        return AdHocPushOutcome(
+            False, f"TorBox rate limit exceeded (cooldown: {int(cooldown)}s)", 400
+        )
+
+    result: dict[str, Any] | None = None
+    if settings.dry_run:
+        result = {}
+    else:
+        try:
+            if is_magnet:
+                result = await torbox.send_magnet_link(release_link, is_manual=True)
+            else:
+                nzb_bytes, filename = await treasure_maps.fetch_nzb_bytes(
+                    release_link,
+                    api_url=indexer.api_url if indexer else None,
+                    api_key=indexer.api_key if indexer else None,
+                    session=session,
+                )
+                result = await torbox.send_nzb_file(
+                    nzb_bytes,
+                    filename=filename,
+                    session=session,
+                    is_manual=True,
+                    password=extract_nzb_password(nzb_bytes),
+                )
+        except treasure_maps.IndexerError as exc:
+            return AdHocPushOutcome(False, f"NZB Download Error: {exc}", 400)
+        except (torbox.DownloaderNetworkError, torbox.TorBoxError) as exc:
+            return AdHocPushOutcome(False, str(exc), 400)
+        if not result or not (result.get("hash") or result.get("id")):
+            err = (result or {}).get("error") or "Failed to send"
+            return AdHocPushOutcome(False, str(err), 400)
+
+    parsed = parse_release_name(nzb_title)
+    now_utc = datetime.now(timezone.utc)
+    result = result or {}
+    history = DownloadHistory(
+        media_item_id=None,
+        season_id=None,
+        episode_id=None,
+        is_ad_hoc=True,
+        push_mode="manual",
+        media_title=media_title,
+        media_year=media_year,
+        media_type_label=media_kind,
+        target_label=_target_label(season, episode),
+        poster_url=poster_url,
+        tmdb_id=tmdb_id,
+        imdb_id=imdb_id,
+        anilist_id=anilist_id,
+        nzb_title=nzb_title,
+        nzb_guid=nzb_guid,
+        score=score,
+        size_bytes=size_bytes,
+        resolution=parsed.resolution if parsed else None,
+        video_codec=parsed.video_codec if parsed else None,
+        audio_codec=parsed.audio_codec if parsed else None,
+        source=parsed.source if parsed else None,
+        release_group=parsed.release_group if parsed else None,
+        torbox_hash=str(result["hash"]) if result.get("hash") else None,
+        torbox_id=str(result["id"]) if result.get("id") else None,
+        torbox_sent_at=now_utc,
+        is_fallback=is_fallback,
+        grabbed_language=matched_language or None,
+        notification_sent=False,
+    )
+    if settings.dry_run:
+        from app.core.transfer_poller import register_dry_run_push
+
+        register_dry_run_push(
+            media_item_id=None,
+            media_title=media_title or nzb_title,
+            release_title=nzb_title,
+            target_badge=history.target_label or "Movie",
+            push_mode="manual",
+            score=score,
+            size_bytes=size_bytes,
+            resolution=history.resolution,
+            source=history.source,
+            language=history.grabbed_language,
+        )
+        history.status_detail = "simulated"
+        history.is_dismissed = True
+        history.is_dry_run = True
+        history.progress_pct = 100.0
+        history.completed_at = now_utc
+    else:
+        history.status_detail = "downloading"
+        history.is_dry_run = False
+    session.add(history)
+    await session.commit()
+
+    if not settings.dry_run:
+        from app.core.transfer_poller import wake_transfer_poller
+
+        wake_transfer_poller()
+    return AdHocPushOutcome(True, "Sent to TorBox!", 200, history)
