@@ -1503,6 +1503,8 @@ async def save_provider(
             provider_type.lower(), ProviderCategory.WATCHLIST.value
         )
 
+    from app.core.automation import normalize_sync_interval_minutes
+
     async with async_session_factory() as session:
         old_client_id = ""
         old_access_token = ""
@@ -1563,7 +1565,9 @@ async def save_provider(
                         old_client_id or client_id.strip(), tok_to_revoke
                     )
 
-            existing_cfg["sync_interval_minutes"] = max(0, int(sync_interval_minutes))
+            existing_cfg["sync_interval_minutes"] = normalize_sync_interval_minutes(
+                sync_interval_minutes
+            )
             existing_cfg["sync_movies"] = (
                 bool(sync_movies)
                 if sync_movies is not None

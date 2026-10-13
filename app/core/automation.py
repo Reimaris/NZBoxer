@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Sequence
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -17,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.logging_config import log_process_end, log_process_start
+from app.core.phase_stats import SimklPeriodicSyncStatus
 from app.core.time_utils import format_local_datetime
 from app.db.database import async_session_factory
 from app.db.models import (
@@ -238,6 +240,11 @@ def _backfill_item_release_date_from_seasons(
         )
 
 
+SIMKL_SYNC_INTERVAL_DEFAULT = 60
+SIMKL_SYNC_INTERVAL_MIN = 5
+SIMKL_SYNC_INTERVAL_MAX = 1440
+
+
 def _parse_iso_utc(ts_str: str | None) -> datetime | None:
     """Parse an ISO-8601 timestamp string into a timezone-aware UTC datetime."""
     if not ts_str or not isinstance(ts_str, str):
@@ -279,39 +286,71 @@ def is_simkl_sync_due_on_load(
     return (now - last_synced) > timedelta(minutes=cooldown_minutes)
 
 
+def normalize_sync_interval_minutes(value: object) -> int:
+    """Normalize a periodic-sync interval: 0 = disabled, else clamped to 5..1440 (default 60)."""
+    if value is None or isinstance(value, bool):
+        return SIMKL_SYNC_INTERVAL_DEFAULT
+    try:
+        n = int(value)  # type: ignore[call-overload]
+    except (ValueError, TypeError):
+        return SIMKL_SYNC_INTERVAL_DEFAULT
+    if n <= 0:
+        return 0
+    return max(SIMKL_SYNC_INTERVAL_MIN, min(SIMKL_SYNC_INTERVAL_MAX, n))
+
+
+def evaluate_periodic_simkl_sync(
+    providers: Sequence[Provider], now: datetime
+) -> SimklPeriodicSyncStatus:
+    """Evaluate whether periodic Simkl sync is due across eligible providers (UTC only)."""
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
+
+    eligible = []
+    for provider in providers:
+        if getattr(provider, "type", None) != "simkl":
+            continue
+        if not getattr(provider, "is_active", True):
+            continue
+        cfg = provider.simkl_config
+        if not (provider.client_id or cfg.get("client_id")) or not (
+            provider.access_token or cfg.get("access_token") or cfg.get("refresh_token")
+        ):
+            continue
+        eligible.append(provider)
+
+    if not eligible:
+        return SimklPeriodicSyncStatus("no_provider", 0, None, 0)
+
+    best: SimklPeriodicSyncStatus | None = None
+    for provider in eligible:
+        cfg = provider.simkl_config
+        interval = normalize_sync_interval_minutes(cfg.get("sync_interval_minutes"))
+        if interval == 0:
+            continue
+        last = _parse_iso_utc(cfg.get("last_synced_at"))
+        if last is None:
+            return SimklPeriodicSyncStatus("due", interval, None, 0)
+        elapsed = int((now - last).total_seconds() // 60)
+        if elapsed >= interval:
+            return SimklPeriodicSyncStatus("due", interval, elapsed, 0)
+        status = SimklPeriodicSyncStatus(
+            "not_due", interval, elapsed, interval - elapsed
+        )
+        if best is None or status.remaining_minutes < best.remaining_minutes:
+            best = status
+
+    return best or SimklPeriodicSyncStatus("disabled", 0, None, 0)
+
+
 def is_simkl_periodic_sync_due(
     provider: Provider,
     now: datetime | None = None,
 ) -> bool:
-    """Return True if a Simkl provider has periodic sync enabled (sync_interval_minutes > 0) and interval has elapsed."""
-    if getattr(provider, "type", None) != "simkl":
-        return False
-    if not getattr(provider, "is_active", True):
-        return False
-    cfg = provider.simkl_config
-    if not (provider.client_id or cfg.get("client_id")) or not (
-        provider.access_token or cfg.get("access_token") or cfg.get("refresh_token")
-    ):
-        return False
-
-    try:
-        interval = int(cfg.get("sync_interval_minutes", 60) or 0)
-    except (ValueError, TypeError):
-        interval = 60
-
-    if interval <= 0:
-        return False
-
-    last_synced = _parse_iso_utc(cfg.get("last_synced_at"))
-    if last_synced is None:
-        return True
-
+    """Return True if a Simkl provider has periodic sync enabled and its interval has elapsed."""
     if now is None:
         now = datetime.now(timezone.utc)
-    elif now.tzinfo is None:
-        now = now.replace(tzinfo=timezone.utc)
-
-    return (now - last_synced) >= timedelta(minutes=interval)
+    return evaluate_periodic_simkl_sync([provider], now).state == "due"
 
 
 async def should_trigger_dashboard_simkl_sync(
@@ -337,7 +376,12 @@ async def run_periodic_simkl_sync_if_due(now: datetime | None = None) -> bool:
     async with async_session_factory() as session:
         stmt = select(Provider).where(Provider.type == "simkl")
         providers = (await session.execute(stmt)).scalars().all()
-        due = any(is_simkl_periodic_sync_due(p, now=now) for p in providers)
+        due = (
+            evaluate_periodic_simkl_sync(
+                providers, now or datetime.now(timezone.utc)
+            ).state
+            == "due"
+        )
     if due:
         await sync_all_providers()
         return True
