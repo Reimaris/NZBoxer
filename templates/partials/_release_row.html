@@ -1,5 +1,5 @@
 {# Shared release row macro (12-slot pills, bitrate bracket, score badge) and Tier 3 search trigger. #}
-{% macro render_card(result, tier="primary") %}
+{% macro render_card(result, tier="primary", push_context=none) %}
 {% set pills = result.feature_pills if result.feature_pills is defined else [] %}
 
 <div class="bg-[#2a2a32] border {% if tier == 'fallback' %}border-amber-500/30 hover:border-amber-500/60{% elif tier == 'mismatch' %}border-red-500/30 hover:border-red-500/60{% else %}border-[#3f3f46] hover:border-[#52525b]{% endif %} rounded-xl shadow-lg p-3.5 flex items-center justify-between gap-4 transition-all">
@@ -24,14 +24,22 @@
 
     <!-- Actions -->
     <div class="shrink-0 pl-2 border-l border-[#3f3f46] flex items-center gap-2">
-        <button 
-            hx-post="/api/torbox/add" 
-            hx-vals='{"magnet": "{{ result.link }}"}' 
+        {% set push_vals = {} %}
+        {% set _ = push_vals.update(push_context or {}) %}
+        {% set _ = push_vals.update({
+            "release_link": result.link, "nzb_title": result.title,
+            "nzb_guid": result.guid or "", "score": result.score or 0,
+            "size_bytes": result.size or 0,
+            "is_fallback": "true" if tier == "fallback" else "false",
+            "matched_language": result.matched_language or "",
+        }) %}
+        <button type="button"
+            hx-post="/api/search/manual/push"
+            hx-vals='{{ push_vals | tojson }}'
             hx-swap="outerHTML"
-            onclick="this.innerHTML='<svg class=\'w-4 h-4 animate-spin shrink-0\' fill=\'none\' stroke=\'currentColor\' viewBox=\'0 0 24 24\'><circle class=\'opacity-25\' cx=\'12\' cy=\'12\' r=\'10\' stroke=\'currentColor\' stroke-width=\'4\'></circle><path class=\'opacity-75\' fill=\'currentColor\' d=\'M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z\'></path></svg> Sending...'; this.classList.add('opacity-75', 'pointer-events-none', 'cursor-wait');"
             class="flex items-center justify-center gap-1.5 px-3 py-2 bg-[#d40060] hover:bg-[#a3004a] text-white rounded-md transition-colors text-xs font-medium shadow-md shadow-pink-900/20 min-w-[130px]">
             <svg width="16" height="16" class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10"></path></svg>
-            <span>Push to TorBox</span>
+            <span>Grab / Push</span>
         </button>
         <button type="button"
             hx-post="/api/blacklist"

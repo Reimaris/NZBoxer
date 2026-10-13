@@ -6,9 +6,11 @@
             {{ hit.title }}{% if scope == 'season' and season_number is not none %} · Season {{ season_number }}{% elif scope == 'episode' and season_number is not none and episode_number is not none %} · S{{ '%02d' % season_number }}E{{ '%02d' % episode_number }}{% endif %}
         </span>
         <div class="flex items-center gap-2">
-            {# Auto-Push Best is wired in ticket 11 #}
-            <button type="button" disabled data-auto-push-placeholder
-                    class="px-2.5 py-1 bg-[#2a2a32] text-[#71717a] border border-[#3f3f46] rounded-md text-xs cursor-not-allowed">Auto-Push Best</button>
+            <span id="{{ drawer_id }}-auto-status"></span>
+            <button type="button"
+                    hx-post="/api/search/manual/auto-push" hx-target="#{{ drawer_id }}-auto-status" hx-swap="innerHTML"
+                    hx-include="#manual-search-form" hx-vals='{{ auto_push_vals | tojson }}'
+                    class="px-2.5 py-1 bg-[#d40060] hover:bg-[#a3004a] text-white rounded-md text-xs font-medium">Auto-Push Best</button>
             <button type="button" @click="document.getElementById('{{ drawer_id }}').innerHTML = ''; searched = false"
                     class="px-2.5 py-1 bg-[#2a2a32] hover:bg-[#33333b] text-white border border-[#3f3f46] rounded-md text-xs">Close</button>
         </div>
@@ -25,13 +27,13 @@
     {% if primary_results %}
     <div>
         <div class="mb-2 text-emerald-400 font-bold text-xs tracking-wide uppercase">Primary Language Releases ({{ primary_results|length }})</div>
-        <div class="flex flex-col gap-2">{% for result in primary_results %}{{ render_card(result, 'primary') }}{% endfor %}</div>
+        <div class="flex flex-col gap-2">{% for result in primary_results %}{{ render_card(result, 'primary', push_context) }}{% endfor %}</div>
     </div>
     {% endif %}
     {% if fallback_results %}
     <div>
         <div class="mb-2 text-amber-400 font-bold text-xs tracking-wide uppercase">Fallback Language Releases ({{ fallback_results|length }})</div>
-        <div class="flex flex-col gap-2">{% for result in fallback_results %}{{ render_card(result, 'fallback') }}{% endfor %}</div>
+        <div class="flex flex-col gap-2">{% for result in fallback_results %}{{ render_card(result, 'fallback', push_context) }}{% endfor %}</div>
     </div>
     {% endif %}
     {% if mismatched_results %}
@@ -40,7 +42,7 @@
             <span>Mismatched Language Releases ({{ mismatched_results|length }})</span>
             <span x-text="open ? 'Hide ▲' : 'Show ▼'" class="font-mono"></span>
         </button>
-        <div x-show="open" style="display: none;" class="flex flex-col gap-2 mt-3">{% for result in mismatched_results %}{{ render_card(result, 'mismatch') }}{% endfor %}</div>
+        <div x-show="open" style="display: none;" class="flex flex-col gap-2 mt-3">{% for result in mismatched_results %}{{ render_card(result, 'mismatch', push_context) }}{% endfor %}</div>
     </div>
     {% endif %}
     {% endif %}

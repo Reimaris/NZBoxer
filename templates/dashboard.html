@@ -1116,8 +1116,15 @@ document.addEventListener('alpine:init', () => {
                                         {% else %}
                                         <span class="px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded bg-blue-500/10 text-blue-400 border border-blue-500/20">MOVIE</span>
                                         {% endif %}
-                                        {% if h.is_detached %}
+                                        {% if h.is_detached and h.is_ad_hoc %}
+                                        <span class="px-1.5 py-0.5 text-[10px] font-semibold rounded bg-indigo-500/15 text-indigo-300 border border-indigo-500/30">Ad-Hoc</span>
+                                        {% elif h.is_detached %}
                                         <span class="px-1.5 py-0.5 text-[10px] font-semibold rounded bg-zinc-500/15 text-zinc-400 border border-zinc-500/30">Pruned from Simkl</span>
+                                        {% endif %}
+                                        {% if h.is_detached and (h.tmdb_id or h.anilist_id) %}
+                                        <button type="button" hx-post="/api/watchlist/promote" hx-swap="outerHTML"
+                                                hx-vals='{{ {"kind": 'series' if h.category_key == 'show' else h.category_key, "title": h.media_title, "year": h.media_year or "", "tmdb_id": h.tmdb_id or "", "imdb_id": h.imdb_id or "", "anilist_id": h.anilist_id or "", "poster_url": h.poster_url or ""} | tojson }}'
+                                                class="px-1.5 py-0.5 text-[10px] font-semibold rounded bg-[#1e1e24] hover:bg-[#33333b] text-white border border-[#3f3f46]">+ Add to Watchlist</button>
                                         {% endif %}
                                     </div>
                                     {% if h.alt_title and h.alt_title | lower != h.media_title | lower %}

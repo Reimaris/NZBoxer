@@ -43,6 +43,11 @@
             {% if hit.overview %}<p class="text-xs text-[#a1a1aa] mt-1 line-clamp-2">{{ hit.overview }}</p>{% endif %}
         </div>
         <div class="shrink-0 flex items-center gap-2">
+        <span>
+            <button type="button" hx-post="/api/watchlist/promote" hx-swap="outerHTML"
+                    hx-vals='{{ {"kind": hit.kind, "title": hit.title, "year": hit.year or "", "tmdb_id": hit.tmdb_id or "", "imdb_id": hit.imdb_id or "", "anilist_id": hit.anilist_id or "", "poster_url": hit.poster_url or ""} | tojson }}'
+                    class="px-3 py-1.5 bg-[#1e1e24] hover:bg-[#33333b] border border-[#3f3f46] rounded-md text-xs text-white">+ Add to Watchlist</button>
+        </span>
         {{ search_button(hit, 'item') }}
         {% if has_seasons %}
         <button type="button" @click="open = !open"
