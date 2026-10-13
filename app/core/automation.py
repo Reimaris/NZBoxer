@@ -374,6 +374,23 @@ async def run_orchestrator_tick(now: datetime | None = None) -> None:
         except Exception as e:  # noqa: BLE001
             logger.error("Error during scheduled air date enrichment: %s", e)
 
+    # 1b. Purge stale Push History Ledger rows (m51, ADR-125) on every tick
+    try:
+        from app.core.transfer_poller import autoclear_history_ledger
+
+        async with async_session_factory() as session:
+            result = await autoclear_history_ledger(session, now=now)
+        if result["total"] > 0:
+            logger.info(
+                "🧹 [HISTORY] Autoclear purged %d entr%s (pruned=%d, aged=%d)",
+                result["total"],
+                "y" if result["total"] == 1 else "ies",
+                result["pruned_count"],
+                result["aged_count"],
+            )
+    except Exception as e:  # noqa: BLE001
+        logger.error("Error during history autoclear: %s", e)
+
     # 2. Check and run periodic Simkl sync if due
     await run_periodic_simkl_sync_if_due(now)
 

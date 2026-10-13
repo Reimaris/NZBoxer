@@ -361,6 +361,7 @@ async def dashboard(request: Request, background_tasks: BackgroundTasks):
         anime_stats = _build_cat_stats(anime_items)
 
         from app.core.transfer_poller import (
+            autoclear_history_ledger,
             count_downloading_entities,
             get_active_pushes,
             get_push_history_ledger,
@@ -370,6 +371,7 @@ async def dashboard(request: Request, background_tasks: BackgroundTasks):
 
         # Auto-purge expired dry-run history on page load
         await purge_expired_dry_run_history(session)
+        await autoclear_history_ledger(session)
 
         # Card 4: Push History Ledger
         push_history_ledger = await get_push_history_ledger(session)
@@ -3791,9 +3793,13 @@ async def api_trigger_transfer_poller_tick() -> Response:
 @app.get("/api/history")
 async def api_get_push_history(request: Request) -> Response:
     """Return the Push History Ledger (DownloadHistory rows) ordered by most recent push."""
-    from app.core.transfer_poller import get_push_history_ledger
+    from app.core.transfer_poller import (
+        autoclear_history_ledger,
+        get_push_history_ledger,
+    )
 
     async with async_session_factory() as session:
+        await autoclear_history_ledger(session)
         ledger = await get_push_history_ledger(session)
 
     return JSONResponse(
