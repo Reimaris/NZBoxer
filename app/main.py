@@ -2219,6 +2219,130 @@ async def onboarding_modal(request: Request) -> Response:
     )
 
 
+@app.post("/api/onboarding/step1")
+async def onboarding_step1(request: Request) -> Response:
+    """Atomically upsert Simkl/TMDB/TorBox/indexer providers from optional sections."""
+    from sqlalchemy import select
+
+    from app.db.models import Provider, ProviderCategory
+    from app.services import provider_service
+
+    payload = await _parse_request_payload(request)
+
+    def _f(key: str) -> str:
+        return str(payload.get(key) or "").strip()
+
+    simkl_client_id, simkl_username = _f("simkl_client_id"), _f("simkl_username")
+    tmdb_api_key = _f("tmdb_api_key")
+    torbox_api_key, torbox_api_url = _f("torbox_api_key"), _f("torbox_api_url")
+    indexer_name, indexer_url, indexer_key = (
+        _f("indexer_name"),
+        _f("indexer_url"),
+        _f("indexer_api_key"),
+    )
+
+    indexer_provided = bool(indexer_url or indexer_key)
+    if indexer_provided and not (indexer_url and indexer_key):
+        return JSONResponse(
+            {"ok": False, "error": "Indexer requires both URL and API key."},
+            status_code=400,
+        )
+
+    async with async_session_factory() as session:
+
+        async def _first(ptype: str) -> Provider | None:
+            return (
+                (
+                    await session.execute(
+                        select(Provider)
+                        .where(Provider.type == ptype)
+                        .order_by(Provider.id)
+                    )
+                )
+                .scalars()
+                .first()
+            )
+
+        async def _upsert(
+            ptype: str, category: ProviderCategory, default_name: str
+        ) -> Provider:
+            prov = await _first(ptype)
+            if prov is None:
+                prov = Provider(
+                    type=ptype,
+                    category=category.value,
+                    name=default_name,
+                    is_active=True,
+                    priority=1,
+                )
+                session.add(prov)
+            return prov
+
+        providers: dict[str, Provider | None] = {
+            "simkl": await _first("simkl"),
+            "tmdb": await _first("tmdb"),
+            "torbox": await _first("torbox"),
+            "indexer": await _first("treasure_maps"),
+        }
+
+        if simkl_client_id or simkl_username:
+            is_new = providers["simkl"] is None
+            simkl = await _upsert("simkl", ProviderCategory.WATCHLIST, "Simkl")
+            simkl.client_id = simkl_client_id
+            simkl.username = simkl_username
+            try:
+                cfg = json.loads(simkl.config_json or "{}")
+            except ValueError:
+                cfg = {}
+            if not isinstance(cfg, dict):
+                cfg = {}
+            cfg["client_id"] = simkl_client_id
+            if is_new:
+                cfg.update(
+                    sync_movies=True,
+                    sync_series=True,
+                    sync_anime=True,
+                    sync_interval_minutes=0,
+                )
+            simkl.config_json = json.dumps(cfg)
+            providers["simkl"] = simkl
+
+        if tmdb_api_key:
+            tmdb = await _upsert("tmdb", ProviderCategory.METADATA, "TMDB")
+            tmdb.api_key = tmdb_api_key
+            providers["tmdb"] = tmdb
+
+        if torbox_api_key:
+            torbox = await _upsert("torbox", ProviderCategory.DOWNLOADER, "TorBox")
+            torbox.api_key = torbox_api_key
+            torbox.api_url = torbox_api_url or "https://api.torbox.app/v1/api"
+            providers["torbox"] = torbox
+
+        if indexer_provided:
+            indexer = await _upsert(
+                "treasure_maps", ProviderCategory.INDEXER, "Newznab Indexer"
+            )
+            if indexer_name:
+                indexer.name = indexer_name
+            indexer.api_url = indexer_url
+            indexer.api_key = indexer_key
+            providers["indexer"] = indexer
+
+        await session.flush()
+        torbox_prov = providers["torbox"]
+        if torbox_api_key and torbox_prov is not None:
+            # set_active_downloader commits the whole transaction.
+            await provider_service.set_active_downloader(session, torbox_prov.id)
+        else:
+            await session.commit()
+
+        provider_ids = {
+            key: (prov.id if prov is not None else None)
+            for key, prov in providers.items()
+        }
+    return JSONResponse({"ok": True, "provider_ids": provider_ids})
+
+
 @app.post("/api/onboarding/complete")
 async def onboarding_complete() -> Response:
     """Permanently mark first-run onboarding as completed/skipped (idempotent)."""
