@@ -21,6 +21,7 @@ from sqlalchemy.orm import selectinload
 from app.core.logging_config import log_process_end, log_process_start
 from app.core.phase_stats import (
     AirDateRefreshStats,
+    IngestStats,
     SimklPeriodicSyncStatus,
     TbaDiscoveryStats,
 )
@@ -850,77 +851,55 @@ async def sync_all_providers() -> None:
                         # Release any read transaction snapshot before outbound HTTP calls
                         await session.commit()
 
-                        # Phase 1: Fetching watchlists from Simkl
-                        logger.debug(
-                            "[SYNC] [1/7] Fetching watchlists from Simkl (Movies, Series, Anime)..."
+                        fetched: dict[str, list[dict[str, Any]]] = {}
+                        for category, enabled in (
+                            ("movies", sync_movies),
+                            ("shows", sync_series),
+                            ("anime", sync_anime),
+                        ):
+                            fetched[category] = []
+                            if not enabled:
+                                continue
+                            (
+                                fetched[category],
+                                client_id,
+                                access_token,
+                            ) = await _fetch_simkl_category_with_retry(
+                                session,
+                                provider,
+                                category,
+                                client_id,
+                                access_token,
+                            )
+                            active_simkl_ids.update(
+                                _extract_active_simkl_ids(fetched[category])
+                            )
+                        logger.info(
+                            "[SYNC] [1/7] Fetched %d movies, %d shows, %d anime",
+                            len(fetched["movies"]),
+                            len(fetched["shows"]),
+                            len(fetched["anime"]),
                         )
-                        # Phase 2: Ingesting watchlist items into local database
-                        logger.debug(
-                            "[SYNC] [2/7] Ingesting watchlist items into local database..."
+
+                        ingest_stats = IngestStats()
+                        for category, media_type in (
+                            ("movies", MediaType.MOVIE),
+                            ("shows", MediaType.SHOW),
+                            ("anime", MediaType.ANIME),
+                        ):
+                            await _sync_items(
+                                session,
+                                fetched[category],
+                                media_type,
+                                provider.id,
+                                provider_name=provider.name,
+                                stats=ingest_stats,
+                            )
+                        logger.info(
+                            "[SYNC] [2/7] Ingested %d items (%d newly added)",
+                            ingest_stats.ingested,
+                            ingest_stats.added,
                         )
-
-                        if sync_movies:
-                            (
-                                movies,
-                                client_id,
-                                access_token,
-                            ) = await _fetch_simkl_category_with_retry(
-                                session,
-                                provider,
-                                "movies",
-                                client_id,
-                                access_token,
-                            )
-                            active_simkl_ids.update(_extract_active_simkl_ids(movies))
-                            await _sync_items(
-                                session,
-                                movies,
-                                MediaType.MOVIE,
-                                provider.id,
-                                provider_name=provider.name,
-                            )
-
-                        if sync_series:
-                            (
-                                shows,
-                                client_id,
-                                access_token,
-                            ) = await _fetch_simkl_category_with_retry(
-                                session,
-                                provider,
-                                "shows",
-                                client_id,
-                                access_token,
-                            )
-                            active_simkl_ids.update(_extract_active_simkl_ids(shows))
-                            await _sync_items(
-                                session,
-                                shows,
-                                MediaType.SHOW,
-                                provider.id,
-                                provider_name=provider.name,
-                            )
-
-                        if sync_anime:
-                            (
-                                anime,
-                                client_id,
-                                access_token,
-                            ) = await _fetch_simkl_category_with_retry(
-                                session,
-                                provider,
-                                "anime",
-                                client_id,
-                                access_token,
-                            )
-                            active_simkl_ids.update(_extract_active_simkl_ids(anime))
-                            await _sync_items(
-                                session,
-                                anime,
-                                MediaType.ANIME,
-                                provider.id,
-                                provider_name=provider.name,
-                            )
 
                         sequels_consolidated = 0
                         anime_seasons_updated = 0
@@ -1013,6 +992,8 @@ async def _sync_items(
     media_type: MediaType,
     provider_id: int,
     provider_name: str = "Simkl",
+    *,
+    stats: IngestStats | None = None,
 ) -> None:
     from sqlalchemy import and_, or_
 
@@ -1027,6 +1008,8 @@ async def _sync_items(
         category_label,
         provider_name,
     )
+    if stats is not None:
+        stats.ingested += len(simkl_items)
 
     mal_to_anilist: dict[int, int] = {}
     if media_type == MediaType.ANIME and simkl_items:
@@ -1323,6 +1306,8 @@ async def _sync_items(
             )
             item.add_associated_simkl_id(simkl_id)
             session.add(item)
+            if stats is not None:
+                stats.added += 1
             # Commit (not just flush) to get item.id AND release the SQLite write lock
             # before any slow outbound AniList/TMDB HTTP calls that follow.
             await session.commit()
