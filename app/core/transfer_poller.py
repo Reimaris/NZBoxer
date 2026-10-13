@@ -3084,6 +3084,7 @@ async def get_push_history_ledger(session: AsyncSession) -> list[dict[str, Any]]
                 "type_label": type_label,
                 "category_key": category_key,
                 "is_detached": is_detached,
+                "is_ad_hoc": bool(h.is_ad_hoc),
                 "simkl_id": simkl_id,
                 "tmdb_id": tmdb_id,
                 "imdb_id": imdb_id,
@@ -3236,7 +3237,7 @@ async def autoclear_history_ledger(
     for row in rows:
         if row.id in protected_ids or not _is_history_terminal(row.status_detail):
             continue
-        if autoclear_pruned and row.media_item_id is None:
+        if autoclear_pruned and row.media_item_id is None and not row.is_ad_hoc:
             pruned += 1
         elif age_enabled:
             ts = row.torbox_sent_at or row.created_at
