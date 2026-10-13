@@ -19,7 +19,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.logging_config import log_process_end, log_process_start
-from app.core.phase_stats import AirDateRefreshStats, SimklPeriodicSyncStatus
+from app.core.phase_stats import (
+    AirDateRefreshStats,
+    SimklPeriodicSyncStatus,
+    TbaDiscoveryStats,
+)
 from app.core.time_utils import format_local_datetime
 from app.db.database import async_session_factory
 from app.db.models import (
@@ -918,45 +922,59 @@ async def sync_all_providers() -> None:
                                 provider_name=provider.name,
                             )
 
-                        # Phase 3: Reconciling anime franchise hierarchies & batched AniList metadata
-                        logger.debug(
-                            "[SYNC] [3/7] Reconciling anime franchise hierarchies & batched AniList metadata..."
-                        )
+                        sequels_consolidated = 0
+                        anime_seasons_updated = 0
                         if sync_anime:
-                            await consolidate_standalone_anime_sequels(session)
-                            await refresh_due_future_anime_seasons(session)
-
-                        # Phase 4: Enriching broadcast air dates for active shows & anime
-                        logger.debug(
-                            "[SYNC] [4/7] Enriching broadcast air dates for active shows & anime..."
+                            sequels_consolidated = (
+                                await consolidate_standalone_anime_sequels(session)
+                            )
+                            anime_seasons_updated = (
+                                await refresh_due_future_anime_seasons(session)
+                            )
+                        logger.info(
+                            "[SYNC] [3/7] Reconciled anime hierarchies (%d sequels consolidated, %d TBA seasons updated)",
+                            sequels_consolidated,
+                            anime_seasons_updated,
                         )
-                        await enrich_active_shows_episode_air_dates(session)
 
-                        # Phase 5: Rolling over due future episode & season air dates
-                        logger.debug(
-                            "[SYNC] [5/7] Rolling over due future episode & season air dates..."
+                        air_stats = AirDateRefreshStats()
+                        await enrich_active_shows_episode_air_dates(
+                            session, stats=air_stats
                         )
-                        await rollover_due_future_episodes_and_seasons(session)
-
-                        # Phase 6: Discovering TBA TV season boundaries on TMDB
-                        logger.debug(
-                            "[SYNC] [6/7] Discovering TBA TV season boundaries on TMDB..."
+                        logger.info(
+                            "[SYNC] [4/7] Air date refresh: %d episode dates updated across %d titles",
+                            air_stats.episodes_updated,
+                            air_stats.titles_updated,
                         )
-                        await refresh_due_future_tv_seasons(session)
 
-                        # Phase 7: Deduplicating library items & pruning completed/dropped titles
-                        logger.debug(
-                            "[SYNC] [7/7] Deduplicating library items & pruning completed/dropped titles..."
+                        rolled = await rollover_due_future_episodes_and_seasons(session)
+                        logger.info(
+                            "[SYNC] [5/7] Rollover: %d items transitioned to searching",
+                            rolled["episodes_rolled_over"]
+                            + rolled["seasons_rolled_over"],
                         )
-                        await deduplicate_media_items(session)
 
-                        await _prune_completed_or_dropped_simkl_items(
+                        tba_stats = TbaDiscoveryStats()
+                        await refresh_due_future_tv_seasons(session, stats=tba_stats)
+                        logger.info(
+                            "[SYNC] [6/7] TMDB TBA season discovery: %d TV shows evaluated, %d seasons discovered",
+                            tba_stats.shows_evaluated,
+                            tba_stats.seasons_discovered,
+                        )
+
+                        duplicates_merged = await deduplicate_media_items(session)
+                        pruned = await _prune_completed_or_dropped_simkl_items(
                             session,
                             provider.id,
                             active_simkl_ids,
                             sync_movies=sync_movies,
                             sync_series=sync_series,
                             sync_anime=sync_anime,
+                        )
+                        logger.info(
+                            "[SYNC] [7/7] Maintenance: %d duplicates merged, %d completed/dropped titles pruned",
+                            duplicates_merged,
+                            pruned,
                         )
 
                         cfg = provider.simkl_config
@@ -2172,9 +2190,11 @@ async def refresh_due_future_anime_seasons(session: AsyncSession) -> int:
     return refreshed_count
 
 
-async def consolidate_standalone_anime_sequels(session: AsyncSession) -> None:
+async def consolidate_standalone_anime_sequels(session: AsyncSession) -> int:
     """Detects standalone MediaItems that are tracked as child Seasons on parent series, and marks them IGNORED."""
     import re
+
+    consolidated = 0
 
     from sqlalchemy import select
     from sqlalchemy.orm import selectinload
@@ -2332,6 +2352,7 @@ async def consolidate_standalone_anime_sequels(session: AsyncSession) -> None:
                         parent.id,
                     )
                     cand.status = MediaStatus.IGNORED
+                    consolidated += 1
                     for s in cand.seasons:
                         s.status = SeasonStatus.IGNORED
 
@@ -2347,6 +2368,7 @@ async def consolidate_standalone_anime_sequels(session: AsyncSession) -> None:
                         season.title = cand.title
 
     await session.commit()
+    return consolidated
 
 
 async def reset_anime_metadata(session: AsyncSession, item_id: int) -> MediaItem | None:
@@ -3007,13 +3029,6 @@ async def enrich_active_shows_episode_air_dates(
                 item_episodes_updated,
             )
 
-    logger.debug(
-        "%s Air date enrichment complete. %d total episodes updated across %d titles.",
-        log_prefix,
-        updated_episodes_count,
-        titles_updated_count,
-    )
-
     if stats is not None:
         stats.episodes_updated = updated_episodes_count
         stats.titles_updated = titles_updated_count
@@ -3134,6 +3149,8 @@ async def rollover_due_future_episodes_and_seasons(
 async def refresh_due_future_tv_seasons(
     session: AsyncSession,
     now: datetime | None = None,
+    *,
+    stats: TbaDiscoveryStats | None = None,
 ) -> int:
     """Discover newly scheduled air dates and newly added episodes for TBA/0-episode FUTURE TV seasons."""
     from app.core.transfer_poller import (
@@ -3175,6 +3192,8 @@ async def refresh_due_future_tv_seasons(
         "[SYNC] [6/7] Evaluating %d TV show(s) with TBA/FUTURE seasons for TMDB updates...",
         len(distinct_shows),
     )
+    if stats is not None:
+        stats.shows_evaluated = len(distinct_shows)
     if not seasons:
         return 0
 
@@ -3265,4 +3284,6 @@ async def refresh_due_future_tv_seasons(
     if refreshed_count > 0 or affected_items:
         await session.commit()
 
+    if stats is not None:
+        stats.seasons_discovered = refreshed_count
     return refreshed_count
