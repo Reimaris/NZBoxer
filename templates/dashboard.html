@@ -1,6 +1,11 @@
 {% extends "base.html" %}
 
 {% block content %}
+{% if show_onboarding %}
+<div hx-get="/onboarding/modal"
+     hx-trigger="load[(function(){ try { return sessionStorage.getItem('nzb_onboarding_dismissed') !== '1'; } catch (e) { return true; } })()]"
+     hx-target="#modal-container" hx-swap="innerHTML"></div>
+{% endif %}
 <script id="video-items-payload" type="application/json">
 {{ items_payload | tojson | safe }}
 </script>

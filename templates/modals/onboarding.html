@@ -1,0 +1,60 @@
+<!-- First-Run Setup Wizard (m54, ADR-128) -->
+<div id="onboarding-modal"
+     class="nzb-modal-backdrop fixed inset-0 z-[100] flex items-center justify-center p-2 sm:p-4 bg-black/80 backdrop-blur-sm animate-fade-in"
+     x-data="{
+         step: 1,
+         error: '',
+         saving: false,
+         dismiss() {
+             try { sessionStorage.setItem('nzb_onboarding_dismissed', '1'); } catch (e) {}
+             const node = document.getElementById('onboarding-modal');
+             if (node) node.remove();
+         }
+     }">
+    <div class="nzb-modal-dialog nzb-modal-dialog-lg bg-[#1e1e24] border border-[#3f3f46] rounded-xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden text-[#d1d5db]"
+         style="width: 100%; max-width: 48rem; max-height: 90vh; display: flex; flex-direction: column; overflow: hidden; background-color: #1e1e24; border: 1px solid #3f3f46; border-radius: 0.75rem;"
+         @click.away="dismiss()">
+
+        <div class="px-6 py-4 bg-[#2a2a32] border-b border-[#3f3f46] flex items-center justify-between">
+            <div>
+                <h3 class="text-lg font-bold text-white">Welcome to NZBoxer — Setup</h3>
+                <div class="text-xs text-[#a1a1aa]" x-text="'Step ' + step + ' of 3'">Step 1 of 3</div>
+            </div>
+            <button type="button" @click="dismiss()" class="p-1.5 text-[#a1a1aa] hover:text-white hover:bg-[#3f3f46]/50 rounded-lg transition-colors" title="Close">
+                <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+            </button>
+        </div>
+
+        <div class="p-6 space-y-4 overflow-y-auto flex-1">
+            <div id="onboarding-error" x-show="error" x-cloak x-text="error" class="text-xs text-red-400 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2"></div>
+
+            <div x-show="step === 1" id="onboarding-step-1" class="space-y-4">
+                <!-- Step 1: Core Providers (ticket 04) -->
+            </div>
+            <div x-show="step === 2" x-cloak id="onboarding-step-2" class="space-y-4">
+                <!-- Step 2: Notifications, optional (ticket 06) -->
+            </div>
+            <div x-show="step === 3" x-cloak id="onboarding-step-3" class="space-y-4">
+                <!-- Step 3: Verification & First Sync (ticket 07) -->
+                <div id="onboarding-check-results"></div>
+                <div id="onboarding-sync-result"></div>
+            </div>
+        </div>
+
+        <div class="px-6 py-4 bg-[#2a2a32] border-t border-[#3f3f46] flex flex-col sm:flex-row gap-2 sm:items-center">
+            <div class="flex gap-3 sm:mr-auto text-xs">
+                <button type="button" @click="dismiss()" class="text-[#a1a1aa] hover:text-white underline-offset-2 hover:underline">Skip for now</button>
+                <button type="button" hx-post="/api/onboarding/complete" hx-target="#modal-container" hx-swap="innerHTML"
+                        class="text-[#a1a1aa] hover:text-white underline-offset-2 hover:underline">Skip Setup</button>
+            </div>
+            <button type="button" x-show="step > 1" @click="step = step - 1; error = ''"
+                    class="w-full sm:w-auto bg-[#2a2a32] hover:bg-[#3f3f46] border border-[#3f3f46] text-white px-4 py-2 rounded-lg text-xs font-bold transition-colors">Back</button>
+            <button type="button" x-show="step < 3" @click="step = step + 1; error = ''"
+                    class="w-full sm:w-auto bg-[#2a2a32] hover:bg-[#3f3f46] border border-[#3f3f46] text-white px-4 py-2 rounded-lg text-xs font-bold transition-colors">Skip this Step</button>
+            <button type="button" x-show="step === 2" x-cloak hx-post="/api/onboarding/complete" hx-target="#modal-container" hx-swap="innerHTML"
+                    class="w-full sm:w-auto bg-[#2a2a32] hover:bg-[#3f3f46] border border-[#3f3f46] text-white px-4 py-2 rounded-lg text-xs font-bold transition-colors">Finish Later</button>
+            <button type="button" x-show="step === 3" x-cloak hx-post="/api/onboarding/complete" hx-target="#modal-container" hx-swap="innerHTML"
+                    class="w-full sm:w-auto bg-[#d40060] hover:bg-[#a3004a] text-white px-4 py-2 rounded-lg text-xs font-bold transition-all shadow-lg shadow-[#d40060]/20">Finish Setup</button>
+        </div>
+    </div>
+</div>

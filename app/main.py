@@ -438,6 +438,8 @@ async def dashboard(request: Request, background_tasks: BackgroundTasks):
             "presets": presets,
             "presets_payload": presets_payload,
             "defaults": defaults,
+            "show_onboarding": (db_settings is None)
+            or (not db_settings.onboarding_completed),
         },
     )
 
@@ -2143,6 +2145,96 @@ async def feedback_modal(
             "bug_markdown": build_bug_markdown(diag),
             "feature_markdown": build_feature_markdown(diag),
             "github_issues_url": GITHUB_NEW_ISSUE_URL,
+        },
+    )
+
+
+@app.get("/onboarding/modal", response_class=HTMLResponse)
+async def onboarding_modal(request: Request) -> Response:
+    """Render the first-run Setup Wizard, pre-populated from existing records."""
+    from sqlalchemy import select
+
+    from app.db.models import NotificationChannel, Provider, SystemSettings
+
+    async def _first_provider(session: Any, ptype: str) -> Provider | None:
+        return (
+            (
+                await session.execute(
+                    select(Provider).where(Provider.type == ptype).order_by(Provider.id)
+                )
+            )
+            .scalars()
+            .first()
+        )
+
+    async with async_session_factory() as session:
+        simkl_p = await _first_provider(session, "simkl")
+        tmdb_p = await _first_provider(session, "tmdb")
+        torbox_p = await _first_provider(session, "torbox")
+        indexer_p = await _first_provider(session, "treasure_maps")
+        sys_settings = await session.get(SystemSettings, 1)
+        telegram_c = (
+            (
+                await session.execute(
+                    select(NotificationChannel)
+                    .where(NotificationChannel.type == "telegram")
+                    .order_by(NotificationChannel.id)
+                )
+            )
+            .scalars()
+            .first()
+        )
+
+    context: dict[str, Any] = {
+        "simkl": {
+            "client_id": (simkl_p.client_id if simkl_p else None) or "",
+            "username": (simkl_p.username if simkl_p else None) or "",
+            "provider_id": str(simkl_p.id) if simkl_p else "",
+            "connected": "1" if simkl_p and simkl_p.access_token else "",
+        },
+        "tmdb": {"api_key": (tmdb_p.api_key if tmdb_p else None) or ""},
+        "torbox": {
+            "api_key": (torbox_p.api_key if torbox_p else None) or "",
+            "api_url": (torbox_p.api_url if torbox_p else None)
+            or "https://api.torbox.app/v1/api",
+        },
+        "indexer": {
+            "name": (indexer_p.name if indexer_p else None) or "",
+            "api_url": (indexer_p.api_url if indexer_p else None) or "",
+            "api_key": (indexer_p.api_key if indexer_p else None) or "",
+        },
+        "discord": {
+            "webhook_url": (sys_settings.discord_webhook_url if sys_settings else None)
+            or "",
+            "enabled": bool(sys_settings and sys_settings.discord_enabled),
+        },
+        "telegram": {
+            "name": (telegram_c.name if telegram_c else None) or "",
+            "bot_token": (telegram_c.bot_token if telegram_c else None) or "",
+            "chat_id": (telegram_c.chat_id if telegram_c else None) or "",
+        },
+    }
+    return templates.TemplateResponse(
+        request=request, name="modals/onboarding.html", context=context
+    )
+
+
+@app.post("/api/onboarding/complete")
+async def onboarding_complete() -> Response:
+    """Permanently mark first-run onboarding as completed/skipped (idempotent)."""
+    from app.db.models import SystemSettings
+
+    async with async_session_factory() as session:
+        row = await session.get(SystemSettings, 1)
+        if row is None:
+            row = SystemSettings(id=1)
+            session.add(row)
+        row.onboarding_completed = True
+        await session.commit()
+    return HTMLResponse(
+        content="",
+        headers={
+            "HX-Trigger": '{"onboardingCompleted": true, "refreshDashboard": true}'
         },
     )
 
