@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from collections.abc import Sequence
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -18,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.logging_config import log_process_end, log_process_start
-from app.core.phase_stats import SimklPeriodicSyncStatus
+from app.core.phase_stats import AirDateRefreshStats, SimklPeriodicSyncStatus
 from app.core.time_utils import format_local_datetime
 from app.db.database import async_session_factory
 from app.db.models import (
@@ -391,13 +392,14 @@ async def run_periodic_simkl_sync_if_due(now: datetime | None = None) -> bool:
 async def run_orchestrator_tick(now: datetime | None = None) -> None:
     """Execute 15-minute background orchestrator tasks: episode air date rollover, periodic Simkl sync,
     and (at xx:00) the air-date push and upgrade pass."""
+    start = time.monotonic()
     if now is None:
         now = datetime.now(timezone.utc)
     elif now.tzinfo is None:
         now = now.replace(tzinfo=timezone.utc)
 
     logger.info(
-        "⏰ Orchestrator clock tick at %s",
+        "[ORCHESTRATOR] Tick start at %s",
         format_local_datetime(now, "%Y-%m-%d %H:%M:%S"),
     )
 
@@ -405,18 +407,35 @@ async def run_orchestrator_tick(now: datetime | None = None) -> None:
     #    then run the paced upstream air date enrichment (m49 pacing policy)
     async with async_session_factory() as session:
         try:
-            await rollover_due_future_episodes_and_seasons(session, now=now)
+            rolled = await rollover_due_future_episodes_and_seasons(session, now=now)
+            logger.info(
+                "[ORCHESTRATOR] [1/3] Air date rollover: %d due episodes/seasons rolled over to searching",
+                rolled["episodes_rolled_over"] + rolled["seasons_rolled_over"],
+            )
         except Exception as e:  # noqa: BLE001
             logger.error("Error during scheduled air date rollover: %s", e)
+            logger.info(
+                "[ORCHESTRATOR] [1/3] Air date rollover: failed (see error above)"
+            )
+        refresh_stats = AirDateRefreshStats()
         try:
-            updated = await enrich_active_shows_episode_air_dates(session, now=now)
-            if updated:
-                logger.debug(
-                    "Orchestrator tick air date enrichment updated %d episode(s)",
-                    updated,
-                )
+            await enrich_active_shows_episode_air_dates(
+                session,
+                now=now,
+                log_prefix="[ORCHESTRATOR] [2/3]",
+                stats=refresh_stats,
+            )
+            logger.info(
+                "[ORCHESTRATOR] [2/3] Broadcast air date refresh: %d refreshed (%d frozen, %d paced)",
+                refresh_stats.episodes_updated,
+                refresh_stats.skipped_frozen,
+                refresh_stats.skipped_paced,
+            )
         except Exception as e:  # noqa: BLE001
             logger.error("Error during scheduled air date enrichment: %s", e)
+            logger.info(
+                "[ORCHESTRATOR] [2/3] Broadcast air date refresh: failed (see error above)"
+            )
 
     # 1b. Purge stale Push History Ledger rows (m51, ADR-125) on every tick
     try:
@@ -436,7 +455,42 @@ async def run_orchestrator_tick(now: datetime | None = None) -> None:
         logger.error("Error during history autoclear: %s", e)
 
     # 2. Check and run periodic Simkl sync if due
-    await run_periodic_simkl_sync_if_due(now)
+    try:
+        async with async_session_factory() as session:
+            providers = (
+                (
+                    await session.execute(
+                        select(Provider).where(Provider.type == "simkl")
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            status = evaluate_periodic_simkl_sync(providers, now)
+        tag = "[ORCHESTRATOR] [3/3] Periodic Simkl sync:"
+        if status.state == "due":
+            if _sync_lock.locked():
+                logger.info("%s due but a sync is already running; skipping", tag)
+            else:
+                logger.info("%s due -> triggering provider sync", tag)
+                await sync_all_providers()
+        elif status.state == "not_due":
+            logger.info(
+                "%s not due (%dm elapsed, interval %dm; %dm remaining)",
+                tag,
+                status.elapsed_minutes,
+                status.interval_minutes,
+                status.remaining_minutes,
+            )
+        elif status.state == "disabled":
+            logger.info("%s disabled (interval 0)", tag)
+        else:
+            logger.info("%s no active Simkl provider with credentials", tag)
+    except Exception as e:  # noqa: BLE001
+        logger.error("Error during periodic Simkl sync: %s", e)
+        logger.info(
+            "[ORCHESTRATOR] [3/3] Periodic Simkl sync: failed (see error above)"
+        )
 
     # 3. At every full hour, run the air-date push and upgrade pass after the sync
     if now.minute == 0:
@@ -446,6 +500,11 @@ async def run_orchestrator_tick(now: datetime | None = None) -> None:
             await run_air_date_push_and_upgrade_tick(now)
         except Exception as e:  # noqa: BLE001
             logger.error("Error during air-date push and upgrade tick: %s", e)
+
+    logger.info(
+        "[ORCHESTRATOR] Tick complete (took %dms)",
+        int((time.monotonic() - start) * 1000),
+    )
 
 
 async def deduplicate_media_items(session: AsyncSession) -> int:
@@ -2711,7 +2770,11 @@ async def _refresh_future_movie_release_dates(
 
 
 async def enrich_active_shows_episode_air_dates(
-    session: AsyncSession, now: datetime | None = None
+    session: AsyncSession,
+    now: datetime | None = None,
+    *,
+    log_prefix: str = "[SYNC] [4/7]",
+    stats: AirDateRefreshStats | None = None,
 ) -> int:
     """Update episode air dates for upcoming TV shows and anime from Simkl.
 
@@ -2783,11 +2846,15 @@ async def enrich_active_shows_episode_air_dates(
         else:
             skipped_frozen += 1
     logger.debug(
-        "[SYNC] [4/7] Air date refresh: checked=%d skipped(frozen)=%d skipped(paced)=%d.",
+        "%s Air date refresh: checked=%d skipped(frozen)=%d skipped(paced)=%d.",
+        log_prefix,
         len(items),
         skipped_frozen,
         skipped_paced,
     )
+    if stats is not None:
+        stats.skipped_frozen = skipped_frozen
+        stats.skipped_paced = skipped_paced
     movie_stmt = select(MediaItem).where(
         MediaItem.media_type == MediaType.MOVIE,
         MediaItem.status == MediaStatus.FUTURE,
@@ -2862,7 +2929,8 @@ async def enrich_active_shows_episode_air_dates(
         client_id, _ = creds
         media_type_str = "anime" if item.media_type == MediaType.ANIME else "tv"
         logger.debug(
-            "[SYNC] [4/7] (%d/%d) Querying Simkl episodes for '%s' (Simkl ID: %s)...",
+            "%s (%d/%d) Querying Simkl episodes for '%s' (Simkl ID: %s)...",
+            log_prefix,
             item_idx,
             total_items,
             item.title,
@@ -2931,7 +2999,8 @@ async def enrich_active_shows_episode_air_dates(
         if item_episodes_updated > 0:
             titles_updated_count += 1
             logger.debug(
-                "[SYNC] [4/7] (%d/%d) '%s': %d episode air dates updated.",
+                "%s (%d/%d) '%s': %d episode air dates updated.",
+                log_prefix,
                 item_idx,
                 total_items,
                 item.title,
@@ -2939,10 +3008,15 @@ async def enrich_active_shows_episode_air_dates(
             )
 
     logger.debug(
-        "[SYNC] [4/7] Air date enrichment complete. %d total episodes updated across %d titles.",
+        "%s Air date enrichment complete. %d total episodes updated across %d titles.",
+        log_prefix,
         updated_episodes_count,
         titles_updated_count,
     )
+
+    if stats is not None:
+        stats.episodes_updated = updated_episodes_count
+        stats.titles_updated = titles_updated_count
 
     if updated_episodes_count > 0:
         # Reconcile parent media item statuses for any affected items
