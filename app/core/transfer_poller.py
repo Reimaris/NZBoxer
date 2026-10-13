@@ -3197,6 +3197,75 @@ async def purge_expired_dry_run_history(
     return deleted_count
 
 
+async def autoclear_history_ledger(
+    session: AsyncSession,
+    *,
+    autoclear_pruned: bool | None = None,
+    retention_days: int | None = None,
+    now: datetime | None = None,
+) -> dict[str, int]:
+    """Purge terminal DownloadHistory rows per the Pruned-from-Simkl and age rules (OR logic).
+
+    Defaults come from ``settings``. Local SQLite only; never calls TorBox.
+    """
+    from app.config import settings
+
+    if autoclear_pruned is None:
+        autoclear_pruned = settings.history_autoclear_pruned
+    if retention_days is None:
+        retention_days = settings.history_retention_days
+    age_enabled = retention_days > 0
+    zero = {"pruned_count": 0, "aged_count": 0, "total": 0}
+    if not autoclear_pruned and not age_enabled:
+        return zero
+
+    cutoff = (now or datetime.now(timezone.utc)) - timedelta(
+        days=max(retention_days, 0)
+    )
+    rows = (await session.execute(select(DownloadHistory))).scalars().all()
+    # Old releases referenced by a pending (non-terminal) upgrade must survive (ADR-124).
+    protected_ids = {
+        r.replaces_history_id
+        for r in rows
+        if r.replaces_history_id is not None
+        and not _is_history_terminal(r.status_detail)
+    }
+    pruned = 0
+    aged = 0
+    affected_item_ids: set[int] = set()
+    for row in rows:
+        if row.id in protected_ids or not _is_history_terminal(row.status_detail):
+            continue
+        if autoclear_pruned and row.media_item_id is None:
+            pruned += 1
+        elif age_enabled:
+            ts = row.torbox_sent_at or row.created_at
+            if ts is None:
+                continue
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=timezone.utc)
+            if ts >= cutoff:
+                continue
+            aged += 1
+            if row.media_item_id is not None:
+                affected_item_ids.add(row.media_item_id)
+        else:
+            continue
+        await session.delete(row)
+
+    total = pruned + aged
+    if total == 0:
+        return zero
+
+    await session.flush()
+    for item_id in affected_item_ids:
+        item = await session.get(MediaItem, item_id)
+        if item is not None:
+            await _recalculate_parent_status(session, item)
+    await session.commit()
+    return {"pruned_count": pruned, "aged_count": aged, "total": total}
+
+
 async def delete_dry_run_history(
     session: AsyncSession,
 ) -> dict[str, Any]:
