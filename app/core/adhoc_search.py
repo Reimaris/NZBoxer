@@ -564,6 +564,15 @@ async def push_adhoc_release(
         history.is_dry_run = False
     session.add(history)
     await session.commit()
+    logger.info(
+        "%s ad-hoc push: '%s' (%s, score=%s, size=%s B, hash=%s)",
+        "[DRY RUN] Simulated" if settings.dry_run else "Sent",
+        nzb_title,
+        history.target_label or media_kind or "release",
+        score,
+        size_bytes,
+        history.torbox_hash or "-",
+    )
 
     if not settings.dry_run:
         from app.core.transfer_poller import wake_transfer_poller
