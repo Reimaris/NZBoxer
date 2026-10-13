@@ -460,7 +460,10 @@ async def push_adhoc_release(
         if parsed_url.scheme not in ("http", "https") or not host:
             return AdHocPushOutcome(False, "Invalid release link.", 400)
         for candidate in await provider_service.get_active_indexers(session):
-            if urlparse(candidate.api_url or "").hostname == host:
+            indexer_host = (urlparse(candidate.api_url or "").hostname or "").lower()
+            if indexer_host and (
+                host == indexer_host or host.endswith("." + indexer_host)
+            ):
                 indexer = candidate
                 break
         if indexer is None:

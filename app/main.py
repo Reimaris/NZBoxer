@@ -934,11 +934,15 @@ def _status_span(message: str, ok: bool, status_code: int = 200) -> HTMLResponse
     if ok:
         cls = "text-emerald-400 font-medium text-xs px-2 py-1.5 bg-emerald-500/10 border border-emerald-500/20 rounded-md"
         return HTMLResponse(
-            f'<span class="{cls}">{msg}</span>', status_code=status_code
+            f'<span class="{cls}">{msg}</span>',
+            status_code=status_code,
+            headers={"X-Status-Span": "1"},
         )
     cls = "text-red-400 font-medium text-xs px-2 py-1.5 bg-red-500/10 border border-red-500/20 rounded-md"
     return HTMLResponse(
-        f'<span class="{cls}" title="{msg}">{msg}</span>', status_code=status_code
+        f'<span class="{cls}" title="{msg}">{msg}</span>',
+        status_code=status_code,
+        headers={"X-Status-Span": "1"},
     )
 
 

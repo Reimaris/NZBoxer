@@ -7,6 +7,16 @@
     <link rel="icon" type="image/svg+xml" href="/static/icon.svg">
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <script>
+        // htmx 1.x skips 4xx swaps; status-span endpoints use 4xx to carry visible error text.
+        document.addEventListener('htmx:beforeSwap', function (evt) {
+            var xhr = evt.detail.xhr;
+            if (xhr && xhr.getResponseHeader('X-Status-Span')) {
+                evt.detail.shouldSwap = true;
+                evt.detail.isError = false;
+            }
+        });
+    </script>
     <!-- AlpineJS for basic interactions like modals/tabs if needed -->
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
     <style>
