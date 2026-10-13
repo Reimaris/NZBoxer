@@ -24,6 +24,9 @@
          async saveStep1() {
              if (await this.post('/api/onboarding/step1', 'onboarding-step1-form')) this.step = this.step + 1;
          },
+         async saveStep2() {
+             if (await this.post('/api/onboarding/step2', 'onboarding-step2-form')) this.step = this.step + 1;
+         },
          async getSimklPin() {
              const data = await this.post('/api/onboarding/step1', 'onboarding-step1-form');
              if (!data) return;
@@ -62,10 +65,10 @@
                 <div class="bg-[#111115] border border-[#3f3f46] rounded-lg p-4 space-y-3">
                     <div class="flex items-center justify-between"><h4 class="text-sm font-bold text-white">Simkl</h4><a href="https://simkl.com/settings/developer/" target="_blank" rel="noopener noreferrer" class="text-[11px] text-[#d40060] hover:underline">Get API Key / Register ↗</a></div>
                     <label class="block text-xs text-[#a1a1aa]">Client ID
-                        <input type="text" name="simkl_client_id" value="{{ simkl.client_id }}" autocomplete="off" placeholder="" class="mt-1 w-full bg-[#111115] border border-[#3f3f46] rounded-lg px-3 py-2 text-white text-xs focus:border-[#d40060] focus:outline-none"
+                        <input type="text" name="simkl_client_id" value="{{ simkl.client_id }}" autocomplete="off" placeholder="" class="mt-1 w-full bg-[#111115] border border-[#3f3f46] rounded-lg px-3 py-2 text-white text-xs focus:border-[#d40060] focus:outline-none">
                     </label>
                     <label class="block text-xs text-[#a1a1aa]">Username
-                        <input type="text" name="simkl_username" value="{{ simkl.username }}" autocomplete="off" placeholder="" class="mt-1 w-full bg-[#111115] border border-[#3f3f46] rounded-lg px-3 py-2 text-white text-xs focus:border-[#d40060] focus:outline-none"
+                        <input type="text" name="simkl_username" value="{{ simkl.username }}" autocomplete="off" placeholder="" class="mt-1 w-full bg-[#111115] border border-[#3f3f46] rounded-lg px-3 py-2 text-white text-xs focus:border-[#d40060] focus:outline-none">
                     </label>
                     <button type="button" @click="getSimklPin()" :disabled="saving" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition-colors disabled:opacity-50">Get PIN</button>
                     <div id="onboarding-simkl-pin">{% if simkl.connected %}<span class="text-xs text-green-400">✓ Connected</span>{% endif %}</div>
@@ -88,16 +91,16 @@
                         </div>
                     </label>
                     <label class="block text-xs text-[#a1a1aa]">API Base URL
-                        <input type="text" name="torbox_api_url" value="{{ torbox.api_url }}" autocomplete="off" placeholder="" class="mt-1 w-full bg-[#111115] border border-[#3f3f46] rounded-lg px-3 py-2 text-white text-xs focus:border-[#d40060] focus:outline-none"
+                        <input type="text" name="torbox_api_url" value="{{ torbox.api_url }}" autocomplete="off" placeholder="" class="mt-1 w-full bg-[#111115] border border-[#3f3f46] rounded-lg px-3 py-2 text-white text-xs focus:border-[#d40060] focus:outline-none">
                     </label>
                 </div>
                 <div class="bg-[#111115] border border-[#3f3f46] rounded-lg p-4 space-y-3">
                     <div class="flex items-center justify-between"><h4 class="text-sm font-bold text-white">Usenet Indexer</h4><a href="https://nzbgeek.info/" target="_blank" rel="noopener noreferrer" class="text-[11px] text-[#d40060] hover:underline">Get API Key / Register ↗</a></div>
                     <label class="block text-xs text-[#a1a1aa]">Name
-                        <input type="text" name="indexer_name" value="{{ indexer.name }}" autocomplete="off" placeholder="e.g. NZBgeek" class="mt-1 w-full bg-[#111115] border border-[#3f3f46] rounded-lg px-3 py-2 text-white text-xs focus:border-[#d40060] focus:outline-none"
+                        <input type="text" name="indexer_name" value="{{ indexer.name }}" autocomplete="off" placeholder="e.g. NZBgeek" class="mt-1 w-full bg-[#111115] border border-[#3f3f46] rounded-lg px-3 py-2 text-white text-xs focus:border-[#d40060] focus:outline-none">
                     </label>
                     <label class="block text-xs text-[#a1a1aa]">API URL
-                        <input type="text" name="indexer_url" value="{{ indexer.api_url }}" autocomplete="off" placeholder="" class="mt-1 w-full bg-[#111115] border border-[#3f3f46] rounded-lg px-3 py-2 text-white text-xs focus:border-[#d40060] focus:outline-none"
+                        <input type="text" name="indexer_url" value="{{ indexer.api_url }}" autocomplete="off" placeholder="" class="mt-1 w-full bg-[#111115] border border-[#3f3f46] rounded-lg px-3 py-2 text-white text-xs focus:border-[#d40060] focus:outline-none">
                     </label>
                     <label class="block text-xs text-[#a1a1aa]">API Key
                         <div class="relative mt-1" x-data="{ show: false }">
@@ -109,7 +112,37 @@
                 </form>
             </div>
             <div x-show="step === 2" x-cloak id="onboarding-step-2" class="space-y-4">
-                <!-- Step 2: Notifications, optional (ticket 06) -->
+                <div class="text-xs text-[#a1a1aa]">Optional — notifications can be configured later in Settings.</div>
+                <form id="onboarding-step2-form" class="space-y-4" @submit.prevent="saveStep2()">
+                <div class="bg-[#111115] border border-[#3f3f46] rounded-lg p-4 space-y-3">
+                    <div class="flex items-center justify-between"><h4 class="text-sm font-bold text-white">Discord</h4><span class="text-[11px] text-[#a1a1aa]">Optional</span></div>
+                    <label class="block text-xs text-[#a1a1aa]">Webhook URL
+                        <div class="relative mt-1" x-data="{ show: false }">
+                            <input :type="show ? 'text' : 'password'" name="discord_webhook_url" value="{{ discord.webhook_url }}" autocomplete="off" placeholder="https://discord.com/api/webhooks/..." class="w-full bg-[#111115] border border-[#3f3f46] rounded-lg px-3 py-2 text-white text-xs focus:border-[#d40060] focus:outline-none">
+                            <button type="button" @click="show = !show" class="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-[#a1a1aa] hover:text-white" x-text="show ? 'Hide' : 'Show'">Show</button>
+                        </div>
+                    </label>
+                    <label class="flex items-center gap-2 text-xs text-[#a1a1aa]">
+                        <input type="checkbox" name="discord_enabled" value="on" {% if discord.enabled %}checked{% endif %} class="rounded border-[#3f3f46] bg-[#111115] text-[#d40060]">
+                        Enable Discord notifications
+                    </label>
+                </div>
+                <div class="bg-[#111115] border border-[#3f3f46] rounded-lg p-4 space-y-3">
+                    <div class="flex items-center justify-between"><h4 class="text-sm font-bold text-white">Telegram</h4><span class="text-[11px] text-[#a1a1aa]">Optional</span></div>
+                    <label class="block text-xs text-[#a1a1aa]">Name
+                        <input type="text" name="telegram_name" value="{{ telegram.name }}" autocomplete="off" placeholder="Telegram" class="mt-1 w-full bg-[#111115] border border-[#3f3f46] rounded-lg px-3 py-2 text-white text-xs focus:border-[#d40060] focus:outline-none">
+                    </label>
+                    <label class="block text-xs text-[#a1a1aa]">Bot Token
+                        <div class="relative mt-1" x-data="{ show: false }">
+                            <input :type="show ? 'text' : 'password'" name="telegram_bot_token" value="{{ telegram.bot_token }}" autocomplete="off" placeholder="" class="w-full bg-[#111115] border border-[#3f3f46] rounded-lg px-3 py-2 text-white text-xs focus:border-[#d40060] focus:outline-none">
+                            <button type="button" @click="show = !show" class="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-[#a1a1aa] hover:text-white" x-text="show ? 'Hide' : 'Show'">Show</button>
+                        </div>
+                    </label>
+                    <label class="block text-xs text-[#a1a1aa]">Chat ID
+                        <input type="text" name="telegram_chat_id" value="{{ telegram.chat_id }}" autocomplete="off" placeholder="" class="mt-1 w-full bg-[#111115] border border-[#3f3f46] rounded-lg px-3 py-2 text-white text-xs focus:border-[#d40060] focus:outline-none">
+                    </label>
+                </div>
+                </form>
             </div>
             <div x-show="step === 3" x-cloak id="onboarding-step-3" class="space-y-4">
                 <!-- Step 3: Verification & First Sync (ticket 07) -->
@@ -127,6 +160,8 @@
             <button type="button" x-show="step > 1" @click="step = step - 1; error = ''"
                     class="w-full sm:w-auto bg-[#2a2a32] hover:bg-[#3f3f46] border border-[#3f3f46] text-white px-4 py-2 rounded-lg text-xs font-bold transition-colors">Back</button>
             <button type="button" x-show="step === 1" @click="saveStep1()" :disabled="saving"
+                    class="w-full sm:w-auto bg-[#d40060] hover:bg-[#a3004a] text-white px-4 py-2 rounded-lg text-xs font-bold transition-all shadow-lg shadow-[#d40060]/20 disabled:opacity-50">Save &amp; Next</button>
+            <button type="button" x-show="step === 2" x-cloak @click="saveStep2()" :disabled="saving"
                     class="w-full sm:w-auto bg-[#d40060] hover:bg-[#a3004a] text-white px-4 py-2 rounded-lg text-xs font-bold transition-all shadow-lg shadow-[#d40060]/20 disabled:opacity-50">Save &amp; Next</button>
             <button type="button" x-show="step < 3" @click="step = step + 1; error = ''"
                     class="w-full sm:w-auto bg-[#2a2a32] hover:bg-[#3f3f46] border border-[#3f3f46] text-white px-4 py-2 rounded-lg text-xs font-bold transition-colors">Skip this Step</button>
