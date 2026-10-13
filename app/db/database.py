@@ -639,6 +639,7 @@ async def init_db(database_url: str) -> None:
                 ("media_items", "auto_push_episodes", "BOOLEAN NOT NULL DEFAULT 0"),
                 ("episodes", "last_upgrade_checked_at", "DATETIME"),
                 ("download_history", "is_upgrade", "BOOLEAN NOT NULL DEFAULT 0"),
+                ("download_history", "is_ad_hoc", "BOOLEAN NOT NULL DEFAULT 0"),
                 ("system_settings", "air_delay_hours", "INTEGER NOT NULL DEFAULT 2"),
                 (
                     "system_settings",

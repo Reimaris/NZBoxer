@@ -1194,6 +1194,9 @@ class DownloadHistory(Base):
     is_upgrade: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="0"
     )
+    is_ad_hoc: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="0"
+    )
     replaces_history_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     grabbed_language: Mapped[str | None] = mapped_column(
         String(50), nullable=True, default=None
