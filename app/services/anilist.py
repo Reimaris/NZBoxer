@@ -271,6 +271,79 @@ async def search_anime_id_by_title(title: str, year: int | None = None) -> int |
             return None
 
 
+_MEDIA_FIELDS = """
+  id
+  title { romaji english native }
+  synonyms
+  startDate { year }
+  format
+  episodes
+  status
+  description(asHtml: false)
+  coverImage { large }
+  nextAiringEpisode { episode }
+  idMal
+"""
+
+
+async def search_anime_media(search: str, per_page: int = 10) -> list[dict[str, Any]]:
+    """Search AniList anime media by title. Returns an empty list on error."""
+    query_str = f"""
+    query ($search: String, $perPage: Int) {{
+      Page(page: 1, perPage: $perPage) {{
+        media(search: $search, type: ANIME) {{
+          {_MEDIA_FIELDS}
+        }}
+      }}
+    }}
+    """
+    variables = {"search": search, "perPage": per_page}
+
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        try:
+            resp = await _post_with_retry(
+                client, {"query": query_str, "variables": variables}
+            )
+            media: list[dict[str, Any]] = (
+                (resp.json().get("data") or {}).get("Page") or {}
+            ).get("media") or []
+            return media
+        except Exception as e:
+            logger.error(
+                "AniList search_anime_media failed for '%s': %s",
+                search,
+                _sanitize_error_message(e),
+            )
+            return []
+
+
+async def get_anime_media_by_id(anilist_id: int) -> dict[str, Any] | None:
+    """Fetch one AniList anime media entry by ID. None on error or not found."""
+    query_str = f"""
+    query ($id: Int) {{
+      Media(id: $id, type: ANIME) {{
+        {_MEDIA_FIELDS}
+      }}
+    }}
+    """
+    variables = {"id": anilist_id}
+
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        try:
+            resp = await _post_with_retry(
+                client, {"query": query_str, "variables": variables}
+            )
+            media: dict[str, Any] | None = (resp.json().get("data") or {}).get("Media")
+            return media
+        except Exception as e:
+            logger.error(
+                "AniList get_anime_media_by_id failed for ID %d: %s",
+                anilist_id,
+                _sanitize_error_message(e),
+            )
+            return None
+
+
 async def get_anime_aliases(anilist_id: int) -> list[str]:
     """Fetches title aliases for a specific AniList Anime ID."""
     query_str = """

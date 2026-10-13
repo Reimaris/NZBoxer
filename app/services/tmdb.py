@@ -257,3 +257,84 @@ async def find_by_external_id(
         except httpx.HTTPError as e:
             logger.error("TMDB find error for %s (%s): %s", external_id, source, e)
             return None
+
+
+async def _search(
+    path: str,
+    query: str,
+    api_key: str | None,
+    session: AsyncSession | None,
+) -> list[dict[str, Any]]:
+    key = await resolve_api_key(session=session, explicit_key=api_key)
+    if not key:
+        logger.warning("TMDB API key missing.")
+        return []
+
+    params, headers = _build_auth(key)
+    params["query"] = query
+
+    await _limiter.wait()
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        try:
+            response = await client.get(
+                f"{TMDB_BASE_URL}{path}", params=params, headers=headers
+            )
+            response.raise_for_status()
+            results: list[dict[str, Any]] = response.json().get("results") or []
+            return results
+        except httpx.HTTPError as e:
+            logger.error("TMDB search %s error for '%s': %s", path, query, e)
+            return []
+
+
+async def search_movies(
+    query: str,
+    api_key: str | None = None,
+    session: AsyncSession | None = None,
+) -> list[dict[str, Any]]:
+    """Search TMDB movies by title. Returns an empty list on error."""
+    return await _search("/search/movie", query, api_key, session)
+
+
+async def search_tv(
+    query: str,
+    api_key: str | None = None,
+    session: AsyncSession | None = None,
+) -> list[dict[str, Any]]:
+    """Search TMDB TV series by title. Returns an empty list on error."""
+    return await _search("/search/tv", query, api_key, session)
+
+
+async def find_all_by_imdb_id(
+    imdb_id: str,
+    api_key: str | None = None,
+    session: AsyncSession | None = None,
+) -> dict[str, list[dict[str, Any]]]:
+    """Resolve an IMDb ID to all TMDB movie and TV matches.
+
+    Both ``movie_results`` and ``tv_results`` keys are always present.
+    """
+    empty: dict[str, list[dict[str, Any]]] = {"movie_results": [], "tv_results": []}
+    key = await resolve_api_key(session=session, explicit_key=api_key)
+    if not key:
+        logger.warning("TMDB API key missing.")
+        return empty
+
+    params, headers = _build_auth(key)
+    params["external_source"] = "imdb_id"
+
+    await _limiter.wait()
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        try:
+            response = await client.get(
+                f"{TMDB_BASE_URL}/find/{imdb_id}", params=params, headers=headers
+            )
+            response.raise_for_status()
+            data = response.json()
+            return {
+                "movie_results": data.get("movie_results") or [],
+                "tv_results": data.get("tv_results") or [],
+            }
+        except httpx.HTTPError as e:
+            logger.error("TMDB find error for %s: %s", imdb_id, e)
+            return empty
