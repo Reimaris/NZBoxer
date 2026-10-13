@@ -183,6 +183,9 @@ class SystemSettings(Base):
     notify_on_dry_run: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default="1"
     )
+    onboarding_completed: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="0", nullable=False
+    )
 
     # Decoupled Debug Mode & Dry-Run Sandbox (ADR-108)
     debug_mode: Mapped[bool] = mapped_column(

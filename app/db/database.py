@@ -871,6 +871,8 @@ async def init_db(database_url: str) -> None:
                 "UPDATE media_items SET prefer_season_packs = 0 WHERE allow_season_packs = 0 AND prefer_season_packs = 1;",
                 # Backfill existing terminal DownloadHistory rows to notification_sent = 1
                 "UPDATE download_history SET notification_sent = 1 WHERE status_detail IN ('completed', 'failed', 'deleted', 'replaced', 'canceled') OR LOWER(COALESCE(status_detail, '')) LIKE 'failed%';",
+                # First-run onboarding sentinel (m54)
+                "ALTER TABLE system_settings ADD COLUMN onboarding_completed BOOLEAN NOT NULL DEFAULT 0;",
             ]
             for sql_stmt in v3_migrations:
                 try:
