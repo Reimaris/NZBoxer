@@ -571,6 +571,49 @@
                 </div>
             </div>
 
+            <!-- History Retention & Autoclearing (m51) -->
+            <div class="pt-6 border-t border-[#2a2a32] space-y-4">
+                <div>
+                    <h3 class="text-sm font-bold text-white">History Retention &amp; Autoclearing</h3>
+                    <p class="text-xs text-[#a1a1aa] mt-0.5">Automatically remove old entries from the local Push History Ledger. Transfers on TorBox are never deleted.</p>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-semibold uppercase text-[#d1d5db] mb-1.5">Delete History Older Than</label>
+                        <select name="history_retention_days"
+                                hx-post="/settings/auto-save"
+                                hx-trigger="change"
+                                hx-swap="none"
+                                class="w-full bg-[#111115] border border-[#3f3f46] rounded-lg p-2.5 text-white text-xs focus:border-emerald-500 focus:outline-none">
+                            <option value="0" {% if (db_settings.history_retention_days if db_settings else 30) == 0 %}selected{% endif %}>Never</option>
+                            <option value="7" {% if (db_settings.history_retention_days if db_settings else 30) == 7 %}selected{% endif %}>7 days</option>
+                            <option value="14" {% if (db_settings.history_retention_days if db_settings else 30) == 14 %}selected{% endif %}>14 days</option>
+                            <option value="30" {% if (db_settings.history_retention_days if db_settings else 30) == 30 %}selected{% endif %}>30 days (Default)</option>
+                            <option value="60" {% if (db_settings.history_retention_days if db_settings else 30) == 60 %}selected{% endif %}>60 days</option>
+                            <option value="90" {% if (db_settings.history_retention_days if db_settings else 30) == 90 %}selected{% endif %}>90 days</option>
+                        </select>
+                        <p class="text-[#71717a] text-xs mt-1.5 leading-relaxed">Only finished entries are removed. "Never" disables age-based clearing.</p>
+                    </div>
+                    <label class="flex items-start gap-3.5 p-4 rounded-xl bg-[#111115] border border-[#3f3f46] cursor-pointer hover:border-zinc-500 transition-colors">
+                        <input type="checkbox"
+                               name="history_autoclear_pruned"
+                               value="true"
+                               {% if db_settings and db_settings.history_autoclear_pruned %}checked{% endif %}
+                               hx-post="/settings/auto-save"
+                               hx-trigger="change"
+                               hx-vals='js:{"history_autoclear_pruned": event.target.checked ? "true" : "false"}'
+                               hx-swap="none"
+                               class="w-4 h-4 mt-0.5 accent-[#d40060] shrink-0">
+                        <div class="min-w-0">
+                            <span class="text-xs text-white font-bold block">Auto-clear Pruned from Simkl</span>
+                            <p class="text-[#71717a] text-xs mt-1 leading-relaxed">
+                                Immediately remove history entries whose title was pruned from your Simkl watchlist.
+                            </p>
+                        </div>
+                    </label>
+                </div>
+            </div>
+
             <!-- Debug Mode & Dry-Run Sandbox Toggles -->
             <div class="pt-6 border-t border-[#2a2a32] space-y-4">
                 <div>
