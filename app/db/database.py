@@ -646,6 +646,16 @@ async def init_db(database_url: str) -> None:
                     "INTEGER NOT NULL DEFAULT 48",
                 ),
                 ("system_settings", "max_upgrade_checks", "INTEGER NOT NULL DEFAULT 3"),
+                (
+                    "system_settings",
+                    "history_autoclear_pruned",
+                    "BOOLEAN NOT NULL DEFAULT 0",
+                ),
+                (
+                    "system_settings",
+                    "history_retention_days",
+                    "INTEGER NOT NULL DEFAULT 30",
+                ),
             ):
                 try:
                     info = await session.execute(

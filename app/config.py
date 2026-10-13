@@ -54,6 +54,10 @@ class Settings:
     upgrade_window_hours: int = 48
     max_upgrade_checks: int = 3
 
+    # History auto-clearing (m51)
+    history_autoclear_pruned: bool = False
+    history_retention_days: int = 30
+
     # Discord & Event Notification Settings (v3.0.0)
     discord_webhook_url: str | None = os.getenv("DISCORD_WEBHOOK_URL") or None
     discord_enabled: bool = os.getenv("DISCORD_ENABLED", "False").lower() == "true"
@@ -188,6 +192,10 @@ async def reload_settings_from_db(session: AsyncSession) -> None:
     settings.air_delay_hours = getattr(db_settings, "air_delay_hours", 2)
     settings.upgrade_window_hours = getattr(db_settings, "upgrade_window_hours", 48)
     settings.max_upgrade_checks = getattr(db_settings, "max_upgrade_checks", 3)
+    settings.history_autoclear_pruned = bool(
+        getattr(db_settings, "history_autoclear_pruned", False)
+    )
+    settings.history_retention_days = getattr(db_settings, "history_retention_days", 30)
     settings.discord_webhook_url = getattr(db_settings, "discord_webhook_url", None)
     settings.discord_enabled = bool(getattr(db_settings, "discord_enabled", False))
     settings.notify_on_push_initiated = bool(

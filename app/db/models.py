@@ -137,6 +137,14 @@ class SystemSettings(Base):
         Integer, default=3, server_default="3", nullable=False
     )
 
+    # History auto-clearing (m51)
+    history_autoclear_pruned: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="0", nullable=False
+    )
+    history_retention_days: Mapped[int] = mapped_column(
+        Integer, default=30, server_default="30", nullable=False
+    )
+
     @property
     def download_timeout_hours(self) -> int:
         """Legacy helper for code referencing timeout in hours."""

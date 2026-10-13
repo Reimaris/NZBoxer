@@ -1172,6 +1172,7 @@ async def save_global_settings(request: Request):
             ("air_delay_hours", (0, 1, 2, 4, 6, 12), 2),
             ("upgrade_window_hours", (24, 48, 72, 168), 48),
             ("max_upgrade_checks", (1, 2, 3, 5), 3),
+            ("history_retention_days", (0, 7, 14, 30, 60, 90), 30),
         ):
             if field in payload:
                 try:
@@ -1224,6 +1225,11 @@ async def save_global_settings(request: Request):
 
         if "dry_run" in payload:
             db_settings.dry_run = _to_bool(payload.get("dry_run"))
+
+        if "history_autoclear_pruned" in payload:
+            db_settings.history_autoclear_pruned = _to_bool(
+                payload.get("history_autoclear_pruned")
+            )
 
         sc: dict[str, Any] = copy.deepcopy(DEFAULT_SCORING_CONFIG)
         if (
