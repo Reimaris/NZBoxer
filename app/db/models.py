@@ -281,6 +281,38 @@ class Provider(Base):
         return str(value)
 
     @property
+    def indexer_config(self) -> dict[str, str | None]:
+        """Parsed indexer category overrides; malformed or invalid values coerce to None."""
+        from app.services.indexer_catalog import (
+            DEFAULT_MOVIE_CATEGORIES,
+            DEFAULT_TV_CATEGORIES,
+            normalize_category_csv,
+        )
+
+        result: dict[str, str | None] = {
+            "custom_movie_categories": None,
+            "custom_tv_categories": None,
+        }
+        defaults = {
+            "custom_movie_categories": DEFAULT_MOVIE_CATEGORIES,
+            "custom_tv_categories": DEFAULT_TV_CATEGORIES,
+        }
+        try:
+            raw = json.loads(self.config_json or "{}")
+        except Exception:
+            return result
+        if not isinstance(raw, dict):
+            return result
+        for key, default in defaults.items():
+            value = raw.get(key)
+            if isinstance(value, str):
+                try:
+                    result[key] = normalize_category_csv(value, default)
+                except ValueError:
+                    pass
+        return result
+
+    @property
     def sabnzbd_config(self) -> dict[str, str]:
         """Parsed SABnzbd categories with defaults; non-str values coerced to default."""
         defaults = {
