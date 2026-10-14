@@ -21,6 +21,10 @@ from app.core.rate_limiter import (
     RateLimitExceeded,
     RollingWindowRateLimiter,
 )
+from app.services.downloaders.base import DownloaderError
+from app.services.downloaders.base import (
+    DownloaderNetworkError as BaseDownloaderNetworkError,
+)
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -81,11 +85,11 @@ def clear_usenet_cache() -> None:
 TORBOX_BASE_URL = "https://api.torbox.app/v1"
 
 
-class TorBoxError(Exception):
+class TorBoxError(DownloaderError):
     pass
 
 
-class DownloaderNetworkError(TorBoxError):
+class DownloaderNetworkError(TorBoxError, BaseDownloaderNetworkError):
     pass
 
 
