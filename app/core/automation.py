@@ -18,7 +18,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.air_dates import enrich_active_shows_episode_air_dates  # noqa: F401
+from app.core import air_dates as air_date_engine
 from app.core.logging_config import log_process_end, log_process_start
 from app.core.phase_stats import (
     AirDateRefreshStats,
@@ -437,7 +437,7 @@ async def run_orchestrator_tick(now: datetime | None = None) -> None:
             )
         refresh_stats = AirDateRefreshStats()
         try:
-            await enrich_active_shows_episode_air_dates(
+            await air_date_engine.enrich_active_shows_episode_air_dates(
                 session,
                 now=now,
                 log_prefix="[ORCHESTRATOR] [2/3]",
