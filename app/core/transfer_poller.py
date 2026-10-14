@@ -12,7 +12,7 @@ Responsibilities:
 3. Layer 3 Playable Video Verification (`is_torbox_filelist_fake`) with 10-minute
    unpack grace period for archives (`status_detail = "unpacking"`), immediate
    Tick-1 rejection for non-archive fake payloads (samples, executables),
-   transitioning verified transfers to `COMPLETED` and dispatching `Ready on TorBox` notifications.
+   transitioning verified transfers to `COMPLETED` and dispatching `Ready on <downloader>` notifications.
 4. Split Failure Recovery:
    - `push_mode == "auto"`: Deletes broken transfer from TorBox, blacklists the release,
      and automatically searches & pushes the next-best non-blacklisted candidate.
@@ -860,6 +860,10 @@ async def _count_active_transfers_for_item(
     return active
 
 
+def _downloader_name(h: DownloadHistory) -> str:
+    return DOWNLOADER_DISPLAY_NAMES.get(h.downloader_type, "downloader")
+
+
 def _build_failure_reason_for_history(
     history: DownloadHistory, sh_max_retries: int
 ) -> str:
@@ -867,7 +871,7 @@ def _build_failure_reason_for_history(
     raw_reason = (
         detail[len("failed: ") :].strip()
         if detail.lower().startswith("failed:")
-        else (detail or "TorBox transfer failed")
+        else (detail or f"{_downloader_name(history)} transfer failed")
     )
     push_mode = (history.push_mode or "auto").strip().lower()
     if push_mode == "manual":
@@ -889,7 +893,7 @@ async def _dispatch_settled_show_notifications(
     sh_max_retries: int,
 ) -> None:
     """For each affected MediaItem that now has 0 active downloading transfers,
-    dispatch at most 1 consolidated Ready on TorBox and/or 1 consolidated Failure notification.
+    dispatch at most 1 consolidated Ready-on-downloader and/or 1 consolidated Failure notification.
     """
     for item_id, item in affected_items.items():
         remaining_for_item = await _count_active_transfers_for_item(session, item_id)
@@ -941,7 +945,7 @@ async def _dispatch_settled_show_notifications(
                 event_type="completed",
                 histories=regular_rows,
                 item=item,
-                reason="Ready on TorBox (Verified Playable Video)",
+                reason=f"Ready on {_downloader_name(regular_rows[0])} (Verified Playable Video)",
             )
 
         if upgrade_rows:
@@ -950,7 +954,7 @@ async def _dispatch_settled_show_notifications(
                 event_type="completed",
                 histories=upgrade_rows,
                 item=item,
-                reason="⬆️ Upgraded: Ready on TorBox (Verified Playable Video)",
+                reason=f"⬆️ Upgraded: Ready on {_downloader_name(upgrade_rows[0])} (Verified Playable Video)",
             )
 
         if failed_rows:

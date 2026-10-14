@@ -23,6 +23,7 @@ from sqlalchemy import select
 
 from app.config import DEFAULT_USER_AGENT, settings
 from app.services import telegram
+from app.services.downloaders.base import DOWNLOADER_DISPLAY_NAMES
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -33,8 +34,8 @@ logger = logging.getLogger(__name__)
 
 # Color-coded Discord Embed borders by event type (ADR-070)
 EVENT_COLORS: dict[str, int] = {
-    "completed": 0x10B981,  # Green (#10b981) — Ready on TorBox
-    "ready_on_torbox": 0x10B981,
+    "completed": 0x10B981,  # Green (#10b981) — Ready on downloader
+    "ready_on_downloader": 0x10B981,
     "failure": 0xEF4444,  # Red (#ef4444) — Push Failed
     "failed": 0xEF4444,
     "auto_replaced": 0xF59E0B,  # Amber (#f59e0b) — Failed & Auto-Replaced
@@ -45,8 +46,8 @@ EVENT_COLORS: dict[str, int] = {
 }
 
 EVENT_HEADERS: dict[str, str] = {
-    "completed": "✅ Download ready",
-    "ready_on_torbox": "✅ Download ready",
+    "completed": "✅ Ready on {downloader}",
+    "ready_on_downloader": "✅ Ready on {downloader}",
     "failure": "❌ Push Failed",
     "failed": "❌ Push Failed",
     "auto_replaced": "⚠️ Push Failed — Auto-Replaced",
@@ -60,13 +61,23 @@ EVENT_HEADERS: dict[str, str] = {
 EVENT_FLAG_ATTRS: dict[str, str] = {
     "push_initiated": "notify_on_push_initiated",
     "completed": "notify_on_completed",
-    "ready_on_torbox": "notify_on_completed",
+    "ready_on_downloader": "notify_on_completed",
     "failure": "notify_on_failure",
     "failed": "notify_on_failure",
     "auto_replaced": "notify_on_failure",
     "auto_advance": "notify_on_auto_advance",
     "dry_run": "notify_on_dry_run",
 }
+
+
+def downloader_label(downloader_name: str | None) -> str:
+    """Return the downloader display name, or "downloader" when unknown."""
+    return downloader_name or "downloader"
+
+
+def _normalize_event(event_type: str | None, default: str = "completed") -> str:
+    norm = (event_type or default).strip().lower()
+    return "ready_on_downloader" if norm == "ready_on_torbox" else norm
 
 
 def format_target_label(
@@ -132,11 +143,14 @@ def build_discord_embed(
     status_reason: str | None = None,
     poster_url: str | None = None,
     is_dry_run: bool = False,
+    downloader_name: str | None = None,
 ) -> dict[str, Any]:
     """Construct a rich Discord Webhook embed dictionary for the given notification event."""
-    norm_event = (event_type or "completed").strip().lower()
+    norm_event = _normalize_event(event_type)
     color = 0xF59E0B if is_dry_run else EVENT_COLORS.get(norm_event, 0x10B981)
-    header = EVENT_HEADERS.get(norm_event, "🔔 NZBoxer Notification")
+    header = EVENT_HEADERS.get(norm_event, "🔔 NZBoxer Notification").format(
+        downloader=downloader_label(downloader_name)
+    )
     if is_dry_run:
         header = f"🧪 [DRY RUN] {header}"
 
@@ -163,7 +177,7 @@ def build_discord_embed(
         fields.append(
             {
                 "name": "Simulation Notice",
-                "value": "⚠️ Dispatch simulated in Dry-Run Mode. No downloader transfer was created.",
+                "value": f"⚠️ Dispatch simulated in Dry-Run Mode. No transfer was created on {downloader_label(downloader_name)}.",
                 "inline": False,
             }
         )
@@ -298,10 +312,13 @@ def format_telegram_event_message(
     language: str | None = None,
     status_reason: str | None = None,
     is_dry_run: bool = False,
+    downloader_name: str | None = None,
 ) -> str:
     """Format an HTML notification message for Telegram matching the event details."""
-    norm_event = (event_type or "completed").strip().lower()
-    header = EVENT_HEADERS.get(norm_event, "🔔 NZBoxer Notification")
+    norm_event = _normalize_event(event_type)
+    header = EVENT_HEADERS.get(norm_event, "🔔 NZBoxer Notification").format(
+        downloader=downloader_label(downloader_name)
+    )
     if is_dry_run:
         header = f"🧪 [DRY RUN] {header}"
     title_with_year = (
@@ -322,7 +339,7 @@ def format_telegram_event_message(
     ]
     if is_dry_run:
         lines.append(
-            "⚠️ <i>Dispatch simulated in Dry-Run Mode — no TorBox transfer was created.</i>"
+            f"⚠️ <i>Dispatch simulated in Dry-Run Mode — no transfer was created on {downloader_label(downloader_name)}.</i>"
         )
     if release_name:
         lines.append(f"📦 <code>{release_name}</code>")
@@ -346,6 +363,7 @@ async def dispatch_notification_event(
     status_reason: str | None = None,
     poster_url: str | None = None,
     is_dry_run: bool | None = None,
+    downloader_name: str | None = None,
 ) -> dict[str, Any]:
     """Unified event-driven notification dispatcher across Telegram and Discord Webhooks.
 
@@ -356,7 +374,7 @@ async def dispatch_notification_event(
     """
     from app.db.models import NotificationChannel, SystemSettings
 
-    norm_event = (event_type or "").strip().lower()
+    norm_event = _normalize_event(event_type, default="")
     flag_attr = EVENT_FLAG_ATTRS.get(norm_event)
 
     db_settings: SystemSettings | None = None
@@ -412,6 +430,7 @@ async def dispatch_notification_event(
             language=language,
             status_reason=status_reason,
             is_dry_run=effective_dry_run,
+            downloader_name=downloader_name,
         )
         for ch in tg_channels:
             if ch.bot_token and ch.chat_id:
@@ -447,6 +466,7 @@ async def dispatch_notification_event(
             status_reason=status_reason,
             poster_url=poster_url,
             is_dry_run=effective_dry_run,
+            downloader_name=downloader_name,
         )
         discord_sent = await send_discord_webhook(discord_url, embed=embed)
 
@@ -673,20 +693,23 @@ async def dispatch_batch_notification_event(
             f"{len(histories)} releases ({first.nzb_title} + {len(histories) - 1} more)"
         )
 
-    norm_event = (event_type or "completed").strip().lower()
+    norm_event = _normalize_event(event_type)
+    dtype = (getattr(first, "downloader_type", None) or "torbox").strip().lower()
+    downloader_name = DOWNLOADER_DISPLAY_NAMES.get(dtype)
+    label = downloader_label(downloader_name)
     if reason:
         effective_reason = reason
-    elif norm_event in ("completed", "ready_on_torbox"):
-        effective_reason = "Download ready (Verified Playable Video)"
+    elif norm_event in ("completed", "ready_on_downloader"):
+        effective_reason = f"Ready on {label} (Verified Playable Video)"
     elif norm_event == "auto_advance":
         effective_reason = "Auto-Advance Season Expansion triggered"
     elif norm_event in ("failure", "failed"):
-        effective_reason = "One or more transfers failed on the downloader."
+        effective_reason = f"One or more transfers failed on {label}."
     else:
         effective_reason = (
-            "Auto-Push Best dispatched to the downloader"
+            f"Auto-Push Best dispatched to {label}"
             if (first.push_mode or "auto") == "auto"
-            else "Manual Pick dispatched to the downloader"
+            else f"Manual Pick dispatched to {label}"
         )
 
     total_auto_replaced = sum(
@@ -710,4 +733,5 @@ async def dispatch_batch_notification_event(
         status_reason=effective_reason,
         poster_url=poster_url,
         is_dry_run=is_dry_run,
+        downloader_name=downloader_name,
     )
