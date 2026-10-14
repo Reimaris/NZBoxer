@@ -1,29 +1,39 @@
-<!DOCTYPE html>
-<html lang="en" class="dark">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Setup required – NZBoxer</title>
-  <style>
-    body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
-           background: #0f172a; color: #e2e8f0; font-family: system-ui, sans-serif; }
-    main { max-width: 32rem; padding: 2rem; background: #1e293b; border-radius: .75rem; }
-    h1 { margin-top: 0; font-size: 1.5rem; }
-    li { margin: .25rem 0; }
-    a { color: #38bdf8; }
-  </style>
-</head>
-<body>
-  <main>
-    <h1>Setup required</h1>
-    <p>NZBoxer needs the following before it can run:</p>
-    <ul>
-      {% for key in setup.missing_core %}<li><a href="{{ {'tmdb': '/settings#metadata', 'indexer': '/settings#indexers', 'downloader': '/settings#downloaders'}[key] }}">{{ missing_labels[loop.index0] }}</a></li>{% endfor %}
-    </ul>
-    <p><a href="/settings">Open Settings</a> or use the guided setup.</p>
-    <button type="button" hx-get="/onboarding/modal" hx-target="#modal-container" hx-swap="innerHTML">Start guided setup</button>
-    <div id="modal-container"></div>
-  </main>
-  <script src="https://unpkg.com/htmx.org@1.9.10"></script>
-</body>
-</html>
+{% extends "base.html" %}
+
+{% block content %}
+{% set links = {'tmdb': '/settings#metadata', 'indexer': '/settings#indexers', 'downloader': '/settings#downloaders'} %}
+{% set hints = {'tmdb': 'Movie & TV metadata', 'indexer': 'Newznab indexer to search releases', 'downloader': 'TorBox, SABnzbd or Premiumize'} %}
+<div class="max-w-xl mx-auto mt-10 sm:mt-20">
+    <div class="bg-[#24242b] border border-[#3f3f46] rounded-xl shadow-lg overflow-hidden">
+        <div class="px-6 py-5 border-b border-[#3f3f46] flex items-center gap-3.5">
+            <div class="w-9 h-9 rounded-lg bg-[#d40060]/15 border border-[#d40060]/30 text-[#d40060] flex items-center justify-center shrink-0">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"></path></svg>
+            </div>
+            <div>
+                <h1 class="text-base font-bold text-white uppercase tracking-wider leading-tight">Setup required</h1>
+                <p class="text-xs text-[#a1a1aa] mt-0.5">NZBoxer needs the following before it can run.</p>
+            </div>
+        </div>
+        <ul class="p-6 space-y-3">
+            {% for key in setup.missing_core %}
+            <li>
+                <a href="{{ links[key] }}" class="flex items-center justify-between gap-4 bg-[#1e1e24] hover:bg-[#2a2a32] border border-[#3f3f46] hover:border-[#d40060]/60 rounded-lg px-4 py-3 transition-colors group">
+                    <div>
+                        <div class="text-sm font-bold text-white">{{ missing_labels[loop.index0] }}</div>
+                        <div class="text-xs text-[#a1a1aa] mt-0.5">{{ hints[key] }}</div>
+                    </div>
+                    <span class="text-xs font-semibold text-[#d40060] group-hover:text-pink-400 shrink-0">Configure &rarr;</span>
+                </a>
+            </li>
+            {% endfor %}
+        </ul>
+        <div class="px-6 py-4 border-t border-[#3f3f46] bg-[#18181d] flex flex-wrap items-center justify-between gap-3">
+            <a href="/settings" class="text-xs text-[#a1a1aa] hover:text-white transition-colors">Open Settings</a>
+            <button type="button" hx-get="/onboarding/modal" hx-target="#modal-container" hx-swap="innerHTML"
+                    class="bg-[#d40060] hover:bg-[#a3004a] text-white px-4 py-2 rounded-lg text-xs font-bold transition-all shadow-lg shadow-[#d40060]/20">
+                Start guided setup
+            </button>
+        </div>
+    </div>
+</div>
+{% endblock %}
