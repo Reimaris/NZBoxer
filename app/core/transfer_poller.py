@@ -80,7 +80,7 @@ _poller_lock = asyncio.Lock()
 
 @dataclass
 class DryRunPushRecord:
-    """In-memory tracking record for a simulated TorBox dispatch during Dry-Run Mode."""
+    """In-memory tracking record for a simulated dispatch during Dry-Run Mode."""
 
     id: str
     timestamp: datetime
@@ -119,7 +119,7 @@ def register_dry_run_push(
     season_id: int | None = None,
     episode_id: int | None = None,
 ) -> DryRunPushRecord:
-    """Register a simulated TorBox dispatch in the in-memory dry-run registry."""
+    """Register a simulated dispatch in the in-memory dry-run registry."""
     rec_id = f"dry-run-{uuid.uuid4().hex[:8]}"
     record = DryRunPushRecord(
         id=rec_id,
@@ -1925,7 +1925,7 @@ async def get_active_pushes(session: AsyncSession) -> list[dict[str, Any]]:
                 "eta_seconds": 0,
                 "speed_and_eta": "Simulated • No Download",
                 "status": "Dry Run (Simulated)",
-                "status_detail": "TorBox upload simulated (Dry-Run Mode)",
+                "status_detail": "Dispatch simulated (Dry-Run Mode)",
                 "push_mode": rec.push_mode,
                 "is_upgrade": bool(rec.is_upgrade),
                 "is_failed": False,

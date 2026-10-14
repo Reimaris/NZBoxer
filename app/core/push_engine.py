@@ -807,7 +807,7 @@ def _log_dry_run_interception(
 ) -> None:
     logger.info(
         "\n============================================================\n"
-        "[DRY RUN] SIMULATED DISPATCH (TorBox upload skipped)\n"
+        "[DRY RUN] SIMULATED DISPATCH (dispatch skipped)\n"
         "Title:         %s\n"
         "Target:        %s\n"
         "Release:       %s\n"
