@@ -54,7 +54,9 @@
     <!-- =================================================================== -->
     <!-- SLICE 1: CONNECTED PROVIDERS                                        -->
     <!-- =================================================================== -->
-    <div class="bg-[#1e1e24] border border-[#3f3f46] rounded-xl overflow-hidden shadow-lg">
+    <span id="metadata"></span><span id="indexers"></span><span id="downloaders"></span>
+    <div class="bg-[#1e1e24] border border-[#3f3f46] rounded-xl overflow-hidden shadow-lg"
+         x-init="if (['#metadata', '#indexers', '#downloaders'].includes(location.hash)) openSlices.providers = true">
         <!-- Header Trigger -->
         <button type="button"
                 @click="toggleSlice('providers')"

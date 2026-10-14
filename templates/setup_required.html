@@ -18,9 +18,12 @@
     <h1>Setup required</h1>
     <p>NZBoxer needs the following before it can run:</p>
     <ul>
-      {% for label in missing_labels %}<li>{{ label }}</li>{% endfor %}
+      {% for key in setup.missing_core %}<li><a href="{{ {'tmdb': '/settings#metadata', 'indexer': '/settings#indexers', 'downloader': '/settings#downloaders'}[key] }}">{{ missing_labels[loop.index0] }}</a></li>{% endfor %}
     </ul>
-    <p><a href="/settings">Open Settings</a> to configure them.</p>
+    <p><a href="/settings">Open Settings</a> or use the guided setup.</p>
+    <button type="button" hx-get="/onboarding/modal" hx-target="#modal-container" hx-swap="innerHTML">Start guided setup</button>
+    <div id="modal-container"></div>
   </main>
+  <script src="https://unpkg.com/htmx.org@1.9.10"></script>
 </body>
 </html>
