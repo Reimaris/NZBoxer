@@ -18,14 +18,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.core.fake_detector import extract_nzb_password
 from app.core.parser import parse_release_name
-from app.db.models import DownloadHistory
+from app.db.models import DownloadHistory, Provider
 from app.services import provider_service, torbox, treasure_maps
 from app.services.downloaders.base import DownloaderError
 from app.services.downloaders.factory import get_active_downloader_client
+from app.services.indexer_catalog import resolve_categories
 
 logger = logging.getLogger(__name__)
 
-_CATEGORY_IDS = {"movie": 2000, "series": 5000, "anime": 5070, "anime-movie": 5070}
+_CATEGORY_KINDS = frozenset({"movie", "series", "anime", "anime-movie"})
 
 
 @dataclass
@@ -139,7 +140,14 @@ async def _fetch_raw_releases(
     episode: int | None,
 ) -> tuple[list[dict[str, Any]], str | None]:
     """Run one Newznab search per distinct title and merge by guid/title."""
-    cat_id = _CATEGORY_IDS.get(kind)
+    from app.db.database import async_session_factory
+
+    async with async_session_factory() as idx_session:
+        indexers: list[Provider | None] = list(
+            await provider_service.get_active_indexers(idx_session)
+        )
+    if not indexers:
+        indexers = [None]  # default indexer; falls back to built-in categories
     distinct: list[str | None] = []
     seen_norm: set[str] = set()
     for t in titles:
@@ -150,10 +158,29 @@ async def _fetch_raw_releases(
     if not distinct:
         distinct = [None]
 
-    def call(title: str | None) -> Any:
+    def call(title: str | None, idx: Provider | None) -> Any:
+        if idx is not None:
+            cat_id: int | str | None = (
+                resolve_categories(idx, kind) if kind in _CATEGORY_KINDS else None
+            )
+            idx_kwargs: dict[str, Any] = {
+                "api_url": idx.api_url,
+                "api_key": idx.api_key,
+            }
+        else:
+            cat_id = (
+                resolve_categories(Provider(config_json="{}"), kind)
+                if kind in _CATEGORY_KINDS
+                else None
+            )
+            idx_kwargs = {}
         if kind in ("movie", "anime-movie"):
             return treasure_maps.search_movie(
-                title=title, category=cat_id, tmdb_id=tmdb_id, imdb_id=imdb_id
+                title=title,
+                category=cat_id,
+                tmdb_id=tmdb_id,
+                imdb_id=imdb_id,
+                **idx_kwargs,
             )
         if kind == "series":
             return treasure_maps.search_show(
@@ -164,6 +191,7 @@ async def _fetch_raw_releases(
                 tvdb_id=tvdb_id,
                 tmdb_id=tmdb_id,
                 imdb_id=imdb_id,
+                **idx_kwargs,
             )
         return treasure_maps.search_raw(
             query=title,
@@ -173,10 +201,12 @@ async def _fetch_raw_releases(
             imdb_id=imdb_id,
             tmdb_id=tmdb_id,
             tvdb_id=tvdb_id,
+            **idx_kwargs,
         )
 
     outcomes = await asyncio.gather(
-        *(call(t) for t in distinct), return_exceptions=True
+        *(call(t, idx) for idx in indexers for t in distinct),
+        return_exceptions=True,
     )
     merged: list[dict[str, Any]] = []
     errors: list[treasure_maps.IndexerError] = []

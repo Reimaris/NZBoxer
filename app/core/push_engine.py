@@ -60,6 +60,12 @@ from app.services.downloaders.base import (
     DownloaderError,
     DownloaderUploadResult,
 )
+from app.services.indexer_catalog import (
+    ANIME_CATEGORY_FALLBACK,
+    DEFAULT_MOVIE_CATEGORIES,
+    DEFAULT_TV_CATEGORIES,
+    resolve_categories,
+)
 from app.services.preset_service import (
     CUSTOM_CONFIG_KEYS,
     extract_custom_config_json,
@@ -647,7 +653,6 @@ async def _query_movie_across_indexers(
     use_external_ids: bool = True,
 ) -> list[dict[str, Any]]:
     """Query active indexers for a standalone movie or franchise movie entry."""
-    cat_id = 2000
     search_title = title_override or item.title
     imdb_id = item.imdb_id if use_external_ids else None
     tmdb_id = item.tmdb_id if use_external_ids else None
@@ -657,6 +662,7 @@ async def _query_movie_across_indexers(
 
     if indexers:
         for idx in indexers:
+            cat_id = resolve_categories(idx, "movie")
             try:
                 logger.debug(
                     "[SEARCH] Searching indexer '%s' for '%s' (Categories: %s)...",
@@ -686,6 +692,7 @@ async def _query_movie_across_indexers(
             except Exception as exc:
                 logger.warning("Indexer '%s' movie search error: %s", idx.name, exc)
     else:
+        cat_id = DEFAULT_MOVIE_CATEGORIES
         logger.debug(
             "[SEARCH] Searching indexer 'Default' for '%s' (Categories: %s)...",
             search_title,
@@ -714,7 +721,7 @@ async def _query_show_across_indexers(
     episode_number: int | None = None,
 ) -> list[dict[str, Any]]:
     """Query active indexers for a TV/Anime season pack or episode."""
-    cat_id = 5070 if item.media_type == MediaType.ANIME else 5000
+    kind = "anime" if item.media_type == MediaType.ANIME else "series"
 
     ep_str = str(episode_number) if episode_number is not None else None
     search_label = (
@@ -731,6 +738,7 @@ async def _query_show_across_indexers(
 
     if indexers:
         for idx in indexers:
+            cat_id = resolve_categories(idx, kind)
             try:
                 logger.debug(
                     "[SEARCH] Searching indexer '%s' for '%s' (Categories: %s)...",
@@ -763,6 +771,7 @@ async def _query_show_across_indexers(
             except Exception as exc:
                 logger.warning("Indexer '%s' show search error: %s", idx.name, exc)
     else:
+        cat_id = ANIME_CATEGORY_FALLBACK if kind == "anime" else DEFAULT_TV_CATEGORIES
         logger.debug(
             "[SEARCH] Searching indexer 'Default' for '%s' (Categories: %s)...",
             search_label,
