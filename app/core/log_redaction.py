@@ -16,6 +16,7 @@ Two layers:
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 import threading
@@ -25,7 +26,10 @@ MIN_MASKABLE_LENGTH = 8
 FULL_MASK_BELOW = 12
 FULL_MASK = "***"
 
-_SENSITIVE_KEYS = r"apikey|api_key|access_token|token|password|secret|client_secret"
+_SENSITIVE_KEYS = (
+    r"apikey|api_key|access_token|token|password|secret|client_secret"
+    r"|code_verifier|code_challenge|authToken|X-Plex-Token|refresh_token"
+)
 
 _QUERY_PARAM_RE = re.compile(
     rf"(?i)(?P<prefix>\b(?:{_SENSITIVE_KEYS})=)(?P<value>[^&\s\"'#]+)"
@@ -38,7 +42,11 @@ _AUTH_HEADER_RE = re.compile(
     r"(?P<value>[^\s\"',}]+)"
 )
 
-_PATTERNS = (_QUERY_PARAM_RE, _JSON_VALUE_RE, _AUTH_HEADER_RE)
+_PLEX_HEADER_RE = re.compile(
+    r"(?i)(?P<prefix>x-plex-token[\"']?\s*:\s*[\"']?)(?P<value>[^\s\"',}]+)"
+)
+
+_PATTERNS = (_QUERY_PARAM_RE, _JSON_VALUE_RE, _AUTH_HEADER_RE, _PLEX_HEADER_RE)
 
 _secrets: set[str] = set()
 _lock = threading.Lock()
@@ -113,6 +121,13 @@ def _register_row_secrets(_mapper: Any, _connection: Any, target: Any) -> None:
         "discord_webhook_url",
     ):
         register_secret(getattr(target, attr, None))
+    # OAuth refresh tokens live in config_json (MAL).
+    try:
+        cfg = json.loads(getattr(target, "config_json", None) or "{}")
+    except (TypeError, ValueError):
+        return
+    if isinstance(cfg, dict):
+        register_secret(str(cfg.get("refresh_token") or ""))
 
 
 _listeners_installed = False

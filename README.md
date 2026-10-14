@@ -31,6 +31,8 @@ NZBoxer is built around an **on-demand workflow**:
 
 ### 1. Watchlist Sync & Metadata Enrichment
 - **Simkl Integration:** Connects to your Simkl account (via OAuth 2.0 Device Flow) and syncs your *Plan to Watch* and *Watching* lists across Movies, TV Shows, and Anime.
+- **Multiple Watchlist Providers:** Besides Simkl, NZBoxer can sync your anime/movie/TV lists from **AniList** (username, optional personal access token for private profiles), **Plex** (PIN login or manual auth token) and **MyAnimeList** (OAuth 2.0 PKCE). Providers can be combined; an item stays on your dashboard while at least one provider keeps it active. **MyAnimeList requires its redirect URI** — `<your NZBoxer base URL>/settings/provider/mal/auth/callback`, shown in the provider dialog — to be registered in your MAL API app.
+- **First-Run Wizard:** Step 1 offers a **Watchlist** dropdown (None / Skip, Simkl, AniList, Plex, MyAnimeList) that shows only the selected provider's credential fields; Step 3 diagnostics verify the chosen provider.
 - **Release Date Tracking (TMDB):** Enriches Movies and Series with digital/physical release dates and season/episode air dates so you always know whether a title is actually available or still upcoming.
 - **Chronological Anime Franchises (AniList):** Automatically groups standalone anime sequel entries and canon franchise movies under a single parent entry in chronological watch order, while keeping your Simkl watch progress aligned.
 - **Future Episode & Season Detection:** Unaired episodes are tracked as *Future* with timezone-aware broadcast times and roll over to *Searching* automatically once they air. Upcoming TBA seasons are discovered on a paced schedule.
