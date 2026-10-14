@@ -19,6 +19,9 @@ ALWAYS_ALLOWED_PREFIXES: tuple[str, ...] = (
     "/api/providers/test",
     "/api/notifications",
     "/api/settings",
+    # Configuration actions reachable from Settings stay usable on an incomplete install.
+    "/api/presets",
+    "/api/blacklist",
     "/setup",
     "/health",
     # Provider auth flows and diagnostics are needed to fix an incomplete setup.
@@ -49,8 +52,6 @@ CORE_PREFIXES: tuple[str, ...] = (
     "/api/torbox/add",
     "/api/pushes",
     "/api/history",
-    "/api/blacklist",
-    "/api/presets",
 )
 CORE_EXACT_PATHS: tuple[str, ...] = ("/",)
 
