@@ -3,10 +3,10 @@
      class="nzb-modal-backdrop fixed inset-0 z-[100] flex items-center justify-center p-2 sm:p-4 bg-black/80 backdrop-blur-sm animate-fade-in"
      x-data="{
          step: 1,
-         watchlistType: {{ watchlist_type|tojson }},
-         downloaderType: {{ downloader_type|tojson }},
-         indexerType: {{ indexer_type|tojson }},
-         indexerPresets: {{ indexer_preset_map|tojson }},
+         watchlistType: {{ watchlist_type|tojson|forceescape }},
+         downloaderType: {{ downloader_type|tojson|forceescape }},
+         indexerType: {{ indexer_type|tojson|forceescape }},
+         indexerPresets: {{ indexer_preset_map|tojson|forceescape }},
          indexerKeyUrl: '',
          selectIndexerPreset() {
              const preset = this.indexerPresets[this.indexerType];

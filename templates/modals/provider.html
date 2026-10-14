@@ -23,7 +23,7 @@
              providerType: '{{ ptype }}',
              providerCategory: '{{ pcat }}',
              autoName: '',
-             indexerTypes: {{ indexer_presets|map(attribute='type')|list|tojson }},
+             indexerTypes: {{ indexer_presets|map(attribute='type')|list|tojson|forceescape }},
              indexerKeyUrl: '',
              selectProvider(type, category, defaultName) {
                  this.providerType = type;

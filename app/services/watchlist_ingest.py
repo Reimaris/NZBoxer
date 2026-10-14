@@ -350,7 +350,7 @@ async def _create_item(
     # Commit (not flush) to release the SQLite write lock before slow HTTP enrichment.
     await session.commit()
     if is_anime:
-        await automation.enrich_anime_metadata(session, item)
+        item = await automation.enrich_anime_metadata(session, item)
     else:
         await automation.enrich_movie_show_metadata(
             session, item, entry.tmdb_id, media_type
@@ -442,7 +442,7 @@ async def ingest_entries(
             from app.core import automation
 
             await session.commit()
-            await automation.enrich_anime_metadata(session, item)
+            item = await automation.enrich_anime_metadata(session, item)
         order = _entry_order(item, entry, matched) if has_progress else 0
         source = await _upsert_source(session, item, provider, entry, order, result)
 

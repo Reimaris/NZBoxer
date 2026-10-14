@@ -1200,7 +1200,8 @@ async def _sync_season_episodes(
             session.add(new_ep)
 
 
-async def enrich_anime_metadata(session: AsyncSession, item: MediaItem) -> None:
+async def enrich_anime_metadata(session: AsyncSession, item: MediaItem) -> MediaItem:
+    """Enrich *item* from AniList; returns the surviving item (the existing root if *item* was consolidated away)."""
     from datetime import datetime, timezone
 
     from sqlalchemy import select
@@ -1220,12 +1221,12 @@ async def enrich_anime_metadata(session: AsyncSession, item: MediaItem) -> None:
     item.add_associated_franchise_id(original_simkl_id)
     if not original_anilist_id:
         item.last_metadata_refreshed_at = now
-        return
+        return item
     hierarchy_data = await anilist.get_anime_root_and_hierarchy(original_anilist_id)
 
     if not hierarchy_data:
         item.last_metadata_refreshed_at = now
-        return
+        return item
 
     root_node = hierarchy_data["root"]
     hierarchy_list = hierarchy_data["hierarchy"]
@@ -1431,6 +1432,7 @@ async def enrich_anime_metadata(session: AsyncSession, item: MediaItem) -> None:
     )
     item.last_metadata_refreshed_at = now
     await consolidate_standalone_anime_sequels(session)
+    return item
 
 
 async def refresh_due_future_anime_seasons(session: AsyncSession) -> int:
