@@ -132,6 +132,28 @@ async def _rename_or_merge_column(
         ) from exc
 
 
+async def _migrate_downloader_columns(conn: AsyncConnection) -> None:
+    """m59 (spec §2.1): legacy ``torbox_*`` tracking columns -> ``downloader_*``."""
+    from sqlalchemy import text as sa_text
+
+    for old, new in (
+        ("torbox_hash", "downloader_hash"),
+        ("torbox_id", "downloader_transfer_id"),
+        ("torbox_sent_at", "dispatched_at"),
+    ):
+        await _rename_or_merge_column(conn, "download_history", old, new)
+    for legacy_idx in ("torbox_hash", "torbox_id"):
+        await conn.execute(
+            sa_text(f"DROP INDEX IF EXISTS ix_download_history_{legacy_idx}")
+        )
+    await conn.execute(
+        sa_text(
+            "CREATE INDEX IF NOT EXISTS ix_download_history_downloader_hash "
+            "ON download_history (downloader_hash)"
+        )
+    )
+
+
 def _backup_db_before_m59(db_path: Path) -> None:
     """Copy the SQLite file to ``<name>.pre-m59.bak`` once (skipped if present)."""
     if str(db_path) == ":memory:" or not db_path.is_file():
@@ -1034,8 +1056,8 @@ async def init_db(database_url: str) -> None:
                     ).fetchall()
                     dh_col_names = {r[1] for r in ti_rows}
 
-                # m57: generalize TorBox tracking columns (ADR-131). Legacy
-                # torbox_id / torbox_sent_at stay in old files, unmapped.
+                # m57: generalize TorBox tracking columns (ADR-131); m59 then
+                # renames/merges the legacy torbox_* columns away (ADR-134).
                 for col, ddl in (
                     (
                         "downloader_type",
@@ -1050,20 +1072,7 @@ async def init_db(database_url: str) -> None:
                                 f"ALTER TABLE download_history ADD COLUMN {col} {ddl};"
                             )
                         )
-                if "torbox_id" in dh_col_names:
-                    await session.execute(
-                        sa_text(
-                            "UPDATE download_history SET downloader_transfer_id = torbox_id "
-                            "WHERE downloader_transfer_id IS NULL AND torbox_id IS NOT NULL;"
-                        )
-                    )
-                if "torbox_sent_at" in dh_col_names:
-                    await session.execute(
-                        sa_text(
-                            "UPDATE download_history SET dispatched_at = torbox_sent_at "
-                            "WHERE dispatched_at IS NULL AND torbox_sent_at IS NOT NULL;"
-                        )
-                    )
+                await _migrate_downloader_columns(await session.connection())
                 await session.execute(
                     sa_text(
                         "CREATE INDEX IF NOT EXISTS ix_download_history_downloader_transfer_id "
@@ -1120,7 +1129,7 @@ async def init_db(database_url: str) -> None:
                                 source VARCHAR(100),
                                 release_group VARCHAR(100),
                                 bitrate_mbps FLOAT,
-                                torbox_hash VARCHAR(200),
+                                downloader_hash VARCHAR(64),
                                 downloader_type VARCHAR(50) NOT NULL DEFAULT 'torbox',
                                 downloader_transfer_id VARCHAR(255),
                                 dispatched_at DATETIME,
@@ -1170,7 +1179,7 @@ async def init_db(database_url: str) -> None:
                         "source",
                         "release_group",
                         "bitrate_mbps",
-                        "torbox_hash",
+                        "downloader_hash",
                         "downloader_type",
                         "downloader_transfer_id",
                         "dispatched_at",
@@ -1217,7 +1226,7 @@ async def init_db(database_url: str) -> None:
                         "imdb_id",
                         "anilist_id",
                         "nzb_guid",
-                        "torbox_hash",
+                        "downloader_hash",
                         "downloader_transfer_id",
                     ):
                         await session.execute(

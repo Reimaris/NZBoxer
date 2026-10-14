@@ -1333,8 +1333,8 @@ class DownloadHistory(Base):
     bitrate_mbps: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     # --- TorBox tracking ---
-    torbox_hash: Mapped[str | None] = mapped_column(
-        String(200), nullable=True, index=True
+    downloader_hash: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, index=True
     )
     downloader_type: Mapped[str] = mapped_column(
         String(50), nullable=False, default="torbox", server_default="torbox"
@@ -1348,6 +1348,7 @@ class DownloadHistory(Base):
     # Legacy names kept as synonyms so reads, writes and query expressions work.
     torbox_id = synonym("downloader_transfer_id")
     torbox_sent_at = synonym("dispatched_at")
+    torbox_hash = synonym("downloader_hash")
 
     # --- Language tracking ---
     is_fallback: Mapped[bool] = mapped_column(
