@@ -2308,8 +2308,8 @@ def extract_simkl_watched_order(
 
     detected_orders: list[int] = []
 
-    # 1. Explicit watch_order / last_watched_order_simkl
-    for explicit_key in ("watch_order", "last_watched_order_simkl"):
+    # 1. Explicit watch_order / last_watched_order
+    for explicit_key in ("watch_order", "last_watched_order"):
         val = item_data.get(explicit_key)
         if isinstance(val, int) and val > 0:
             detected_orders.append(val)
@@ -2463,14 +2463,14 @@ async def evaluate_simkl_watch_progress_and_advance(
     item_data: dict[str, Any],
     matched_season: Season | None = None,
 ) -> list[DownloadHistory]:
-    """Inspect Simkl item payload for user watch progress, update `last_watched_order_simkl`,
+    """Inspect Simkl item payload for user watch progress, update `last_watched_order`,
     and trigger Auto-Advance season expansion (with Movie Bridge Lookahead) if enabled."""
     from sqlalchemy import inspect as sa_inspect
 
     status_str = str(item_data.get("status") or "").lower()
-    if status_str == "completed" or item_data.get("simkl_watched_completed") is True:
+    if status_str == "completed" or item_data.get("watched_completed") is True:
         if matched_season is None:
-            item.simkl_watched_completed = True
+            item.watched_completed = True
 
     if "seasons" in sa_inspect(item).unloaded and hasattr(session, "refresh"):
         await session.refresh(item, ["seasons"])
@@ -2478,11 +2478,11 @@ async def evaluate_simkl_watch_progress_and_advance(
     detected_order = extract_simkl_watched_order(
         item=item, item_data=item_data, matched_season=matched_season
     )
-    current_order = int(item.last_watched_order_simkl or 0)
+    current_order = int(item.last_watched_order or 0)
     if detected_order <= current_order:
         return []
 
-    item.last_watched_order_simkl = detected_order
+    item.last_watched_order = detected_order
     await session.flush()
 
     if not getattr(item, "auto_advance_seasons", False):

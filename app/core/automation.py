@@ -636,8 +636,8 @@ async def deduplicate_media_items(session: AsyncSession) -> int:
             if not getattr(canonical, attr, None) and getattr(dup, attr, None):
                 setattr(canonical, attr, getattr(dup, attr))
 
-        for sid in dup.associated_simkl_ids:
-            canonical.add_associated_simkl_id(sid)
+        for sid in dup.associated_franchise_ids:
+            canonical.add_associated_franchise_id(sid)
         if dup.simkl_id and canonical.seasons:
             for s in canonical.seasons:
                 if not s.simkl_id and (
@@ -1409,7 +1409,7 @@ async def _sync_items(
         for existing_mi in existing_items_res.scalars().unique().all():
             if existing_mi.simkl_id:
                 known_simkl_ids.add(int(existing_mi.simkl_id))
-            known_simkl_ids.update(existing_mi.associated_simkl_ids)
+            known_simkl_ids.update(existing_mi.associated_franchise_ids)
             if existing_mi.mal_id:
                 known_mal_ids.add(int(existing_mi.mal_id))
             for existing_s in existing_mi.seasons or []:
@@ -1519,13 +1519,13 @@ async def _sync_items(
         result = await session.execute(stmt)
         item = result.scalars().first()
 
-        # Also check associated_simkl_ids for merged multi-cour/bridge anime entries
+        # Also check associated_franchise_ids for merged multi-cour/bridge anime entries
         if not item and media_type == MediaType.ANIME:
             assoc_stmt = (
                 select(MediaItem)
                 .where(
                     MediaItem.media_type == MediaType.ANIME,
-                    MediaItem.associated_simkl_ids_json.isnot(None),
+                    MediaItem.associated_franchise_ids_json != "[]",
                 )
                 .order_by(MediaItem.id.asc())
                 .options(selectinload(MediaItem.seasons))
@@ -1533,7 +1533,7 @@ async def _sync_items(
             for cand_item in (
                 (await session.execute(assoc_stmt)).scalars().unique().all()
             ):
-                if simkl_id in cand_item.associated_simkl_ids:
+                if simkl_id in cand_item.associated_franchise_ids:
                     item = cand_item
                     break
 
@@ -1601,7 +1601,7 @@ async def _sync_items(
         if existing_season:
             parent_item = existing_season.media_item
             if parent_item:
-                parent_item.add_associated_simkl_id(simkl_id)
+                parent_item.add_associated_franchise_id(simkl_id)
                 if not parent_item.tmdb_id and tmdb_id:
                     parent_item.tmdb_id = tmdb_id
                 if not parent_item.imdb_id and ids.get("imdb"):
@@ -1665,7 +1665,7 @@ async def _sync_items(
                     evaluate_simkl_watch_progress_and_advance,
                 )
 
-                parent_item.simkl_synced_at = datetime.now(timezone.utc)
+                parent_item.watchlist_synced_at = datetime.now(timezone.utc)
                 await _upsert_simkl_source_for_item(
                     session, parent_item, provider_id, simkl_id, item_data
                 )
@@ -1694,7 +1694,7 @@ async def _sync_items(
                 else None,
                 status=MediaStatus.PENDING,
             )
-            item.add_associated_simkl_id(simkl_id)
+            item.add_associated_franchise_id(simkl_id)
             session.add(item)
             if stats is not None:
                 stats.added += 1
@@ -1706,7 +1706,7 @@ async def _sync_items(
             is_new = False
             # PRESERVE existing DB media_type for sync logic to prevent watchlist sync from overwriting user classifications
             media_type = item.media_type
-            item.add_associated_simkl_id(simkl_id)
+            item.add_associated_franchise_id(simkl_id)
             if not item.tmdb_id and tmdb_id:
                 item.tmdb_id = tmdb_id
             if not item.imdb_id and ids.get("imdb"):
@@ -1763,7 +1763,9 @@ async def _sync_items(
                     for s in item.seasons:
                         s.status = SeasonStatus.IGNORED
                     if parent_season.media_item and item.simkl_id:
-                        parent_season.media_item.add_associated_simkl_id(item.simkl_id)
+                        parent_season.media_item.add_associated_franchise_id(
+                            item.simkl_id
+                        )
                     if not parent_season.simkl_id and item.simkl_id:
                         parent_season.simkl_id = item.simkl_id
                     if not parent_season.mal_id and item.mal_id:
@@ -1860,7 +1862,7 @@ async def _sync_items(
             continue
 
         _backfill_item_release_date_from_seasons(item)
-        item.simkl_synced_at = datetime.now(timezone.utc)
+        item.watchlist_synced_at = datetime.now(timezone.utc)
         await _upsert_simkl_source_for_item(
             session, item, provider_id, simkl_id, item_data
         )
@@ -1975,7 +1977,7 @@ async def enrich_anime_metadata(session: AsyncSession, item: MediaItem) -> None:
     original_anilist_id = item.anilist_id
     original_simkl_id = item.simkl_id
     original_mal_id = item.mal_id
-    item.add_associated_simkl_id(original_simkl_id)
+    item.add_associated_franchise_id(original_simkl_id)
     if not original_anilist_id:
         item.last_metadata_refreshed_at = now
         return
@@ -2016,8 +2018,8 @@ async def enrich_anime_metadata(session: AsyncSession, item: MediaItem) -> None:
                 other_root.mal_id = item.mal_id
             if not other_root.poster_url and item.poster_url:
                 other_root.poster_url = item.poster_url
-            for sid in item.associated_simkl_ids:
-                other_root.add_associated_simkl_id(sid)
+            for sid in item.associated_franchise_ids:
+                other_root.add_associated_franchise_id(sid)
             if other_root.status == MediaStatus.IGNORED:
                 other_root.status = (
                     MediaStatus.FUTURE
@@ -2516,8 +2518,8 @@ async def consolidate_standalone_anime_sequels(session: AsyncSession) -> int:
                     for s in cand.seasons:
                         s.status = SeasonStatus.IGNORED
 
-                    for sid in cand.associated_simkl_ids:
-                        parent.add_associated_simkl_id(sid)
+                    for sid in cand.associated_franchise_ids:
+                        parent.add_associated_franchise_id(sid)
                     if not season.simkl_id and cand.simkl_id:
                         season.simkl_id = cand.simkl_id
                     if not season.anilist_id and cand.anilist_id:
@@ -2623,8 +2625,8 @@ async def reset_anime_metadata(session: AsyncSession, item_id: int) -> MediaItem
                     other_root.mal_id = item.mal_id
                 if not other_root.poster_url and item.poster_url:
                     other_root.poster_url = item.poster_url
-                for sid in item.associated_simkl_ids:
-                    other_root.add_associated_simkl_id(sid)
+                for sid in item.associated_franchise_ids:
+                    other_root.add_associated_franchise_id(sid)
                 await session.delete(item)
                 await session.commit()
                 return other_root

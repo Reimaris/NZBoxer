@@ -35,7 +35,6 @@ from sqlalchemy.orm import (
     Mapped,
     mapped_column,
     relationship,
-    synonym,
     validates,
 )
 
@@ -531,7 +530,6 @@ class MediaItem(Base):
     associated_franchise_ids_json: Mapped[str] = mapped_column(
         Text, nullable=False, default="[]", server_default="[]"
     )
-    associated_simkl_ids_json = synonym("associated_franchise_ids_json")
     imdb_id: Mapped[str | None] = mapped_column(String(20), nullable=True, index=True)
     tmdb_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     tvdb_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
@@ -569,15 +567,6 @@ class MediaItem(Base):
         current = self.associated_franchise_ids
         current.add(int(external_id))
         self.associated_franchise_ids_json = json.dumps(sorted(current))
-
-    @property
-    def associated_simkl_ids(self) -> set[int]:
-        """Alias of ``associated_franchise_ids`` (removed in m59-08)."""
-        return self.associated_franchise_ids
-
-    def add_associated_simkl_id(self, simkl_id: int | None) -> None:
-        """Alias of ``add_associated_franchise_id`` (removed in m59-08)."""
-        self.add_associated_franchise_id(simkl_id)
 
     # --- Metadata ---
     title: Mapped[str] = mapped_column(String(500), nullable=False)
@@ -631,8 +620,6 @@ class MediaItem(Base):
     watched_completed: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="0"
     )
-    last_watched_order_simkl = synonym("last_watched_order")
-    simkl_watched_completed = synonym("watched_completed")
 
     @validates("custom_search_config_json")
     def _validate_custom_search_config_json(self, _key: str, value: Any) -> str | None:
@@ -646,7 +633,6 @@ class MediaItem(Base):
     watchlist_synced_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
-    simkl_synced_at = synonym("watchlist_synced_at")
     fail_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     last_searched_at: Mapped[datetime | None] = mapped_column(

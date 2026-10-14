@@ -1573,7 +1573,7 @@ async def backfill_watchlist_sources(session: AsyncSession) -> int:
                 MediaItem.id,
                 MediaItem.provider_id,
                 MediaItem.simkl_id,
-                MediaItem.last_watched_order_simkl,
+                MediaItem.last_watched_order,
             ).where(
                 MediaItem.provider_id.is_not(None),
                 ~select(MediaItemWatchlistSource.id)
@@ -1584,7 +1584,7 @@ async def backfill_watchlist_sources(session: AsyncSession) -> int:
     ).all()
     created = 0
     for item in items:
-        order = item.last_watched_order_simkl or 0
+        order = item.last_watched_order or 0
         session.add(
             MediaItemWatchlistSource(
                 media_item_id=item.id,
