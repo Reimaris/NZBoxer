@@ -101,15 +101,17 @@ async def get_active_indexers(db: AsyncSession) -> Sequence[Provider]:
     indexers = list(result.scalars().all())
     if not indexers:
         from app.config import settings
+        from app.services.indexers.catalog import INDEXER_PRESETS
 
+        preset = INDEXER_PRESETS[0]
         api_key = getattr(settings, "treasure_maps_api_key", "")
         return [
             Provider(
                 id=0,
-                name="TreasureMaps",
-                type="treasure_maps",
+                name=preset.name,
+                type=preset.type,
                 category=ProviderCategory.INDEXER.value,
-                api_url="https://treasure-maps.com/api",
+                api_url=preset.api_url,
                 api_key=api_key,
                 priority=1,
                 is_active=True,

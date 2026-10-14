@@ -250,7 +250,7 @@ class Provider(Base):
     )
     type: Mapped[str] = mapped_column(
         String(50), nullable=False
-    )  # e.g., 'simkl', 'torbox', 'treasure_maps', 'tmdb', 'anilist'
+    )  # e.g., 'simkl', 'torbox', 'newznab', 'tmdb', 'anilist'
     name: Mapped[str] = mapped_column(String(200), nullable=False)
 
     # Generic API & Endpoint Credentials

@@ -2915,7 +2915,7 @@ async def onboarding_step1(request: Request) -> Response:
             "indexer_type",
             frozenset(p.type for p in INDEXER_PRESETS),
             label="indexer",
-            legacy="treasure_maps" if indexer_url or indexer_key else "",
+            legacy="newznab" if indexer_url or indexer_key else "",
         )
     except ValueError as exc:
         return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)

@@ -154,6 +154,18 @@ async def _migrate_downloader_columns(conn: AsyncConnection) -> None:
     )
 
 
+async def _migrate_indexer_type(conn: AsyncConnection) -> None:
+    """m59 (spec §6): provider type ``treasure_maps`` -> ``newznab`` (idempotent)."""
+    from sqlalchemy import text as sa_text
+
+    await conn.execute(
+        sa_text(
+            "UPDATE providers SET type = 'newznab' "
+            "WHERE type = 'treasure_maps'"  # legacy domain migration (allowlisted)
+        )
+    )
+
+
 async def _migrate_watchlist_neutral_columns(conn: AsyncConnection) -> None:
     """m59 (spec §2.2): legacy ``*_simkl*`` media_items columns -> watchlist-neutral."""
     from sqlalchemy import text as sa_text
@@ -374,7 +386,9 @@ async def init_db(database_url: str) -> None:
                             p_cat = "metadata"
                         elif p_type == "torbox":
                             p_cat = "downloader"
-                        elif p_type == "treasure_maps":
+                        elif (
+                            p_type == "treasure_maps"
+                        ):  # legacy schema marker (allowlisted)
                             p_cat = "indexer"
                         elif p_type == "simkl":
                             p_cat = "watchlist"
@@ -924,6 +938,7 @@ async def init_db(database_url: str) -> None:
 
             # Backfill existing providers category
             try:
+                await _migrate_indexer_type(await session.connection())
                 await session.execute(
                     __import__("sqlalchemy").text(
                         "DELETE FROM providers WHERE type IN ('hardcover', 'openlibrary') OR category = 'print_media';"
@@ -941,7 +956,7 @@ async def init_db(database_url: str) -> None:
                 )
                 await session.execute(
                     __import__("sqlalchemy").text(
-                        "UPDATE providers SET category = 'indexer' WHERE type = 'treasure_maps';"
+                        "UPDATE providers SET category = 'indexer' WHERE type = 'newznab';"
                     )
                 )
                 await session.execute(
@@ -1123,6 +1138,7 @@ async def init_db(database_url: str) -> None:
                         )
                 await _migrate_downloader_columns(await session.connection())
                 await _migrate_watchlist_neutral_columns(await session.connection())
+                await _migrate_indexer_type(await session.connection())
                 await session.execute(
                     sa_text(
                         "CREATE INDEX IF NOT EXISTS ix_download_history_downloader_transfer_id "

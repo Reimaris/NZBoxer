@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from app.services.indexers import normalize_indexer_type
+
 if TYPE_CHECKING:
     from app.db.models import Provider
 
@@ -25,7 +27,7 @@ class IndexerPreset:
 
 INDEXER_PRESETS: tuple[IndexerPreset, ...] = (
     IndexerPreset(
-        "treasure_maps",
+        "treasuremaps",
         "TreasureMaps",
         "https://treasure-maps.com/api",
         "https://treasure-maps.com/profile",
@@ -111,7 +113,10 @@ _PRESETS_BY_TYPE = {p.type: p for p in INDEXER_PRESETS}
 
 
 def get_preset(provider_type: str) -> IndexerPreset | None:
-    return _PRESETS_BY_TYPE.get((provider_type or "").strip().lower())
+    slug = (provider_type or "").strip().lower()
+    if slug == "treasure_maps":  # legacy domain migration (allowlisted)
+        slug = normalize_indexer_type(slug)
+    return _PRESETS_BY_TYPE.get(slug)
 
 
 def is_indexer_type(provider_type: str) -> bool:
