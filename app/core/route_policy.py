@@ -22,6 +22,7 @@ ALWAYS_ALLOWED_PREFIXES: tuple[str, ...] = (
     "/setup",
     "/health",
     # Provider auth flows and diagnostics are needed to fix an incomplete setup.
+    # provider-specific code (allowlisted)
     "/simkl/auth",
     "/feedback",
     "/system",
@@ -44,6 +45,7 @@ WATCHLIST_ROUTE_PATTERNS: tuple[re.Pattern[str], ...] = (
 # the ad-hoc search routes that stay usable without a watchlist provider.
 CORE_PREFIXES: tuple[str, ...] = (
     "/api/search/manual",
+    # provider-specific code (allowlisted)
     "/api/torbox/add",
     "/api/pushes",
     "/api/history",
