@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.config import settings
+from app.core.automation import is_date_only_air_date
 from app.core.parser import parse_release_name
 from app.core.phase_stats import AirPushStats
 from app.core.push_engine import (
@@ -66,12 +67,16 @@ def is_episode_air_due(
 ) -> bool:
     """True when a SEARCHING episode's air date plus delay has been reached.
 
-    With ``max_age_hours`` set, episodes older than ``air_date + delay + max_age``
-    are excluded (backlog guard).
+    Date-only air dates (no broadcast time) only become due once that day has
+    fully ended (+24h) plus the delay. With ``max_age_hours`` set, episodes older
+    than ``due + max_age`` are excluded (backlog guard).
     """
     if ep.air_date is None or ep.status != EpisodeStatus.SEARCHING:
         return False
-    due = _as_utc(ep.air_date) + timedelta(hours=delay_hours)
+    air_date = _as_utc(ep.air_date)
+    if is_date_only_air_date(air_date):
+        air_date = air_date.replace(microsecond=0) + timedelta(hours=24)
+    due = air_date + timedelta(hours=delay_hours)
     if now_utc < due:
         return False
     return max_age_hours is None or now_utc <= due + timedelta(hours=max_age_hours)

@@ -154,6 +154,16 @@ def parse_broadcast_air_date(date_str: str | None) -> datetime | None:
         return None
 
 
+def is_date_only_air_date(air_date: datetime) -> bool:
+    """True when air_date carries only a calendar day (no broadcast time)."""
+    return air_date.microsecond == DATE_ONLY_FALLBACK_MICROSECOND or (
+        air_date.hour == 0
+        and air_date.minute == 0
+        and air_date.second == 0
+        and air_date.microsecond == 0
+    )
+
+
 def is_episode_aired(
     air_date: datetime,
     now_utc: datetime,
@@ -183,12 +193,7 @@ def is_episode_aired(
     else:
         # Date-only fallback if marked with DATE_ONLY_FALLBACK_MICROSECOND
         # or midnight timestamp without non-zero time components
-        is_fallback = air_date.microsecond == DATE_ONLY_FALLBACK_MICROSECOND or (
-            air_date.hour == 0
-            and air_date.minute == 0
-            and air_date.second == 0
-            and air_date.microsecond == 0
-        )
+        is_fallback = is_date_only_air_date(air_date)
 
     if is_fallback:
         base_date = air_date.replace(microsecond=0)
