@@ -133,16 +133,30 @@
                         </div>
 
                         <!-- Provider Avatar & Meta -->
+                        {% set idx_preset = indexer_preset(provider.type) if cat == 'indexer' else none %}
+                        {% set idx_color_classes = {
+                            'blue': 'bg-blue-500/15 border border-blue-500/30 text-blue-400',
+                            'emerald': 'bg-emerald-500/15 border border-emerald-500/30 text-emerald-400',
+                            'orange': 'bg-orange-500/15 border border-orange-500/30 text-orange-400',
+                            'rose': 'bg-rose-500/15 border border-rose-500/30 text-rose-400',
+                            'cyan': 'bg-cyan-500/15 border border-cyan-500/30 text-cyan-400',
+                            'violet': 'bg-violet-500/15 border border-violet-500/30 text-violet-400',
+                            'amber': 'bg-amber-500/15 border border-amber-500/30 text-amber-400',
+                            'lime': 'bg-lime-500/15 border border-lime-500/30 text-lime-400',
+                            'teal': 'bg-teal-500/15 border border-teal-500/30 text-teal-400',
+                            'fuchsia': 'bg-fuchsia-500/15 border border-fuchsia-500/30 text-fuchsia-400',
+                            'zinc': 'bg-zinc-500/15 border border-zinc-500/30 text-zinc-400'
+                        } %}
                         <div class="flex items-start gap-3 mb-3">
                             <div class="w-10 h-10 rounded-xl flex items-center justify-center font-bold text-base shrink-0
                                 {% if cat == 'watchlist' %}bg-[#d40060]/15 border border-[#d40060]/30 text-[#d40060]
                                 {% elif cat == 'metadata' %}bg-amber-500/15 border border-amber-500/30 text-amber-400
                                 {% elif cat == 'downloader' %}bg-purple-500/15 border border-purple-500/30 text-purple-400
-                                {% elif cat == 'indexer' %}bg-blue-500/15 border border-blue-500/30 text-blue-400
+                                {% elif cat == 'indexer' %}{{ idx_color_classes[idx_preset.color if idx_preset else 'zinc'] }}
                                 {% else %}bg-zinc-700 text-zinc-300{% endif %}">
                                 {% if cat == 'watchlist' %}{{ provider.name[:1]|upper }}
                                 {% elif cat == 'downloader' %}TB
-                                {% elif cat == 'indexer' %}<span class="text-xs">NZB</span>
+                                {% elif cat == 'indexer' %}<span class="text-xs" data-badge="{{ idx_preset.badge if idx_preset else 'NZB' }}">{{ idx_preset.badge if idx_preset else 'NZB' }}</span>
                                 {% elif provider.type == 'tmdb' %}T
                                 {% elif provider.type == 'anilist' %}A
                                 {% else %}{{ provider.name[:1]|upper }}{% endif %}
