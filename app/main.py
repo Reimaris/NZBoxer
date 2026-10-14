@@ -309,10 +309,15 @@ async def setup_guard(request: Request, call_next):
 
     def refuse(missing: list[str], message: str) -> Response:
         if is_htmx:
+            # X-Status-Span makes base.html swap the 4xx body so the message is visible.
+            msg = html.escape(message)
             return HTMLResponse(
-                content=f'<div class="text-red-400 text-sm">{html.escape(message)}</div>',
+                content=(
+                    '<span class="text-red-400 font-medium text-xs px-2 py-1.5 '
+                    f'bg-red-500/10 border border-red-500/20 rounded-md">{msg}</span>'
+                ),
                 status_code=403,
-                headers={"HX-Trigger": json.dumps({"showAutoSaveToast": message})},
+                headers={"X-Status-Span": "1"},
             )
         return JSONResponse(
             {"detail": "setup_required", "missing": missing}, status_code=403
