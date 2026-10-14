@@ -2483,11 +2483,13 @@ async def evaluate_watch_progress_and_advance(
         if matched_season is None:
             item.watched_completed = True
 
-    unloaded = sa_inspect(item).unloaded
     if hasattr(session, "refresh"):
-        stale = [a for a in ("seasons", "watchlist_sources") if a in unloaded]
-        if stale:
-            await session.refresh(item, stale)
+        # Pending source rows must be flushed first, or the loaded collection is stale.
+        await session.flush()
+        stale = ["watchlist_sources"]
+        if "seasons" in sa_inspect(item).unloaded:
+            stale.append("seasons")
+        await session.refresh(item, stale)
 
     detected_order = max(
         extract_watched_order(

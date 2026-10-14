@@ -29,6 +29,7 @@ class WatchlistEntry:
     year: int | None = None
     list_status: ListStatus = "plantowatch"
     watched_episodes: int = 0
+    watched_season: int | None = None  # furthest season with watched episodes
     tmdb_id: int | None = None
     imdb_id: str | None = None
     tvdb_id: int | None = None

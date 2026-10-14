@@ -17,12 +17,15 @@ from sqlalchemy.orm import selectinload
 
 from app.db.models import (
     ACTIVE_LIST_STATUSES,
+    Episode,
+    EpisodeStatus,
     MediaItem,
     MediaItemWatchlistSource,
     MediaStatus,
     MediaType,
     Provider,
     Season,
+    SeasonStatus,
 )
 from app.services.watchlist_providers import WatchlistEntry
 
@@ -187,14 +190,55 @@ def _fill_missing_ids(
             setattr(item, attr, value)
 
 
-def _entry_order(item: MediaItem, entry: WatchlistEntry) -> tuple[int, Season | None]:
-    """Return (watch_order reached, matched season) for an entry with progress."""
+def _matched_season(item: MediaItem, entry: WatchlistEntry) -> Season | None:
+    """Season of *item* that the entry's AniList/MAL id points at, if any."""
     for season in item.seasons or []:
         if (entry.anilist_id and season.anilist_id == entry.anilist_id) or (
             entry.mal_id and season.mal_id == entry.mal_id
         ):
-            return int(season.watch_order or 1), season
-    return 1, None
+            return season
+    return None
+
+
+def _season_number_order(item: MediaItem, number: int) -> int:
+    """Chronological watch order of provider season *number* (fallback: the number)."""
+    seasons = sorted(item.seasons or [], key=lambda s: (s.watch_order, s.season_number))
+    for match in (
+        lambda s: (
+            getattr(s, "entry_type", "season") == "season" and s.type_number == number
+        ),
+        lambda s: s.season_number == number,
+        lambda s: s.type_number == number,
+        lambda s: s.watch_order == number,
+    ):
+        for season in seasons:
+            if match(season):
+                return int(season.watch_order)
+    return number
+
+
+def _entry_order(item: MediaItem, entry: WatchlistEntry, matched: Season | None) -> int:
+    """Return the watch_order reached by an entry with progress (furthest signal wins)."""
+    orders = [int(matched.watch_order or 1)] if matched else []
+    if entry.watched_season:
+        orders.append(_season_number_order(item, entry.watched_season))
+    return max(orders) if orders else 1
+
+
+async def _monitor_matched_season(session: AsyncSession, season: Season) -> None:
+    """A list entry that maps to a season makes that season (and its episodes) searchable."""
+    season.monitored = True
+    if season.status == SeasonStatus.PENDING:
+        season.status = SeasonStatus.SEARCHING
+    episodes = (
+        (await session.execute(select(Episode).where(Episode.season_id == season.id)))
+        .scalars()
+        .all()
+    )
+    for ep in episodes:
+        ep.monitored = True
+        if ep.status == EpisodeStatus.PENDING:
+            ep.status = EpisodeStatus.SEARCHING
 
 
 async def _upsert_source(
@@ -331,9 +375,13 @@ async def ingest_entries(
             result.linked += 1
 
         has_progress = entry.watched_episodes > 0 or entry.list_status == "completed"
-        if has_progress:
+        matched = None
+        if has_progress or entry.media_kind in _ANIME_KINDS:
             await session.refresh(item, ["seasons"])  # async-safe lazy load
-        order, matched = _entry_order(item, entry) if has_progress else (0, None)
+            matched = _matched_season(item, entry)
+        if matched is not None:
+            await _monitor_matched_season(session, matched)
+        order = _entry_order(item, entry, matched) if has_progress else 0
         source = await _upsert_source(session, item, provider, entry, order, result)
 
         if has_progress:

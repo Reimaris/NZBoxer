@@ -9,6 +9,7 @@ Helpers shared with the rest of the orchestrator are reached through the
 from __future__ import annotations
 
 import logging
+import re
 from datetime import datetime, timezone
 from typing import Any
 
@@ -967,6 +968,22 @@ def _simkl_watched_episodes(item: dict[str, Any]) -> int:
     return 0
 
 
+def _simkl_watched_season(item: dict[str, Any]) -> int | None:
+    """Furthest season with watched episodes, from ``seasons[]`` and ``last_watched``."""
+    numbers: list[int] = []
+    for season in item.get("seasons") or []:
+        if isinstance(season, dict) and season.get("episodes"):
+            try:
+                numbers.append(int(season.get("number")))  # type: ignore[arg-type]
+            except (TypeError, ValueError):
+                continue
+    last = item.get("last_watched")
+    if isinstance(last, str) and (m := re.search(r"(?i)S(\d+)\s*E(\d+)", last)):
+        numbers.append(int(m.group(1)))
+    positive = [n for n in numbers if n > 0]
+    return max(positive) if positive else None
+
+
 class SimklWatchlistAdapter:
     """Simkl watchlist adapter with a native, franchise-aware sync pipeline."""
 
@@ -1001,6 +1018,7 @@ class SimklWatchlistAdapter:
                             year=media.get("year"),
                             list_status=_simkl_list_status(item.get("status")),
                             watched_episodes=_simkl_watched_episodes(item),
+                            watched_season=_simkl_watched_season(item),
                             tmdb_id=_int_or_none(ids.get("tmdb")),
                             imdb_id=ids.get("imdb"),
                             tvdb_id=_int_or_none(ids.get("tvdb")),
