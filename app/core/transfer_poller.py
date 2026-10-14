@@ -641,13 +641,13 @@ def _match_downloader_transfer(
 ) -> tuple[str, dict[str, Any] | None]:
     """Match a DownloadHistory row against TorBox's transfer dictionary by ID, hash, or title."""
     tb_item: dict[str, Any] | None = None
-    if history.torbox_id:
-        tb_item = tb_map.get(str(history.torbox_id))
+    if history.downloader_transfer_id:
+        tb_item = tb_map.get(str(history.downloader_transfer_id))
 
-    if tb_item is None and history.torbox_hash:
+    if tb_item is None and history.downloader_hash:
         for cand in tb_map.values():
-            if str(cand.get("hash") or "").lower() == history.torbox_hash.lower():
-                history.torbox_id = str(cand.get("id"))
+            if str(cand.get("hash") or "").lower() == history.downloader_hash.lower():
+                history.downloader_transfer_id = str(cand.get("id"))
                 tb_item = cand
                 break
 
@@ -658,15 +658,15 @@ def _match_downloader_transfer(
                 history.nzb_title.lower() in tb_name.lower()
                 or tb_name.lower() in history.nzb_title.lower()
             ):
-                history.torbox_id = str(cand.get("id"))
+                history.downloader_transfer_id = str(cand.get("id"))
                 tb_item = cand
                 break
 
     if tb_item is None:
-        if not history.torbox_id:
+        if not history.downloader_transfer_id:
             return "downloading", None
         now_utc = datetime.now(timezone.utc)
-        sent_at = history.torbox_sent_at
+        sent_at = history.dispatched_at
         if sent_at and sent_at.tzinfo is None:
             sent_at = sent_at.replace(tzinfo=timezone.utc)
         if (
@@ -752,7 +752,7 @@ def _sync_season_status_from_episodes(season: Season | None) -> None:
     )
     has_active_pack = any(
         not h.is_dismissed
-        and bool(h.torbox_id or h.torbox_hash)
+        and bool(h.downloader_transfer_id or h.downloader_hash)
         and h.episode_id is None
         and not _is_history_terminal(h.status_detail)
         for h in hist_list
@@ -1173,7 +1173,7 @@ async def _run_transfer_poller_tick_with_session(
     ] = []
 
     def _sent_at_utc(h: DownloadHistory) -> datetime:
-        dt = h.torbox_sent_at
+        dt = h.dispatched_at
         if dt is None:
             return datetime.min.replace(tzinfo=timezone.utc)
         if dt.tzinfo is None:
@@ -1188,7 +1188,7 @@ async def _run_transfer_poller_tick_with_session(
             h
             for h in histories
             if not h.is_dismissed
-            and bool(h.torbox_id or h.torbox_hash)
+            and bool(h.downloader_transfer_id or h.downloader_hash)
             and (h.status_detail or "").strip().lower()
             in ACTIVE_POLLABLE_STATUS_DETAILS
             and (not require_episode_none or h.episode_id is None)
@@ -1267,7 +1267,7 @@ async def _run_transfer_poller_tick_with_session(
         )
         status_lower = raw_status.lower()
 
-        sent_at = history.torbox_sent_at
+        sent_at = history.dispatched_at
         if sent_at and sent_at.tzinfo is None:
             sent_at = sent_at.replace(tzinfo=timezone.utc)
         elapsed_seconds = (now_utc - sent_at).total_seconds() if sent_at else 0.0
@@ -1289,7 +1289,7 @@ async def _run_transfer_poller_tick_with_session(
             else:
                 history.eta_seconds = None
 
-        tb_id_str = str(history.torbox_id or "unknown")
+        tb_id_str = str(history.downloader_transfer_id or "unknown")
         speed_str = _format_speed_and_eta(int(history.download_speed_bytes or 0), None)
         eta_display = (
             f"{int(history.eta_seconds)}s"
@@ -1324,7 +1324,9 @@ async def _run_transfer_poller_tick_with_session(
             elif client.supports_file_listing:
                 try:
                     tb_files = list(
-                        await client.get_transfer_files(str(history.torbox_id))
+                        await client.get_transfer_files(
+                            str(history.downloader_transfer_id)
+                        )
                     )
                 except DownloaderNetworkError:
                     continue
@@ -1718,7 +1720,7 @@ async def get_active_pushes(session: AsyncSession) -> list[dict[str, Any]]:
             selectinload(DownloadHistory.season),
             selectinload(DownloadHistory.episode),
         )
-        .order_by(DownloadHistory.torbox_sent_at.desc(), DownloadHistory.id.desc())
+        .order_by(DownloadHistory.dispatched_at.desc(), DownloadHistory.id.desc())
     )
     rows = (await session.execute(stmt)).scalars().all()
 
@@ -1865,7 +1867,7 @@ async def get_active_pushes(session: AsyncSession) -> list[dict[str, Any]]:
                 "history_id": h.id,
                 "downloader_type": _row_downloader_type(h),
                 "downloader_name": DOWNLOADER_DISPLAY_NAMES[_row_downloader_type(h)],
-                "torbox_id": h.downloader_transfer_id,
+                "downloader_transfer_id": h.downloader_transfer_id,
                 "media_item_id": item.id,
                 "season_id": h.season_id,
                 "episode_id": h.episode_id,
@@ -2072,7 +2074,7 @@ async def cancel_active_push(session: AsyncSession, history_id: int) -> bool:
     if history is None:
         return False
 
-    old_torbox_id = history.torbox_id
+    old_transfer_id = history.downloader_transfer_id
     old_downloader_type = history.downloader_type
 
     if history.episode is not None:
@@ -2103,8 +2105,8 @@ async def cancel_active_push(session: AsyncSession, history_id: int) -> bool:
 
     await session.commit()
 
-    if old_torbox_id:
-        await _purge_for_row(session, old_torbox_id, old_downloader_type)
+    if old_transfer_id:
+        await _purge_for_row(session, old_transfer_id, old_downloader_type)
 
     if history.media_item is not None and history.media_item.id is not None:
         sys_settings = (
@@ -2163,7 +2165,7 @@ async def abort_all_active_transfers(session: AsyncSession) -> dict[str, Any]:
         rows = (await session.execute(stmt)).scalars().all()
 
         matching_histories: list[DownloadHistory] = []
-        torbox_ids_to_delete: list[str] = []
+        transfer_ids_to_delete: list[str] = []
         id_types: dict[str, str] = {}
         affected_items: dict[int, MediaItem] = {}
         reverted_episode_ids: set[int] = set()
@@ -2184,9 +2186,12 @@ async def abort_all_active_transfers(session: AsyncSession) -> dict[str, Any]:
                 continue
 
             matching_histories.append(h)
-            if h.torbox_id and str(h.torbox_id) not in torbox_ids_to_delete:
-                torbox_ids_to_delete.append(str(h.torbox_id))
-                id_types[str(h.torbox_id)] = h.downloader_type
+            if (
+                h.downloader_transfer_id
+                and str(h.downloader_transfer_id) not in transfer_ids_to_delete
+            ):
+                transfer_ids_to_delete.append(str(h.downloader_transfer_id))
+                id_types[str(h.downloader_transfer_id)] = h.downloader_type
 
             reverts_to_old = h.episode is not None and (
                 await _has_live_replaced_release(session, h)
@@ -2296,7 +2301,7 @@ async def abort_all_active_transfers(session: AsyncSession) -> dict[str, Any]:
 
         await session.commit()
 
-    for tb_id in torbox_ids_to_delete:
+    for tb_id in transfer_ids_to_delete:
         await _purge_for_row(session, tb_id, id_types.get(tb_id))
 
     try:
@@ -2319,7 +2324,7 @@ async def abort_all_active_transfers(session: AsyncSession) -> dict[str, Any]:
     return {
         "ok": True,
         "aborted_count": len(matching_histories),
-        "canceled_torbox_ids": torbox_ids_to_delete,
+        "canceled_torbox_ids": transfer_ids_to_delete,
         "in_flight_canceled": in_flight_canceled,
     }
 
@@ -2415,7 +2420,7 @@ async def abort_item_transfer(
         matching_histories.extend(hists)
 
     valid_histories: list[DownloadHistory] = []
-    torbox_ids_to_delete: list[str] = []
+    transfer_ids_to_delete: list[str] = []
     id_types: dict[str, str] = {}
     reverted_episode_ids: set[int] = set()
     for h in matching_histories:
@@ -2432,9 +2437,12 @@ async def abort_item_transfer(
         )
         if is_rate_limited or is_active_downloading:
             valid_histories.append(h)
-            if h.torbox_id and str(h.torbox_id) not in torbox_ids_to_delete:
-                torbox_ids_to_delete.append(str(h.torbox_id))
-                id_types[str(h.torbox_id)] = h.downloader_type
+            if (
+                h.downloader_transfer_id
+                and str(h.downloader_transfer_id) not in transfer_ids_to_delete
+            ):
+                transfer_ids_to_delete.append(str(h.downloader_transfer_id))
+                id_types[str(h.downloader_transfer_id)] = h.downloader_type
             if h.episode_id is not None and await _has_live_replaced_release(
                 session, h
             ):
@@ -2515,7 +2523,7 @@ async def abort_item_transfer(
 
     await session.commit()
 
-    for tb_id in torbox_ids_to_delete:
+    for tb_id in transfer_ids_to_delete:
         await _purge_for_row(session, tb_id, id_types.get(tb_id))
 
     try:
@@ -2537,7 +2545,7 @@ async def abort_item_transfer(
 
     return {
         "status": "ok",
-        "deleted_torbox_ids": torbox_ids_to_delete,
+        "deleted_torbox_ids": transfer_ids_to_delete,
         "canceled_count": len(valid_histories),
         "item_id": item_id,
     }
@@ -2573,10 +2581,10 @@ async def reconcile_completed_history(
 
 async def reconcile_completed_history_with_torbox(
     session: AsyncSession,
-    live_torbox_ids: set[str],
+    live_transfer_ids: set[str],
 ) -> int:
     """TorBox-specific entry point; delegates to ``reconcile_completed_history``."""
-    return await reconcile_completed_history(session, "torbox", live_torbox_ids)
+    return await reconcile_completed_history(session, "torbox", live_transfer_ids)
 
 
 async def _recalculate_parent_status(
@@ -2620,7 +2628,7 @@ async def _recalculate_parent_status(
     )
 
     def _is_hist_active(h: DownloadHistory) -> bool:
-        if h.is_dismissed or not (h.torbox_id or h.torbox_hash):
+        if h.is_dismissed or not (h.downloader_transfer_id or h.downloader_hash):
             return False
         d = (h.status_detail or "").strip().lower()
         return d in (
@@ -2988,15 +2996,18 @@ async def manual_delete_from_downloader(
             if all(existing.id != h.id for existing in matching_histories):
                 matching_histories.append(h)
 
-    torbox_ids_to_delete: list[str] = []
+    transfer_ids_to_delete: list[str] = []
     id_types: dict[str, str] = {}
     for h in matching_histories:
         detail_low = (h.status_detail or "").strip().lower()
         if h.id == history_id or detail_low not in ("replaced", "canceled"):
             if h.id == history_id or detail_low != "deleted":
-                if h.torbox_id and str(h.torbox_id) not in torbox_ids_to_delete:
-                    torbox_ids_to_delete.append(str(h.torbox_id))
-                    id_types[str(h.torbox_id)] = h.downloader_type
+                if (
+                    h.downloader_transfer_id
+                    and str(h.downloader_transfer_id) not in transfer_ids_to_delete
+                ):
+                    transfer_ids_to_delete.append(str(h.downloader_transfer_id))
+                    id_types[str(h.downloader_transfer_id)] = h.downloader_type
             h.status_detail = "deleted"
             h.is_dismissed = True
             h.notification_sent = True
@@ -3042,7 +3053,7 @@ async def manual_delete_from_downloader(
 
     await session.commit()
 
-    for tb_id in torbox_ids_to_delete:
+    for tb_id in transfer_ids_to_delete:
         await _purge_for_row(session, tb_id, id_types.get(tb_id))
 
     remaining = await count_downloading_entities(session)
@@ -3051,7 +3062,7 @@ async def manual_delete_from_downloader(
 
     return {
         "status": "ok",
-        "deleted_torbox_ids": torbox_ids_to_delete,
+        "deleted_torbox_ids": transfer_ids_to_delete,
         "item_id": item.id if item else item_id,
     }
 
@@ -3161,13 +3172,13 @@ async def blacklist_from_active_pushes(
         return True
     if (
         detail_lower.startswith("failed") or detail_lower == "rate_limited"
-    ) and not history.torbox_id:
+    ) and not history.downloader_transfer_id:
         return await dismiss_failed_push(session, history_id)
     return await cancel_active_push(session, history_id)
 
 
 async def get_push_history_ledger(session: AsyncSession) -> list[dict[str, Any]]:
-    """Query DownloadHistory ordered by COALESCE(torbox_sent_at, created_at) DESC, id DESC for Card 4 Push History Ledger."""
+    """Query DownloadHistory ordered by COALESCE(dispatched_at, created_at) DESC, id DESC for Card 4 Push History Ledger."""
     stmt = (
         select(DownloadHistory)
         .options(
@@ -3177,7 +3188,7 @@ async def get_push_history_ledger(session: AsyncSession) -> list[dict[str, Any]]
         )
         .order_by(
             func.coalesce(
-                DownloadHistory.torbox_sent_at, DownloadHistory.created_at
+                DownloadHistory.dispatched_at, DownloadHistory.created_at
             ).desc(),
             DownloadHistory.id.desc(),
         )
@@ -3298,7 +3309,7 @@ async def get_push_history_ledger(session: AsyncSession) -> list[dict[str, Any]]
             status_key = "completed"
             failure_reason = None
 
-        pushed_dt = h.torbox_sent_at or h.created_at
+        pushed_dt = h.dispatched_at or h.created_at
         pushed_local_dt = to_local_datetime(pushed_dt)
         pushed_ts = (
             pushed_local_dt.timestamp()
@@ -3357,7 +3368,7 @@ async def get_push_history_ledger(session: AsyncSession) -> list[dict[str, Any]]
                 "feature_pills": feature_pills,
                 "pushed_at_str": pushed_str,
                 "pushed_at_ts": pushed_ts,
-                "torbox_id": h.torbox_id,
+                "downloader_transfer_id": h.downloader_transfer_id,
                 "downloader_type": _row_downloader_type(h),
                 "downloader_name": DOWNLOADER_DISPLAY_NAMES[_row_downloader_type(h)],
                 "status_detail": h.status_detail,
@@ -3365,7 +3376,8 @@ async def get_push_history_ledger(session: AsyncSession) -> list[dict[str, Any]]
                 "torbox_status": torbox_status,
                 "status_key": status_key,
                 "failure_reason": failure_reason,
-                "can_delete_torbox": status_key == "completed" and bool(h.torbox_id),
+                "can_delete_torbox": status_key == "completed"
+                and bool(h.downloader_transfer_id),
                 "can_repush": h.media_item_id is not None,
             }
         )
@@ -3440,7 +3452,7 @@ async def purge_expired_dry_run_history(
     """Purge simulated dry-run DownloadHistory rows older than ttl_hours (default 1 hour)."""
     cutoff = datetime.now(timezone.utc) - timedelta(hours=ttl_hours)
     effective_ts = func.coalesce(
-        DownloadHistory.torbox_sent_at, DownloadHistory.created_at
+        DownloadHistory.dispatched_at, DownloadHistory.created_at
     )
     stmt = delete(DownloadHistory).where(
         DownloadHistory.is_dry_run.is_(True),
@@ -3499,7 +3511,7 @@ async def autoclear_history_ledger(
         if autoclear_pruned and row.media_item_id is None and not row.is_ad_hoc:
             pruned += 1
         elif age_enabled:
-            ts = row.torbox_sent_at or row.created_at
+            ts = row.dispatched_at or row.created_at
             if ts is None:
                 continue
             if ts.tzinfo is None:
