@@ -5,6 +5,17 @@
          step: 1,
          watchlistType: {{ watchlist_type|tojson }},
          downloaderType: {{ downloader_type|tojson }},
+         indexerType: {{ indexer_type|tojson }},
+         indexerPresets: {{ indexer_preset_map|tojson }},
+         indexerKeyUrl: '',
+         selectIndexerPreset() {
+             const preset = this.indexerPresets[this.indexerType];
+             if (!preset) { this.indexerKeyUrl = ''; return; }
+             const form = document.getElementById('onboarding-step1-form');
+             form.elements['indexer_name'].value = preset.name;
+             form.elements['indexer_url'].value = preset.api_url;
+             this.indexerKeyUrl = preset.key_url;
+         },
          error: '',
          saving: false,
          async post(url, formId) {
@@ -197,7 +208,15 @@
                     </div>
                 </div>
                 <div class="bg-[#111115] border border-[#3f3f46] rounded-lg p-4 space-y-3">
-                    <div class="flex items-center justify-between"><h4 class="text-sm font-bold text-white">Usenet Indexer</h4><a href="https://nzbgeek.info/" target="_blank" rel="noopener noreferrer" class="text-[11px] text-[#d40060] hover:underline">Get API Key / Register ↗</a></div>
+                    <div class="flex items-center justify-between"><h4 class="text-sm font-bold text-white">Usenet Indexer</h4><a id="onboarding-indexer-key-link" :href="indexerKeyUrl" x-show="indexerKeyUrl" x-cloak target="_blank" rel="noopener noreferrer" class="text-[11px] text-[#d40060] hover:underline">Get API Key / Register ↗</a></div>
+                    <select name="indexer_type" id="onboarding-indexer-type" x-model="indexerType" @change="selectIndexerPreset()" class="w-full bg-[#111115] border border-[#3f3f46] rounded-lg px-3 py-2 text-white text-xs focus:border-[#d40060] focus:outline-none">
+                        <option value="">None / Skip</option>
+                        {% for preset in indexer_presets if preset.type != 'newznab' %}
+                        <option value="{{ preset.type }}"{% if indexer_type == preset.type %} selected{% endif %}>{{ preset.name }}</option>
+                        {% endfor %}
+                        <option value="newznab"{% if indexer_type == 'newznab' %} selected{% endif %}>Custom Newznab</option>
+                    </select>
+                    <div id="onboarding-indexer-panel" x-show="indexerType !== ''" x-cloak class="space-y-3">
                     <label class="block text-xs text-[#a1a1aa]">Name
                         <input type="text" name="indexer_name" value="{{ indexer.name }}" autocomplete="off" placeholder="e.g. NZBgeek" class="mt-1 w-full bg-[#111115] border border-[#3f3f46] rounded-lg px-3 py-2 text-white text-xs focus:border-[#d40060] focus:outline-none">
                     </label>
@@ -210,6 +229,7 @@
                             <button type="button" @click="show = !show" class="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-[#a1a1aa] hover:text-white" x-text="show ? 'Hide' : 'Show'">Show</button>
                         </div>
                     </label>
+                    </div>
                 </div>
                 </form>
             </div>
