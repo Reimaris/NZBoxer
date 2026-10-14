@@ -7,6 +7,7 @@ They are read-only: NZBoxer never writes to any watchlist.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from importlib import import_module
 from typing import TYPE_CHECKING, Literal, Protocol
 
 if TYPE_CHECKING:
@@ -199,5 +200,16 @@ _ADAPTERS: dict[str, WatchlistAdapter] = {
 
 
 def get_adapter(provider_type: str) -> WatchlistAdapter:
-    """Return the adapter for *provider_type*; raises ``KeyError`` for unknown types."""
-    return _ADAPTERS[provider_type.lower()]
+    """Return the adapter for *provider_type*; raises ``KeyError`` for unknown types.
+
+    Types with a native sync pipeline ship an ``app.services.watchlists.<type>_sync``
+    module exposing an ``ADAPTER`` instance, loaded on first use.
+    """
+    key = provider_type.lower()
+    if key not in _ADAPTERS:
+        try:
+            module = import_module(f"app.services.watchlists.{key}_sync")
+        except ImportError as exc:
+            raise KeyError(provider_type) from exc
+        _ADAPTERS[key] = module.ADAPTER
+    return _ADAPTERS[key]

@@ -307,26 +307,6 @@ async def ingest_entries(
     return result
 
 
-# simkl inline sync (allowlisted, m59-32)
-async def upsert_simkl_source(
-    session: AsyncSession,
-    item: MediaItem,
-    provider: Provider,
-    simkl_id: int,
-    list_status: str,
-) -> MediaItemWatchlistSource:
-    """Upsert the source row linking *item* to a Simkl provider entry."""
-    entry = WatchlistEntry(
-        remote_id=str(simkl_id),
-        media_kind="movie" if item.media_type == MediaType.MOVIE else "show",
-        title=item.title or "",
-        list_status=list_status if list_status else "plantowatch",  # type: ignore[arg-type]
-    )
-    source = await _upsert_source(session, item, provider, entry, 0, IngestResult())
-    source.last_synced_at = datetime.now(timezone.utc)
-    return source
-
-
 async def mark_absent_sources_completed(
     session: AsyncSession, provider: Provider, seen_remote_ids: set[str]
 ) -> int:
