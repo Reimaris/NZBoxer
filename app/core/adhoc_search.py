@@ -481,7 +481,7 @@ async def push_adhoc_release(
     season: int | None = None,
     episode: int | None = None,
 ) -> AdHocPushOutcome:
-    """Send one release to TorBox and record a detached ad-hoc DownloadHistory row.
+    """Send one release to the active downloader and record a detached ad-hoc DownloadHistory row.
 
     No row is written on failure. Links are restricted to ``magnet:`` URIs and
     http(s) URLs hosted on a configured indexer (SSRF guard).

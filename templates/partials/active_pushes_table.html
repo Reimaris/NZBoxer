@@ -2,7 +2,7 @@
 {% if active_in_flight %}
 <div class="mb-3 px-4 py-2.5 rounded-lg bg-cyan-950/60 border border-cyan-600/50 text-cyan-200 text-xs font-medium flex items-center gap-2.5 animate-pulse" data-in-flight-banner="true">
     <span class="inline-flex rounded-full h-2 w-2 bg-cyan-400 shrink-0"></span>
-    <span class="truncate">Searching indexers &amp; dispatching to {{ downloader_name }}: <strong class="text-white">{{ active_in_flight | join(", ") }}</strong>...</span>
+    <span class="truncate">Searching indexers &amp; dispatching to downloader: <strong class="text-white">{{ active_in_flight | join(", ") }}</strong>...</span>
 </div>
 {% endif %}
 
@@ -251,7 +251,7 @@
                         <p class="text-sm font-medium text-cyan-300">Searching indexers for best releases — episodes will appear here momentarily...</p>
                         <p class="text-xs text-[#71717a]">Transfer poller is awake and monitoring background dispatch for {{ active_in_flight | join(", ") }}.</p>
                         {% else %}
-                        <p class="text-sm font-medium text-gray-300">No active {{ downloader_name }} transfers</p>
+                        <p class="text-sm font-medium text-gray-300">No active downloader transfers</p>
                         <p class="text-xs text-[#71717a]">Transfer poller is sleeping (0 background API calls). Push any movie, season, or episode to wake it automatically.</p>
                         {% endif %}
                     </div>

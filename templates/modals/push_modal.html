@@ -162,7 +162,7 @@
                 } else {
                     const reason = data.no_release_reason;
                     if (reason === "candidates_not_dispatched") {
-                        this.statusError = "Releases were found on indexers but could not be sent to {{ downloader_name }} (NZB fetch or upload failed). Check the logs for details, or use Search & Pick Manually to retry a specific release.";
+                        this.statusError = "Releases were found on indexers but could not be dispatched to the downloader (NZB fetch or dispatch failed). Check the logs for details, or use Search & Pick Manually to retry a specific release.";
                     } else {
                         this.statusError = data.error || "No matching releases found on active indexers. The scorer may have filtered all results — try Search & Pick Manually to browse and grab a release directly.";
                     }
@@ -222,8 +222,8 @@
             if (resp.ok && data.pushed) {
                 this.hasPushedInSession = true;
                 this.statusMessage = data.queued
-                    ? "Paused by {{ rate_limit_source() }} rate limit — \"" + rel.title + "\" is queued and will push automatically."
-                    : "Grabbed & pushed \"" + rel.title + "\" to {{ downloader_name }}!";
+                    ? "Paused by " + (data.rate_limit_source || "{{ rate_limit_source() }}") + " rate limit — \"" + rel.title + "\" is queued and will push automatically."
+                    : "Grabbed & dispatched \"" + rel.title + "\" to downloader!";
             } else {
                 this.statusError = data.error || "Failed to grab release.";
             }
@@ -1007,17 +1007,17 @@
                     @click="runAutoPush()"
                     :disabled="isLoadingAuto || isLoadingManual"
                     {% if settings.dry_run %}
-                    title="Simulate push pipeline without uploading to {{ downloader_name }}"
+                    title="Simulate push pipeline without dispatching to downloader"
                     class="w-full sm:w-auto px-4 py-2 sm:px-5 sm:py-2.5 justify-center rounded-lg bg-amber-600 hover:bg-amber-500 text-xs font-bold text-white shadow-lg shadow-amber-600/30 flex items-center gap-2 transition disabled:opacity-50">
                 <svg width="16" height="16" class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"></path></svg>
                 <span x-show="!isLoadingAuto">Simulate Push (Dry Run)</span>
                 <span x-show="isLoadingAuto" x-cloak>Simulating Push...</span>
                     {% else %}
-                    title="Auto-push the highest-scoring release to {{ downloader_name }}"
+                    title="Auto-push the highest-scoring release to the active downloader"
                     class="w-full sm:w-auto px-4 py-2 sm:px-5 sm:py-2.5 justify-center rounded-lg bg-[#d40060] hover:bg-[#a3004a] text-xs font-bold text-white shadow-lg shadow-[#d40060]/30 flex items-center gap-2 transition disabled:opacity-50">
                 <svg width="16" height="16" class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
                 <span x-show="!isLoadingAuto">Auto-Push Best</span>
-                <span x-show="isLoadingAuto" x-cloak>Pushing to {{ downloader_name }}...</span>
+                <span x-show="isLoadingAuto" x-cloak>Dispatching to Downloader...</span>
                     {% endif %}
             </button>
         </div>

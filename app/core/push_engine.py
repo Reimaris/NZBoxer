@@ -36,10 +36,12 @@ from app.core.fake_detector import (
 from app.core.parser import build_release_feature_pills, parse_release_name
 from app.core.rate_limit_queue import (
     RATE_LIMITED_DETAIL,
+    active_rate_limit_sources,
     is_indexer_rate_limit_error,
     is_rate_limit_error,
     rate_limit_episode,
     rate_limit_queue,
+    rate_limit_source_label,
     resume_time_label,
 )
 from app.core.scorer import score_release
@@ -3188,6 +3190,9 @@ async def execute_manual_grab(
             return {
                 "pushed": True,
                 "queued": True,
+                "rate_limit_source": rate_limit_source_label(
+                    active_rate_limit_sources()
+                ),
                 "push_mode": "manual",
                 "history_id": queued_hist.id,
                 "guid": queued_hist.nzb_guid,

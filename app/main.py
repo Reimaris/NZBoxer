@@ -916,7 +916,7 @@ async def reset_anime_metadata_endpoint(request: Request, item_id: int):
 
 @app.post("/api/torbox/add", response_class=HTMLResponse)
 async def manual_push_to_torbox(magnet: str = Form(...)):
-    """Push a search result directly to TorBox."""
+    """Push a search result directly to the active downloader."""
     import logging
 
     from app.services.downloaders import torbox
@@ -1025,7 +1025,7 @@ async def manual_push_adhoc(
     season: str = Form(""),
     episode: str = Form(""),
 ):
-    """Dispatch one ad-hoc release to TorBox and record a detached history row."""
+    """Dispatch one ad-hoc release to the active downloader and record a detached history row."""
     from app.core.adhoc_search import push_adhoc_release
 
     async with async_session_factory() as session:
@@ -4572,7 +4572,7 @@ async def api_push_item_manual_search(item_id: int, request: Request) -> Respons
 
 @app.post("/api/items/{item_id}/push/manual-grab")
 async def api_push_item_manual_grab(item_id: int, request: Request) -> Response:
-    """Dispatch a manually chosen release to TorBox with `DownloadHistory.push_mode = 'manual'`."""
+    """Dispatch a manually chosen release to the active downloader with `DownloadHistory.push_mode = 'manual'`."""
     from fastapi.responses import JSONResponse
 
     from app.core.push_engine import execute_manual_grab
@@ -4625,7 +4625,7 @@ def _build_poller_state_header(
 
 @app.get("/api/pushes/active")
 async def api_get_active_pushes(request: Request) -> Response:
-    """Return active transfers (`DOWNLOADING`), recently completed transfers (`Ready on TorBox`), and unacknowledged failed pushes (`FAILED`)."""
+    """Return active transfers (`DOWNLOADING`), recently completed transfers (`Ready on <downloader>`), and unacknowledged failed pushes (`FAILED`)."""
     from app.core.transfer_poller import (
         count_downloading_entities,
         get_active_pushes,
