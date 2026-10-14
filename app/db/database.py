@@ -482,15 +482,6 @@ async def init_db(database_url: str) -> None:
             try:
                 await session.execute(
                     __import__("sqlalchemy").text(
-                        "ALTER TABLE download_history ADD COLUMN torbox_id VARCHAR(200);"
-                    )
-                )
-            except Exception:
-                pass
-
-            try:
-                await session.execute(
-                    __import__("sqlalchemy").text(
                         "ALTER TABLE media_items ADD COLUMN tvdb_id INTEGER;"
                     )
                 )
@@ -964,6 +955,50 @@ async def init_db(database_url: str) -> None:
                     ).fetchall()
                     dh_col_names = {r[1] for r in ti_rows}
 
+                # m57: generalize TorBox tracking columns (ADR-131). Legacy
+                # torbox_id / torbox_sent_at stay in old files, unmapped.
+                for col, ddl in (
+                    (
+                        "downloader_type",
+                        "VARCHAR(50) NOT NULL DEFAULT 'torbox'",
+                    ),
+                    ("downloader_transfer_id", "VARCHAR(255)"),
+                    ("dispatched_at", "DATETIME"),
+                ):
+                    if col not in dh_col_names:
+                        await session.execute(
+                            sa_text(
+                                f"ALTER TABLE download_history ADD COLUMN {col} {ddl};"
+                            )
+                        )
+                if "torbox_id" in dh_col_names:
+                    await session.execute(
+                        sa_text(
+                            "UPDATE download_history SET downloader_transfer_id = torbox_id "
+                            "WHERE downloader_transfer_id IS NULL AND torbox_id IS NOT NULL;"
+                        )
+                    )
+                if "torbox_sent_at" in dh_col_names:
+                    await session.execute(
+                        sa_text(
+                            "UPDATE download_history SET dispatched_at = torbox_sent_at "
+                            "WHERE dispatched_at IS NULL AND torbox_sent_at IS NOT NULL;"
+                        )
+                    )
+                await session.execute(
+                    sa_text(
+                        "CREATE INDEX IF NOT EXISTS ix_download_history_downloader_transfer_id "
+                        "ON download_history (downloader_transfer_id);"
+                    )
+                )
+                await session.commit()
+                ti_rows = (
+                    await session.execute(
+                        sa_text("PRAGMA table_info(download_history)")
+                    )
+                ).fetchall()
+                dh_col_names = {r[1] for r in ti_rows}
+
                 fk_rows = (
                     await session.execute(
                         sa_text("PRAGMA foreign_key_list(download_history)")
@@ -1007,8 +1042,9 @@ async def init_db(database_url: str) -> None:
                                 release_group VARCHAR(100),
                                 bitrate_mbps FLOAT,
                                 torbox_hash VARCHAR(200),
-                                torbox_id VARCHAR(200),
-                                torbox_sent_at DATETIME,
+                                downloader_type VARCHAR(50) NOT NULL DEFAULT 'torbox',
+                                downloader_transfer_id VARCHAR(255),
+                                dispatched_at DATETIME,
                                 is_fallback BOOLEAN NOT NULL DEFAULT 0,
                                 is_upgrade BOOLEAN NOT NULL DEFAULT 0,
                                 is_ad_hoc BOOLEAN NOT NULL DEFAULT 0,
@@ -1056,8 +1092,9 @@ async def init_db(database_url: str) -> None:
                         "release_group",
                         "bitrate_mbps",
                         "torbox_hash",
-                        "torbox_id",
-                        "torbox_sent_at",
+                        "downloader_type",
+                        "downloader_transfer_id",
+                        "dispatched_at",
                         "is_fallback",
                         "is_upgrade",
                         "is_ad_hoc",
@@ -1102,7 +1139,7 @@ async def init_db(database_url: str) -> None:
                         "anilist_id",
                         "nzb_guid",
                         "torbox_hash",
-                        "torbox_id",
+                        "downloader_transfer_id",
                     ):
                         await session.execute(
                             sa_text(

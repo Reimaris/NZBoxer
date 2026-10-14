@@ -35,6 +35,7 @@ from sqlalchemy.orm import (
     Mapped,
     mapped_column,
     relationship,
+    synonym,
     validates,
 )
 
@@ -278,6 +279,24 @@ class Provider(Base):
         if isinstance(value, dict):
             return json.dumps(value)
         return str(value)
+
+    @property
+    def sabnzbd_config(self) -> dict[str, str]:
+        """Parsed SABnzbd categories with defaults; non-str values coerced to default."""
+        defaults = {
+            "category_movie": "movies",
+            "category_series": "tv",
+            "category_anime": "anime",
+        }
+        try:
+            raw = json.loads(self.config_json or "{}")
+        except Exception:
+            return defaults
+        if isinstance(raw, dict):
+            for key in defaults:
+                if isinstance(raw.get(key), str):
+                    defaults[key] = raw[key]
+        return defaults
 
     @property
     def watchlist_config(self) -> dict[str, Any]:
@@ -1285,12 +1304,18 @@ class DownloadHistory(Base):
     torbox_hash: Mapped[str | None] = mapped_column(
         String(200), nullable=True, index=True
     )
-    torbox_id: Mapped[str | None] = mapped_column(
-        String(200), nullable=True, index=True
+    downloader_type: Mapped[str] = mapped_column(
+        String(50), nullable=False, default="torbox", server_default="torbox"
     )
-    torbox_sent_at: Mapped[datetime | None] = mapped_column(
+    downloader_transfer_id: Mapped[str | None] = mapped_column(
+        String(255), nullable=True, index=True
+    )
+    dispatched_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # Legacy names kept as synonyms so reads, writes and query expressions work.
+    torbox_id = synonym("downloader_transfer_id")
+    torbox_sent_at = synonym("dispatched_at")
 
     # --- Language tracking ---
     is_fallback: Mapped[bool] = mapped_column(
