@@ -21,12 +21,17 @@ def _sanitize_error_message(exc: Exception) -> str:
 
 
 async def _post_with_retry(
-    client: httpx.AsyncClient, json_data: dict[str, Any], max_retries: int = 3
+    client: httpx.AsyncClient,
+    json_data: dict[str, Any],
+    max_retries: int = 3,
+    extra_headers: dict[str, str] | None = None,
 ) -> httpx.Response:
     headers = {
         "User-Agent": DEFAULT_USER_AGENT,
         "Accept": "application/json",
     }
+    if extra_headers:
+        headers.update(extra_headers)
     resp: httpx.Response | None = None
     for attempt in range(max_retries):
         await _limiter.wait()
@@ -685,3 +690,70 @@ async def get_anime_root_and_hierarchy(anilist_id: int) -> dict[str, Any] | None
 
         canonical_root = hierarchy[0] if hierarchy else root_node
         return {"root": canonical_root, "hierarchy": hierarchy}
+
+
+_USER_MEDIA_LIST_QUERY = """
+query ($u: String) {
+  MediaListCollection(userName: $u, type: ANIME) {
+    lists {
+      entries {
+        status
+        progress
+        media {
+          id
+          idMal
+          format
+          title { romaji english }
+          startDate { year }
+        }
+      }
+    }
+  }
+}
+"""
+
+_PRIVATE_PROFILE_MSG = "AniList profile not found or private — add an access token"
+
+
+async def get_user_media_list(
+    username: str, access_token: str | None = None
+) -> list[dict[str, Any]]:
+    """Fetch every anime list entry (all statuses) of an AniList user.
+
+    Raises:
+        WatchlistFetchError: profile not found/private, rate limited or HTTP failure.
+    """
+    from app.services.watchlist_providers import WatchlistFetchError
+
+    headers = {"Authorization": f"Bearer {access_token}"} if access_token else None
+    payload = {"query": _USER_MEDIA_LIST_QUERY, "variables": {"u": username}}
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await _post_with_retry(client, payload, extra_headers=headers)
+    except httpx.HTTPStatusError as exc:
+        status = exc.response.status_code
+        if status in (403, 404):
+            raise WatchlistFetchError(_PRIVATE_PROFILE_MSG) from exc
+        if status == 429:
+            retry = exc.response.headers.get("Retry-After", "unknown")
+            raise WatchlistFetchError(
+                f"AniList rate limited (Retry-After: {retry})"
+            ) from exc
+        raise WatchlistFetchError(f"AniList request failed (HTTP {status})") from exc
+    except httpx.RequestError as exc:
+        raise WatchlistFetchError(
+            f"AniList request failed: {_sanitize_error_message(exc)}"
+        ) from exc
+
+    try:
+        body = resp.json()
+    except ValueError as exc:
+        raise WatchlistFetchError("AniList returned an invalid response") from exc
+    errors = body.get("errors") if isinstance(body, dict) else None
+    if errors:
+        raise WatchlistFetchError(_PRIVATE_PROFILE_MSG)
+    collection = (body.get("data") or {}).get("MediaListCollection") or {}
+    entries: list[dict[str, Any]] = []
+    for lst in collection.get("lists") or []:
+        entries.extend(e for e in (lst.get("entries") or []) if e.get("media"))
+    return entries
