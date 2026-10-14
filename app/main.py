@@ -280,6 +280,59 @@ app = FastAPI(
 # Mount static files
 app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
+SETUP_LABELS: dict[str, str] = {
+    "tmdb": "TMDB API key",
+    "indexer": "Indexer",
+    "downloader": "Downloader",
+}
+
+app.state.setup_guard_enabled = True
+
+
+@app.middleware("http")
+async def setup_guard(request: Request, call_next):
+    """Refuse non-open requests while core prerequisites (TMDB, indexer, downloader) are missing."""
+    from app.core.prerequisites import get_setup_status
+    from app.core.route_policy import classify_path
+
+    if not request.app.state.setup_guard_enabled:
+        return await call_next(request)
+    if classify_path(request.url.path, request.method) == "open":
+        return await call_next(request)
+
+    async with async_session_factory() as session:
+        status = await get_setup_status(session)
+    request.state.setup = status
+    if status.core_ready:
+        return await call_next(request)
+
+    missing_labels = [SETUP_LABELS[m] for m in status.missing_core]
+    is_htmx = request.headers.get("HX-Request") == "true"
+    accepts_json = "application/json" in request.headers.get("accept", "")
+    is_page = (
+        request.method == "GET"
+        and not is_htmx
+        and not accepts_json
+        and not request.url.path.startswith("/api")
+    )
+    if is_page:
+        return templates.TemplateResponse(
+            request=request,
+            name="setup_required.html",
+            context={"setup": status, "missing_labels": missing_labels},
+        )
+    message = "Setup required: " + ", ".join(missing_labels)
+    if is_htmx:
+        return HTMLResponse(
+            content=f'<div class="text-red-400 text-sm">{html.escape(message)}</div>',
+            status_code=403,
+            headers={"HX-Trigger": json.dumps({"showAutoSaveToast": message})},
+        )
+    return JSONResponse(
+        {"detail": "setup_required", "missing": list(status.missing_core)},
+        status_code=403,
+    )
+
 
 # ---------------------------------------------------------------------------
 # Routes (HTML & HTMX)
