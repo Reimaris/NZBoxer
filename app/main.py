@@ -2150,6 +2150,124 @@ async def poll_plex_auth(session_id: str = "") -> HTMLResponse:
     )
 
 
+_MAL_CALLBACK_PATH = "/settings/provider/mal/auth/callback"
+
+
+def _mal_status_fragment(provider_id: int, connected: bool) -> str:
+    if connected:
+        return '<div class="text-emerald-300 text-xs mt-2">✓ Connected</div>'
+    return (
+        '<div class="text-slate-400 text-xs mt-2" '
+        f'hx-get="/settings/provider/mal/auth/status?provider_id={provider_id}" '
+        'hx-trigger="every 3s" hx-swap="outerHTML">Waiting for authorization…</div>'
+    )
+
+
+@app.post("/settings/provider/mal/auth/start")
+async def start_mal_auth(
+    request: Request, client_id: str = Form(""), provider_id: str = Form("")
+) -> HTMLResponse:
+    """Build the MAL PKCE authorize link for an already-saved MAL provider."""
+    import html
+
+    from app.db.models import Provider
+    from app.services import mal
+
+    def err(msg: str) -> HTMLResponse:
+        return HTMLResponse(content=_PLEX_ERR.format(msg), status_code=400)
+
+    clean_client_id = client_id.strip()
+    if not provider_id.strip().isdigit():
+        return err("Save the MyAnimeList provider first.")
+    async with async_session_factory() as session:
+        provider = await session.get(Provider, int(provider_id))
+        if provider is None or provider.type != "mal":
+            return err("Save the MyAnimeList provider first.")
+        if not clean_client_id:
+            clean_client_id = str(provider.client_id or "").strip()
+        if not clean_client_id:
+            return err("Enter your MyAnimeList client ID first.")
+        provider.client_id = clean_client_id
+        await session.commit()
+    redirect_uri = str(request.base_url).rstrip("/") + _MAL_CALLBACK_PATH
+    verifier, challenge = mal.generate_pkce_pair()
+    state = mal.create_auth_state(verifier, int(provider_id))
+    url = mal.build_authorize_url(clean_client_id, challenge, state, redirect_uri)
+    return HTMLResponse(
+        content=(
+            '<div class="p-3 bg-slate-800 rounded-lg text-xs mt-2">'
+            f'<a href="{html.escape(url, quote=True)}" target="_blank" '
+            'rel="noopener noreferrer" class="text-sky-400 underline">'
+            "Authorize on MyAnimeList</a>"
+            '<div class="mt-2 text-slate-400">Register this redirect URI in your MAL app: '
+            f'<code class="font-mono">{html.escape(redirect_uri)}</code></div>'
+            f"{_mal_status_fragment(int(provider_id), False)}</div>"
+        )
+    )
+
+
+@app.get("/settings/provider/mal/auth/callback")
+async def mal_auth_callback(
+    request: Request, code: str = "", state: str = ""
+) -> HTMLResponse:
+    """OAuth redirect target: verify state, exchange the code, store tokens."""
+    from app.db.models import Provider
+    from app.services import mal
+
+    pending = mal.pop_auth_state(state) if state else None
+    if pending is None or not code:
+        return HTMLResponse(
+            content="Invalid or expired authorization request. Please start again.",
+            status_code=400,
+        )
+    verifier, provider_id = pending
+    redirect_uri = str(request.base_url).rstrip("/") + _MAL_CALLBACK_PATH
+    async with async_session_factory() as session:
+        provider = await session.get(Provider, provider_id)
+        if provider is None:
+            return HTMLResponse(content="Provider not found.", status_code=400)
+        try:
+            data = await mal.exchange_code(
+                str(provider.client_id or ""), code, verifier, redirect_uri
+            )
+        except Exception as e:
+            logger.warning("MAL token exchange failed: %s", type(e).__name__)
+            return HTMLResponse(
+                content="MyAnimeList authorization failed. Please try again.",
+                status_code=400,
+            )
+        try:
+            raw = json.loads(provider.config_json or "{}")
+        except ValueError:
+            raw = {}
+        raw["refresh_token"] = data.get("refresh_token")
+        raw["token_expires_at"] = data["token_expires_at"]
+        provider.access_token = str(data.get("access_token") or "")
+        provider.config_json = json.dumps(raw)
+        await session.commit()
+    return HTMLResponse(
+        content=(
+            "<!doctype html><html><body><p>Connected — you may close this tab.</p>"
+            '<script>setTimeout(function(){location.href="/settings"},1500)</script>'
+            "</body></html>"
+        )
+    )
+
+
+@app.get("/settings/provider/mal/auth/status")
+async def mal_auth_status(provider_id: str = "") -> HTMLResponse:
+    """Polled by the modal/wizard while the OAuth flow runs in another tab."""
+    from app.db.models import Provider
+
+    pid = int(provider_id) if provider_id.strip().isdigit() else 0
+    async with async_session_factory() as session:
+        provider = await session.get(Provider, pid) if pid else None
+        connected = (
+            provider is not None and provider.watchlist_connection_status == "connected"
+        )
+    return HTMLResponse(content=_mal_status_fragment(pid, connected))
+
+
 @app.get("/simkl/auth/poll")
 async def poll_simkl_auth(session_id: str = "") -> HTMLResponse:
     """Poll Simkl AUTH V2 token endpoint using server-side session_id without exposing device_code."""

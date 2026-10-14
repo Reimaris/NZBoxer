@@ -29,6 +29,35 @@ MAL_TOKEN_URL = "https://myanimelist.net/v1/oauth2/token"
 MAL_ANIMELIST_URL = "https://api.myanimelist.net/v2/users/@me/animelist"
 REFRESH_BUFFER = timedelta(hours=24)
 _TIMEOUT = 20.0
+STATE_TTL = timedelta(minutes=15)
+
+# state -> (code_verifier, provider_id, expires_at)
+_AUTH_STATES: dict[str, tuple[str, int, datetime]] = {}
+
+
+def _prune_states() -> None:
+    now = datetime.now(timezone.utc)
+    for key in [k for k, v in _AUTH_STATES.items() if v[2] <= now]:
+        _AUTH_STATES.pop(key, None)
+
+
+def create_auth_state(code_verifier: str, provider_id: int) -> str:
+    """Remember a PKCE verifier under a random OAuth ``state`` (15 min TTL)."""
+    _prune_states()
+    state = secrets.token_urlsafe(24)
+    _AUTH_STATES[state] = (
+        code_verifier,
+        provider_id,
+        datetime.now(timezone.utc) + STATE_TTL,
+    )
+    return state
+
+
+def pop_auth_state(state: str) -> tuple[str, int] | None:
+    """Consume *state*; ``None`` if unknown or expired."""
+    _prune_states()
+    entry = _AUTH_STATES.pop(state, None)
+    return (entry[0], entry[1]) if entry else None
 
 
 class MalUnauthorizedError(Exception):
