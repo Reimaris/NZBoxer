@@ -800,6 +800,41 @@ async def _prune_completed_or_dropped_simkl_items(
     return pruned_count
 
 
+async def _simkl_seen_remote_ids(
+    session: AsyncSession,
+    provider_id: int,
+    active_simkl_ids: set[int],
+    *,
+    sync_movies: bool,
+    sync_series: bool,
+    sync_anime: bool,
+) -> set[str]:
+    """Remote ids still present on the Simkl list; disabled categories count as seen."""
+    from app.db.models import MediaItemWatchlistSource
+
+    seen = {str(i) for i in active_simkl_ids}
+    disabled = [
+        mt
+        for mt, enabled in (
+            (MediaType.MOVIE, sync_movies),
+            (MediaType.SHOW, sync_series),
+            (MediaType.ANIME, sync_anime),
+        )
+        if not enabled
+    ]
+    if disabled:
+        rows = await session.execute(
+            select(MediaItemWatchlistSource.remote_id)
+            .join(MediaItem, MediaItem.id == MediaItemWatchlistSource.media_item_id)
+            .where(
+                MediaItemWatchlistSource.provider_id == provider_id,
+                MediaItem.media_type.in_(disabled),
+            )
+        )
+        seen.update(rows.scalars().all())
+    return seen
+
+
 async def sync_all_providers() -> None:
     """Sync watchlists and libraries from all configured providers (Simkl, etc.)."""
     import json
@@ -941,6 +976,22 @@ async def sync_all_providers() -> None:
                             tba_stats.seasons_discovered,
                         )
 
+                        from app.services.watchlist_ingest import (
+                            mark_absent_sources_completed,
+                        )
+
+                        await mark_absent_sources_completed(
+                            session,
+                            provider,
+                            await _simkl_seen_remote_ids(
+                                session,
+                                provider.id,
+                                active_simkl_ids,
+                                sync_movies=sync_movies,
+                                sync_series=sync_series,
+                                sync_anime=sync_anime,
+                            ),
+                        )
                         duplicates_merged = await deduplicate_media_items(session)
                         pruned = await _prune_completed_or_dropped_simkl_items(
                             session,
@@ -1205,6 +1256,24 @@ async def enrich_movie_show_metadata(
             )
 
     return media_type
+
+
+async def _upsert_simkl_source_for_item(
+    session: AsyncSession,
+    item: MediaItem,
+    provider_id: int,
+    simkl_id: int,
+    item_data: dict[str, Any],
+) -> None:
+    """Record the Simkl list membership of *item* as a watchlist source row."""
+    from app.db.models import Provider
+    from app.services.watchlist_ingest import upsert_simkl_source
+
+    provider = await session.get(Provider, provider_id)
+    if provider is None:
+        return
+    status = str(item_data.get("status") or "plantowatch").lower()
+    await upsert_simkl_source(session, item, provider, simkl_id, status)
 
 
 async def _sync_items(
@@ -1500,6 +1569,9 @@ async def _sync_items(
                 )
 
                 parent_item.simkl_synced_at = datetime.now(timezone.utc)
+                await _upsert_simkl_source_for_item(
+                    session, parent_item, provider_id, simkl_id, item_data
+                )
                 await evaluate_simkl_watch_progress_and_advance(
                     session=session,
                     item=parent_item,
@@ -1692,6 +1764,9 @@ async def _sync_items(
 
         _backfill_item_release_date_from_seasons(item)
         item.simkl_synced_at = datetime.now(timezone.utc)
+        await _upsert_simkl_source_for_item(
+            session, item, provider_id, simkl_id, item_data
+        )
         from app.core.push_engine import evaluate_simkl_watch_progress_and_advance
 
         await evaluate_simkl_watch_progress_and_advance(

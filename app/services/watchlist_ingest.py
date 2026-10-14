@@ -300,3 +300,51 @@ async def ingest_entries(
         await session.commit()
 
     return result
+
+
+async def upsert_simkl_source(
+    session: AsyncSession,
+    item: MediaItem,
+    provider: Provider,
+    simkl_id: int,
+    list_status: str,
+) -> MediaItemWatchlistSource:
+    """Upsert the source row linking *item* to a Simkl provider entry."""
+    entry = WatchlistEntry(
+        remote_id=str(simkl_id),
+        media_kind="movie" if item.media_type == MediaType.MOVIE else "show",
+        title=item.title or "",
+        list_status=list_status if list_status else "plantowatch",  # type: ignore[arg-type]
+    )
+    source = await _upsert_source(session, item, provider, entry, 0, IngestResult())
+    source.last_synced_at = datetime.now(timezone.utc)
+    return source
+
+
+async def mark_absent_sources_completed(
+    session: AsyncSession, provider: Provider, seen_remote_ids: set[str]
+) -> int:
+    """Mark this provider's active sources missing from a successful fetch as completed.
+
+    Must only be called after a full, successful fetch: list departure means inactive.
+    """
+    sources = (
+        (
+            await session.execute(
+                select(MediaItemWatchlistSource).where(
+                    MediaItemWatchlistSource.provider_id == provider.id,
+                    MediaItemWatchlistSource.list_status.in_(ACTIVE_LIST_STATUSES),
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    count = 0
+    for source in sources:
+        if source.remote_id not in seen_remote_ids:
+            source.list_status = "completed"
+            count += 1
+    if count:
+        await session.commit()
+    return count
