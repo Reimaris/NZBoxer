@@ -1337,7 +1337,7 @@ async def _sync_items(
     simkl_items: list[dict[str, Any]],
     media_type: MediaType,
     provider_id: int,
-    provider_name: str = "Simkl",
+    provider_name: str,
     *,
     stats: IngestStats | None = None,
 ) -> None:
@@ -1621,14 +1621,14 @@ async def _sync_items(
                     ep.status = EpisodeStatus.SEARCHING
             if parent_item is not None:
                 from app.core.push_engine import (
-                    evaluate_simkl_watch_progress_and_advance,
+                    evaluate_watch_progress_and_advance,
                 )
 
                 parent_item.watchlist_synced_at = datetime.now(timezone.utc)
                 await _upsert_simkl_source_for_item(
                     session, parent_item, provider_id, simkl_id, item_data
                 )
-                await evaluate_simkl_watch_progress_and_advance(
+                await evaluate_watch_progress_and_advance(
                     session=session,
                     item=parent_item,
                     item_data=item_data,
@@ -1825,9 +1825,9 @@ async def _sync_items(
         await _upsert_simkl_source_for_item(
             session, item, provider_id, simkl_id, item_data
         )
-        from app.core.push_engine import evaluate_simkl_watch_progress_and_advance
+        from app.core.push_engine import evaluate_watch_progress_and_advance
 
-        await evaluate_simkl_watch_progress_and_advance(
+        await evaluate_watch_progress_and_advance(
             session=session,
             item=item,
             item_data=item_data,

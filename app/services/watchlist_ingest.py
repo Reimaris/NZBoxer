@@ -251,7 +251,7 @@ async def ingest_entries(
     session: AsyncSession, provider: Provider, entries: list[WatchlistEntry]
 ) -> IngestResult:
     """Create or attach MediaItems for *entries* and upsert their source links."""
-    from app.core.push_engine import evaluate_simkl_watch_progress_and_advance
+    from app.core.push_engine import evaluate_watch_progress_and_advance
 
     result = IngestResult(ingested=len(entries))
 
@@ -295,7 +295,7 @@ async def ingest_entries(
         source = await _upsert_source(session, item, provider, entry, order, result)
 
         if has_progress:
-            await evaluate_simkl_watch_progress_and_advance(
+            await evaluate_watch_progress_and_advance(
                 session=session,
                 item=item,
                 item_data={"status": entry.list_status, "watch_order": order},

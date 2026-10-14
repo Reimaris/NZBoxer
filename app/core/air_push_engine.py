@@ -196,7 +196,7 @@ async def run_initial_air_push(
 
 
 def _is_season_watched(item: MediaItem, season: Season) -> bool:
-    """Simkl watch signal (season granularity, as used by auto-advance)."""
+    """Watchlist watch signal (season granularity, as used by auto-advance)."""
     if item.watched_completed:
         return True
     watched_order = int(item.last_watched_order or 0)

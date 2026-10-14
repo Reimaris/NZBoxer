@@ -151,7 +151,7 @@ def populate_history_snapshot(
     """Populate denormalized media snapshot fields on a DownloadHistory instance."""
     m_type_label = build_history_media_type_label(item)
     t_label = build_history_target_label(item, season, episode)
-    s_simkl = getattr(season, "simkl_id", None) if season is not None else None
+    season_ext_simkl = getattr(season, "simkl_id", None) if season is not None else None
     s_anilist = getattr(season, "anilist_id", None) if season is not None else None
 
     if not only_missing or not history.media_title:
@@ -164,8 +164,8 @@ def populate_history_snapshot(
         history.target_label = t_label
     if not only_missing or not history.poster_url:
         history.poster_url = item.poster_url
-    if s_simkl is not None:
-        history.simkl_id = s_simkl
+    if season_ext_simkl is not None:
+        history.simkl_id = season_ext_simkl
     elif not only_missing or history.simkl_id is None:
         history.simkl_id = item.simkl_id
     if not only_missing or history.tmdb_id is None:
@@ -2278,12 +2278,12 @@ async def advance_season_buffer(
     return dispatched
 
 
-def extract_simkl_watched_order(
+def extract_watched_order(
     item: MediaItem,
     item_data: dict[str, Any],
     matched_season: Season | None = None,
 ) -> int:
-    """Extract the highest chronological `watch_order` K where Simkl reports user watch progress."""
+    """Extract the highest chronological `watch_order` K where the watchlist provider reports user watch progress."""
     seasons_list = sorted(
         item.seasons or [], key=lambda s: (s.watch_order, s.season_number)
     )
@@ -2323,7 +2323,7 @@ def extract_simkl_watched_order(
         if isinstance(val, int) and val > 0:
             detected_orders.append(_order_for_season_num(val, has_episodes_hint=True))
 
-    # 3. `seasons` array in Simkl payload (e.g. [{"number": 2, "episodes": [{"number": 1}]}])
+    # 3. `seasons` array in watchlist payload (e.g. [{"number": 2, "episodes": [{"number": 1}]}])
     raw_seasons = item_data.get("seasons")
     if isinstance(raw_seasons, list):
         for s_dict in raw_seasons:
@@ -2460,13 +2460,13 @@ def extract_simkl_watched_order(
     return max(detected_orders) if detected_orders else 0
 
 
-async def evaluate_simkl_watch_progress_and_advance(
+async def evaluate_watch_progress_and_advance(
     session: AsyncSession,
     item: MediaItem,
     item_data: dict[str, Any],
     matched_season: Season | None = None,
 ) -> list[DownloadHistory]:
-    """Inspect Simkl item payload for user watch progress, update `last_watched_order`,
+    """Inspect watchlist item payload for user watch progress, update `last_watched_order`,
     and trigger Auto-Advance season expansion (with Movie Bridge Lookahead) if enabled."""
     from sqlalchemy import inspect as sa_inspect
 
@@ -2478,7 +2478,7 @@ async def evaluate_simkl_watch_progress_and_advance(
     if "seasons" in sa_inspect(item).unloaded and hasattr(session, "refresh"):
         await session.refresh(item, ["seasons"])
 
-    detected_order = extract_simkl_watched_order(
+    detected_order = extract_watched_order(
         item=item, item_data=item_data, matched_season=matched_season
     )
     current_order = int(item.last_watched_order or 0)

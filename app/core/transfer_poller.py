@@ -3474,7 +3474,7 @@ async def autoclear_history_ledger(
     retention_days: int | None = None,
     now: datetime | None = None,
 ) -> dict[str, int]:
-    """Purge terminal DownloadHistory rows per the Pruned-from-Simkl and age rules (OR logic).
+    """Purge terminal DownloadHistory rows per the Pruned-from-Watchlist and age rules (OR logic).
 
     Defaults come from ``settings``. Local SQLite only; never calls TorBox.
     """
