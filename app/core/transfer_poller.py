@@ -51,6 +51,13 @@ from app.db.models import (
     SystemSettings,
 )
 from app.services import discord, torbox
+from app.services.downloaders.base import (
+    BaseDownloader,
+    DownloaderNetworkError,
+    DownloaderTransfer,
+    TransferState,
+)
+from app.services.downloaders.factory import get_downloader_client_for_type
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -323,16 +330,39 @@ def _is_terminal_failure_state(status_lower: str) -> bool:
     )
 
 
-async def _delete_and_purge_torbox_transfer(
+async def _delete_and_purge_transfer(
     session: AsyncSession,
-    torbox_id: str | None,
+    transfer_id: str | None,
     tb_item: dict[str, Any] | None = None,
+    downloader_type: str | None = "torbox",
 ) -> None:
-    """Delete a failed/canceled transfer from TorBox."""
-    if not torbox_id:
+    """Delete a failed/canceled transfer from the row's own downloader (best-effort)."""
+    if not transfer_id:
+        return
+    dtype = downloader_type or "torbox"
+    if dtype != "torbox":
+        try:
+            client = await get_downloader_client_for_type(session, dtype)
+            if client is None:
+                logger.warning(
+                    "Cannot delete %s transfer %s: downloader provider removed.",
+                    dtype,
+                    transfer_id,
+                )
+                return
+            if not await client.delete_transfer(str(transfer_id), delete_files=True):
+                logger.warning(
+                    "%s refused delete of transfer %s.",
+                    client.display_name,
+                    transfer_id,
+                )
+        except Exception as exc:
+            logger.warning(
+                "Failed to delete %s transfer %s: %s", dtype, transfer_id, exc
+            )
         return
     tb_type = tb_item.get("_type", "usenet") if tb_item else "usenet"
-    parsed_id: Any = int(torbox_id) if str(torbox_id).isdigit() else torbox_id
+    parsed_id: Any = int(transfer_id) if str(transfer_id).isdigit() else transfer_id
     try:
         if tb_type == "torrent":
             await torbox.delete_torrent_download(parsed_id, session=session)
@@ -340,7 +370,25 @@ async def _delete_and_purge_torbox_transfer(
             await torbox.delete_usenet_download(parsed_id, session=session)
     except Exception as exc:
         logger.warning(
-            "Failed to delete %s %s from TorBox: %s", tb_type, torbox_id, exc
+            "Failed to delete %s %s from TorBox: %s", tb_type, transfer_id, exc
+        )
+
+
+_delete_and_purge_torbox_transfer = _delete_and_purge_transfer
+
+
+async def _purge_for_row(
+    session: AsyncSession,
+    transfer_id: str | None,
+    downloader_type: str | None,
+    tb_item: dict[str, Any] | None = None,
+) -> None:
+    """Delete via the row's own downloader; TorBox goes through the legacy-named hook."""
+    if (downloader_type or "torbox") == "torbox":
+        await _delete_and_purge_torbox_transfer(session, transfer_id, tb_item)
+    else:
+        await _delete_and_purge_transfer(
+            session, transfer_id, tb_item, downloader_type=downloader_type
         )
 
 
@@ -359,7 +407,7 @@ async def _finalize_upgrade_replacement(
     ).scalar_one_or_none()
     if old is None or old.status_detail == "replaced":
         return
-    await _delete_and_purge_torbox_transfer(session, old.torbox_id)
+    await _purge_for_row(session, old.downloader_transfer_id, old.downloader_type)
     old.status_detail = "replaced"
     old.is_dismissed = True
     old.notification_sent = True
@@ -563,7 +611,7 @@ async def _auto_replace_failed_push(
     return res_movie if isinstance(res_movie, DownloadHistory) else None
 
 
-def _match_torbox_transfer(
+def _match_downloader_transfer(
     history: DownloadHistory, tb_map: dict[str, dict[str, Any]]
 ) -> tuple[str, dict[str, Any] | None]:
     """Match a DownloadHistory row against TorBox's transfer dictionary by ID, hash, or title."""
@@ -604,6 +652,55 @@ def _match_torbox_transfer(
         return "not_found", None
 
     return str(tb_item.get("download_state") or "downloading"), tb_item
+
+
+_match_torbox_transfer = _match_downloader_transfer
+
+
+_STATE_TO_DOWNLOAD_STATE: dict[TransferState, str] = {
+    TransferState.QUEUED: "queued",
+    TransferState.DOWNLOADING: "downloading",
+    TransferState.UNPACKING: "processing",
+    TransferState.COMPLETED: "completed",
+    TransferState.FAILED: "failed",
+}
+
+
+def _transfer_to_item(transfer: DownloaderTransfer) -> dict[str, Any]:
+    """Project a normalized ``DownloaderTransfer`` onto the poller's transfer-dict shape."""
+    return {
+        "id": transfer.transfer_id,
+        "name": transfer.name,
+        "download_state": _STATE_TO_DOWNLOAD_STATE[transfer.state],
+        "progress": transfer.progress_pct,
+        "download_speed": transfer.speed_bytes,
+        "eta": transfer.eta_seconds,
+        "fail_message": transfer.fail_message,
+        "_type": "usenet",
+    }
+
+
+async def _fetch_non_torbox_transfers(
+    session: AsyncSession, downloader_type: str
+) -> tuple[BaseDownloader | None, dict[str, dict[str, Any]] | None]:
+    """Fetch live transfers for one non-TorBox type.
+
+    Returns (client, map); map is None when the type must be skipped this tick
+    (provider removed or network error).
+    """
+    client = await get_downloader_client_for_type(session, downloader_type)
+    if client is None:
+        return None, None
+    try:
+        transfers = await client.get_transfers()
+    except DownloaderNetworkError as exc:
+        logger.warning(
+            "[POLLER] %s unreachable, skipping this tick: %s",
+            client.display_name,
+            exc,
+        )
+        return client, None
+    return client, {t.transfer_id: _transfer_to_item(t) for t in transfers}
 
 
 def _is_history_terminal(status_detail: str | None) -> bool:
@@ -912,21 +1009,60 @@ async def _run_transfer_poller_tick_with_session(
     transfer_poller.wake()
     transfer_poller.last_polled_at = datetime.now(timezone.utc)
 
-    if pre_fetched_downloads is None:
-        raw_downloads = await torbox.get_usenet_downloads(
-            bypass_cache=False, session=session
+    active_types = set(
+        (
+            await session.execute(
+                select(DownloadHistory.downloader_type)
+                .where(
+                    DownloadHistory.is_dismissed.is_(False),
+                    func.lower(func.coalesce(DownloadHistory.status_detail, "")).in_(
+                        ACTIVE_POLLABLE_STATUS_DETAILS
+                    ),
+                )
+                .distinct()
+            )
         )
-    else:
-        raw_downloads = pre_fetched_downloads
-
+        .scalars()
+        .all()
+    )
+    non_torbox_types = sorted(t for t in active_types if t != "torbox")
     tb_map: dict[str, dict[str, Any]] = {}
-    for d in raw_downloads:
-        d.setdefault("_type", "usenet")
-        if d.get("id") is not None:
-            tb_map[str(d["id"])] = d
+    if (
+        pre_fetched_downloads is not None
+        or not non_torbox_types
+        or "torbox" in active_types
+    ):
+        if pre_fetched_downloads is None:
+            raw_downloads = await torbox.get_usenet_downloads(
+                bypass_cache=False, session=session
+            )
+        else:
+            raw_downloads = pre_fetched_downloads
 
-    if tb_map:
-        await reconcile_completed_history_with_torbox(session, set(tb_map.keys()))
+        for d in raw_downloads:
+            d.setdefault("_type", "usenet")
+            if d.get("id") is not None:
+                tb_map[str(d["id"])] = d
+
+        if tb_map:
+            await reconcile_completed_history(session, "torbox", set(tb_map.keys()))
+
+    transfer_maps: dict[str, dict[str, dict[str, Any]]] = {"torbox": tb_map}
+    clients: dict[str, BaseDownloader] = {}
+    skipped_types: set[str] = set()
+    removed_types: set[str] = set()
+    for dtype in non_torbox_types:
+        client, live_map = await _fetch_non_torbox_transfers(session, dtype)
+        if client is None:
+            removed_types.add(dtype)
+            continue
+        clients[dtype] = client
+        if live_map is None:
+            skipped_types.add(dtype)
+            continue
+        transfer_maps[dtype] = live_map
+        if live_map:
+            await reconcile_completed_history(session, dtype, set(live_map.keys()))
 
     sys_settings = (
         (await session.execute(select(SystemSettings).where(SystemSettings.id == 1)))
@@ -1080,7 +1216,30 @@ async def _run_transfer_poller_tick_with_session(
         if item.id is not None:
             affected_items[item.id] = item
 
-        raw_status, tb_item = _match_torbox_transfer(history, tb_map)
+        dtype = history.downloader_type or "torbox"
+        if dtype in removed_types:
+            history.status_detail = "downloader_removed"
+            history.download_speed_bytes = 0
+            history.eta_seconds = None
+            logger.warning(
+                "[POLLER] Downloader provider '%s' removed; transfer #%s marked failed.",
+                dtype,
+                history.downloader_transfer_id,
+            )
+            if isinstance(target, Episode):
+                target.status = EpisodeStatus.SEARCHING
+            elif isinstance(target, Season):
+                target.status = SeasonStatus.SEARCHING
+            else:
+                target.status = MediaStatus.SEARCHING
+            continue
+        if dtype in skipped_types:
+            continue
+        client = clients.get(dtype)
+        display_name = client.display_name if client else "TorBox"
+        raw_status, tb_item = _match_downloader_transfer(
+            history, transfer_maps.get(dtype, {})
+        )
         status_lower = raw_status.lower()
 
         sent_at = history.torbox_sent_at
@@ -1128,23 +1287,53 @@ async def _run_transfer_poller_tick_with_session(
             or bool(tb_item and tb_item.get("download_finished") is True)
         ) and status_lower not in ("downloading", "processing", "queued", "unknown")
         if is_completed and tb_item is not None:
-            raw_files = tb_item.get("files")
-            tb_files: list[Any] = (
-                raw_files
-                if isinstance(raw_files, list)
-                else [{"name": tb_item.get("name") or tb_item.get("title") or ""}]
-            )
+            skip_layer3 = False
+            tb_files: list[Any]
+            if client is None:
+                raw_files = tb_item.get("files")
+                tb_files = (
+                    raw_files
+                    if isinstance(raw_files, list)
+                    else [{"name": tb_item.get("name") or tb_item.get("title") or ""}]
+                )
+            elif client.supports_file_listing:
+                try:
+                    tb_files = list(
+                        await client.get_transfer_files(str(history.torbox_id))
+                    )
+                except DownloaderNetworkError:
+                    continue
+            else:
+                tb_files = []
+                skip_layer3 = True  # local client (SABnzbd): completed = verified
             is_movie = episode is None and (
                 season is None or getattr(season, "entry_type", "season") == "movie"
             )
             media_type_str = "movie" if is_movie else "episode"
             is_sp = bool(season is not None and episode is None and not is_movie)
-            is_fake, fake_reason, is_unextracted_archive = is_torbox_filelist_fake(
-                tb_files,
-                media_type=media_type_str,
-                is_season_pack=is_sp,
-                release_name=history.nzb_title,
-            )
+            if skip_layer3:
+                is_fake, fake_reason, is_unextracted_archive = False, None, False
+            elif (
+                not tb_files
+                and client is not None
+                and client.provider_type == "sabnzbd"
+            ):
+                # SABnzbd unpacks before reporting Completed: empty listing = pass.
+                is_fake, fake_reason, is_unextracted_archive = False, None, False
+            elif not tb_files and client is not None:
+                # Cloud client reported COMPLETED but lists no files yet: unpack grace.
+                is_fake, fake_reason, is_unextracted_archive = (
+                    True,
+                    f"{display_name} returned empty file list",
+                    True,
+                )
+            else:
+                is_fake, fake_reason, is_unextracted_archive = is_torbox_filelist_fake(
+                    tb_files,
+                    media_type=media_type_str,
+                    is_season_pack=is_sp,
+                    release_name=history.nzb_title,
+                )
 
             if is_unextracted_archive:
                 if history.unpack_started_at is None:
@@ -1169,7 +1358,7 @@ async def _run_transfer_poller_tick_with_session(
                     history.eta_seconds = None
                     continue
                 else:
-                    reason = "Layer 3 Fake Detection: TorBox failed to extract archive within 10m"
+                    reason = f"Layer 3 Fake Detection: {display_name} failed to extract archive within 10m"
                     await _handle_transfer_failure(
                         session=session,
                         target=target,
@@ -1286,13 +1475,18 @@ async def _run_transfer_poller_tick_with_session(
                 reason = (
                     f"Stalled download exceeded timeout ({download_timeout_minutes}m)"
                 )
-                log_msg = f"TorBox download stalled past {download_timeout_minutes}m limit ({int(elapsed_seconds // 60)}m elapsed)"
+                log_msg = f"{display_name} download stalled past {download_timeout_minutes}m limit ({int(elapsed_seconds // 60)}m elapsed)"
             elif status_lower == "not_found":
-                reason = "TorBox download missing (not_found)"
-                log_msg = "TorBox download missing past 15m grace window (not_found)"
+                reason = f"{display_name} download missing (not_found)"
+                log_msg = (
+                    f"{display_name} download missing past 15m grace window (not_found)"
+                )
+            elif tb_item is not None and tb_item.get("fail_message"):
+                reason = str(tb_item["fail_message"])
+                log_msg = f"{display_name} download failed: {reason}"
             else:
-                reason = f"TorBox reported status: {raw_status}"
-                log_msg = f"TorBox download failed: {raw_status}"
+                reason = f"{display_name} reported status: {raw_status}"
+                log_msg = f"{display_name} download failed: {raw_status}"
 
             await _handle_transfer_failure(
                 session=session,
@@ -1362,7 +1556,9 @@ async def _handle_transfer_failure(
     # Commit blacklist and failure log before outbound TorBox delete HTTP call
     await session.commit()
 
-    await _delete_and_purge_torbox_transfer(session, history.torbox_id, tb_item)
+    await _purge_for_row(
+        session, history.downloader_transfer_id, history.downloader_type, tb_item
+    )
 
     if await _revert_failed_upgrade(session, history, episode, season, reason):
         await session.commit()
@@ -1841,6 +2037,7 @@ async def cancel_active_push(session: AsyncSession, history_id: int) -> bool:
         return False
 
     old_torbox_id = history.torbox_id
+    old_downloader_type = history.downloader_type
 
     if history.episode is not None:
         history.episode.status = (
@@ -1871,7 +2068,7 @@ async def cancel_active_push(session: AsyncSession, history_id: int) -> bool:
     await session.commit()
 
     if old_torbox_id:
-        await _delete_and_purge_torbox_transfer(session, old_torbox_id)
+        await _purge_for_row(session, old_torbox_id, old_downloader_type)
 
     if history.media_item is not None and history.media_item.id is not None:
         sys_settings = (
@@ -1931,6 +2128,7 @@ async def abort_all_active_transfers(session: AsyncSession) -> dict[str, Any]:
 
         matching_histories: list[DownloadHistory] = []
         torbox_ids_to_delete: list[str] = []
+        id_types: dict[str, str] = {}
         affected_items: dict[int, MediaItem] = {}
         reverted_episode_ids: set[int] = set()
 
@@ -1952,6 +2150,7 @@ async def abort_all_active_transfers(session: AsyncSession) -> dict[str, Any]:
             matching_histories.append(h)
             if h.torbox_id and str(h.torbox_id) not in torbox_ids_to_delete:
                 torbox_ids_to_delete.append(str(h.torbox_id))
+                id_types[str(h.torbox_id)] = h.downloader_type
 
             reverts_to_old = h.episode is not None and (
                 await _has_live_replaced_release(session, h)
@@ -2062,7 +2261,7 @@ async def abort_all_active_transfers(session: AsyncSession) -> dict[str, Any]:
         await session.commit()
 
     for tb_id in torbox_ids_to_delete:
-        await _delete_and_purge_torbox_transfer(session, tb_id)
+        await _purge_for_row(session, tb_id, id_types.get(tb_id))
 
     try:
         from app.core.rate_limit_queue import (
@@ -2181,6 +2380,7 @@ async def abort_item_transfer(
 
     valid_histories: list[DownloadHistory] = []
     torbox_ids_to_delete: list[str] = []
+    id_types: dict[str, str] = {}
     reverted_episode_ids: set[int] = set()
     for h in matching_histories:
         detail_lower = (h.status_detail or "").strip().lower()
@@ -2198,6 +2398,7 @@ async def abort_item_transfer(
             valid_histories.append(h)
             if h.torbox_id and str(h.torbox_id) not in torbox_ids_to_delete:
                 torbox_ids_to_delete.append(str(h.torbox_id))
+                id_types[str(h.torbox_id)] = h.downloader_type
             if h.episode_id is not None and await _has_live_replaced_release(
                 session, h
             ):
@@ -2279,7 +2480,7 @@ async def abort_item_transfer(
     await session.commit()
 
     for tb_id in torbox_ids_to_delete:
-        await _delete_and_purge_torbox_transfer(session, tb_id)
+        await _purge_for_row(session, tb_id, id_types.get(tb_id))
 
     try:
         from app.core.rate_limit_queue import (
@@ -2306,27 +2507,40 @@ async def abort_item_transfer(
     }
 
 
-async def reconcile_completed_history_with_torbox(
+async def reconcile_completed_history(
     session: AsyncSession,
-    live_torbox_ids: set[str],
+    downloader_type: str,
+    live_ids: set[str],
 ) -> int:
-    """Passively reconcile completed DownloadHistory rows against live TorBox transfer IDs.
+    """Passively reconcile completed DownloadHistory rows of one downloader type against live transfer IDs.
 
     Marks missing rows as status_detail='deleted' without altering MediaItem, Season, or Episode status.
     """
     stmt = select(DownloadHistory).where(
         DownloadHistory.status_detail == "completed",
-        DownloadHistory.torbox_id.is_not(None),
+        DownloadHistory.downloader_type == downloader_type,
+        DownloadHistory.downloader_transfer_id.is_not(None),
     )
     rows = (await session.execute(stmt)).scalars().all()
     updated = 0
     for row in rows:
-        if row.torbox_id and str(row.torbox_id) not in live_torbox_ids:
+        if (
+            row.downloader_transfer_id
+            and str(row.downloader_transfer_id) not in live_ids
+        ):
             row.status_detail = "deleted"
             updated += 1
     if updated > 0:
         await session.commit()
     return updated
+
+
+async def reconcile_completed_history_with_torbox(
+    session: AsyncSession,
+    live_torbox_ids: set[str],
+) -> int:
+    """TorBox-specific entry point; delegates to ``reconcile_completed_history``."""
+    return await reconcile_completed_history(session, "torbox", live_torbox_ids)
 
 
 async def _recalculate_parent_status(
@@ -2593,7 +2807,7 @@ async def reconcile_all_items_transfer_truth(session: AsyncSession) -> int:
     return reconciled
 
 
-async def manual_delete_from_torbox(
+async def manual_delete_from_downloader(
     session: AsyncSession,
     *,
     history_id: int | None = None,
@@ -2739,12 +2953,14 @@ async def manual_delete_from_torbox(
                 matching_histories.append(h)
 
     torbox_ids_to_delete: list[str] = []
+    id_types: dict[str, str] = {}
     for h in matching_histories:
         detail_low = (h.status_detail or "").strip().lower()
         if h.id == history_id or detail_low not in ("replaced", "canceled"):
             if h.id == history_id or detail_low != "deleted":
                 if h.torbox_id and str(h.torbox_id) not in torbox_ids_to_delete:
                     torbox_ids_to_delete.append(str(h.torbox_id))
+                    id_types[str(h.torbox_id)] = h.downloader_type
             h.status_detail = "deleted"
             h.is_dismissed = True
             h.notification_sent = True
@@ -2791,7 +3007,7 @@ async def manual_delete_from_torbox(
     await session.commit()
 
     for tb_id in torbox_ids_to_delete:
-        await _delete_and_purge_torbox_transfer(session, tb_id)
+        await _purge_for_row(session, tb_id, id_types.get(tb_id))
 
     remaining = await count_downloading_entities(session)
     if remaining == 0 and not transfer_poller.has_in_flight_pushes:
@@ -2802,6 +3018,9 @@ async def manual_delete_from_torbox(
         "deleted_torbox_ids": torbox_ids_to_delete,
         "item_id": item.id if item else item_id,
     }
+
+
+manual_delete_from_torbox = manual_delete_from_downloader
 
 
 async def ensure_blacklisted_release(
@@ -2869,7 +3088,7 @@ async def blacklist_from_history(
     )
     await session.commit()
 
-    res = await manual_delete_from_torbox(session, history_id=history_id)
+    res = await manual_delete_from_downloader(session, history_id=history_id)
     res["blacklist_id"] = bl.id
     return res
 
@@ -2902,7 +3121,7 @@ async def blacklist_from_active_pushes(
 
     detail_lower = (history.status_detail or "").strip().lower()
     if detail_lower == "completed":
-        await manual_delete_from_torbox(session, history_id=history_id)
+        await manual_delete_from_downloader(session, history_id=history_id)
         return True
     if (
         detail_lower.startswith("failed") or detail_lower == "rate_limited"

@@ -363,6 +363,8 @@ def _extract_file_entries(files: list[Any]) -> list[tuple[str, int]]:
     for f in files:
         if isinstance(f, str):
             entries.append((f, 0))
+        elif hasattr(f, "size_bytes") and hasattr(f, "name"):  # DownloaderFile
+            entries.append((str(f.path or f.name), int(f.size_bytes or 0)))
         elif isinstance(f, dict):
             name = f.get("name") or f.get("short_name") or f.get("path")
             raw_size = f.get("size") if f.get("size") is not None else f.get("bytes")
@@ -486,3 +488,7 @@ def is_torbox_filelist_fake(
                 )
 
     return _ret(False, None, False)
+
+
+# Provider-neutral name (m57): accepts ``list[DownloaderFile]``, TorBox dicts or names.
+is_filelist_fake = is_torbox_filelist_fake
