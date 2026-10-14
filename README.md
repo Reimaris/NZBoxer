@@ -37,7 +37,7 @@ NZBoxer is built around an **on-demand workflow**:
 - **Release Date Tracking (TMDB):** Enriches Movies and Series with digital/physical release dates and season/episode air dates so you always know whether a title is actually available or still upcoming.
 - **Chronological Anime Franchises (AniList):** Automatically groups standalone anime sequel entries and canon franchise movies under a single parent entry in chronological watch order, while keeping your watch progress aligned.
 - **Future Episode & Season Detection:** Unaired episodes are tracked as *Future* with timezone-aware broadcast times and roll over to *Searching* automatically once they air. Upcoming TBA seasons are discovered on a paced schedule.
-- **Paced Air Date Refresh:** Air dates of unreleased movies and series are re-checked every 24 hours, or every 3 hours for releases due within 14 days, and frozen for completed or ignored items to save API calls.
+- **Paced Air Date Refresh:** Air dates of unreleased movies and series are re-checked every 24 hours, or every 3 hours for releases due within 14 days, and frozen for completed or ignored items to save API calls. Episode air times come from tiers: anime uses exact AniList airing times; TV uses Simkl's exact broadcast time when Simkl is connected, otherwise the TMDB calendar date plus a 24-hour buffer (so Plex/MAL-only TV episodes become eligible about a day after their date). A precise time is never downgraded to a date.
 - **Automatic Cleanup:** When you mark an item as *Completed* or drop it on your watchlist, NZBoxer automatically removes it from your active watchlist views on the next sync while preserving your permanent push history.
 
 ### 2. On-Demand Search, Scoring & Push
