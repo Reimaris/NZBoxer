@@ -590,11 +590,11 @@ document.addEventListener('alpine:init', () => {
                     <div class="space-y-3">
                         <div class="flex items-start gap-3">
                             <span class="bg-amber-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider shrink-0 w-20 text-center">IN PROGRESS</span>
-                            <span>Currently downloading on {{ downloader_name }}, failed needing attention, or partially/fully downloaded on {{ downloader_name }}.</span>
+                            <span>Currently downloading on your downloader, failed needing attention, or partially/fully downloaded on your downloader.</span>
                         </div>
                         <div class="flex items-start gap-3">
                             <span class="bg-[#d40060] text-white text-[10px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider shrink-0 w-20 text-center">READY</span>
-                            <span>Released and ready for on-demand Search / Push to {{ downloader_name }}.</span>
+                            <span>Released and ready for on-demand Search / Push to your downloader.</span>
                         </div>
                         <div class="flex items-start gap-3">
                             <span class="bg-blue-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider shrink-0 w-20 text-center">FUTURE / TBA</span>
@@ -1051,7 +1051,7 @@ document.addEventListener('alpine:init', () => {
                         </th>
                         <th scope="col" @click="sortHistoryBy('status')" class="px-4 py-3.5 w-px whitespace-nowrap text-left text-xs font-semibold text-[#a1a1aa] uppercase tracking-wider cursor-pointer hover:text-white select-none">
                             <div class="flex items-center gap-1">
-                                <span>{{ downloader_name }} Status</span>
+                                <span>Downloader Status</span>
                                 <span x-show="historySortCol === 'status'" x-text="historySortDir === 'asc' ? '▲' : '▼'" class="text-[#d40060] font-bold text-xs"></span>
                             </div>
                         </th>
@@ -1192,7 +1192,7 @@ document.addEventListener('alpine:init', () => {
                         <td class="hidden md:table-cell md:px-4 md:py-3.5 text-gray-400 text-xs font-mono md:w-px md:whitespace-nowrap">
                             {{ h.pushed_at_str }}
                         </td>
-                        <!-- Desktop-Only Col 4: {{ downloader_name }} Status -->
+                        <!-- Desktop-Only Col 4: Downloader Status -->
                         <td class="hidden md:table-cell md:px-4 md:py-3.5 md:w-px md:whitespace-nowrap" id="ledger-status-{{ h.id }}">
                             {% if h.is_dry_run %}
                             <span class="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded bg-amber-500/20 text-amber-300 border-amber-500/40 border">SIMULATED (DRY RUN)</span>
@@ -1251,7 +1251,7 @@ document.addEventListener('alpine:init', () => {
                                         hx-post="/api/history/{{ h.id }}/blacklist"
                                         hx-target="#ledger-status-{{ h.id }}"
                                         hx-swap="innerHTML"
-                                        hx-confirm="Blacklist this release, delete from {{ h.downloader_name }} if present, and reset target to Ready to Push?"
+                                        hx-confirm="Blacklist this release, delete from the downloader if present, and reset target to Ready to Push?"
                                         title="Blacklist Release"
                                         class="p-1.5 bg-zinc-800/60 hover:bg-red-900/50 text-zinc-400 hover:text-red-300 border border-zinc-700 hover:border-red-500/40 rounded-md transition-colors flex items-center justify-center">
                                     <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"></path></svg>
@@ -1281,7 +1281,7 @@ document.addEventListener('alpine:init', () => {
                     <span class="inline-flex rounded-full h-2.5 w-2.5 bg-cyan-400"></span>
                     <span>Active Pushes — Live Transfer Monitor</span>
                 </h3>
-                <p class="text-xs text-[#a1a1aa] mt-0.5">Every active movie, season pack, or episode transfer updates live. Completed rows stay visible for 5 minutes as Ready on {{ downloader_name }} once Layer 3 video verification passes.</p>
+                <p class="text-xs text-[#a1a1aa] mt-0.5">Every active movie, season pack, or episode transfer updates live. Completed rows stay visible for 5 minutes as Ready in Downloader once Layer 3 video verification passes.</p>
             </div>
             <div class="flex items-center gap-2">
                 <button type="button"
@@ -1298,7 +1298,7 @@ document.addEventListener('alpine:init', () => {
                         hx-post="/api/pushes/abort-all"
                         hx-target="#active-pushes-container"
                         hx-swap="innerHTML"
-                        hx-confirm="Abort and delete all active transfers from {{ downloader_name }}?"
+                        hx-confirm="Abort and delete all active transfers from downloader?"
                         x-show="lastDownloadingCount > 0 || pollerAwake"
                         class="px-3 py-1.5 bg-transparent border border-red-800 text-red-400 hover:bg-red-700 hover:text-white rounded-md text-xs font-semibold flex items-center gap-1.5 transition-colors">
                     <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>

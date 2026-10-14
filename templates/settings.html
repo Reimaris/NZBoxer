@@ -65,7 +65,7 @@
                 </div>
                 <div class="min-w-0">
                     <h2 class="text-base font-bold text-white leading-tight">Connected Providers</h2>
-                    <p class="text-xs text-[#a1a1aa] truncate mt-0.5">Manage Watchlists (Simkl), Metadata (TMDB, AniList), Downloader, and Indexers.</p>
+                    <p class="text-xs text-[#a1a1aa] truncate mt-0.5">Manage Watchlists (Simkl, AniList, Plex, MAL), Metadata (TMDB, AniList), Downloaders (TorBox, SABnzbd, Premiumize), and Indexers.</p>
                 </div>
             </div>
             <div class="flex items-center gap-3 shrink-0">
@@ -220,8 +220,10 @@
                                 Priority {{ provider.priority if provider.priority is not none else '1' }}
                             </span>
                             {% elif cat == 'downloader' %}
-                            <span class="text-xs text-[#a1a1aa] font-mono truncate max-w-[170px]" title="{{ provider.api_url or 'https://api.torbox.app/v1/api' }}">
-                                {{ provider.api_url or 'https://api.torbox.app/v1/api' }}
+                            {% set dl_url = provider.api_url or ('https://api.torbox.app/v1/api' if provider.type == 'torbox' else '') %}
+                            <span class="px-2 py-0.5 rounded text-[11px] font-bold bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">{{ downloader_display_names.get(provider.type, provider.type) }}</span>
+                            <span class="text-xs text-[#a1a1aa] font-mono truncate max-w-[170px]" title="{{ dl_url }}">
+                                {{ dl_url }}
                             </span>
                             {% elif cat == 'metadata' %}
                             <span class="text-xs text-[#a1a1aa] font-mono truncate">
@@ -434,7 +436,7 @@
                                hx-vals='js:{"notify_on_completed": event.target.checked ? "true" : "false"}'
                                hx-swap="none"
                                class="w-4 h-4 accent-[#d40060]">
-                        <span class="text-xs text-white font-medium">Download Completed (Ready on {{ downloader_name }})</span>
+                        <span class="text-xs text-white font-medium">Download Completed (Ready in Downloader)</span>
                     </label>
                     <label class="flex items-center gap-2.5 p-3 rounded-lg bg-[#111115] border border-[#3f3f46] cursor-pointer hover:border-zinc-500 transition-colors">
                         <input type="checkbox"
@@ -535,7 +537,7 @@
                         <option value="120" {% if db_settings and db_settings.download_timeout_minutes == 120 %}selected{% endif %}>120 minutes (2 hours)</option>
                         <option value="240" {% if db_settings and db_settings.download_timeout_minutes == 240 %}selected{% endif %}>240 minutes (4 hours)</option>
                     </select>
-                    <p class="text-[#71717a] text-xs mt-1.5 leading-relaxed">Abort and blacklist active {{ downloader_name }} transfers that make zero completion progress past this duration.</p>
+                    <p class="text-[#71717a] text-xs mt-1.5 leading-relaxed">Abort and blacklist active downloader transfers that make zero completion progress past this duration.</p>
                 </div>
                 <div>
                     <label class="block text-xs font-semibold uppercase text-[#d1d5db] mb-1.5">Max Auto-Push Replacement Attempts</label>
@@ -547,7 +549,7 @@
                            hx-trigger="change, blur"
                            hx-swap="none"
                            class="w-full bg-[#111115] border border-[#3f3f46] rounded-lg p-2.5 text-white font-mono text-center text-xs focus:border-emerald-500 focus:outline-none">
-                    <p class="text-[#71717a] text-xs mt-1.5 leading-relaxed">Maximum times NZBoxer will auto-push the next-best indexer candidate when an Auto-Push fails on {{ downloader_name }} before marking it Failed.</p>
+                    <p class="text-[#71717a] text-xs mt-1.5 leading-relaxed">Maximum times NZBoxer will auto-push the next-best indexer candidate when an Auto-Push fails on the active downloader before marking it Failed.</p>
                 </div>
             </div>
 
@@ -609,7 +611,7 @@
             <div class="pt-6 border-t border-[#2a2a32] space-y-4">
                 <div>
                     <h3 class="text-sm font-bold text-white">History Retention &amp; Autoclearing</h3>
-                    <p class="text-xs text-[#a1a1aa] mt-0.5">Automatically remove old entries from the local Push History Ledger. Transfers on {{ downloader_name }} are never deleted.</p>
+                    <p class="text-xs text-[#a1a1aa] mt-0.5">Automatically remove old entries from the local Push History Ledger. Transfers on your downloader are never deleted.</p>
                 </div>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
@@ -689,7 +691,7 @@
                         <div class="min-w-0">
                             <span class="text-xs text-white font-bold block">Dry-Run Mode (Simulation Sandbox)</span>
                             <p class="text-[#71717a] text-xs mt-1 leading-relaxed">
-                                Executes searches, scoring, and NZB inspection end-to-end, but intercepts and skips the final {{ downloader_name }} upload. Library items remain in Searching state.
+                                Executes searches, scoring, and NZB inspection end-to-end, but intercepts and skips the final downloader dispatch. Library items remain in Searching state.
                             </p>
                         </div>
                     </label>
@@ -760,7 +762,7 @@
         <!-- Body Content (Read-Only Reference Grid) -->
         <div x-show="openSlices.scoring" x-cloak class="p-6 border-t border-[#3f3f46] bg-[#18181d] space-y-6">
             <div class="bg-[#111115] border border-[#3f3f46] rounded-lg p-4 text-xs text-[#a1a1aa] leading-relaxed">
-                NZBoxer uses this built-in scoring matrix to rank candidate releases during on-demand searches. In <strong class="text-white">Auto-Push Best</strong> mode, the highest-scoring release matching your selected <strong class="text-white">Search Preset</strong> is automatically dispatched to {{ downloader_name }}. In <strong class="text-white">Search &amp; Pick Manually</strong> mode, candidates are sorted by score from highest to lowest.
+                NZBoxer uses this built-in scoring matrix to rank candidate releases during on-demand searches. In <strong class="text-white">Auto-Push Best</strong> mode, the highest-scoring release matching your selected <strong class="text-white">Search Preset</strong> is automatically dispatched to the active downloader. In <strong class="text-white">Search &amp; Pick Manually</strong> mode, candidates are sorted by score from highest to lowest.
             </div>
 
             <div class="grid grid-cols-1 md:grid-cols-3 gap-6">

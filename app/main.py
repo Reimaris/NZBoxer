@@ -146,6 +146,11 @@ templates.env.globals["app_version"] = APP_VERSION
 from app.services.provider_service import ActiveDownloaderName  # noqa: E402
 
 templates.env.globals["downloader_name"] = ActiveDownloaderName()
+from app.services.downloaders.base import (  # noqa: E402
+    DOWNLOADER_DISPLAY_NAMES as _DL_NAMES,
+)
+
+templates.env.globals["downloader_display_names"] = _DL_NAMES
 
 
 def _current_rate_limit_source() -> str:
