@@ -40,9 +40,7 @@ usage.md
 .directory
 .DS_Store
 
-# Testing and Coverage (Strict Local)
-tests/
-test_*.py
+# Testing and Coverage (tests are tracked; only artifacts are local)
 TESTING_CHECKLIST.md
 .pytest_cache/
 .mypy_cache/
