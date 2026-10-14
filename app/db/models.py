@@ -4,7 +4,7 @@ NZBoxer Database Models
 SQLAlchemy 2.0 ORM definitions for all database entities.
 
 Models:
-    - MediaItem:       A movie or series tracked from the Simkl watchlist.
+    - MediaItem:       A movie or series tracked from a watchlist provider.
     - Season:          A season belonging to a series MediaItem.
     - DownloadHistory: A record of an NZB sent to the downloader (for upgrade logic).
 """
@@ -120,7 +120,7 @@ class SystemSettings(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
 
-    # TorBox Transfer Poller & Failure Recovery
+    # Downloader Transfer Poller & Failure Recovery
     sh_max_retries: Mapped[int] = mapped_column(Integer, default=3)
     download_timeout_minutes: Mapped[int] = mapped_column(
         Integer, default=60, server_default="60", nullable=False
@@ -266,7 +266,7 @@ class Provider(Base):
     client_id: Mapped[str | None] = mapped_column(String(500), nullable=True)
     access_token: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
-    # Provider-specific JSON configuration (e.g. Simkl sync interval, category flags, last_synced_at)
+    # Provider-specific JSON configuration (e.g. watchlist sync interval, category flags, last_synced_at)
     config_json: Mapped[str] = mapped_column(
         Text, nullable=False, default="{}", server_default="{}"
     )
@@ -502,7 +502,7 @@ class SearchPreset(Base):
 
 
 class MediaItem(Base):
-    """Represents a movie or TV series tracked from the Simkl watchlist."""
+    """Represents a movie or TV series tracked from a watchlist provider."""
 
     __tablename__ = "media_items"
 
@@ -1268,7 +1268,7 @@ class DownloadHistory(Base):
     """A record of an NZB dispatched to a downloader (Push History Ledger).
 
     Stores nullable foreign keys to MediaItem/Season/Episode and denormalized
-    snapshot columns so push history survives Simkl watchlist pruning or manual
+    snapshot columns so push history survives watchlist pruning or manual
     MediaItem deletion.
     """
 
@@ -1324,7 +1324,7 @@ class DownloadHistory(Base):
     release_group: Mapped[str | None] = mapped_column(String(100), nullable=True)
     bitrate_mbps: Mapped[float | None] = mapped_column(Float, nullable=True)
 
-    # --- TorBox tracking ---
+    # --- Downloader tracking ---
     downloader_hash: Mapped[str | None] = mapped_column(
         String(64), nullable=True, index=True
     )
@@ -1420,7 +1420,7 @@ class DownloadHistory(Base):
 
 
 class BlacklistedRelease(Base):
-    """Tracks failed NZBs (e.g. removed by TorBox or invalid) so they are
+    """Tracks failed NZBs (e.g. removed by the downloader or invalid) so they are
     skipped during the next search cycle (Self-Healing).
     """
 

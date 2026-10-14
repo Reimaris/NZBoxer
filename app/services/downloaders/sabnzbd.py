@@ -139,6 +139,7 @@ class SabnzbdDownloader(BaseDownloader):
         filename: str,
         password: str | None = None,
         category: str | None = None,
+        is_manual: bool = False,
     ) -> DownloaderUploadResult:
         data = {
             "apikey": self._api_key,

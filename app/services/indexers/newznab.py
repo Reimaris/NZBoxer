@@ -133,6 +133,7 @@ async def resolve_indexer(
 
     from app.services.provider_service import get_active_indexers
 
+    # provider-specific code (allowlisted)
     if session is not None:
         indexers = await get_active_indexers(session)
         register_indexer_names(indexers)
@@ -150,12 +151,14 @@ async def resolve_indexer(
                 register_indexer_names(indexers)
                 if indexers and indexers[0].api_key:
                     return (
-                        indexers[0].api_url or "https://treasure-maps.com/api",
+                        indexers[0].api_url
+                        or "https://treasure-maps.com/api",  # provider-specific code (allowlisted)
                         indexers[0].api_key or "",
                     )
         except Exception:
             pass
 
+    # provider-specific code (allowlisted)
     return (
         api_url or "https://treasure-maps.com/api",
         api_key or "",
@@ -561,7 +564,8 @@ async def fetch_nzb_bytes(
     if guid_or_url.startswith("http"):
         url = guid_or_url
         params = None
-        # If url doesn't have apikey, append it if it's treasure-maps
+        # provider-specific code (allowlisted)
+        # If url doesn't have apikey, append it for the default preset host
         if (
             ("treasuremaps.net" in url or "treasure-maps.com" in url) or "api" in url
         ) and "apikey=" not in url:

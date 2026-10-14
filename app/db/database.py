@@ -295,6 +295,7 @@ async def init_db(database_url: str) -> None:
         "magazine_issues",
         "magazine_subscriptions",
         "provider_profiles",
+        # legacy schema marker (allowlisted)
         "seen_torbox_downloads",
         "daily_grab_counters",
         "book_items",
@@ -330,6 +331,7 @@ async def init_db(database_url: str) -> None:
                         )
                     ).fetchall()
                 }
+                # legacy schema marker (allowlisted)
                 if settings_cols & {
                     "treasure_maps_api_key",
                     "torbox_api_key",
@@ -386,6 +388,7 @@ async def init_db(database_url: str) -> None:
                             p_cat = "metadata"
                         elif p_type == "torbox":
                             p_cat = "downloader"
+                        # legacy schema marker (allowlisted)
                         elif (
                             p_type == "treasure_maps"
                         ):  # legacy schema marker (allowlisted)
@@ -394,6 +397,7 @@ async def init_db(database_url: str) -> None:
                             p_cat = "watchlist"
 
                         api_url = r.get("api_url")
+                        # legacy domain migration (allowlisted)
                         if isinstance(api_url, str) and "treasuremaps.net" in api_url:
                             api_url = api_url.replace(
                                 "treasuremaps.net", "treasure-maps.com"
@@ -640,6 +644,7 @@ async def init_db(database_url: str) -> None:
                 # Create a default provider if we just added the column, so foreign keys don't break
                 await session.execute(
                     __import__("sqlalchemy").text(
+                        # legacy schema marker (allowlisted)
                         "INSERT OR IGNORE INTO providers (id, type, name) VALUES (1, 'simkl', 'Default Simkl');"
                     )
                 )
@@ -877,6 +882,7 @@ async def init_db(database_url: str) -> None:
                             "ALTER TABLE episodes ADD COLUMN first_pushed_at DATETIME;"
                         )
                     )
+                    # legacy schema marker (allowlisted)
                     if {"episode_id", "torbox_sent_at", "is_upgrade"} <= dh_cols:
                         await session.execute(
                             sa_text(
@@ -967,7 +973,7 @@ async def init_db(database_url: str) -> None:
                 # SearchPreset two-checkbox season pack columns (ADR-078)
                 "ALTER TABLE search_presets ADD COLUMN allow_season_packs BOOLEAN NOT NULL DEFAULT 0;",
                 "ALTER TABLE search_presets ADD COLUMN prefer_season_packs BOOLEAN NOT NULL DEFAULT 0;",
-                # MediaItem sticky & Simkl watch progress columns
+                # MediaItem sticky & watchlist progress columns
                 "ALTER TABLE media_items ADD COLUMN preset_id INTEGER REFERENCES search_presets(id) ON DELETE SET NULL;",
                 "ALTER TABLE media_items ADD COLUMN custom_search_config_json TEXT;",
                 "ALTER TABLE media_items ADD COLUMN allow_season_packs BOOLEAN NOT NULL DEFAULT 0;",
@@ -1009,7 +1015,7 @@ async def init_db(database_url: str) -> None:
                 # SystemSettings decoupled Debug Mode & Dry-Run Sandbox (ADR-108)
                 "ALTER TABLE system_settings ADD COLUMN debug_mode BOOLEAN NOT NULL DEFAULT 0;",
                 "ALTER TABLE system_settings ADD COLUMN dry_run BOOLEAN NOT NULL DEFAULT 0;",
-                # Provider Simkl sync config_json column
+                # Provider watchlist sync config_json column
                 "ALTER TABLE providers ADD COLUMN config_json TEXT NOT NULL DEFAULT '{}';",
                 # Migrate retired v2 MANUAL_GRAB status values to SEARCHING
                 "UPDATE media_items SET status = 'SEARCHING' WHERE status IN ('MANUAL_GRAB', 'manual_grab');",
@@ -1115,6 +1121,7 @@ async def init_db(database_url: str) -> None:
                     ).fetchall()
                     dh_col_names = {r[1] for r in ti_rows}
 
+                # legacy schema marker (allowlisted)
                 # m57: generalize TorBox tracking columns (ADR-131); m59 then
                 # renames/merges the legacy torbox_* columns away (ADR-134).
                 for col, ddl in (
@@ -1466,12 +1473,14 @@ async def init_db(database_url: str) -> None:
             except Exception as e:
                 logger.warning("Error reconciling transfer truth during startup: %s", e)
 
+            # legacy domain migration (allowlisted)
             # --- Domain migration: treasuremaps.net → treasure-maps.com ---
             try:
                 from sqlalchemy import func, select, update
 
                 from app.db.models import Provider
 
+                # legacy domain migration (allowlisted)
                 migrated = await session.execute(
                     update(Provider)
                     .where(Provider.api_url.contains("treasuremaps.net"))

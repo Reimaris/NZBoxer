@@ -627,6 +627,49 @@ class TorBoxDownloader(BaseDownloader):
     display_name = "TorBox"
     poll_interval_seconds = 20
     supports_file_listing = True
+    supports_magnet = True
+
+    # Classmethods look module functions up at call time so test patches apply.
+    @classmethod
+    def get_cooldown_remaining(cls, is_manual: bool = False) -> float:
+        return get_cooldown_remaining(is_manual=is_manual)
+
+    @classmethod
+    def set_cooldown(cls, seconds: float) -> None:
+        set_cooldown(seconds)
+
+    @classmethod
+    def clear_cooldown(cls) -> None:
+        clear_cooldown()
+
+    @classmethod
+    def clear_transfer_cache(cls) -> None:
+        clear_usenet_cache()
+
+    @classmethod
+    async def fetch_raw_transfers(
+        cls, bypass_cache: bool = False, session: AsyncSession | None = None
+    ) -> list[dict[str, Any]]:
+        return await get_usenet_downloads(bypass_cache=bypass_cache, session=session)
+
+    @classmethod
+    async def delete_raw_transfer(
+        cls,
+        transfer_id: int | str,
+        kind: str = "usenet",
+        session: AsyncSession | None = None,
+    ) -> None:
+        parsed: Any = int(transfer_id) if str(transfer_id).isdigit() else transfer_id
+        if kind == "torrent":
+            await delete_torrent_download(parsed, session=session)
+        else:
+            await delete_usenet_download(parsed, session=session)
+
+    @classmethod
+    async def send_magnet(
+        cls, magnet: str, is_manual: bool = False, session: AsyncSession | None = None
+    ) -> dict[str, Any]:
+        return await send_magnet_link(magnet, session=session, is_manual=is_manual)
 
     def __init__(self, provider: Provider, session: AsyncSession | None = None):
         self.provider = provider

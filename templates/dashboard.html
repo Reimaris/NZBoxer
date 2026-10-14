@@ -713,7 +713,7 @@ document.addEventListener('alpine:init', () => {
                         {% endif %}
                         <div class="flex flex-wrap gap-1.5 mt-1.5 text-[10px] font-bold">
                             {% if item.simkl_id %}
-                            <a href="https://simkl.com/{{ 'movies' if (item.media_type.value == 'movie' and not item.is_anime_movie) else ('anime' if (item.media_type.value == 'anime' or item.is_anime_movie) else 'tv') }}/{{ item.simkl_id }}" target="_blank" rel="noopener noreferrer" class="bg-[#2a2a32] text-gray-400 hover:text-white px-2 py-0.5 rounded border border-[#3f3f46] transition-colors">SIMKL</a>
+                            <a href="https://simkl.com/{{ 'movies' if (item.media_type.value == 'movie' and not item.is_anime_movie) else ('anime' if (item.media_type.value == 'anime' or item.is_anime_movie) else 'tv') }}/{{ item.simkl_id }}" target="_blank" rel="noopener noreferrer" class="bg-[#2a2a32] text-gray-400 hover:text-white px-2 py-0.5 rounded border border-[#3f3f46] transition-colors">SIMKL</a> <!-- provider-specific code (allowlisted) -->
                             {% endif %}
                             {% if item.tmdb_id %}
                             <a href="https://themoviedb.org/{{ 'movie' if item.media_type.value == 'movie' else 'tv' }}/{{ item.tmdb_id }}" target="_blank" rel="noopener noreferrer" class="bg-[#2a2a32] text-blue-400 hover:text-white px-2 py-0.5 rounded border border-[#3f3f46] transition-colors">TMDB</a>
@@ -1132,7 +1132,7 @@ document.addEventListener('alpine:init', () => {
                                     {% endif %}
                                     <div class="flex flex-wrap gap-1.5 mt-2 text-[10px] font-bold">
                                         {% if h.simkl_id %}
-                                        <a href="https://simkl.com/{{ 'movies' if h.category_key == 'movie' else ('anime' if h.category_key == 'anime' else 'tv') }}/{{ h.simkl_id }}" target="_blank" rel="noopener noreferrer" class="bg-[#2a2a32] text-gray-400 hover:text-white px-2 py-0.5 rounded border border-[#3f3f46] transition-colors">SIMKL</a>
+                                        <a href="https://simkl.com/{{ 'movies' if h.category_key == 'movie' else ('anime' if h.category_key == 'anime' else 'tv') }}/{{ h.simkl_id }}" target="_blank" rel="noopener noreferrer" class="bg-[#2a2a32] text-gray-400 hover:text-white px-2 py-0.5 rounded border border-[#3f3f46] transition-colors">SIMKL</a> <!-- provider-specific code (allowlisted) -->
                                         {% endif %}
                                         {% if h.tmdb_id %}
                                         <a href="https://themoviedb.org/{{ 'movie' if h.category_key == 'movie' else 'tv' }}/{{ h.tmdb_id }}" target="_blank" rel="noopener noreferrer" class="bg-[#2a2a32] text-blue-400 hover:text-white px-2 py-0.5 rounded border border-[#3f3f46] transition-colors">TMDB</a>

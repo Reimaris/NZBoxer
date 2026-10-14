@@ -77,6 +77,7 @@ def downloader_label(downloader_name: str | None) -> str:
 
 def _normalize_event(event_type: str | None, default: str = "completed") -> str:
     norm = (event_type or default).strip().lower()
+    # legacy alias (m59)
     return "ready_on_downloader" if norm == "ready_on_torbox" else norm
 
 

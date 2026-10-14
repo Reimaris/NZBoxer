@@ -1,7 +1,7 @@
 """
 Automation Orchestrator
 =======================
-Handles syncing the Simkl watchlist to the local database, searching
+Handles syncing watchlists to the local database, searching
 Newznab indexers, evaluating scores, and sending releases to the downloader.
 """
 
@@ -39,11 +39,13 @@ from app.db.models import (
 )
 from app.services import tmdb
 from app.services.watchlist_ingest import prune_inactive_media_items
+
+# simkl inline sync (allowlisted, m59-32)
 from app.services.watchlists import simkl
 
 logger = logging.getLogger(__name__)
 
-# Global mutex preventing concurrent Simkl watchlist sync executions
+# Global mutex preventing concurrent watchlist sync executions
 _sync_lock = asyncio.Lock()
 
 
@@ -267,6 +269,7 @@ def _parse_iso_utc(ts_str: str | None) -> datetime | None:
         return None
 
 
+# simkl inline sync (allowlisted, m59-32)
 def is_watchlist_sync_due_on_load(
     provider: Provider,
     now: datetime | None = None,
@@ -311,7 +314,7 @@ def normalize_sync_interval_minutes(value: object) -> int:
 def evaluate_periodic_watchlist_sync(
     providers: Sequence[Provider], now: datetime
 ) -> WatchlistPeriodicSyncStatus:
-    """Evaluate whether periodic Simkl sync is due across eligible providers (UTC only)."""
+    """Evaluate whether periodic watchlist sync is due across eligible providers (UTC only)."""
     if now.tzinfo is None:
         now = now.replace(tzinfo=timezone.utc)
 
@@ -352,6 +355,7 @@ def evaluate_periodic_watchlist_sync(
     return best or WatchlistPeriodicSyncStatus("disabled", 0, None, 0)
 
 
+# simkl inline sync (allowlisted, m59-32)
 def is_provider_periodic_sync_due(
     provider: Provider,
     now: datetime | None = None,
@@ -382,6 +386,7 @@ def is_provider_periodic_sync_due(
     return (now - last) >= timedelta(minutes=interval)
 
 
+# simkl inline sync (allowlisted, m59-32)
 def is_watchlist_periodic_sync_due(
     provider: Provider,
     now: datetime | None = None,
@@ -390,6 +395,7 @@ def is_watchlist_periodic_sync_due(
     return is_provider_periodic_sync_due(provider, now)
 
 
+# simkl inline sync (allowlisted, m59-32)
 async def should_trigger_dashboard_watchlist_sync(
     session: AsyncSession,
     now: datetime | None = None,
@@ -422,7 +428,7 @@ async def run_periodic_watchlist_sync_if_due(now: datetime | None = None) -> boo
 
 
 async def run_orchestrator_tick(now: datetime | None = None) -> None:
-    """Execute 15-minute background orchestrator tasks: episode air date rollover, periodic Simkl sync,
+    """Execute 15-minute background orchestrator tasks: episode air date rollover, periodic watchlist sync,
     and (at xx:00) the air-date push and upgrade pass."""
     start = time.monotonic()
     if now is None:
@@ -486,7 +492,7 @@ async def run_orchestrator_tick(now: datetime | None = None) -> None:
     except Exception as e:  # noqa: BLE001
         logger.error("Error during history autoclear: %s", e)
 
-    # 2. Check and run periodic Simkl sync if due
+    # 2. Check and run periodic watchlist sync if due
     try:
         async with async_session_factory() as session:
             providers = (
@@ -504,7 +510,7 @@ async def run_orchestrator_tick(now: datetime | None = None) -> None:
                 for p in providers
                 if p.type != "simkl"
             )
-        tag = "[ORCHESTRATOR] [3/3] Periodic Simkl sync:"
+        tag = "[ORCHESTRATOR] [3/3] Periodic watchlist sync:"
         if status.state != "due" and other_due:
             tag = "[ORCHESTRATOR] [3/3] Periodic watchlist sync:"
             status = WatchlistPeriodicSyncStatus("due", 0, None, 0)
@@ -525,11 +531,11 @@ async def run_orchestrator_tick(now: datetime | None = None) -> None:
         elif status.state == "disabled":
             logger.info("%s disabled (interval 0)", tag)
         else:
-            logger.info("%s no active Simkl provider with credentials", tag)
+            logger.info("%s no active watchlist provider with credentials", tag)
     except Exception as e:  # noqa: BLE001
-        logger.error("Error during periodic Simkl sync: %s", e)
+        logger.error("Error during periodic watchlist sync: %s", e)
         logger.info(
-            "[ORCHESTRATOR] [3/3] Periodic Simkl sync: failed (see error above)"
+            "[ORCHESTRATOR] [3/3] Periodic watchlist sync: failed (see error above)"
         )
 
     # 3. At every full hour, run the air-date push and upgrade pass after the sync
@@ -548,7 +554,7 @@ async def run_orchestrator_tick(now: datetime | None = None) -> None:
 
 
 async def deduplicate_media_items(session: AsyncSession) -> int:
-    """Detect and merge duplicate MediaItem rows sharing the same Simkl ID or external IDs.
+    """Detect and merge duplicate MediaItem rows sharing the same watchlist ID or external IDs.
 
     Preserves the canonical item (preferring non-ignored, active/completed status,
     history/seasons, and lowest ID), re-homes any DownloadHistory and FailureLog rows,
@@ -734,6 +740,7 @@ def _item_has_active_downloading_entity(item: MediaItem) -> bool:
     return False
 
 
+# simkl inline sync (allowlisted, m59-32)
 async def _simkl_seen_remote_ids(
     session: AsyncSession,
     provider_id: int,
@@ -785,7 +792,7 @@ def _record_provider_error(provider: Provider, error: object) -> str:
 async def _sync_adapter_provider(
     session: AsyncSession, provider: Provider, result: dict[str, Any]
 ) -> None:
-    """Fetch, ingest, complete-absent and prune one non-Simkl watchlist provider."""
+    """Fetch, ingest, complete-absent and prune one adapter-based watchlist provider."""
     import json
 
     from app.services.watchlist_ingest import (
@@ -830,6 +837,7 @@ async def _sync_adapter_provider(
     await session.commit()
 
 
+# simkl inline sync (allowlisted, m59-32)
 async def _run_provider_sync(
     only_provider_id: int | None = None,
 ) -> list[dict[str, Any]]:
@@ -1314,6 +1322,7 @@ async def enrich_movie_show_metadata(
     return media_type
 
 
+# simkl inline sync (allowlisted, m59-32)
 async def _upsert_simkl_source_for_item(
     session: AsyncSession,
     item: MediaItem,
@@ -1332,6 +1341,7 @@ async def _upsert_simkl_source_for_item(
     await upsert_simkl_source(session, item, provider, simkl_id, status)
 
 
+# simkl inline sync (allowlisted, m59-32)
 async def _sync_items(
     session: AsyncSession,
     simkl_items: list[dict[str, Any]],
@@ -2912,6 +2922,7 @@ async def _refresh_future_movie_release_dates(
             movie.status = MediaStatus.SEARCHING
 
 
+# simkl inline sync (allowlisted, m59-32)
 async def enrich_active_shows_episode_air_dates(
     session: AsyncSession,
     now: datetime | None = None,

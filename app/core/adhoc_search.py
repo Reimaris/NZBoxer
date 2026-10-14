@@ -18,11 +18,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.core.fake_detector import extract_nzb_password
 from app.core.parser import parse_release_name
+from app.core.rate_limit_queue import (
+    downloader_rate_limit_detail,
+    get_downloader_cooldown_remaining,
+)
 from app.db.models import DownloadHistory, Provider
 from app.services import provider_service
-from app.services.downloaders import torbox
-from app.services.downloaders.base import DownloaderError
-from app.services.downloaders.factory import get_active_downloader_client
+from app.services.downloaders.base import DOWNLOADER_DISPLAY_NAMES, DownloaderError
+from app.services.downloaders.factory import (
+    downloader_class,
+    get_active_downloader_client,
+)
 from app.services.indexers import newznab as newznab_client
 from app.services.indexers.catalog import resolve_categories
 
@@ -505,15 +511,12 @@ async def push_adhoc_release(
                 False, "Release link host is not a configured indexer.", 400
             )
 
-    cooldown = torbox.get_cooldown_remaining(is_manual=True)
-    if cooldown > 0:
-        return AdHocPushOutcome(
-            False, f"TorBox rate limit exceeded (cooldown: {int(cooldown)}s)", 400
-        )
+    if get_downloader_cooldown_remaining() > 0:
+        return AdHocPushOutcome(False, downloader_rate_limit_detail(), 400)
 
     result: dict[str, Any] | None = None
     downloader_type = "torbox"
-    downloader_name = "TorBox"
+    downloader_name = DOWNLOADER_DISPLAY_NAMES[downloader_type]
     if settings.dry_run:
         result = {}
         active = await get_active_downloader_client(session)
@@ -524,13 +527,18 @@ async def push_adhoc_release(
         try:
             if is_magnet:
                 active = await get_active_downloader_client(session)
-                if active is not None and active.provider_type != "torbox":
+                magnet_cls = (
+                    type(active) if active is not None else downloader_class("torbox")
+                )
+                if not magnet_cls.supports_magnet:
                     return AdHocPushOutcome(
                         False,
-                        f"Magnet links are not supported by {active.display_name}.",
+                        f"Magnet links are not supported by {active.display_name}."
+                        if active is not None
+                        else "Magnet links are not supported.",
                         400,
                     )
-                result = await torbox.send_magnet_link(release_link, is_manual=True)
+                result = await magnet_cls.send_magnet(release_link, is_manual=True)
             else:
                 nzb_bytes, filename = await newznab_client.fetch_nzb_bytes(
                     release_link,

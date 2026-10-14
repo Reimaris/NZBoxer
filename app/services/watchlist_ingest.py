@@ -307,6 +307,7 @@ async def ingest_entries(
     return result
 
 
+# simkl inline sync (allowlisted, m59-32)
 async def upsert_simkl_source(
     session: AsyncSession,
     item: MediaItem,

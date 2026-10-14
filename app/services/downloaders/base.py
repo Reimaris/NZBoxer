@@ -8,6 +8,8 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
+
     from app.db.models import Provider
 
 DOWNLOADER_DISPLAY_NAMES: dict[str, str] = {
@@ -71,6 +73,53 @@ class BaseDownloader(ABC):
     display_name: str  # "TorBox" | "SABnzbd" | "Premiumize"
     poll_interval_seconds: int  # SAB 5, cloud 20
     supports_file_listing: bool
+    supports_magnet: bool = False
+    session: AsyncSession | None = None  # optional DB session for key resolution
+
+    # --- Process-global cooldown state (classmethods: no provider row needed) ---
+
+    @classmethod
+    def get_cooldown_remaining(cls, is_manual: bool = False) -> float:
+        """Seconds until this downloader accepts dispatches again (0.0 = ready)."""
+        return 0.0
+
+    @classmethod
+    def set_cooldown(cls, seconds: float) -> None:
+        """Activate a rate-limit cooldown (no-op for downloaders without one)."""
+
+    @classmethod
+    def clear_cooldown(cls) -> None:
+        """Clear the rate-limit cooldown (no-op for downloaders without one)."""
+
+    # --- Optional capabilities (defaults for downloaders without them) ---
+
+    @classmethod
+    def clear_transfer_cache(cls) -> None:
+        """Drop any in-memory live-transfer cache."""
+
+    @classmethod
+    async def fetch_raw_transfers(
+        cls, bypass_cache: bool = False, session: AsyncSession | None = None
+    ) -> list[dict[str, Any]]:
+        """Provider-shaped live transfer dicts for the poller (default: none)."""
+        return []
+
+    @classmethod
+    async def delete_raw_transfer(
+        cls,
+        transfer_id: int | str,
+        kind: str = "usenet",
+        session: AsyncSession | None = None,
+    ) -> None:
+        """Delete a transfer identified by a provider-shaped raw entry."""
+        raise DownloaderError("Raw transfer deletion is not supported")
+
+    @classmethod
+    async def send_magnet(
+        cls, magnet: str, is_manual: bool = False, session: AsyncSession | None = None
+    ) -> dict[str, Any]:
+        """Dispatch a magnet link (only when ``supports_magnet``)."""
+        raise DownloaderError("Magnet links are not supported")
 
     @abstractmethod
     async def test_connection(self) -> tuple[bool, str]: ...
@@ -82,6 +131,7 @@ class BaseDownloader(ABC):
         filename: str,
         password: str | None = None,
         category: str | None = None,
+        is_manual: bool = False,
     ) -> DownloaderUploadResult: ...
 
     @abstractmethod

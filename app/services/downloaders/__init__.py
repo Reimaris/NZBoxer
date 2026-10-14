@@ -12,6 +12,8 @@ from app.services.downloaders.base import (
 )
 from app.services.downloaders.factory import (
     category_for_media,
+    downloader_class,
+    downloader_classes,
     get_active_downloader_client,
     get_downloader_client,
     get_downloader_client_for_type,
@@ -27,6 +29,8 @@ __all__ = [
     "DownloaderUploadResult",
     "TransferState",
     "category_for_media",
+    "downloader_class",
+    "downloader_classes",
     "get_active_downloader_client",
     "get_downloader_client",
     "get_downloader_client_for_type",

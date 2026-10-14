@@ -82,6 +82,18 @@ def _rate_limited(detail: str = "Fair use limit reached") -> DownloaderUploadRes
 
 
 class PremiumizeDownloader(BaseDownloader):
+    @classmethod
+    def get_cooldown_remaining(cls, is_manual: bool = False) -> float:
+        return get_cooldown_remaining()
+
+    @classmethod
+    def set_cooldown(cls, seconds: float) -> None:
+        set_cooldown(seconds)
+
+    @classmethod
+    def clear_cooldown(cls) -> None:
+        clear_cooldown()
+
     provider_type = "premiumize"
     display_name = "Premiumize"
     poll_interval_seconds = 20
@@ -134,6 +146,7 @@ class PremiumizeDownloader(BaseDownloader):
         filename: str,
         password: str | None = None,
         category: str | None = None,
+        is_manual: bool = False,
     ) -> DownloaderUploadResult:
         if get_cooldown_remaining() > 0:
             return _rate_limited()

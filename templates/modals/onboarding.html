@@ -40,7 +40,7 @@
          async saveStep2() {
              if (await this.post('/api/onboarding/step2', 'onboarding-step2-form')) this.step = this.step + 1;
          },
-         async getSimklPin() {
+         async getSimklPin() { // provider-specific code (allowlisted): begin
              const data = await this.post('/api/onboarding/step1', 'onboarding-step1-form');
              if (!data) return;
              const form = document.getElementById('onboarding-step1-form');
@@ -49,7 +49,7 @@
                  swap: 'innerHTML',
                  values: { client_id: form.elements['simkl_client_id'].value, provider_id: data.provider_ids.watchlist || '' }
              });
-         },
+         }, // provider-specific code (allowlisted): end
          async getPlexPin() {
              document.getElementById('onboarding-watchlist-prepare').value = '1';
              const data = await this.post('/api/onboarding/step1', 'onboarding-step1-form');

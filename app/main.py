@@ -175,7 +175,7 @@ templates.env.globals["indexer_preset"] = get_preset
 
 
 async def run_orchestrator_tick(now: datetime | None = None) -> None:
-    """Execute scheduled periodic Simkl watchlist sync and air date rollover aligned to wall-clock intervals."""
+    """Execute scheduled periodic watchlist sync and air date rollover aligned to wall-clock intervals."""
     from app.core.automation import (
         run_orchestrator_tick as core_run_orchestrator_tick,
     )
@@ -916,23 +916,26 @@ async def reset_anime_metadata_endpoint(request: Request, item_id: int):
     )
 
 
+# legacy alias (m59)
 @app.post("/api/torbox/add", response_class=HTMLResponse)
 async def manual_push_to_downloader(magnet: str = Form(...)):
     """Push a search result directly to the active downloader."""
     import logging
 
-    from app.services.downloaders import torbox
-    from app.services.downloaders.base import DownloaderError
+    from app.services.downloaders.base import DOWNLOADER_DISPLAY_NAMES, DownloaderError
+    from app.services.downloaders.factory import downloader_class
     from app.services.indexers import newznab as newznab_client
 
     logger = logging.getLogger(__name__)
-    sent_to = "TorBox"
+    sent_to = DOWNLOADER_DISPLAY_NAMES["torbox"]
 
     try:
         if magnet.startswith("magnet:"):
             try:
-                result = await torbox.send_magnet_link(magnet, is_manual=True)
-            except (torbox.DownloaderNetworkError, torbox.TorBoxError) as e:
+                result = await downloader_class("torbox").send_magnet(
+                    magnet, is_manual=True
+                )
+            except DownloaderError as e:
                 result = {"error": str(e)}
         else:
             try:
@@ -1637,6 +1640,7 @@ async def save_provider(
     request: Request,
     provider_id: int | None = None,
     name: str = Form(...),
+    # provider-specific code (allowlisted)
     simkl_username: str = Form(""),
     username: str = Form(""),
     access_token: str = Form(""),
@@ -1668,6 +1672,8 @@ async def save_provider(
         is_indexer_type,
         normalize_category_csv,
     )
+
+    # provider-specific code (allowlisted)
     from app.services.watchlists import simkl
 
     try:
@@ -1747,6 +1753,7 @@ async def save_provider(
 
         provider.name = name
         if not (is_new_watchlist and provider_type.lower() in ("plex", "mal")):
+            # provider-specific code (allowlisted)
             provider.username = simkl_username or username
         provider.access_token = effective_access_token
         provider.client_id = client_id.strip()
@@ -1772,6 +1779,7 @@ async def save_provider(
                     and tok_to_revoke != refresh_token.strip()
                     and tok_to_revoke != effective_access_token
                 ):
+                    # provider-specific code (allowlisted)
                     await simkl.revoke_token(
                         old_client_id or client_id.strip(), tok_to_revoke
                     )
@@ -1887,6 +1895,8 @@ async def toggle_provider_active(provider_id: int) -> HTMLResponse:
 @app.delete("/settings/provider/{provider_id}", response_class=HTMLResponse)
 async def delete_provider(provider_id: int) -> HTMLResponse:
     from app.db.models import Provider
+
+    # provider-specific code (allowlisted)
     from app.services.watchlists import simkl
 
     async with async_session_factory() as session:
@@ -1904,6 +1914,7 @@ async def delete_provider(provider_id: int) -> HTMLResponse:
                     or ""
                 ).strip()
                 if cid and tok:
+                    # provider-specific code (allowlisted)
                     await simkl.revoke_token(cid, tok)
             await _rehome_or_detach_provider_items(session, provider)
             await session.delete(provider)
@@ -2200,6 +2211,7 @@ async def save_notification_settings(request: Request) -> Response:
     return JSONResponse({"ok": True})
 
 
+# provider-specific code (allowlisted)
 def _render_simkl_device_card(auth_session: dict[str, Any]) -> str:
     """Render the HTMX RFC 8628 Device Authorization card without exposing device_code."""
     session_id = auth_session["session_id"]
@@ -2226,6 +2238,7 @@ def _render_simkl_device_card(auth_session: dict[str, Any]) -> str:
     """
 
 
+# provider-specific code (allowlisted)
 @app.post("/simkl/auth/start")
 async def start_simkl_auth(
     client_id: str = Form(""),
@@ -2502,6 +2515,7 @@ async def mal_auth_status(provider_id: str = "") -> HTMLResponse:
     return HTMLResponse(content=_mal_status_fragment(pid, connected))
 
 
+# provider-specific code (allowlisted)
 @app.get("/simkl/auth/poll")
 async def poll_simkl_auth(session_id: str = "") -> HTMLResponse:
     """Poll Simkl AUTH V2 token endpoint using server-side session_id without exposing device_code."""
@@ -2671,6 +2685,7 @@ _ONBOARDING_WATCHLIST_TYPES = WATCHLIST_TYPES
 _ONBOARDING_DOWNLOADER_TYPES = DOWNLOADER_TYPES
 
 
+# provider-specific code (allowlisted)
 @app.get("/onboarding/modal", response_class=HTMLResponse)
 async def onboarding_modal(request: Request) -> Response:
     """Render the first-run Setup Wizard, pre-populated from existing records."""
@@ -2830,6 +2845,7 @@ async def onboarding_modal(request: Request) -> Response:
     )
 
 
+# provider-specific code (allowlisted)
 @app.post("/api/onboarding/step1")
 async def onboarding_step1(request: Request) -> Response:
     """Atomically upsert Simkl/TMDB/TorBox/indexer providers from optional sections."""
@@ -3202,7 +3218,13 @@ async def run_system_check(request: Request):
     from app.config import DEFAULT_USER_AGENT
     from app.db.models import NotificationChannel, Provider, SystemSettings
     from app.services import anilist
-    from app.services.watchlists import mal, plex, simkl
+
+    # provider-specific code (allowlisted)
+    from app.services.watchlists import (
+        mal,
+        plex,
+        simkl,
+    )
 
     async with async_session_factory() as session:
         providers = (await session.execute(select(Provider))).scalars().all()
@@ -3344,6 +3366,7 @@ async def run_system_check(request: Request):
                 "latency_ms": latency,
             }
 
+    # provider-specific code (allowlisted)
     async def probe_simkl(p: Provider) -> dict[str, Any]:
         start = time.perf_counter()
         try:
@@ -3646,6 +3669,7 @@ async def run_system_check(request: Request):
                 or wl.watchlist_config.get("client_id")
                 or wl.watchlist_config.get("access_token")
             ):
+                # provider-specific code (allowlisted)
                 probes.append(probe_simkl(wl))
         elif (
             wl.type in ("anilist", "plex", "mal")
@@ -4565,17 +4589,17 @@ async def api_get_active_pushes(request: Request) -> Response:
         run_transfer_poller_tick,
         transfer_poller,
     )
-    from app.services.downloaders import torbox
+    from app.services.downloaders.factory import downloader_class
 
     force = (request.query_params.get("force") or "").lower() in ("1", "true", "yes")
     if force:
-        torbox.clear_usenet_cache()
+        downloader_class("torbox").clear_transfer_cache()
 
     async with async_session_factory() as session:
         downloading_count = await count_downloading_entities(session)
         if downloading_count > 0:
             try:
-                live_downloads = await torbox.get_usenet_downloads(
+                live_downloads = await downloader_class("torbox").fetch_raw_transfers(
                     bypass_cache=False, session=session
                 )
                 await run_transfer_poller_tick(
@@ -4756,13 +4780,15 @@ async def api_dismiss_all_active_pushes(request: Request) -> Response:
 
 
 @app.post("/api/pushes/{history_id}/delete-transfer")
+# legacy alias (m59)
 @app.post(
-    "/api/pushes/{history_id}/delete-torbox", include_in_schema=False
+    "/api/pushes/{history_id}/delete-torbox",
+    include_in_schema=False,
 )  # legacy alias (m59) — remove after one release
 async def api_active_push_delete_transfer(
     history_id: int, request: Request
 ) -> Response:
-    """Delete a completed transfer from TorBox via Active Pushes, mark row 'deleted', and reset target to SEARCHING."""
+    """Delete a completed transfer from the downloader via Active Pushes, mark row 'deleted', and reset target to SEARCHING."""
     from app.core.transfer_poller import (
         count_downloading_entities,
         get_active_pushes,
@@ -4820,7 +4846,7 @@ async def api_active_push_delete_transfer(
             "ok": True,
             "status": "ok",
             "history_id": history_id,
-            "deleted_torbox_ids": res.get("deleted_torbox_ids", []),
+            "deleted_transfer_ids": res.get("deleted_transfer_ids", []),
             "remaining_pushes": len(pushes),
         },
         headers=headers,
@@ -4830,7 +4856,7 @@ async def api_active_push_delete_transfer(
 @app.post("/api/pushes/{history_id}/cancel")
 @app.delete("/api/pushes/{history_id}")
 async def api_cancel_active_push(history_id: int, request: Request) -> Response:
-    """Cancel and delete an active transfer on TorBox and remove it from Active Pushes."""
+    """Cancel and delete an active transfer on the downloader and remove it from Active Pushes."""
     from app.core.transfer_poller import (
         cancel_active_push,
         count_downloading_entities,
@@ -4885,7 +4911,7 @@ async def api_cancel_active_push(history_id: int, request: Request) -> Response:
 
 @app.post("/api/pushes/{history_id}/blacklist")
 async def api_blacklist_active_push(history_id: int, request: Request) -> Response:
-    """Blacklist release from Active Pushes, cancel/delete on TorBox or dismiss failed row, and reset target to SEARCHING."""
+    """Blacklist release from Active Pushes, cancel/delete on the downloader or dismiss failed row, and reset target to SEARCHING."""
     from app.core.transfer_poller import (
         blacklist_from_active_pushes,
         count_downloading_entities,
@@ -4941,7 +4967,7 @@ async def api_blacklist_active_push(history_id: int, request: Request) -> Respon
 
 @app.post("/api/pushes/abort-all")
 async def api_abort_all_transfers(request: Request) -> Response:
-    """Abort all active downloading and rate-limited transfers across TorBox and database."""
+    """Abort all active downloading and rate-limited transfers across the downloader and database."""
     from app.core.transfer_poller import (
         abort_all_active_transfers,
         count_downloading_entities,
@@ -4993,7 +5019,7 @@ async def api_abort_all_transfers(request: Request) -> Response:
 
 @app.post("/api/pushes/resume-rate-limited")
 async def api_resume_rate_limited_pushes(request: Request) -> Response:
-    """Clear all TorBox and indexer cooldowns, wake the queue, and trigger an immediate resume tick."""
+    """Clear all downloader and indexer cooldowns, wake the queue, and trigger an immediate resume tick."""
     from app.core.rate_limit_queue import (
         clear_all_rate_limit_cooldowns,
         rate_limit_queue,
@@ -5060,7 +5086,7 @@ async def api_trigger_transfer_poller_tick() -> Response:
 
 
 # ---------------------------------------------------------------------------
-# Card 4: Push History Ledger & Dual-Mode TorBox Deletion API (v3.0.0)
+# Card 4: Push History Ledger & Dual-Mode Transfer Deletion API (v3.0.0)
 # ---------------------------------------------------------------------------
 
 
@@ -5083,11 +5109,13 @@ async def api_get_push_history(request: Request) -> Response:
 
 
 @app.post("/api/history/{history_id}/delete-transfer")
+# legacy alias (m59)
 @app.post(
-    "/api/history/{history_id}/delete-torbox", include_in_schema=False
+    "/api/history/{history_id}/delete-torbox",
+    include_in_schema=False,
 )  # legacy alias (m59) — remove after one release
 async def api_history_delete_transfer(history_id: int, request: Request) -> Response:
-    """Delete transfer from TorBox via Push History Ledger row, mark row 'deleted', reset target to SEARCHING, and recalculate parent status."""
+    """Delete transfer from the downloader via Push History Ledger row, mark row 'deleted', reset target to SEARCHING, and recalculate parent status."""
     from app.core.transfer_poller import manual_delete_transfer
 
     async with async_session_factory() as session:
@@ -5110,7 +5138,7 @@ async def api_history_delete_transfer(history_id: int, request: Request) -> Resp
 
 @app.post("/api/history/{history_id}/blacklist")
 async def api_history_blacklist(history_id: int, request: Request) -> Response:
-    """Blacklist release from Push History Ledger row, delete from TorBox if present, mark row 'deleted', and reset target to SEARCHING."""
+    """Blacklist release from Push History Ledger row, delete from the downloader if present, mark row 'deleted', and reset target to SEARCHING."""
     from app.core.transfer_poller import blacklist_from_history
 
     async with async_session_factory() as session:
@@ -5265,8 +5293,10 @@ async def api_delete_dry_run_history(request: Request) -> Response:
 
 
 @app.post("/api/items/{item_id}/delete-transfer")
+# legacy alias (m59)
 @app.post(
-    "/api/items/{item_id}/delete-torbox", include_in_schema=False
+    "/api/items/{item_id}/delete-torbox",
+    include_in_schema=False,
 )  # legacy alias (m59) — remove after one release
 async def api_item_delete_transfer(
     item_id: int,
@@ -5274,7 +5304,7 @@ async def api_item_delete_transfer(
     season_id: int | None = None,
     episode_id: int | None = None,
 ) -> Response:
-    """Delete transfer from TorBox for a Movie, Season/Franchise Movie, or Episode from the Push Modal."""
+    """Delete transfer from the downloader for a Movie, Season/Franchise Movie, or Episode from the Push Modal."""
     from app.core.push_engine import get_push_modal_context
     from app.core.transfer_poller import manual_delete_transfer
 

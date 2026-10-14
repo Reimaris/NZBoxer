@@ -25,6 +25,7 @@ from app.core.push_engine import (
     execute_auto_push,
     resolve_effective_search_config,
 )
+from app.core.rate_limit_queue import get_downloader_cooldown_remaining
 from app.core.search_lock import item_lock_manager
 from app.db.database import async_session_factory
 from app.db.models import (
@@ -34,7 +35,6 @@ from app.db.models import (
     MediaItem,
     Season,
 )
-from app.services.downloaders import torbox
 from app.services.indexers import newznab as newznab_client
 
 logger = logging.getLogger(__name__)
@@ -205,7 +205,7 @@ def _is_season_watched(item: MediaItem, season: Season) -> bool:
 
 def _upgrade_rate_limited() -> bool:
     return (
-        torbox.get_cooldown_remaining(is_manual=True) > 0
+        get_downloader_cooldown_remaining() > 0
         or newznab_client.get_all_indexer_cooldowns_remaining() > 0
     )
 

@@ -75,7 +75,7 @@
                             <div class="flex items-center gap-3 mb-2">
                                 <div class="w-10 h-10 rounded-lg bg-[#d40060]/15 text-[#d40060] flex items-center justify-center font-bold text-lg">S</div>
                                 <div>
-                                    <div class="font-bold text-white group-hover:text-[#d40060] transition-colors">Simkl</div>
+                                    <div class="font-bold text-white group-hover:text-[#d40060] transition-colors">Simkl</div> <!-- provider-specific code (allowlisted) -->
                                     <div class="text-xs text-[#a1a1aa]">Watchlist Integration</div>
                                 </div>
                             </div>
@@ -149,7 +149,7 @@
                             <div class="flex items-center gap-3 mb-2">
                                 <div class="w-10 h-10 rounded-lg bg-purple-500/20 text-purple-400 flex items-center justify-center font-bold text-lg">TB</div>
                                 <div>
-                                    <div class="font-bold text-white group-hover:text-purple-400 transition-colors">TorBox</div>
+                                    <div class="font-bold text-white group-hover:text-purple-400 transition-colors">TorBox</div> <!-- provider-specific code (allowlisted) -->
                                     <div class="text-xs text-[#a1a1aa]">Debrid &amp; Usenet Client</div>
                                 </div>
                             </div>
@@ -220,7 +220,7 @@
                         </div>
                     </div>
 
-                    <!-- TORBOX CONFIGURATION -->
+                    <!-- TORBOX CONFIGURATION --> <!-- provider-specific code (allowlisted): begin -->
                     <fieldset :disabled="providerType !== 'torbox'" x-show="providerType === 'torbox'" class="border-0 p-0 m-0 space-y-6">
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                             <div class="flex flex-col col-span-1 md:col-span-2">
@@ -235,7 +235,7 @@
                                 <input type="text" name="api_url" value="{{ provider.api_url if provider and provider.api_url else 'https://api.torbox.app/v1/api' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors font-mono" placeholder="https://api.torbox.app/v1/api">
                             </div>
                         </div>
-                    </fieldset>
+                    </fieldset> <!-- provider-specific code (allowlisted): end -->
 
                     <!-- SABNZBD CONFIGURATION -->
                     <fieldset :disabled="providerType !== 'sabnzbd'" x-show="providerType === 'sabnzbd'" class="border-0 p-0 m-0 space-y-6">
@@ -326,7 +326,7 @@
                         </div>
                     </fieldset>
 
-                    <!-- SIMKL CONFIGURATION (AUTH V2 — RFC 8628 Device Flow & Auto-Refresh) -->
+                    <!-- SIMKL CONFIGURATION (AUTH V2 — RFC 8628 Device Flow & Auto-Refresh) --> <!-- provider-specific code (allowlisted): begin -->
                     <fieldset :disabled="providerType !== 'simkl'" x-show="providerType === 'simkl'" class="border-0 p-0 m-0 space-y-6">
                         <input type="hidden" name="provider_id" value="{{ provider.id if provider else '' }}">
                         <input type="hidden" id="simkl-refresh-token" name="refresh_token" value="{{ cfg.get('refresh_token', '') or '' }}">
@@ -404,7 +404,7 @@
                                 </div>
                             </div>
                         </div>
-                    </fieldset>
+                    </fieldset> <!-- provider-specific code (allowlisted): end -->
 
                     <!-- ANILIST CONFIGURATION -->
                     <fieldset :disabled="!(providerType === 'anilist' && providerCategory === 'metadata')" x-show="providerType === 'anilist' && providerCategory === 'metadata'" class="border-0 p-0 m-0 space-y-6">

@@ -37,8 +37,11 @@ from app.core.parser import build_release_feature_pills, parse_release_name
 from app.core.rate_limit_queue import (
     RATE_LIMITED_DETAIL,
     active_rate_limit_sources,
+    downloader_rate_limit_detail,
+    get_downloader_cooldown_remaining,
     is_indexer_rate_limit_error,
     is_rate_limit_error,
+    longest_downloader_cooldown,
     rate_limit_episode,
     rate_limit_queue,
     rate_limit_source_label,
@@ -56,7 +59,6 @@ from app.db.models import (
     Season,
     SeasonStatus,
 )
-from app.services.downloaders import torbox
 from app.services.downloaders.base import (
     BaseDownloader,
     DownloaderError,
@@ -151,7 +153,7 @@ def populate_history_snapshot(
     """Populate denormalized media snapshot fields on a DownloadHistory instance."""
     m_type_label = build_history_media_type_label(item)
     t_label = build_history_target_label(item, season, episode)
-    season_ext_simkl = getattr(season, "simkl_id", None) if season is not None else None
+    season_ext_id = getattr(season, "simkl_id", None) if season is not None else None
     s_anilist = getattr(season, "anilist_id", None) if season is not None else None
 
     if not only_missing or not history.media_title:
@@ -164,8 +166,8 @@ def populate_history_snapshot(
         history.target_label = t_label
     if not only_missing or not history.poster_url:
         history.poster_url = item.poster_url
-    if season_ext_simkl is not None:
-        history.simkl_id = season_ext_simkl
+    if season_ext_id is not None:
+        history.simkl_id = season_ext_id
     elif not only_missing or history.simkl_id is None:
         history.simkl_id = item.simkl_id
     if not only_missing or history.tmdb_id is None:
@@ -944,21 +946,14 @@ async def dispatch_nzb_to_active_downloader(
         category_for_media,
         get_active_downloader_client,
     )
-    from app.services.downloaders.torbox import TorBoxDownloader
 
     client = await get_active_downloader_client(session)
     if client is None:
         raise DownloaderError("No active downloader configured")
-    if isinstance(client, TorBoxDownloader):
-        client.session = session
-        result = await client.upload_nzb(
-            nzb_bytes, filename, password=password, is_manual=True
-        )
-    else:
-        category = category_for_media(client.provider, media_type, is_anime)
-        result = await client.upload_nzb(
-            nzb_bytes, filename, password=password, category=category
-        )
+    category = category_for_media(client.provider, media_type, is_anime)
+    result = await client.upload_nzb(
+        nzb_bytes, filename, password=password, category=category, is_manual=True
+    )
     return client, result
 
 
@@ -986,11 +981,11 @@ async def _dispatch_candidate_list_to_downloader(
         guid = cand["guid"]
         title = cand["title"]
 
-        cooldown_rem = torbox.get_cooldown_remaining(is_manual=True)
+        cooldown_rem = get_downloader_cooldown_remaining()
         if cooldown_rem > 0:
-            err_str = f"TorBox rate limit exceeded (cooldown: {int(cooldown_rem)}s)"
+            err_str = downloader_rate_limit_detail()
             logger.warning(
-                "Skipping NZB fetch & TorBox dispatch for '%s': %s",
+                "Skipping NZB fetch & downloader dispatch for '%s': %s",
                 title,
                 err_str,
             )
@@ -1350,7 +1345,7 @@ def _failure_reason_from_partitioned(partitioned: dict[str, Any] | None) -> str:
         return "failed: No matching releases found on indexers"
     if not partitioned.get("had_candidates"):
         return "failed: All indexer results rejected by quality/language filters"
-    return "failed: TorBox upload failed — all candidates exhausted"
+    return "failed: downloader upload failed — all candidates exhausted"
 
 
 async def _record_auto_push_failure(
@@ -1366,7 +1361,7 @@ async def _record_auto_push_failure(
 ) -> DownloadHistory:
     """Persist a visible failed DownloadHistory row for an explicit push target that dispatched nothing.
 
-    If ``reason`` describes a TorBox rate limit, the target is instead queued as a
+    If ``reason`` describes a downloader rate limit, the target is instead queued as a
     ``RATE_LIMITED`` (paused) push that resumes automatically after the cooldown (ADR-094).
     """
     if rate_limited is None:
@@ -1496,12 +1491,12 @@ async def _record_auto_push_failure(
 
     await _recalculate_parent_status(session, item)
     if rate_limited:
-        from app.core.rate_limit_queue import get_downloader_cooldown_remaining
         from app.services.indexers import newznab as newznab_client
 
-        tb_cooldown = int(get_downloader_cooldown_remaining())
+        dl_name, dl_remaining = longest_downloader_cooldown()
+        tb_cooldown = int(dl_remaining)
         idx_cooldown = int(newznab_client.get_all_indexer_cooldowns_remaining())
-        source_name = "Indexer" if "indexer" in reason.lower() else "TorBox"
+        source_name = "Indexer" if "indexer" in reason.lower() else dl_name
         cooldown_sec = idx_cooldown if "indexer" in reason.lower() else tb_cooldown
         t_label = (
             f"S{int(season.type_number or season.season_number):02d}E{int(episode.episode_number):02d}"
@@ -1543,7 +1538,7 @@ async def _push_single_season_or_movie_entry(
     Args:
         _candidates_found_acc: Optional mutable list; if provided, ``True`` is appended
             whenever at least one scored valid candidate is found, allowing the caller to
-            distinguish "nothing on indexers" from "releases found but TorBox skipped all".
+            distinguish "nothing on indexers" from "releases found but the downloader skipped all".
     """
     from sqlalchemy import inspect as sa_inspect
 
@@ -1560,11 +1555,9 @@ async def _push_single_season_or_movie_entry(
     )
     dispatched: list[DownloadHistory] = []
 
-    cooldown_rem = torbox.get_cooldown_remaining(is_manual=True)
+    cooldown_rem = get_downloader_cooldown_remaining()
     if cooldown_rem > 0 and not settings.dry_run:
-        err_reason = (
-            f"failed: TorBox rate limit exceeded (cooldown: {int(cooldown_rem)}s)"
-        )
+        err_reason = f"failed: {downloader_rate_limit_detail()}"
         logger.warning(
             "Skipping season/movie push for '%s' (%s) — %s",
             item.title,
@@ -1914,7 +1907,7 @@ async def _push_single_season_or_movie_entry(
                         await session.commit()
                     return dispatched
 
-            # Case 2b: E01 beats Pack -> Pre-flight resolve and Layer-2 verify all remaining episodes in memory before any TorBox upload
+            # Case 2b: E01 beats Pack -> Pre-flight resolve and Layer-2 verify all remaining episodes in memory before any downloader dispatch
             verified_ep_candidates: list[tuple[Episode, dict[str, Any]]] = [
                 (first_ep, verified_e01)  # type: ignore[list-item]
             ]
@@ -2062,14 +2055,14 @@ async def _push_single_season_or_movie_entry(
                             item=item,
                             season=season,
                             episode=ep,
-                            reason="failed: TorBox upload failed — all candidates exhausted",
+                            reason="failed: downloader upload failed — all candidates exhausted",
                         )
                         await session.commit()
                 return dispatched
 
     # State 1 (allow_season_packs=False) or Pack-to-Episode Fallback (when no valid Season Pack exists)
     for ep in missing_released_eps:
-        cooldown_rem = torbox.get_cooldown_remaining(is_manual=True)
+        cooldown_rem = get_downloader_cooldown_remaining()
         if cooldown_rem > 0 and not settings.dry_run:
             if reset_fail_count:
                 # Queue the whole season: on resume only the still-missing episodes are pushed.
@@ -2078,7 +2071,7 @@ async def _push_single_season_or_movie_entry(
                     item=item,
                     season=season,
                     episode=None,
-                    reason=f"failed: TorBox rate limit exceeded (cooldown: {int(cooldown_rem)}s)",
+                    reason=f"failed: {downloader_rate_limit_detail()}",
                     rate_limited=True,
                 )
                 await session.commit()
@@ -2187,7 +2180,7 @@ async def advance_season_buffer(
       `DOWNLOADING`, `DOWNLOADED`, or `COMPLETED`.
     - Movie Bridge Lookahead: Whenever the target auto-advance entry has `entry_type == 'movie'`,
       pushes both that Movie entry AND the following chronological entry (`N+2`, continuing
-      across any consecutive franchise movies) so the next season is ready on TorBox.
+      across any consecutive franchise movies) so the next season is ready on the downloader.
     """
     from sqlalchemy import inspect as sa_inspect
 
@@ -2226,7 +2219,7 @@ async def advance_season_buffer(
             )
             and not candidate_entry.is_tba
         )
-        cooldown_rem = torbox.get_cooldown_remaining(is_manual=True)
+        cooldown_rem = get_downloader_cooldown_remaining()
         if cooldown_rem > 0:
             if is_eligible:
                 await _record_auto_push_failure(
@@ -2234,7 +2227,7 @@ async def advance_season_buffer(
                     item=item,
                     season=candidate_entry,
                     episode=None,
-                    reason=f"failed: TorBox rate limit exceeded (cooldown: {int(cooldown_rem)}s)",
+                    reason=f"failed: {downloader_rate_limit_detail()}",
                 )
                 await session.commit()
                 excluded.add(candidate_entry.id)
@@ -2559,14 +2552,14 @@ async def execute_auto_push(
         if not settings.dry_run:
             item.fail_count = 0
             await session.commit()
-        cooldown_rem = torbox.get_cooldown_remaining(is_manual=True)
+        cooldown_rem = get_downloader_cooldown_remaining()
         if cooldown_rem > 0 and not settings.dry_run:
             await _record_auto_push_failure(
                 session,
                 item=item,
                 season=None,
                 episode=None,
-                reason=f"failed: TorBox rate limit exceeded (cooldown: {int(cooldown_rem)}s)",
+                reason=f"failed: {downloader_rate_limit_detail()}",
             )
             await session.commit()
         else:
@@ -2688,14 +2681,14 @@ async def execute_auto_push(
                 parent_s, ep_obj = eps_by_id[eid]
                 if parent_s.id in covered_season_ids:
                     continue
-                cooldown_rem = torbox.get_cooldown_remaining(is_manual=True)
+                cooldown_rem = get_downloader_cooldown_remaining()
                 if cooldown_rem > 0 and not settings.dry_run:
                     await _record_auto_push_failure(
                         session,
                         item=item,
                         season=parent_s,
                         episode=ep_obj,
-                        reason=f"failed: TorBox rate limit exceeded (cooldown: {int(cooldown_rem)}s)",
+                        reason=f"failed: {downloader_rate_limit_detail()}",
                     )
                     await session.commit()
                     continue
@@ -2798,7 +2791,7 @@ async def execute_auto_push(
     no_release_reason: str | None = None
     if not pushed:
         if any_candidates_found:
-            # Indexers returned scored releases but TorBox rejected / NZB fetch failed for all
+            # Indexers returned scored releases but the downloader rejected / NZB fetch failed for all
             no_release_reason = "candidates_not_dispatched"
         else:
             # Indexers returned zero scored releases (nothing found or all filtered by scorer)
@@ -3155,7 +3148,7 @@ async def execute_manual_grab(
             "candidate": hist.get("candidate") or candidate,
             "history_id": None,
             "guid": guid,
-            "torbox_id": None,
+            "transfer_id": None,
             "auto_advanced_count": 0,
             "status_code": 200,
         }
@@ -3163,7 +3156,7 @@ async def execute_manual_grab(
         err_msg = (
             manual_tb_errors[-1]
             if manual_tb_errors
-            else "Release failed fake verification or TorBox dispatch"
+            else "Release failed fake verification or downloader dispatch"
         )
         if is_rate_limit_error(err_msg):
             queued_hist = await _record_auto_push_failure(
@@ -3196,7 +3189,7 @@ async def execute_manual_grab(
                 "push_mode": "manual",
                 "history_id": queued_hist.id,
                 "guid": queued_hist.nzb_guid,
-                "torbox_id": None,
+                "transfer_id": None,
                 "status_code": 200,
             }
         await session.commit()
@@ -3234,7 +3227,7 @@ async def execute_manual_grab(
         "push_mode": "manual",
         "history_id": hist.id,
         "guid": hist.nzb_guid,
-        "torbox_id": hist.downloader_transfer_id,
+        "transfer_id": hist.downloader_transfer_id,
         "auto_advanced_count": len(adv_hists),
         "status_code": 200,
     }

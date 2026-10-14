@@ -1,11 +1,11 @@
 """
 Rate-Limit Push Queue (ADR-094)
 ===============================
-When TorBox rate-limits NZBoxer (HTTP 429 / active cooldown), Auto-Push targets
+When a downloader rate-limits NZBoxer (HTTP 429 / active cooldown), Auto-Push targets
 are not failed. Instead a persisted ``rate_limited`` ``DownloadHistory`` row
 (and ``RATE_LIMITED`` entity status) marks the target as paused. A lightweight
 APScheduler job (``rate_limit_resume_job``) re-runs Auto-Push Best for the
-queued targets in FIFO order once the TorBox cooldown has expired.
+queued targets in FIFO order once the downloader cooldown has expired.
 
 The job is paused whenever the queue is empty (zero idle CPU/DB usage) and is
 woken whenever a push is enqueued. Because the queue lives in the database it
@@ -24,8 +24,8 @@ from typing import TYPE_CHECKING, Any, Literal
 from sqlalchemy import func, select
 
 from app.db.models import DownloadHistory, MediaItem
-from app.services.downloaders import premiumize, torbox
 from app.services.downloaders.base import DOWNLOADER_DISPLAY_NAMES
+from app.services.downloaders.factory import downloader_classes
 from app.services.indexers import newznab as newznab_client
 
 if TYPE_CHECKING:
@@ -38,7 +38,7 @@ RESUME_JOB_ID = "rate_limit_resume_job"
 
 
 def is_rate_limit_error(message: str | None) -> bool:
-    """True if a failure reason/exception text describes a TorBox or Indexer rate limit."""
+    """True if a failure reason/exception text describes a downloader or Indexer rate limit."""
     msg = (message or "").lower()
     return (
         "rate limit" in msg
@@ -65,17 +65,25 @@ class RateLimitSource:
 
 def _downloader_cooldowns() -> list[tuple[str, float]]:
     return [
-        (
-            DOWNLOADER_DISPLAY_NAMES["torbox"],
-            torbox.get_cooldown_remaining(is_manual=True),
-        ),
-        (DOWNLOADER_DISPLAY_NAMES["premiumize"], premiumize.get_cooldown_remaining()),
+        (DOWNLOADER_DISPLAY_NAMES[dtype], cls.get_cooldown_remaining(is_manual=True))
+        for dtype, cls in downloader_classes().items()
     ]
 
 
 def get_downloader_cooldown_remaining() -> float:
     """Longest active downloader cooldown (max over adapters)."""
     return max(rem for _, rem in _downloader_cooldowns())
+
+
+def longest_downloader_cooldown() -> tuple[str, float]:
+    """(display name, remaining seconds) of the longest downloader cooldown."""
+    return max(_downloader_cooldowns(), key=lambda c: c[1])
+
+
+def downloader_rate_limit_detail() -> str:
+    """'<Downloader> rate limit exceeded (cooldown: Ns)' for the longest cooldown."""
+    name, rem = longest_downloader_cooldown()
+    return f"{name} rate limit exceeded (cooldown: {int(rem)}s)"
 
 
 def active_rate_limit_sources() -> list[RateLimitSource]:
@@ -93,7 +101,7 @@ def active_rate_limit_sources() -> list[RateLimitSource]:
 
 
 def rate_limit_source_label(sources: list[RateLimitSource]) -> str:
-    """'TorBox', 'NZBgeek', 'TorBox + NZBgeek' or 'Rate limit' when empty."""
+    """A downloader name, an indexer name, both joined by ' + ', or 'Rate limit' when empty."""
     names = list(dict.fromkeys(s.name for s in sources))
     return " + ".join(names) if names else "Rate limit"
 
@@ -110,12 +118,9 @@ def resume_time_label() -> str:
 
 
 def clear_all_rate_limit_cooldowns() -> None:
-    """Clear cooldowns across TorBox, Premiumize and all configured indexers."""
-    premiumize.clear_cooldown()
-    if hasattr(torbox, "clear_cooldown"):
-        torbox.clear_cooldown()
-    else:
-        torbox.set_cooldown(0.0)
+    """Clear cooldowns across all downloaders and configured indexers."""
+    for cls in downloader_classes().values():
+        cls.clear_cooldown()
     newznab_client.clear_all_indexer_cooldowns()
 
 
@@ -308,7 +313,7 @@ async def resume_rate_limited_pushes() -> int:
         return 0
 
     logger.debug(
-        "[QUEUE] Resume check: %d queued pushes. TorBox cooldown: %ds, Indexer cooldown: %ds.",
+        "[QUEUE] Resume check: %d queued pushes. Downloader cooldown: %ds, Indexer cooldown: %ds.",
         len(rows),
         int(tb_rem),
         int(idx_rem),

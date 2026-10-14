@@ -65,7 +65,7 @@
                 </div>
                 <div class="min-w-0">
                     <h2 class="text-base font-bold text-white leading-tight">Connected Providers</h2>
-                    <p class="text-xs text-[#a1a1aa] truncate mt-0.5">Manage Watchlists (Simkl, AniList, Plex, MAL), Metadata (TMDB, AniList), Downloaders (TorBox, SABnzbd, Premiumize), and Indexers.</p>
+                    <p class="text-xs text-[#a1a1aa] truncate mt-0.5">Manage Watchlists (Simkl, AniList, Plex, MAL), Metadata (TMDB, AniList), Downloaders (TorBox, SABnzbd, Premiumize), and Indexers.</p> <!-- provider-specific code (allowlisted) -->
                 </div>
             </div>
             <div class="flex items-center gap-3 shrink-0">
@@ -220,7 +220,7 @@
                                 Priority {{ provider.priority if provider.priority is not none else '1' }}
                             </span>
                             {% elif cat == 'downloader' %}
-                            {% set dl_url = provider.api_url or ('https://api.torbox.app/v1/api' if provider.type == 'torbox' else '') %}
+                            {% set dl_url = provider.api_url or ('https://api.torbox.app/v1/api' if provider.type == 'torbox' else '') %} {# provider-specific code (allowlisted) #}
                             <span class="px-2 py-0.5 rounded text-[11px] font-bold bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">{{ downloader_display_names.get(provider.type, provider.type) }}</span>
                             <span class="text-xs text-[#a1a1aa] font-mono truncate max-w-[170px]" title="{{ dl_url }}">
                                 {{ dl_url }}
