@@ -249,79 +249,89 @@ async def enrich_active_shows_episode_air_dates(
 
     total_items = len(items)
     for item_idx, item in enumerate(items, start=1):
-        if not item.simkl_id:
-            if item.media_type != MediaType.SHOW:
-                continue
-            tmdb_rows = await _fetch_tmdb_episode_dates(item, log_prefix)
-            item.last_air_dates_refreshed_at = now
-            if not tmdb_rows:
-                continue
-            changed = _apply_episode_dates(item, tmdb_rows)
-            if changed:
-                titles_updated_count += 1
-                updated_episodes_count += changed
-            continue
-
-        prov_id = item.provider_id
-        if prov_id not in provider_creds:
-            provider = item.provider
-            if provider is None and prov_id is not None:
-                provider = await session.get(Provider, prov_id)
-            provider_creds[prov_id] = await simkl._resolve_simkl_creds(
-                session, provider
-            )
-
-        creds = provider_creds.get(prov_id)
-        if not creds:
-            if not default_creds_checked:
-                active_simkl_stmt = select(Provider).where(
-                    Provider.type == "simkl",
-                    Provider.is_active == True,  # noqa: E712
+        is_show = item.media_type == MediaType.SHOW
+        creds: tuple[str, str] | None = None
+        if item.simkl_id:
+            prov_id = item.provider_id
+            if prov_id not in provider_creds:
+                provider = item.provider
+                if provider is None and prov_id is not None:
+                    provider = await session.get(Provider, prov_id)
+                provider_creds[prov_id] = (
+                    await simkl._resolve_simkl_creds(session, provider)
+                    if provider is not None
+                    and provider.type == "simkl"
+                    and provider.sync_eligible
+                    else None
                 )
-                simkl_provs = list(
-                    (await session.execute(active_simkl_stmt)).scalars().all()
-                )
-                for sp in simkl_provs:
-                    c = await simkl._resolve_simkl_creds(session, sp)
-                    if c:
-                        default_simkl_creds = c
-                        break
-                default_creds_checked = True
-            creds = default_simkl_creds
+            creds = provider_creds.get(prov_id)
+            if not creds:
+                if not default_creds_checked:
+                    simkl_provs = list(
+                        (
+                            await session.execute(
+                                select(Provider).where(
+                                    Provider.category == "watchlist",
+                                    Provider.type == "simkl",
+                                )
+                            )
+                        )
+                        .scalars()
+                        .all()
+                    )
+                    for sp in simkl_provs:
+                        if not sp.sync_eligible:
+                            continue
+                        c = await simkl._resolve_simkl_creds(session, sp)
+                        if c:
+                            default_simkl_creds = c
+                            break
+                    default_creds_checked = True
+                creds = default_simkl_creds
 
-        if not creds:
-            continue
-
-        client_id, _ = creds
-        media_type_str = "anime" if item.media_type == MediaType.ANIME else "tv"
-        logger.debug(
-            "%s (%d/%d) Querying Simkl episodes for '%s' (Simkl ID: %s)...",
-            log_prefix,
-            item_idx,
-            total_items,
-            item.title,
-            str(item.simkl_id),
-        )
-        try:
-            episodes_data = await simkl.get_episodes(
-                simkl_id=int(item.simkl_id),
-                client_id=client_id,
-                media_type=media_type_str,
+        rows: list[tuple[Any, Any, Any]] | None = None
+        if creds and item.simkl_id:
+            client_id, _ = creds
+            media_type_str = "anime" if item.media_type == MediaType.ANIME else "tv"
+            logger.debug(
+                "%s (%d/%d) Querying Simkl episodes for '%s' (Simkl ID: %s)...",
+                log_prefix,
+                item_idx,
+                total_items,
+                item.title,
+                str(item.simkl_id),
             )
-        except Exception as e:
-            logger.warning("Error fetching Simkl episodes for item %s: %s", item.id, e)
+            try:
+                episodes_data = await simkl.get_episodes(
+                    simkl_id=int(item.simkl_id),
+                    client_id=client_id,
+                    media_type=media_type_str,
+                )
+            except Exception as e:
+                logger.warning(
+                    "Error fetching Simkl episodes for item %s: %s", item.id, e
+                )
+                episodes_data = []
             item.last_air_dates_refreshed_at = now
-            continue
+            rows = [
+                (ep.get("season"), ep.get("episode"), ep.get("date"))
+                for ep in episodes_data
+            ]
+            if not rows and is_show:
+                logger.warning(
+                    "%s Simkl returned no episodes for '%s'; falling back to TMDB.",
+                    log_prefix,
+                    item.title,
+                )
+        if not rows:
+            if not is_show:
+                continue
+            rows = await _fetch_tmdb_episode_dates(item, log_prefix)
+            item.last_air_dates_refreshed_at = now
+            if not rows:
+                continue
 
-        item.last_air_dates_refreshed_at = now
-        if not episodes_data:
-            continue
-
-        simkl_rows = [
-            (ep_info.get("season"), ep_info.get("episode"), ep_info.get("date"))
-            for ep_info in episodes_data
-        ]
-        item_episodes_updated = _apply_episode_dates(item, simkl_rows)
+        item_episodes_updated = _apply_episode_dates(item, rows)
         updated_episodes_count += item_episodes_updated
 
         if item_episodes_updated > 0:
