@@ -755,7 +755,7 @@ document.addEventListener('alpine:init', () => {
                             {% if item.status.value == 'downloading' %}
                                 <span class="bg-cyan-600 animate-pulse text-white text-[10px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider shadow-sm">DOWNLOADING</span>
                             {% elif item.status.value == 'rate_limited' %}
-                                <span class="bg-amber-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider shadow-sm" title="Paused by {{ downloader_name }} rate limit — resumes automatically">PAUSED</span>
+                                <span class="bg-amber-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider shadow-sm" title="Paused by {{ rate_limit_source() }} rate limit — resumes automatically">PAUSED</span>
                             {% elif item.status.value == 'failed' %}
                                 <span class="bg-red-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider shadow-sm">FAILED</span>
                             {% elif item.status.value == 'downloaded' or item.status.value == 'completed' %}
@@ -811,7 +811,7 @@ document.addEventListener('alpine:init', () => {
                         {% if item.status.value == 'downloading' %}
                             <span class="bg-cyan-600 animate-pulse text-white text-[11px] font-bold px-2 py-0.5 rounded uppercase tracking-wider shadow-sm">DOWNLOADING</span>
                         {% elif item.status.value == 'rate_limited' %}
-                            <span class="bg-amber-600 text-white text-[11px] font-bold px-2 py-0.5 rounded uppercase tracking-wider shadow-sm" title="Paused by {{ downloader_name }} rate limit — resumes automatically">PAUSED</span>
+                            <span class="bg-amber-600 text-white text-[11px] font-bold px-2 py-0.5 rounded uppercase tracking-wider shadow-sm" title="Paused by {{ rate_limit_source() }} rate limit — resumes automatically">PAUSED</span>
                         {% elif item.status.value == 'failed' %}
                             <span class="bg-red-600 text-white text-[11px] font-bold px-2 py-0.5 rounded uppercase tracking-wider shadow-sm">FAILED</span>
                         {% elif item.status.value == 'downloaded' or item.status.value == 'completed' %}
@@ -1069,8 +1069,8 @@ document.addEventListener('alpine:init', () => {
                         data-type="{{ (h.type_label or '') | lower }}"
                         data-release="{{ (h.nzb_title or '') | lower }}"
                         data-pushed-at="{{ h.pushed_at_str or '' }}"
-                        data-status="{{ (h.torbox_status or '') | lower }}"
-                        x-show="historySearch.trim() === '' || '{{ (h.media_title or '')|replace('\'', '\\\'') }}'.toLowerCase().includes(historySearch.toLowerCase()) || '{{ (h.alt_title or '')|replace('\'', '\\\'') }}'.toLowerCase().includes(historySearch.toLowerCase()) || '{{ (h.nzb_title or '')|replace('\'', '\\\'') }}'.toLowerCase().includes(historySearch.toLowerCase()) || '{{ (h.target_label or '')|replace('\'', '\\\'') }}'.toLowerCase().includes(historySearch.toLowerCase()) || '{{ (h.type_label or '') | lower }}'.includes(historySearch.toLowerCase()) || '{{ (h.torbox_status or '') | lower }}'.includes(historySearch.toLowerCase())">
+                        data-status="{{ (h.downloader_status or '') | lower }}"
+                        x-show="historySearch.trim() === '' || '{{ (h.media_title or '')|replace('\'', '\\\'') }}'.toLowerCase().includes(historySearch.toLowerCase()) || '{{ (h.alt_title or '')|replace('\'', '\\\'') }}'.toLowerCase().includes(historySearch.toLowerCase()) || '{{ (h.nzb_title or '')|replace('\'', '\\\'') }}'.toLowerCase().includes(historySearch.toLowerCase()) || '{{ (h.target_label or '')|replace('\'', '\\\'') }}'.toLowerCase().includes(historySearch.toLowerCase()) || '{{ (h.type_label or '') | lower }}'.includes(historySearch.toLowerCase()) || '{{ (h.downloader_status or '') | lower }}'.includes(historySearch.toLowerCase())">
                         <!-- Desktop Selection Checkbox Col -->
                         <td x-show="isSelectingHistory" class="hidden md:table-cell md:px-3 md:py-3.5 text-center w-10">
                             <input type="checkbox"
@@ -1173,7 +1173,7 @@ document.addEventListener('alpine:init', () => {
                                     {% elif h.status_key == 'canceled' %}
                                     <span class="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded bg-orange-500/15 text-orange-400 border border-orange-500/30">CANCELED</span>
                                     {% else %}
-                                    <span class="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded bg-cyan-500/15 text-cyan-400 border border-cyan-500/30">{{ h.torbox_status }}</span>
+                                    <span class="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded bg-cyan-500/15 text-cyan-400 border border-cyan-500/30">{{ h.downloader_status }}</span>
                                     {% endif %}
                                 </div>
                             </div>
@@ -1207,7 +1207,7 @@ document.addEventListener('alpine:init', () => {
                             {% elif h.status_key == 'canceled' %}
                             <span class="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded bg-orange-500/15 text-orange-400 border border-orange-500/30">CANCELED</span>
                             {% else %}
-                            <span class="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded bg-cyan-500/15 text-cyan-400 border border-cyan-500/30">{{ h.torbox_status }}</span>
+                            <span class="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded bg-cyan-500/15 text-cyan-400 border border-cyan-500/30">{{ h.downloader_status }}</span>
                             {% endif %}
                         </td>
                         <!-- Col 5: Actions (Compact Icon-Only Re-Push + Two-Stage Smart Trash, Anchored Bottom Action Bar on Mobile) -->
@@ -1224,7 +1224,7 @@ document.addEventListener('alpine:init', () => {
                                     <span class="sr-only">Re-Push</span>
                                 </button>
                                 {% endif %}
-                                {% if h.can_delete_torbox %}
+                                {% if h.can_delete_transfer %}
                                 <button type="button"
                                         hx-post="/api/history/{{ h.id }}/delete-transfer"
                                         hx-target="#ledger-status-{{ h.id }}"

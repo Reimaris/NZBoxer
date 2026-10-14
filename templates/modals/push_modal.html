@@ -222,7 +222,7 @@
             if (resp.ok && data.pushed) {
                 this.hasPushedInSession = true;
                 this.statusMessage = data.queued
-                    ? "Paused by {{ downloader_name }} rate limit — \"" + rel.title + "\" is queued and will push automatically."
+                    ? "Paused by {{ rate_limit_source() }} rate limit — \"" + rel.title + "\" is queued and will push automatically."
                     : "Grabbed & pushed \"" + rel.title + "\" to {{ downloader_name }}!";
             } else {
                 this.statusError = data.error || "Failed to grab release.";

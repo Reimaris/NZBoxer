@@ -1720,6 +1720,12 @@ async def get_active_pushes(session: AsyncSession) -> list[dict[str, Any]]:
     rows = (await session.execute(stmt)).scalars().all()
 
     now_utc = datetime.now(timezone.utc)
+    from app.core.rate_limit_queue import (
+        active_rate_limit_sources,
+        rate_limit_source_label,
+    )
+
+    rate_limit_source: str = rate_limit_source_label(active_rate_limit_sources())
     active_rows: list[dict[str, Any]] = []
     seen_targets: set[tuple[int, int | None, int | None]] = set()
 
@@ -1808,9 +1814,7 @@ async def get_active_pushes(session: AsyncSession) -> list[dict[str, Any]]:
         )
 
         if is_recently_completed:
-            status_badge = (
-                f"Ready on {DOWNLOADER_DISPLAY_NAMES[_row_downloader_type(h)]}"
-            )
+            status_badge = f"Ready on {DOWNLOADER_DISPLAY_NAMES.get(h.downloader_type, 'downloader')}"
         elif is_rate_limited:
             from app.core.rate_limit_queue import resume_time_label
 
@@ -1878,6 +1882,7 @@ async def get_active_pushes(session: AsyncSession) -> list[dict[str, Any]]:
                 "download_speed_bytes": int(h.download_speed_bytes or 0),
                 "eta_seconds": h.eta_seconds,
                 "speed_and_eta": row_speed_and_eta,
+                "rate_limit_source": rate_limit_source,
                 "status": status_badge,
                 "status_detail": h.status_detail,
                 "push_mode": h.push_mode,
@@ -3275,19 +3280,19 @@ async def get_push_history_ledger(session: AsyncSession) -> list[dict[str, Any]]
             continue
 
         if detail_low in ("deleted", "expired"):
-            torbox_status = "DELETED"
+            downloader_status = "DELETED"
             status_key = "deleted"
             failure_reason = None
         elif detail_low == "replaced":
-            torbox_status = "REPLACED"
+            downloader_status = "REPLACED"
             status_key = "replaced"
             failure_reason = None
         elif detail_low == "canceled":
-            torbox_status = "CANCELED"
+            downloader_status = "CANCELED"
             status_key = "canceled"
             failure_reason = None
         elif detail_low.startswith("failed"):
-            torbox_status = "FAILED"
+            downloader_status = "FAILED"
             status_key = "failed"
             failure_reason = (
                 detail_raw[len("failed:") :].strip()
@@ -3295,9 +3300,7 @@ async def get_push_history_ledger(session: AsyncSession) -> list[dict[str, Any]]
                 else detail_raw
             )
         else:
-            torbox_status = (
-                f"READY ON {DOWNLOADER_DISPLAY_NAMES[_row_downloader_type(h)].upper()}"
-            )
+            downloader_status = "READY"
             status_key = "completed"
             failure_reason = None
 
@@ -3365,10 +3368,10 @@ async def get_push_history_ledger(session: AsyncSession) -> list[dict[str, Any]]
                 "downloader_name": DOWNLOADER_DISPLAY_NAMES[_row_downloader_type(h)],
                 "status_detail": h.status_detail,
                 "is_dry_run": bool(getattr(h, "is_dry_run", False)),
-                "torbox_status": torbox_status,
+                "downloader_status": downloader_status,
                 "status_key": status_key,
                 "failure_reason": failure_reason,
-                "can_delete_torbox": status_key == "completed"
+                "can_delete_transfer": status_key == "completed"
                 and bool(h.downloader_transfer_id),
                 "can_repush": h.media_item_id is not None,
             }

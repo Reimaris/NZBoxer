@@ -146,6 +146,18 @@ templates.env.globals["app_version"] = APP_VERSION
 from app.services.provider_service import ActiveDownloaderName  # noqa: E402
 
 templates.env.globals["downloader_name"] = ActiveDownloaderName()
+
+
+def _current_rate_limit_source() -> str:
+    from app.core.rate_limit_queue import (
+        active_rate_limit_sources,
+        rate_limit_source_label,
+    )
+
+    return rate_limit_source_label(active_rate_limit_sources())
+
+
+templates.env.globals["rate_limit_source"] = _current_rate_limit_source
 from app.services.indexers.catalog import (  # noqa: E402
     INDEXER_PRESETS,
     get_preset,
