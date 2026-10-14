@@ -350,6 +350,22 @@ async def ingest_entries(
         }
     )
     if unresolved:
+        # Ids already stored on a local item or season need no AniList round-trip.
+        known = set(
+            (
+                await session.execute(
+                    select(MediaItem.mal_id).where(MediaItem.mal_id.in_(unresolved))
+                )
+            ).scalars()
+        ) | set(
+            (
+                await session.execute(
+                    select(Season.mal_id).where(Season.mal_id.in_(unresolved))
+                )
+            ).scalars()
+        )
+        unresolved = [m for m in unresolved if m not in known]
+    if unresolved:
         from app.services import anilist
 
         mal_to_anilist = await anilist.get_anime_ids_by_mal_ids(unresolved)
