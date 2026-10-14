@@ -16,6 +16,24 @@ from app.db.models import DownloadHistory, Provider, ProviderCategory
 
 logger = logging.getLogger(__name__)
 
+_active_name = "TorBox"
+
+
+class ActiveDownloaderName:
+    """Template global: renders the active downloader's display name ('TorBox' fallback)."""
+
+    def __str__(self) -> str:
+        return _active_name
+
+
+def _remember_active(provider: Provider | None) -> None:
+    from app.services.downloaders.base import DOWNLOADER_DISPLAY_NAMES
+
+    global _active_name
+    _active_name = (
+        DOWNLOADER_DISPLAY_NAMES.get(provider.type, "TorBox") if provider else "TorBox"
+    )
+
 
 async def get_active_downloader(db: AsyncSession) -> Provider | None:
     """Retrieve the single active downloader provider."""
@@ -28,7 +46,9 @@ async def get_active_downloader(db: AsyncSession) -> Provider | None:
         .limit(1)
     )
     result = await db.execute(stmt)
-    return result.scalars().first()
+    provider = result.scalars().first()
+    _remember_active(provider)
+    return provider
 
 
 async def set_active_downloader(db: AsyncSession, provider_id: int) -> None:
@@ -49,6 +69,7 @@ async def set_active_downloader(db: AsyncSession, provider_id: int) -> None:
         .values(is_active=True)
     )
     await db.commit()
+    await get_active_downloader(db)
 
 
 async def count_foreign_downloading(

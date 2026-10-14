@@ -184,7 +184,7 @@ class RateLimitEpisode:
                 pending = await count_rate_limited_pushes(session)
                 await _send_alert(
                     session,
-                    "⏸️ TorBox rate limit reached",
+                    "⏸️ Downloader rate limit reached",
                     f"{pending} push(es) paused — {resume_time_label()}.",
                 )
         except Exception as exc:  # noqa: BLE001
@@ -201,7 +201,7 @@ class RateLimitEpisode:
             async with async_session_factory() as session:
                 await _send_alert(
                     session,
-                    "▶️ TorBox rate limit over — queue resumed",
+                    "▶️ Downloader rate limit over — queue resumed",
                     f"Resuming {pending} paused push(es).",
                 )
         except Exception as exc:  # noqa: BLE001

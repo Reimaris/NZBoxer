@@ -45,8 +45,8 @@ EVENT_COLORS: dict[str, int] = {
 }
 
 EVENT_HEADERS: dict[str, str] = {
-    "completed": "✅ Ready on TorBox",
-    "ready_on_torbox": "✅ Ready on TorBox",
+    "completed": "✅ Download ready",
+    "ready_on_torbox": "✅ Download ready",
     "failure": "❌ Push Failed",
     "failed": "❌ Push Failed",
     "auto_replaced": "⚠️ Push Failed — Auto-Replaced",
@@ -163,7 +163,7 @@ def build_discord_embed(
         fields.append(
             {
                 "name": "Simulation Notice",
-                "value": "⚠️ Dispatch simulated in Dry-Run Mode. No TorBox transfer was created.",
+                "value": "⚠️ Dispatch simulated in Dry-Run Mode. No downloader transfer was created.",
                 "inline": False,
             }
         )
@@ -677,16 +677,16 @@ async def dispatch_batch_notification_event(
     if reason:
         effective_reason = reason
     elif norm_event in ("completed", "ready_on_torbox"):
-        effective_reason = "Ready on TorBox (Verified Playable Video)"
+        effective_reason = "Download ready (Verified Playable Video)"
     elif norm_event == "auto_advance":
         effective_reason = "Auto-Advance Season Expansion triggered"
     elif norm_event in ("failure", "failed"):
-        effective_reason = "One or more transfers failed on TorBox."
+        effective_reason = "One or more transfers failed on the downloader."
     else:
         effective_reason = (
-            "Auto-Push Best dispatched to TorBox"
+            "Auto-Push Best dispatched to the downloader"
             if (first.push_mode or "auto") == "auto"
-            else "Manual Pick dispatched to TorBox"
+            else "Manual Pick dispatched to the downloader"
         )
 
     total_auto_replaced = sum(

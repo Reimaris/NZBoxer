@@ -52,6 +52,7 @@ from app.db.models import (
 )
 from app.services import discord, torbox
 from app.services.downloaders.base import (
+    DOWNLOADER_DISPLAY_NAMES,
     BaseDownloader,
     DownloaderNetworkError,
     DownloaderTransfer,
@@ -1701,6 +1702,12 @@ def _format_speed_and_eta(speed_bytes: int, eta_seconds: int | None) -> str:
     return f"{speed_str} • {eta_str}"
 
 
+def _row_downloader_type(h: DownloadHistory) -> str:
+    """Row's downloader type; unknown values display as 'torbox' (spec §4.10)."""
+    dtype = h.downloader_type or "torbox"
+    return dtype if dtype in DOWNLOADER_DISPLAY_NAMES else "torbox"
+
+
 async def get_active_pushes(session: AsyncSession) -> list[dict[str, Any]]:
     """Return flat list of active transfers (`DOWNLOADING`), recently completed transfers within 5m (`Ready on TorBox`), and unacknowledged failed pushes within 5m (`FAILED` & `is_dismissed == False`)."""
     stmt = (
@@ -1804,7 +1811,7 @@ async def get_active_pushes(session: AsyncSession) -> list[dict[str, Any]]:
         )
 
         if is_recently_completed:
-            status_badge = "Ready on TorBox"
+            status_badge = f"Ready on {DOWNLOADER_DISPLAY_NAMES[_row_downloader_type(h)]}"
         elif is_rate_limited:
             from app.core.rate_limit_queue import resume_time_label
 
@@ -1854,6 +1861,9 @@ async def get_active_pushes(session: AsyncSession) -> list[dict[str, Any]]:
         active_rows.append(
             {
                 "history_id": h.id,
+                "downloader_type": _row_downloader_type(h),
+                "downloader_name": DOWNLOADER_DISPLAY_NAMES[_row_downloader_type(h)],
+                "torbox_id": h.downloader_transfer_id,
                 "media_item_id": item.id,
                 "season_id": h.season_id,
                 "episode_id": h.episode_id,
@@ -3280,7 +3290,9 @@ async def get_push_history_ledger(session: AsyncSession) -> list[dict[str, Any]]
                 else detail_raw
             )
         else:
-            torbox_status = "READY ON TORBOX"
+            torbox_status = (
+                f"READY ON {DOWNLOADER_DISPLAY_NAMES[_row_downloader_type(h)].upper()}"
+            )
             status_key = "completed"
             failure_reason = None
 
@@ -3344,6 +3356,8 @@ async def get_push_history_ledger(session: AsyncSession) -> list[dict[str, Any]]
                 "pushed_at_str": pushed_str,
                 "pushed_at_ts": pushed_ts,
                 "torbox_id": h.torbox_id,
+                "downloader_type": _row_downloader_type(h),
+                "downloader_name": DOWNLOADER_DISPLAY_NAMES[_row_downloader_type(h)],
                 "status_detail": h.status_detail,
                 "is_dry_run": bool(getattr(h, "is_dry_run", False)),
                 "torbox_status": torbox_status,

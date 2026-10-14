@@ -2,7 +2,7 @@
 {% if active_in_flight %}
 <div class="mb-3 px-4 py-2.5 rounded-lg bg-cyan-950/60 border border-cyan-600/50 text-cyan-200 text-xs font-medium flex items-center gap-2.5 animate-pulse" data-in-flight-banner="true">
     <span class="inline-flex rounded-full h-2 w-2 bg-cyan-400 shrink-0"></span>
-    <span class="truncate">Searching indexers &amp; dispatching to TorBox: <strong class="text-white">{{ active_in_flight | join(", ") }}</strong>...</span>
+    <span class="truncate">Searching indexers &amp; dispatching to {{ downloader_name }}: <strong class="text-white">{{ active_in_flight | join(", ") }}</strong>...</span>
 </div>
 {% endif %}
 
@@ -204,16 +204,16 @@
                         <button hx-post="/api/pushes/{{ p.history_id }}/delete-torbox"
                                 hx-target="#active-pushes-container"
                                 hx-swap="innerHTML"
-                                hx-confirm="Delete this transfer from TorBox and reset target to Ready to Push?"
-                                title="Delete from TorBox"
+                                hx-confirm="Delete this transfer from {{ p.downloader_name }} and reset target to Ready to Push?"
+                                title="Delete from {{ p.downloader_name }}"
                                 class="bg-transparent border border-red-800 text-red-400 hover:bg-red-600 hover:text-white text-xs font-semibold px-3 py-1.5 rounded-md transition-colors flex items-center gap-1.5">
                             <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
-                            Delete from TorBox
+                            Delete from {{ p.downloader_name }}
                         </button>
                         <button hx-post="/api/pushes/{{ p.history_id }}/blacklist"
                                 hx-target="#active-pushes-container"
                                 hx-swap="innerHTML"
-                                hx-confirm="Blacklist this release, cancel/delete on TorBox, and reset target to Ready to Push?"
+                                hx-confirm="Blacklist this release, cancel/delete on {{ p.downloader_name }}, and reset target to Ready to Push?"
                                 title="Blacklist Release"
                                 class="bg-zinc-800/60 hover:bg-red-900/50 text-zinc-400 hover:text-red-300 border border-zinc-700 hover:border-red-500/40 text-xs font-semibold p-1.5 rounded-md transition-colors flex items-center justify-center">
                             <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"></path></svg>
@@ -223,7 +223,7 @@
                         <button hx-post="/api/pushes/{{ p.history_id }}/cancel"
                                 hx-target="#active-pushes-container"
                                 hx-swap="innerHTML"
-                                hx-confirm="Cancel and delete this active transfer from TorBox?"
+                                hx-confirm="Cancel and delete this active transfer from {{ p.downloader_name }}?"
                                 class="bg-transparent border border-red-800 text-red-400 hover:bg-red-600 hover:text-white text-xs font-semibold px-3 py-1.5 rounded-md transition-colors flex items-center gap-1.5">
                             <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
                             Cancel &amp; Delete
@@ -232,7 +232,7 @@
                         <button hx-post="/api/pushes/{{ p.history_id }}/blacklist"
                                 hx-target="#active-pushes-container"
                                 hx-swap="innerHTML"
-                                hx-confirm="Blacklist this release, cancel/delete on TorBox, and reset target to Ready to Push?"
+                                hx-confirm="Blacklist this release, cancel/delete on {{ p.downloader_name }}, and reset target to Ready to Push?"
                                 title="Blacklist Release"
                                 class="bg-zinc-800/60 hover:bg-red-900/50 text-zinc-400 hover:text-red-300 border border-zinc-700 hover:border-red-500/40 text-xs font-semibold p-1.5 rounded-md transition-colors flex items-center justify-center">
                             <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"></path></svg>
@@ -251,7 +251,7 @@
                         <p class="text-sm font-medium text-cyan-300">Searching indexers for best releases — episodes will appear here momentarily...</p>
                         <p class="text-xs text-[#71717a]">Transfer poller is awake and monitoring background dispatch for {{ active_in_flight | join(", ") }}.</p>
                         {% else %}
-                        <p class="text-sm font-medium text-gray-300">No active TorBox transfers</p>
+                        <p class="text-sm font-medium text-gray-300">No active {{ downloader_name }} transfers</p>
                         <p class="text-xs text-[#71717a]">Transfer poller is sleeping (0 background API calls). Push any movie, season, or episode to wake it automatically.</p>
                         {% endif %}
                     </div>

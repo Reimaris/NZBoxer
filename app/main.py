@@ -143,6 +143,9 @@ templates.env.filters["relative_date"] = relative_date
 templates.env.filters["local_datetime"] = format_local_datetime
 templates.env.globals["settings"] = settings
 templates.env.globals["app_version"] = APP_VERSION
+from app.services.provider_service import ActiveDownloaderName  # noqa: E402
+
+templates.env.globals["downloader_name"] = ActiveDownloaderName()
 
 
 async def run_orchestrator_tick(now: datetime | None = None) -> None:
