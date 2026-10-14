@@ -513,3 +513,61 @@ async def get_episodes(
             "Failed to fetch Simkl episodes for %s ID %s: %s", media_type, simkl_id, e
         )
         return []
+
+
+async def _fetch_simkl_category_with_retry(
+    session: AsyncSession,
+    provider: Provider,
+    media_type_key: str,
+    client_id: str,
+    access_token: str,
+) -> tuple[list[dict[str, Any]], str, str]:
+    """Fetch a Simkl watchlist category, retrying once with token refresh on HTTP 401."""
+    try:
+        items = await get_watchlist(media_type_key, client_id, access_token)
+        return items, client_id, access_token
+    except SimklUnauthorizedError:
+        if provider.watchlist_config.get("refresh_token"):
+            client_id, access_token = await refresh_provider_simkl_token(
+                session, provider
+            )
+            items = await get_watchlist(media_type_key, client_id, access_token)
+            return items, client_id, access_token
+        raise
+
+
+def _extract_active_simkl_ids(raw_items: list[dict[str, Any]]) -> set[int]:
+    """Extract all integer Simkl IDs from a Simkl watchlist payload."""
+    active_ids: set[int] = set()
+    for item_data in raw_items:
+        media_obj = (
+            item_data.get("movie") or item_data.get("show") or item_data.get("anime")
+        )
+        if not isinstance(media_obj, dict):
+            continue
+        raw_sid = (media_obj.get("ids") or {}).get("simkl")
+        if raw_sid is not None:
+            try:
+                active_ids.add(int(raw_sid))
+            except (TypeError, ValueError):
+                pass
+    return active_ids
+
+
+async def _resolve_simkl_creds(
+    session: AsyncSession, prov: Provider | None
+) -> tuple[str, str] | None:
+    if prov is None or not getattr(prov, "is_active", True) or prov.type != "simkl":
+        return None
+    cfg = prov.watchlist_config
+    has_cid = bool(prov.client_id or cfg.get("client_id"))
+    has_tok = bool(
+        prov.access_token or cfg.get("access_token") or cfg.get("refresh_token")
+    )
+    if not has_cid or not has_tok:
+        return None
+    try:
+        return await ensure_valid_simkl_token(session, prov)
+    except Exception as e:
+        logger.warning("Failed to validate Simkl token for provider %s: %s", prov.id, e)
+        return None

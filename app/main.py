@@ -294,7 +294,7 @@ async def dashboard(request: Request, background_tasks: BackgroundTasks):
         classify_v3_status_tier,
         consolidate_standalone_anime_sequels,
         deduplicate_media_items,
-        should_trigger_dashboard_simkl_sync,
+        should_trigger_dashboard_watchlist_sync,
         sync_all_providers,
     )
     from app.core.transfer_poller import (
@@ -312,7 +312,7 @@ async def dashboard(request: Request, background_tasks: BackgroundTasks):
     )
 
     async with async_session_factory() as session:
-        if await should_trigger_dashboard_simkl_sync(session):
+        if await should_trigger_dashboard_watchlist_sync(session):
             background_tasks.add_task(sync_all_providers)
 
         # Auto-consolidate any legacy standalone sequels and deduplicate items before rendering

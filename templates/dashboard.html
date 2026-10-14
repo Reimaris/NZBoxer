@@ -1124,7 +1124,7 @@ document.addEventListener('alpine:init', () => {
                                         {% if h.is_detached and h.is_ad_hoc %}
                                         <span class="px-1.5 py-0.5 text-[10px] font-semibold rounded bg-indigo-500/15 text-indigo-300 border border-indigo-500/30">Ad-Hoc</span>
                                         {% elif h.is_detached %}
-                                        <span class="px-1.5 py-0.5 text-[10px] font-semibold rounded bg-zinc-500/15 text-zinc-400 border border-zinc-500/30">Pruned from Simkl</span>
+                                        <span class="px-1.5 py-0.5 text-[10px] font-semibold rounded bg-zinc-500/15 text-zinc-400 border border-zinc-500/30">Pruned from watchlist</span>
                                         {% endif %}
                                     </div>
                                     {% if h.alt_title and h.alt_title | lower != h.media_title | lower %}
@@ -1329,7 +1329,7 @@ document.addEventListener('alpine:init', () => {
          class="bg-[#24242b] border border-[#3f3f46] rounded-lg shadow overflow-hidden p-5">
         <div class="mb-4 border-b border-[#3f3f46] pb-3">
             <h3 class="text-base font-bold text-white uppercase tracking-wider">Ad-Hoc Manual Search</h3>
-            <p class="text-xs text-[#a1a1aa] mt-0.5">Query configured Newznab indexers directly for any title or External ID outside your Simkl watchlist.</p>
+            <p class="text-xs text-[#a1a1aa] mt-0.5">Query configured Newznab indexers directly for any title or External ID outside your watchlist.</p>
         </div>
 
         <div class="flex flex-col lg:flex-row gap-6">

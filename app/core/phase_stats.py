@@ -32,7 +32,7 @@ class AirPushStats:
 
 
 @dataclass(frozen=True)
-class SimklPeriodicSyncStatus:
+class WatchlistPeriodicSyncStatus:
     state: str  # "due" | "not_due" | "disabled" | "no_provider"
     interval_minutes: int
     elapsed_minutes: int | None

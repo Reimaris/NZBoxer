@@ -22,8 +22,8 @@ from app.core.logging_config import log_process_end, log_process_start
 from app.core.phase_stats import (
     AirDateRefreshStats,
     IngestStats,
-    SimklPeriodicSyncStatus,
     TbaDiscoveryStats,
+    WatchlistPeriodicSyncStatus,
 )
 from app.core.time_utils import format_local_datetime
 from app.db.database import async_session_factory
@@ -249,9 +249,9 @@ def _backfill_item_release_date_from_seasons(
         )
 
 
-SIMKL_SYNC_INTERVAL_DEFAULT = 60
-SIMKL_SYNC_INTERVAL_MIN = 5
-SIMKL_SYNC_INTERVAL_MAX = 1440
+WATCHLIST_SYNC_INTERVAL_DEFAULT = 60
+WATCHLIST_SYNC_INTERVAL_MIN = 5
+WATCHLIST_SYNC_INTERVAL_MAX = 1440
 
 
 def _parse_iso_utc(ts_str: str | None) -> datetime | None:
@@ -267,7 +267,7 @@ def _parse_iso_utc(ts_str: str | None) -> datetime | None:
         return None
 
 
-def is_simkl_sync_due_on_load(
+def is_watchlist_sync_due_on_load(
     provider: Provider,
     now: datetime | None = None,
     cooldown_minutes: int = 15,
@@ -298,19 +298,19 @@ def is_simkl_sync_due_on_load(
 def normalize_sync_interval_minutes(value: object) -> int:
     """Normalize a periodic-sync interval: 0 = disabled, else clamped to 5..1440 (default 60)."""
     if value is None or isinstance(value, bool):
-        return SIMKL_SYNC_INTERVAL_DEFAULT
+        return WATCHLIST_SYNC_INTERVAL_DEFAULT
     try:
         n = int(value)  # type: ignore[call-overload]
     except (ValueError, TypeError):
-        return SIMKL_SYNC_INTERVAL_DEFAULT
+        return WATCHLIST_SYNC_INTERVAL_DEFAULT
     if n <= 0:
         return 0
-    return max(SIMKL_SYNC_INTERVAL_MIN, min(SIMKL_SYNC_INTERVAL_MAX, n))
+    return max(WATCHLIST_SYNC_INTERVAL_MIN, min(WATCHLIST_SYNC_INTERVAL_MAX, n))
 
 
-def evaluate_periodic_simkl_sync(
+def evaluate_periodic_watchlist_sync(
     providers: Sequence[Provider], now: datetime
-) -> SimklPeriodicSyncStatus:
+) -> WatchlistPeriodicSyncStatus:
     """Evaluate whether periodic Simkl sync is due across eligible providers (UTC only)."""
     if now.tzinfo is None:
         now = now.replace(tzinfo=timezone.utc)
@@ -329,9 +329,9 @@ def evaluate_periodic_simkl_sync(
         eligible.append(provider)
 
     if not eligible:
-        return SimklPeriodicSyncStatus("no_provider", 0, None, 0)
+        return WatchlistPeriodicSyncStatus("no_provider", 0, None, 0)
 
-    best: SimklPeriodicSyncStatus | None = None
+    best: WatchlistPeriodicSyncStatus | None = None
     for provider in eligible:
         cfg = provider.watchlist_config
         interval = normalize_sync_interval_minutes(cfg.get("sync_interval_minutes"))
@@ -339,17 +339,17 @@ def evaluate_periodic_simkl_sync(
             continue
         last = _parse_iso_utc(cfg.get("last_synced_at"))
         if last is None:
-            return SimklPeriodicSyncStatus("due", interval, None, 0)
+            return WatchlistPeriodicSyncStatus("due", interval, None, 0)
         elapsed = int((now - last).total_seconds() // 60)
         if elapsed >= interval:
-            return SimklPeriodicSyncStatus("due", interval, elapsed, 0)
-        status = SimklPeriodicSyncStatus(
+            return WatchlistPeriodicSyncStatus("due", interval, elapsed, 0)
+        status = WatchlistPeriodicSyncStatus(
             "not_due", interval, elapsed, interval - elapsed
         )
         if best is None or status.remaining_minutes < best.remaining_minutes:
             best = status
 
-    return best or SimklPeriodicSyncStatus("disabled", 0, None, 0)
+    return best or WatchlistPeriodicSyncStatus("disabled", 0, None, 0)
 
 
 def is_provider_periodic_sync_due(
@@ -382,7 +382,7 @@ def is_provider_periodic_sync_due(
     return (now - last) >= timedelta(minutes=interval)
 
 
-def is_simkl_periodic_sync_due(
+def is_watchlist_periodic_sync_due(
     provider: Provider,
     now: datetime | None = None,
 ) -> bool:
@@ -390,7 +390,7 @@ def is_simkl_periodic_sync_due(
     return is_provider_periodic_sync_due(provider, now)
 
 
-async def should_trigger_dashboard_simkl_sync(
+async def should_trigger_dashboard_watchlist_sync(
     session: AsyncSession,
     now: datetime | None = None,
     cooldown_minutes: int = 15,
@@ -401,7 +401,7 @@ async def should_trigger_dashboard_simkl_sync(
     stmt = select(Provider).where(Provider.type == "simkl")
     providers = (await session.execute(stmt)).scalars().all()
     return any(
-        is_simkl_sync_due_on_load(p, now=now, cooldown_minutes=cooldown_minutes)
+        is_watchlist_sync_due_on_load(p, now=now, cooldown_minutes=cooldown_minutes)
         for p in providers
     )
 
@@ -419,9 +419,6 @@ async def run_periodic_watchlist_sync_if_due(now: datetime | None = None) -> boo
         await sync_all_providers()
         return True
     return False
-
-
-run_periodic_simkl_sync_if_due = run_periodic_watchlist_sync_if_due
 
 
 async def run_orchestrator_tick(now: datetime | None = None) -> None:
@@ -501,7 +498,7 @@ async def run_orchestrator_tick(now: datetime | None = None) -> None:
                 .scalars()
                 .all()
             )
-            status = evaluate_periodic_simkl_sync(providers, now)
+            status = evaluate_periodic_watchlist_sync(providers, now)
             other_due = any(
                 is_provider_periodic_sync_due(p, now)
                 for p in providers
@@ -510,7 +507,7 @@ async def run_orchestrator_tick(now: datetime | None = None) -> None:
         tag = "[ORCHESTRATOR] [3/3] Periodic Simkl sync:"
         if status.state != "due" and other_due:
             tag = "[ORCHESTRATOR] [3/3] Periodic watchlist sync:"
-            status = SimklPeriodicSyncStatus("due", 0, None, 0)
+            status = WatchlistPeriodicSyncStatus("due", 0, None, 0)
         if status.state == "due":
             if _sync_lock.locked():
                 logger.info("%s due but a sync is already running; skipping", tag)
@@ -724,45 +721,6 @@ async def deduplicate_media_items(session: AsyncSession) -> int:
     return removed_count
 
 
-async def _fetch_simkl_category_with_retry(
-    session: AsyncSession,
-    provider: Provider,
-    media_type_key: str,
-    client_id: str,
-    access_token: str,
-) -> tuple[list[dict[str, Any]], str, str]:
-    """Fetch a Simkl watchlist category, retrying once with token refresh on HTTP 401."""
-    try:
-        items = await simkl.get_watchlist(media_type_key, client_id, access_token)
-        return items, client_id, access_token
-    except simkl.SimklUnauthorizedError:
-        if provider.watchlist_config.get("refresh_token"):
-            client_id, access_token = await simkl.refresh_provider_simkl_token(
-                session, provider
-            )
-            items = await simkl.get_watchlist(media_type_key, client_id, access_token)
-            return items, client_id, access_token
-        raise
-
-
-def _extract_active_simkl_ids(raw_items: list[dict[str, Any]]) -> set[int]:
-    """Extract all integer Simkl IDs from a Simkl watchlist payload."""
-    active_ids: set[int] = set()
-    for item_data in raw_items:
-        media_obj = (
-            item_data.get("movie") or item_data.get("show") or item_data.get("anime")
-        )
-        if not isinstance(media_obj, dict):
-            continue
-        raw_sid = (media_obj.get("ids") or {}).get("simkl")
-        if raw_sid is not None:
-            try:
-                active_ids.add(int(raw_sid))
-            except (TypeError, ValueError):
-                pass
-    return active_ids
-
-
 def _item_has_active_downloading_entity(item: MediaItem) -> bool:
     """Return True if the MediaItem or any child Season/Episode has an active transfer (DOWNLOADING or RATE_LIMITED)."""
     if item.status in (MediaStatus.DOWNLOADING, MediaStatus.RATE_LIMITED):
@@ -973,7 +931,7 @@ async def _run_provider_sync(
                             fetched[category],
                             client_id,
                             access_token,
-                        ) = await _fetch_simkl_category_with_retry(
+                        ) = await simkl._fetch_simkl_category_with_retry(
                             session,
                             provider,
                             category,
@@ -981,7 +939,7 @@ async def _run_provider_sync(
                             access_token,
                         )
                         active_simkl_ids.update(
-                            _extract_active_simkl_ids(fetched[category])
+                            simkl._extract_active_simkl_ids(fetched[category])
                         )
                     logger.info(
                         "[SYNC] [1/7] Fetched %d movies, %d shows, %d anime",
@@ -3060,24 +3018,6 @@ async def enrich_active_shows_episode_air_dates(
     updated_episodes_count = 0
     titles_updated_count = 0
 
-    async def _resolve_simkl_creds(prov: Provider | None) -> tuple[str, str] | None:
-        if prov is None or not getattr(prov, "is_active", True) or prov.type != "simkl":
-            return None
-        cfg = prov.watchlist_config
-        has_cid = bool(prov.client_id or cfg.get("client_id"))
-        has_tok = bool(
-            prov.access_token or cfg.get("access_token") or cfg.get("refresh_token")
-        )
-        if not has_cid or not has_tok:
-            return None
-        try:
-            return await simkl.ensure_valid_simkl_token(session, prov)
-        except Exception as e:
-            logger.warning(
-                "Failed to validate Simkl token for provider %s: %s", prov.id, e
-            )
-            return None
-
     total_items = len(items)
     for item_idx, item in enumerate(items, start=1):
         if not item.simkl_id:
@@ -3088,7 +3028,9 @@ async def enrich_active_shows_episode_air_dates(
             provider = item.provider
             if provider is None and prov_id is not None:
                 provider = await session.get(Provider, prov_id)
-            provider_creds[prov_id] = await _resolve_simkl_creds(provider)
+            provider_creds[prov_id] = await simkl._resolve_simkl_creds(
+                session, provider
+            )
 
         creds = provider_creds.get(prov_id)
         if not creds:
@@ -3101,7 +3043,7 @@ async def enrich_active_shows_episode_air_dates(
                     (await session.execute(active_simkl_stmt)).scalars().all()
                 )
                 for sp in simkl_provs:
-                    c = await _resolve_simkl_creds(sp)
+                    c = await simkl._resolve_simkl_creds(session, sp)
                     if c:
                         default_simkl_creds = c
                         break
