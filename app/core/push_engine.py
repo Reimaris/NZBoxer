@@ -1482,9 +1482,10 @@ async def _record_auto_push_failure(
 
     await _recalculate_parent_status(session, item)
     if rate_limited:
-        from app.services import torbox, treasure_maps
+        from app.core.rate_limit_queue import downloader_cooldown_remaining
+        from app.services import treasure_maps
 
-        tb_cooldown = int(torbox.get_cooldown_remaining(is_manual=True))
+        tb_cooldown = int(downloader_cooldown_remaining())
         idx_cooldown = int(treasure_maps.get_all_indexer_cooldowns_remaining())
         source_name = "Indexer" if "indexer" in reason.lower() else "TorBox"
         cooldown_sec = idx_cooldown if "indexer" in reason.lower() else tb_cooldown

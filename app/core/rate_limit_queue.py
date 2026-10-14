@@ -24,6 +24,7 @@ from sqlalchemy import func, select
 
 from app.db.models import DownloadHistory, MediaItem
 from app.services import torbox, treasure_maps
+from app.services.downloaders import premiumize
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -37,7 +38,12 @@ RESUME_JOB_ID = "rate_limit_resume_job"
 def is_rate_limit_error(message: str | None) -> bool:
     """True if a failure reason/exception text describes a TorBox or Indexer rate limit."""
     msg = (message or "").lower()
-    return "rate limit" in msg or "too many requests" in msg or "429" in msg
+    return (
+        "rate limit" in msg
+        or "too many requests" in msg
+        or "429" in msg
+        or "fair use limit" in msg
+    )
 
 
 def is_indexer_rate_limit_error(message: str | None) -> bool:
@@ -46,9 +52,17 @@ def is_indexer_rate_limit_error(message: str | None) -> bool:
     return is_rate_limit_error(msg) and ("indexer" in msg or "grab limit" in msg)
 
 
+def downloader_cooldown_remaining() -> float:
+    """Longest active downloader cooldown (TorBox or Premiumize)."""
+    return max(
+        torbox.get_cooldown_remaining(is_manual=True),
+        premiumize.get_cooldown_remaining(),
+    )
+
+
 def resume_time_label() -> str:
     """Human-readable resume time for the longest active provider cooldown."""
-    tb_rem = torbox.get_cooldown_remaining(is_manual=True)
+    tb_rem = downloader_cooldown_remaining()
     idx_rem = treasure_maps.get_all_indexer_cooldowns_remaining()
     remaining = max(tb_rem, idx_rem)
     if remaining <= 0:
@@ -58,7 +72,8 @@ def resume_time_label() -> str:
 
 
 def clear_all_rate_limit_cooldowns() -> None:
-    """Clear cooldowns across both TorBox and all configured indexers."""
+    """Clear cooldowns across TorBox, Premiumize and all configured indexers."""
+    premiumize.clear_cooldown()
     if hasattr(torbox, "clear_cooldown"):
         torbox.clear_cooldown()
     else:
@@ -224,7 +239,7 @@ async def resume_rate_limited_pushes() -> int:
     from app.core.transfer_poller import transfer_poller
     from app.db.database import async_session_factory
 
-    tb_rem = torbox.get_cooldown_remaining(is_manual=True)
+    tb_rem = downloader_cooldown_remaining()
     idx_rem = treasure_maps.get_all_indexer_cooldowns_remaining()
     if max(tb_rem, idx_rem) > 0:
         return 0
@@ -303,7 +318,7 @@ async def resume_rate_limited_pushes() -> int:
 
     resumed = 0
     for mode, item_id, payload in work_items:
-        tb_rem = torbox.get_cooldown_remaining(is_manual=True)
+        tb_rem = downloader_cooldown_remaining()
         idx_rem = treasure_maps.get_all_indexer_cooldowns_remaining()
         if max(tb_rem, idx_rem) > 0:
             break
@@ -361,7 +376,7 @@ async def resume_rate_limited_pushes() -> int:
 
 async def run_rate_limit_resume_tick() -> None:
     """APScheduler entry point (cheap in-memory cooldown check first)."""
-    tb_rem = torbox.get_cooldown_remaining(is_manual=True)
+    tb_rem = downloader_cooldown_remaining()
     idx_rem = treasure_maps.get_all_indexer_cooldowns_remaining()
     rem = max(tb_rem, idx_rem)
     if rem > 0:
