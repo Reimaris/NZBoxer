@@ -28,7 +28,7 @@ from app.db.models import (
     SeasonStatus,
 )
 from app.services.watchlist_ingest import IngestResult, _upsert_source
-from app.services.watchlist_providers import WatchlistEntry
+from app.services.watchlist_providers import ListStatus, WatchlistEntry
 from app.services.watchlists import simkl
 
 # Pipeline phase logs keep the orchestrator logger name (log filters, tests).
@@ -977,6 +977,34 @@ async def sync_provider(
 _KIND_BY_KEY = {"movie": "movie", "show": "show", "anime": "anime"}
 
 
+def _simkl_list_status(raw: Any) -> ListStatus:
+    """Map a Simkl list status to ``ListStatus`` (``hold`` counts as ``watching``)."""
+    status = str(raw or "plantowatch").lower()
+    if status == "hold":
+        return "watching"
+    if status in ("plantowatch", "watching", "completed", "dropped"):
+        return status  # type: ignore[return-value]
+    return "plantowatch"
+
+
+def _simkl_watched_episodes(item: dict[str, Any]) -> int:
+    """Watched-episode count from the same payload keys auto-advance reads."""
+    for key in ("watched_episodes_count", "watched_episodes"):
+        val = item.get(key)
+        if isinstance(val, list):
+            val = len(val)
+        if isinstance(val, int) and not isinstance(val, bool) and val > 0:
+            return val
+    seasons = item.get("seasons")
+    if isinstance(seasons, list):
+        return sum(
+            len(s["episodes"])
+            for s in seasons
+            if isinstance(s, dict) and isinstance(s.get("episodes"), list)
+        )
+    return 0
+
+
 class SimklWatchlistAdapter:
     """Simkl watchlist adapter with a native, franchise-aware sync pipeline."""
 
@@ -1009,9 +1037,11 @@ class SimklWatchlistAdapter:
                             media_kind=_KIND_BY_KEY[key or "show"],  # type: ignore[arg-type]
                             title=str(media.get("title") or ""),
                             year=media.get("year"),
-                            list_status=str(item.get("status") or "plantowatch"),  # type: ignore[arg-type]
+                            list_status=_simkl_list_status(item.get("status")),
+                            watched_episodes=_simkl_watched_episodes(item),
                             tmdb_id=_int_or_none(ids.get("tmdb")),
                             imdb_id=ids.get("imdb"),
+                            tvdb_id=_int_or_none(ids.get("tvdb")),
                             anilist_id=_int_or_none(ids.get("anilist")),
                             mal_id=_int_or_none(ids.get("mal")),
                         )
