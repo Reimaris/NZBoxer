@@ -37,7 +37,10 @@ from app.db.models import (
     SeasonStatus,
 )
 from app.services import tmdb
-from app.services.watchlist_ingest import prune_inactive_media_items
+from app.services.library_maintenance import run_library_maintenance
+from app.services.watchlist_ingest import (
+    prune_inactive_media_items,  # noqa: F401  (au.* patch target)
+)
 
 # provider-specific code (allowlisted): re-exports keep legacy patch targets valid
 from app.services.watchlists.simkl_sync import (  # noqa: F401
@@ -728,7 +731,7 @@ def _record_provider_error(provider: Provider, error: object) -> str:
 async def _sync_adapter_provider(
     session: AsyncSession, provider: Provider, result: dict[str, Any]
 ) -> None:
-    """Fetch, ingest, complete-absent and prune one adapter-based watchlist provider."""
+    """Fetch, ingest and complete-absent entries for one adapter-based watchlist provider."""
     import json
 
     from app.services.watchlist_ingest import (
@@ -741,11 +744,11 @@ async def _sync_adapter_provider(
     # Release any read transaction snapshot before outbound HTTP calls
     await session.commit()
     entries = await adapter.fetch_entries(provider)
-    logger.info("[SYNC] [1/4] %s: fetched %d entries", provider.name, len(entries))
+    logger.info("[SYNC] [1/3] %s: fetched %d entries", provider.name, len(entries))
 
     ingest = await ingest_entries(session, provider, entries)
     logger.info(
-        "[SYNC] [2/4] %s: ingested %d (%d added, %d linked, %d status changes)",
+        "[SYNC] [2/3] %s: ingested %d (%d added, %d linked, %d status changes)",
         provider.name,
         ingest.ingested,
         ingest.added,
@@ -757,15 +760,12 @@ async def _sync_adapter_provider(
         session, provider, {e.remote_id for e in entries}
     )
     logger.info(
-        "[SYNC] [3/4] %s: %d departed entries marked completed",
+        "[SYNC] [3/3] %s: %d departed entries marked completed",
         provider.name,
         completed,
     )
 
-    pruned = await prune_inactive_media_items(session)
-    logger.info("[SYNC] [4/4] %s: %d inactive titles pruned", provider.name, pruned)
-
-    result.update(ingested=ingest.ingested, added=ingest.added, pruned=pruned)
+    result.update(ingested=ingest.ingested, added=ingest.added)
     cfg = provider.watchlist_config
     cfg["last_synced_at"] = datetime.now(timezone.utc).isoformat()
     cfg.pop("last_error", None)
@@ -797,6 +797,7 @@ async def _run_provider_sync(
             provider_ids = [p.id for p in providers_res.scalars().unique().all()]
 
             any_synced = False
+            include_anime = False
             for prov_id in provider_ids:
                 provider = await session.get(Provider, prov_id)
                 if provider is None or not getattr(provider, "is_active", True):
@@ -825,6 +826,9 @@ async def _run_provider_sync(
                     else:
                         await _sync_adapter_provider(session, provider, result)
                     any_synced = True
+                    include_anime = include_anime or bool(
+                        provider.watchlist_config.get("sync_anime", True)
+                    )
                 except Exception as prov_err:  # noqa: BLE001
                     await session.rollback()
                     prov_after_rb = await session.get(Provider, prov_id)
@@ -843,6 +847,11 @@ async def _run_provider_sync(
                     await session.commit()
 
             if any_synced:
+                maintenance = await run_library_maintenance(
+                    session, include_anime=include_anime
+                )
+                for r in results:
+                    r["pruned"] = maintenance.pruned
                 logger.info("All provider watchlists synced successfully.")
         except Exception as e:  # noqa: BLE001
             logger.error("Provider sync failed: %s", e)
