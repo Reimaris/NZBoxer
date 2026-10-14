@@ -361,6 +361,7 @@ async def dashboard(request: Request, background_tasks: BackgroundTasks):
         should_trigger_dashboard_watchlist_sync,
         sync_all_providers,
     )
+    from app.core.prerequisites import get_setup_status
     from app.core.transfer_poller import (
         count_downloading_entities,
         get_active_pushes,
@@ -509,6 +510,7 @@ async def dashboard(request: Request, background_tasks: BackgroundTasks):
         defaults: dict[str, Any] = {}
         if db_settings and db_settings.scoring_settings:
             defaults = db_settings.scoring_settings.get("manual_search_defaults", {})
+        setup = getattr(request.state, "setup", None) or await get_setup_status(session)
 
     return templates.TemplateResponse(
         request=request,
@@ -539,6 +541,7 @@ async def dashboard(request: Request, background_tasks: BackgroundTasks):
             "presets": presets,
             "presets_payload": presets_payload,
             "defaults": defaults,
+            "setup": setup,
             "show_onboarding": (db_settings is None)
             or (not db_settings.onboarding_completed),
         },

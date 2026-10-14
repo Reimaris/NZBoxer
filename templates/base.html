@@ -121,12 +121,14 @@
                 <!-- Right side: Navigation Links & Controls -->
                 <div class="flex items-center gap-2 sm:gap-3 text-sm text-[#a1a1aa] font-medium">
                     <!-- 1. Clean Sync Watchlist Button -->
+                    {% if setup is not defined or setup.watchlist_ready %}
                     <div class="flex items-center gap-2">
                         <button hx-post="/sync" hx-target="#sync-result" hx-indicator="#sync-overlay" class="nav-link flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 bg-[#3f3f46] hover:bg-[#52525b] text-white rounded-md transition-colors text-xs font-medium">
                             <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
                             <span class="hidden sm:inline">Sync Watchlist</span><span class="sm:hidden">Sync</span>
                         </button>
                     </div>
+                    {% endif %}
                     
                     <!-- 2. Dashboard Link -->
                     <a href="/" class="nav-link flex items-center gap-2 px-2 py-1.5 sm:px-0 sm:py-0 ml-1" title="Dashboard">

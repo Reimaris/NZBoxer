@@ -37,7 +37,8 @@ function initVideoDashboard() {
 
     const initialParam = new URLSearchParams(window.location.search).get('tab') || localStorage.getItem('video_dashboard_tab') || 'movie';
     const validCards = ['movie', 'show', 'anime', 'history', 'active_pushes', 'manual_search'];
-    const startCard = validCards.includes(initialParam) ? initialParam : 'movie';
+    const watchlistReady = {{ (setup.watchlist_ready if setup is defined else true) | tojson }};
+    const startCard = validCards.includes(initialParam) && (watchlistReady || !['movie', 'show', 'anime'].includes(initialParam)) ? initialParam : (watchlistReady ? 'movie' : 'manual_search');
 
     return {
         activeCard: startCard,
@@ -400,6 +401,7 @@ document.addEventListener('alpine:init', () => {
 <div x-data="videoDashboard()">
     <!-- 6-Card Interactive Top Deck -->
     <div class="grid grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-4 mb-5 sm:mb-8">
+        {% if setup is not defined or setup.watchlist_ready %}
         <!-- Card 1: Movies -->
         <div id="deck-card-count-movie" @click="setCard('movie')"
              :class="activeCard === 'movie' ? 'md:translate-y-2 ring-2 ring-[#d40060] shadow-xl shadow-pink-950/40' : 'hover:-translate-y-0.5 opacity-90 hover:opacity-100'"
@@ -484,6 +486,8 @@ document.addEventListener('alpine:init', () => {
             </div>
         </div>
 
+        {% endif %}
+
         <!-- Card 4: History -->
         {% set ledger_rows = push_history_ledger | default([]) %}
         <div id="deck-card-count-history" @click="setCard('history')"
@@ -555,6 +559,7 @@ document.addEventListener('alpine:init', () => {
         </div>
     </div>
 
+    {% if setup is not defined or setup.watchlist_ready %}
     <!-- =================================================================== -->
     <!-- CARDS 1–3 VIEW: MOVIES, SERIES & ANIME (3-TIER 5-COLUMN TABLES)     -->
     <!-- =================================================================== -->
@@ -942,6 +947,14 @@ document.addEventListener('alpine:init', () => {
             </div>
         </div>
     </div>
+    {% endif %}
+
+    {% if setup is defined and not setup.watchlist_ready %}
+    <div id="no-watchlist-panel" class="mb-5 p-4 rounded-lg border border-[#3f3f46] bg-[#24242b] text-sm text-[#a1a1aa]">
+        <strong class="text-white">No watchlist connected.</strong>
+        Connect a watchlist provider in <a href="/settings" class="text-[#d40060] underline">Settings</a> to see your movies, series and anime here. Ad-Hoc Search works without one.
+    </div>
+    {% endif %}
 
     <!-- =================================================================== -->
     <!-- CARD 4 VIEW: HISTORY (5-COLUMN PUSH HISTORY LEDGER)                 -->
