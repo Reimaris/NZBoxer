@@ -587,7 +587,7 @@ async def push_adhoc_release(
         audio_codec=parsed.audio_codec if parsed else None,
         source=parsed.source if parsed else None,
         release_group=parsed.release_group if parsed else None,
-        torbox_hash=str(result["hash"])
+        downloader_hash=str(result["hash"])
         if downloader_type == "torbox" and result.get("hash")
         else None,
         downloader_type=downloader_type,
@@ -629,7 +629,7 @@ async def push_adhoc_release(
         history.target_label or media_kind or "release",
         score,
         size_bytes,
-        history.torbox_hash or "-",
+        history.downloader_hash or "-",
     )
 
     if not settings.dry_run:

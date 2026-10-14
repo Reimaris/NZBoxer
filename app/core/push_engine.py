@@ -898,9 +898,9 @@ async def _simulate_push_candidate(
         bitrate_mbps=(
             score_res.bitrate_mbps if score_res else cand.get("bitrate_mbps")
         ),
-        torbox_hash=None,
-        torbox_id=None,
-        torbox_sent_at=now_utc,
+        downloader_hash=None,
+        downloader_transfer_id=None,
+        dispatched_at=now_utc,
         is_fallback=bool(cand.get("is_fallback", False)),
         grabbed_language=cand.get("matched_language"),
         push_mode=push_mode,
@@ -1114,14 +1114,14 @@ async def _dispatch_candidate_list_to_torbox(
             season.id if season else (episode.season_id if episode else None)
         )
         target_episode_id = episode.id if episode else None
-        new_torbox_id = upload.transfer_id
+        new_transfer_id = upload.transfer_id
 
         logger.debug(
             "[SEARCH] Dispatched successfully to TorBox -> Transfer ID: %s.",
-            new_torbox_id or torbox_result.get("hash"),
+            new_transfer_id or torbox_result.get("hash"),
         )
 
-        superseded_torbox_ids: list[str] = []
+        superseded_transfer_ids: list[str] = []
         if reset_fail_count:
             from sqlalchemy import and_, or_
 
@@ -1152,8 +1152,10 @@ async def _dispatch_candidate_list_to_torbox(
                 )
             prior_rows = (await session.execute(prior_stmt)).scalars().all()
             for pr in prior_rows:
-                if pr.torbox_id and str(pr.torbox_id) != str(new_torbox_id or ""):
-                    superseded_torbox_ids.append(str(pr.torbox_id))
+                if pr.downloader_transfer_id and str(pr.downloader_transfer_id) != str(
+                    new_transfer_id or ""
+                ):
+                    superseded_transfer_ids.append(str(pr.downloader_transfer_id))
                 pr.status_detail = "replaced"
                 pr.is_dismissed = True
                 pr.notification_sent = True
@@ -1174,11 +1176,11 @@ async def _dispatch_candidate_list_to_torbox(
             bitrate_mbps=(
                 score_res.bitrate_mbps if score_res else cand.get("bitrate_mbps")
             ),
-            torbox_hash=str(torbox_result.get("hash"))
+            downloader_hash=str(torbox_result.get("hash"))
             if client.provider_type == "torbox" and torbox_result.get("hash")
             else None,
             downloader_type=client.provider_type,
-            downloader_transfer_id=new_torbox_id,
+            downloader_transfer_id=new_transfer_id,
             dispatched_at=datetime.now(timezone.utc),
             is_fallback=bool(cand.get("is_fallback", False)),
             grabbed_language=cand.get("matched_language"),
@@ -1230,10 +1232,10 @@ async def _dispatch_candidate_list_to_torbox(
 
         await session.commit()
 
-        if superseded_torbox_ids:
+        if superseded_transfer_ids:
             from app.core.transfer_poller import _delete_and_purge_torbox_transfer
 
-            for old_tid in superseded_torbox_ids:
+            for old_tid in superseded_transfer_ids:
                 await _delete_and_purge_torbox_transfer(session, old_tid)
             await session.commit()
 
@@ -1379,7 +1381,7 @@ async def _record_auto_push_failure(
         DownloadHistory.episode_id.is_(None)
         if target_episode_id is None
         else DownloadHistory.episode_id == target_episode_id,
-        DownloadHistory.torbox_id.is_(None),
+        DownloadHistory.downloader_transfer_id.is_(None),
         DownloadHistory.is_dismissed.is_(False),
     )
     for prior_row in (await session.execute(prior_stmt)).scalars().all():
@@ -1420,8 +1422,8 @@ async def _record_auto_push_failure(
                 else f"{label} — No matching release dispatched"
             )
         ),
-        torbox_id=None,
-        torbox_hash=None,
+        downloader_transfer_id=None,
+        downloader_hash=None,
         score=float(candidate.get("score") or 0.0)
         if (rate_limited and candidate)
         else 0.0,
@@ -3226,7 +3228,7 @@ async def execute_manual_grab(
         "push_mode": "manual",
         "history_id": hist.id,
         "guid": hist.nzb_guid,
-        "torbox_id": hist.torbox_id,
+        "torbox_id": hist.downloader_transfer_id,
         "auto_advanced_count": len(adv_hists),
         "status_code": 200,
     }

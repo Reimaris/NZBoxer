@@ -874,7 +874,7 @@ class MediaItem(Base):
             latest = max(
                 hist,
                 key=lambda h: (
-                    getattr(h, "torbox_sent_at", None)
+                    getattr(h, "dispatched_at", None)
                     or datetime.min.replace(tzinfo=timezone.utc),
                     getattr(h, "id", 0) or 0,
                 ),
@@ -1085,7 +1085,7 @@ class Season(Base):
         latest = max(
             hist,
             key=lambda h: (
-                getattr(h, "torbox_sent_at", None)
+                getattr(h, "dispatched_at", None)
                 or datetime.min.replace(tzinfo=timezone.utc),
                 getattr(h, "id", 0) or 0,
             ),
@@ -1243,7 +1243,7 @@ class Episode(Base):
         latest = max(
             hist,
             key=lambda h: (
-                getattr(h, "torbox_sent_at", None)
+                getattr(h, "dispatched_at", None)
                 or datetime.min.replace(tzinfo=timezone.utc),
                 getattr(h, "id", 0) or 0,
             ),
