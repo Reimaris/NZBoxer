@@ -231,6 +231,10 @@ class ProviderCategory(str, enum.Enum):
     INDEXER = "indexer"
 
 
+ACTIVE_LIST_STATUSES: frozenset[str] = frozenset({"plantowatch", "watching"})
+INACTIVE_LIST_STATUSES: frozenset[str] = frozenset({"completed", "dropped"})
+
+
 class Provider(Base):
     """Represents a third-party integration or service provider (Watchlist, Metadata, Downloader, Indexer)."""
 
@@ -276,8 +280,8 @@ class Provider(Base):
         return str(value)
 
     @property
-    def simkl_config(self) -> dict[str, Any]:
-        """Return parsed Simkl provider configuration with v3.0.0 AUTH V2 defaults."""
+    def watchlist_config(self) -> dict[str, Any]:
+        """Return parsed watchlist provider configuration (any watchlist type) with defaults."""
         defaults: dict[str, Any] = {
             "sync_interval_minutes": 60,
             "sync_movies": True,
@@ -323,9 +327,47 @@ class Provider(Base):
         return "Not Connected"
 
     @property
+    def simkl_config(self) -> dict[str, Any]:
+        """Alias for watchlist_config (legacy name)."""
+        return self.watchlist_config
+
+    @property
     def config(self) -> dict[str, Any]:
-        """Alias for simkl_config used by templates."""
-        return self.simkl_config
+        """Alias for watchlist_config used by templates."""
+        return self.watchlist_config
+
+    @property
+    def watchlist_connection_status(self) -> str:
+        """Return ``"connected"``, ``"not_connected"`` or ``"reconnect_required"``."""
+        ptype = (self.type or "").lower()
+        cfg = self.watchlist_config
+        token = str(self.access_token or cfg.get("access_token") or "").strip()
+        if ptype == "simkl":
+            if self.is_simkl_v2_authenticated:
+                return "connected"
+            return "reconnect_required" if token else "not_connected"
+        if ptype == "anilist":
+            return "connected" if (self.username or "").strip() else "not_connected"
+        if ptype == "plex":
+            return "connected" if token else "not_connected"
+        if ptype == "mal":
+            if not token:
+                return "not_connected"
+            if str(cfg.get("refresh_token") or "").strip():
+                return "connected"
+            expires = cfg.get("token_expires_at")
+            if not expires:
+                return "connected"
+            try:
+                exp = datetime.fromisoformat(str(expires))
+            except ValueError:
+                return "reconnect_required"
+            if exp.tzinfo is None:
+                exp = exp.replace(tzinfo=timezone.utc)
+            if exp > datetime.now(timezone.utc):
+                return "connected"
+            return "reconnect_required"
+        return "not_connected"
 
     media_items: Mapped[list[MediaItem]] = relationship(
         "MediaItem", back_populates="provider", cascade="all, delete-orphan"
@@ -443,6 +485,13 @@ class MediaItem(Base):
     tvdb_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     mal_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     anilist_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+
+    @property
+    def is_watchlist_active(self) -> bool:
+        """True when at least one watchlist source still lists this item as active."""
+        return any(
+            s.list_status in ACTIVE_LIST_STATUSES for s in self.watchlist_sources
+        )
 
     @property
     def associated_simkl_ids(self) -> set[int]:
@@ -564,6 +613,12 @@ class MediaItem(Base):
     # --- Relationships ---
     provider: Mapped[Provider] = relationship("Provider", back_populates="media_items")
     preset: Mapped[SearchPreset | None] = relationship("SearchPreset", lazy="selectin")
+    watchlist_sources: Mapped[list[MediaItemWatchlistSource]] = relationship(
+        "MediaItemWatchlistSource",
+        back_populates="media_item",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
     seasons: Mapped[list[Season]] = relationship(
         "Season",
         back_populates="media_item",
@@ -797,6 +852,50 @@ class MediaItem(Base):
         cascade="all, delete-orphan",
         lazy="selectin",
     )
+
+
+class MediaItemWatchlistSource(Base):
+    """Junction linking a MediaItem to one watchlist provider (multi-provider sync)."""
+
+    __tablename__ = "watchlist_sources"
+    __table_args__ = (
+        UniqueConstraint("provider_id", "remote_id", name="uq_watchlist_source_remote"),
+        UniqueConstraint(
+            "media_item_id", "provider_id", name="uq_watchlist_source_item_provider"
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    media_item_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("media_items.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    provider_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("providers.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    remote_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    list_status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="plantowatch", server_default="plantowatch"
+    )
+    last_watched_order: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    last_synced_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    media_item: Mapped[MediaItem] = relationship(
+        "MediaItem", back_populates="watchlist_sources"
+    )
+    provider: Mapped[Provider] = relationship("Provider")
 
 
 class Season(Base):
