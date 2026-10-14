@@ -24,6 +24,7 @@ _limiter = RateLimiter(0.6)
 
 DEFAULT_INDEXER_COOLDOWN_SECONDS: int = 3600
 _indexer_cooldowns: dict[str, datetime] = {}
+_indexer_names: dict[str, str] = {}
 
 
 class IndexerError(Exception):
@@ -93,6 +94,23 @@ def clear_all_indexer_cooldowns() -> None:
     _indexer_cooldowns.clear()
 
 
+def register_indexer_names(indexers: Any) -> None:
+    """Remember provider display names per indexer host for rate-limit messages."""
+    for p in indexers:
+        if getattr(p, "api_url", None) and getattr(p, "name", None):
+            _indexer_names[_normalize_indexer_key(p.api_url)] = p.name
+
+
+def get_all_indexer_cooldowns() -> dict[str, float]:
+    """Display name (provider name, else host key) -> remaining seconds (> 0 only)."""
+    result: dict[str, float] = {}
+    for key in list(_indexer_cooldowns.keys()):
+        rem = get_indexer_cooldown_remaining(key)
+        if rem > 0:
+            result[_indexer_names.get(key, key)] = rem
+    return result
+
+
 def get_all_indexer_cooldowns_remaining() -> float:
     """Return the maximum remaining cooldown seconds across all tracked indexers."""
     keys = list(_indexer_cooldowns.keys())
@@ -117,6 +135,7 @@ async def resolve_indexer(
 
     if session is not None:
         indexers = await get_active_indexers(session)
+        register_indexer_names(indexers)
         if indexers and indexers[0].api_key:
             return (
                 indexers[0].api_url or "https://treasure-maps.com/api",
@@ -128,6 +147,7 @@ async def resolve_indexer(
         try:
             async with async_session_factory() as db:
                 indexers = await get_active_indexers(db)
+                register_indexer_names(indexers)
                 if indexers and indexers[0].api_key:
                     return (
                         indexers[0].api_url or "https://treasure-maps.com/api",

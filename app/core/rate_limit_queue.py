@@ -17,13 +17,15 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from sqlalchemy import func, select
 
 from app.db.models import DownloadHistory, MediaItem
 from app.services.downloaders import premiumize, torbox
+from app.services.downloaders.base import DOWNLOADER_DISPLAY_NAMES
 from app.services.indexers import newznab as newznab_client
 
 if TYPE_CHECKING:
@@ -52,17 +54,53 @@ def is_indexer_rate_limit_error(message: str | None) -> bool:
     return is_rate_limit_error(msg) and ("indexer" in msg or "grab limit" in msg)
 
 
-def downloader_cooldown_remaining() -> float:
-    """Longest active downloader cooldown (TorBox or Premiumize)."""
-    return max(
-        torbox.get_cooldown_remaining(is_manual=True),
-        premiumize.get_cooldown_remaining(),
-    )
+@dataclass(frozen=True)
+class RateLimitSource:
+    """One provider currently cooling down after a rate limit."""
+
+    kind: Literal["downloader", "indexer"]
+    name: str
+    remaining_seconds: float
+
+
+def _downloader_cooldowns() -> list[tuple[str, float]]:
+    return [
+        (
+            DOWNLOADER_DISPLAY_NAMES["torbox"],
+            torbox.get_cooldown_remaining(is_manual=True),
+        ),
+        (DOWNLOADER_DISPLAY_NAMES["premiumize"], premiumize.get_cooldown_remaining()),
+    ]
+
+
+def get_downloader_cooldown_remaining() -> float:
+    """Longest active downloader cooldown (max over adapters)."""
+    return max(rem for _, rem in _downloader_cooldowns())
+
+
+def active_rate_limit_sources() -> list[RateLimitSource]:
+    """Downloaders and indexers whose cooldown is currently active."""
+    sources = [
+        RateLimitSource("downloader", name, rem)
+        for name, rem in _downloader_cooldowns()
+        if rem > 0
+    ]
+    sources += [
+        RateLimitSource("indexer", name, rem)
+        for name, rem in newznab_client.get_all_indexer_cooldowns().items()
+    ]
+    return sources
+
+
+def rate_limit_source_label(sources: list[RateLimitSource]) -> str:
+    """'TorBox', 'NZBgeek', 'TorBox + NZBgeek' or 'Rate limit' when empty."""
+    names = list(dict.fromkeys(s.name for s in sources))
+    return " + ".join(names) if names else "Rate limit"
 
 
 def resume_time_label() -> str:
     """Human-readable resume time for the longest active provider cooldown."""
-    tb_rem = downloader_cooldown_remaining()
+    tb_rem = get_downloader_cooldown_remaining()
     idx_rem = newznab_client.get_all_indexer_cooldowns_remaining()
     remaining = max(tb_rem, idx_rem)
     if remaining <= 0:
@@ -135,12 +173,14 @@ class RateLimitEpisode:
     def __init__(self) -> None:
         self.active = False
         self.resumed_sent = False
+        self.label = "Rate limit"
         self._reached_pending = False
         self._dirty = False
         self._task: asyncio.Task[None] | None = None
 
     def reset(self) -> None:
         self.active = False
+        self.label = "Rate limit"
         self.resumed_sent = False
         self._reached_pending = False
         self._dirty = False
@@ -180,11 +220,12 @@ class RateLimitEpisode:
                 if not self._dirty:
                     break
             self._reached_pending = False
+            self.label = rate_limit_source_label(active_rate_limit_sources())
             async with async_session_factory() as session:
                 pending = await count_rate_limited_pushes(session)
                 await _send_alert(
                     session,
-                    "⏸️ Downloader rate limit reached",
+                    f"⏸️ {self.label} rate limit reached",
                     f"{pending} push(es) paused — {resume_time_label()}.",
                 )
         except Exception as exc:  # noqa: BLE001
@@ -201,7 +242,7 @@ class RateLimitEpisode:
             async with async_session_factory() as session:
                 await _send_alert(
                     session,
-                    "▶️ Downloader rate limit over — queue resumed",
+                    f"▶️ {self.label} rate limit over — queue resumed",
                     f"Resuming {pending} paused push(es).",
                 )
         except Exception as exc:  # noqa: BLE001
@@ -239,7 +280,7 @@ async def resume_rate_limited_pushes() -> int:
     from app.core.transfer_poller import transfer_poller
     from app.db.database import async_session_factory
 
-    tb_rem = downloader_cooldown_remaining()
+    tb_rem = get_downloader_cooldown_remaining()
     idx_rem = newznab_client.get_all_indexer_cooldowns_remaining()
     if max(tb_rem, idx_rem) > 0:
         return 0
@@ -318,7 +359,7 @@ async def resume_rate_limited_pushes() -> int:
 
     resumed = 0
     for mode, item_id, payload in work_items:
-        tb_rem = downloader_cooldown_remaining()
+        tb_rem = get_downloader_cooldown_remaining()
         idx_rem = newznab_client.get_all_indexer_cooldowns_remaining()
         if max(tb_rem, idx_rem) > 0:
             break
@@ -376,14 +417,13 @@ async def resume_rate_limited_pushes() -> int:
 
 async def run_rate_limit_resume_tick() -> None:
     """APScheduler entry point (cheap in-memory cooldown check first)."""
-    tb_rem = downloader_cooldown_remaining()
+    tb_rem = get_downloader_cooldown_remaining()
     idx_rem = newznab_client.get_all_indexer_cooldowns_remaining()
     rem = max(tb_rem, idx_rem)
     if rem > 0:
         logger.debug(
-            "Rate-limit resume tick skipped — active cooldown remaining: TorBox=%.1fs, Indexers=%.1fs",
-            tb_rem,
-            idx_rem,
+            "Rate-limit resume tick skipped — active cooldowns: %s",
+            rate_limit_source_label(active_rate_limit_sources()),
         )
         return
     try:

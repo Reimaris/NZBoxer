@@ -1494,10 +1494,10 @@ async def _record_auto_push_failure(
 
     await _recalculate_parent_status(session, item)
     if rate_limited:
-        from app.core.rate_limit_queue import downloader_cooldown_remaining
+        from app.core.rate_limit_queue import get_downloader_cooldown_remaining
         from app.services.indexers import newznab as newznab_client
 
-        tb_cooldown = int(downloader_cooldown_remaining())
+        tb_cooldown = int(get_downloader_cooldown_remaining())
         idx_cooldown = int(newznab_client.get_all_indexer_cooldowns_remaining())
         source_name = "Indexer" if "indexer" in reason.lower() else "TorBox"
         cooldown_sec = idx_cooldown if "indexer" in reason.lower() else tb_cooldown
