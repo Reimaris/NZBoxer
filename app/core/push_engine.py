@@ -54,7 +54,7 @@ from app.db.models import (
     Season,
     SeasonStatus,
 )
-from app.services import torbox
+from app.services.downloaders import torbox
 from app.services.downloaders.base import (
     BaseDownloader,
     DownloaderError,

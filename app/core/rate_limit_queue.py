@@ -23,8 +23,7 @@ from typing import TYPE_CHECKING, Any
 from sqlalchemy import func, select
 
 from app.db.models import DownloadHistory, MediaItem
-from app.services import torbox
-from app.services.downloaders import premiumize
+from app.services.downloaders import premiumize, torbox
 from app.services.indexers import newznab as newznab_client
 
 if TYPE_CHECKING:

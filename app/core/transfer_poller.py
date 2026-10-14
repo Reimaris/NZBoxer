@@ -50,7 +50,8 @@ from app.db.models import (
     SeasonStatus,
     SystemSettings,
 )
-from app.services import discord, torbox
+from app.services import discord
+from app.services.downloaders import torbox
 from app.services.downloaders.base import (
     DOWNLOADER_DISPLAY_NAMES,
     BaseDownloader,

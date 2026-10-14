@@ -1,7 +1,7 @@
 """Downloader client factory (m57, ADR-131).
 
 Client modules are imported lazily so the factory works before every
-adapter module exists and avoids import cycles with ``app.services.torbox``.
+adapter module exists and avoids import cycles with ``app.services.downloaders.torbox``.
 """
 
 from __future__ import annotations

@@ -902,7 +902,7 @@ async def manual_push_to_torbox(magnet: str = Form(...)):
     """Push a search result directly to TorBox."""
     import logging
 
-    from app.services import torbox
+    from app.services.downloaders import torbox
     from app.services.downloaders.base import DownloaderError
     from app.services.indexers import newznab as newznab_client
 
@@ -4615,7 +4615,7 @@ async def api_get_active_pushes(request: Request) -> Response:
         run_transfer_poller_tick,
         transfer_poller,
     )
-    from app.services import torbox
+    from app.services.downloaders import torbox
 
     force = (request.query_params.get("force") or "").lower() in ("1", "true", "yes")
     if force:

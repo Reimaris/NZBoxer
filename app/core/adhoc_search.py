@@ -19,7 +19,8 @@ from app.config import settings
 from app.core.fake_detector import extract_nzb_password
 from app.core.parser import parse_release_name
 from app.db.models import DownloadHistory, Provider
-from app.services import provider_service, torbox
+from app.services import provider_service
+from app.services.downloaders import torbox
 from app.services.downloaders.base import DownloaderError
 from app.services.downloaders.factory import get_active_downloader_client
 from app.services.indexers import newznab as newznab_client

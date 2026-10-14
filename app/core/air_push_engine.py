@@ -34,7 +34,7 @@ from app.db.models import (
     MediaItem,
     Season,
 )
-from app.services import torbox
+from app.services.downloaders import torbox
 from app.services.indexers import newznab as newznab_client
 
 logger = logging.getLogger(__name__)
