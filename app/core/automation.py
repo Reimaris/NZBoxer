@@ -850,6 +850,7 @@ async def _run_provider_sync(
                 maintenance = await run_library_maintenance(
                     session, include_anime=include_anime
                 )
+                await session.commit()
                 for r in results:
                     r["pruned"] = maintenance.pruned
                 logger.info("All provider watchlists synced successfully.")

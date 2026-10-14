@@ -871,11 +871,10 @@ async def enrich_active_shows_episode_air_dates(
 async def sync_provider(
     session: AsyncSession, provider: Provider, result: dict[str, Any]
 ) -> None:
-    """Run the full Simkl watchlist sync pipeline for *provider* (7 phases)."""
+    """Run the full Simkl watchlist sync pipeline for *provider* (5 phases; maintenance runs after the cycle)."""
     import json
 
     from app.core import automation as au
-    from app.core.phase_stats import TbaDiscoveryStats
 
     client_id, access_token = await simkl.ensure_valid_simkl_token(session, provider)
     cfg = provider.watchlist_config
@@ -909,7 +908,7 @@ async def sync_provider(
         )
         active_simkl_ids.update(simkl._extract_active_simkl_ids(fetched[category]))
     logger.info(
-        "[SYNC] [1/7] Fetched %d movies, %d shows, %d anime",
+        "[SYNC] [1/5] Fetched %d movies, %d shows, %d anime",
         len(fetched["movies"]),
         len(fetched["shows"]),
         len(fetched["anime"]),
@@ -930,49 +929,30 @@ async def sync_provider(
             stats=ingest_stats,
         )
     logger.info(
-        "[SYNC] [2/7] Ingested %d items (%d newly added)",
+        "[SYNC] [2/5] Ingested %d items (%d newly added)",
         ingest_stats.ingested,
         ingest_stats.added,
-    )
-
-    sequels_consolidated = 0
-    anime_seasons_updated = 0
-    if sync_anime:
-        sequels_consolidated = await au.consolidate_standalone_anime_sequels(session)
-        anime_seasons_updated = await au.refresh_due_future_anime_seasons(session)
-    logger.info(
-        "[SYNC] [3/7] Reconciled anime hierarchies (%d sequels consolidated, %d TBA seasons updated)",
-        sequels_consolidated,
-        anime_seasons_updated,
     )
 
     air_stats = AirDateRefreshStats()
     await au.enrich_active_shows_episode_air_dates(session, stats=air_stats)
     logger.info(
-        "[SYNC] [4/7] Air date refresh: %d episode dates updated across %d titles",
+        "[SYNC] [3/5] Air date refresh: %d episode dates updated across %d titles",
         air_stats.episodes_updated,
         air_stats.titles_updated,
     )
 
     rolled = await au.rollover_due_future_episodes_and_seasons(session)
     logger.info(
-        "[SYNC] [5/7] Rollover: %d items transitioned to searching",
+        "[SYNC] [4/5] Rollover: %d items transitioned to searching",
         rolled["episodes_rolled_over"] + rolled["seasons_rolled_over"],
-    )
-
-    tba_stats = TbaDiscoveryStats()
-    await au.refresh_due_future_tv_seasons(session, stats=tba_stats)
-    logger.info(
-        "[SYNC] [6/7] TMDB TBA season discovery: %d TV shows evaluated, %d seasons discovered",
-        tba_stats.shows_evaluated,
-        tba_stats.seasons_discovered,
     )
 
     from app.services.watchlist_ingest import (
         mark_absent_sources_completed,
     )
 
-    await mark_absent_sources_completed(
+    completed = await mark_absent_sources_completed(
         session,
         provider,
         await _simkl_seen_remote_ids(
@@ -984,19 +964,9 @@ async def sync_provider(
             sync_anime=sync_anime,
         ),
     )
-    duplicates_merged = await au.deduplicate_media_items(session)
-    pruned = await au.prune_inactive_media_items(session)
-    logger.info(
-        "[SYNC] [7/7] Maintenance: %d duplicates merged, %d completed/dropped titles pruned",
-        duplicates_merged,
-        pruned,
-    )
+    logger.info("[SYNC] [5/5] %d departed entries marked completed", completed)
 
-    result.update(
-        ingested=ingest_stats.ingested,
-        added=ingest_stats.added,
-        pruned=pruned,
-    )
+    result.update(ingested=ingest_stats.ingested, added=ingest_stats.added)
     cfg = provider.watchlist_config
     cfg["last_synced_at"] = datetime.now(timezone.utc).isoformat()
     cfg.pop("last_error", None)
