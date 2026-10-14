@@ -1,12 +1,14 @@
 <!-- Provider Modal (v3.0.0) -->
 {% set cfg = provider.config if provider else {} %}
+{% set pcat = (provider.category.value if provider.category.value is defined else provider.category) if provider else ('watchlist' if new_type else '') %}
+{% set ptype = provider.type if provider else new_type %}
 <div class="nzb-modal-backdrop fixed inset-0 bg-black bg-opacity-70 z-[100] flex items-center justify-center p-4 animate-fade-in" id="provider-modal-overlay">
     <div class="nzb-modal-dialog nzb-modal-dialog-lg bg-[#1e1e24] border border-[#3f3f46] rounded-xl shadow-2xl w-full max-w-3xl overflow-hidden flex flex-col max-h-[90vh]"
          x-data="{
              isEdit: {{ 'true' if provider else 'false' }},
-             step: {{ 2 if provider else 1 }},
-             providerType: '{{ provider.type if provider else '' }}',
-             providerCategory: '{{ provider.category if provider else '' }}',
+             step: {{ 2 if (provider or new_type) else 1 }},
+             providerType: '{{ ptype }}',
+             providerCategory: '{{ pcat }}',
              selectProvider(type, category, defaultName) {
                  this.providerType = type;
                  this.providerCategory = category;
@@ -55,6 +57,36 @@
                                 </div>
                             </div>
                             <p class="text-xs text-[#71717a] mt-1">Sync movies, TV shows, and anime watchlists via OAuth 2.0 Device Flow (AUTH V2) with auto-refreshing tokens and watch-progress season expansion.</p>
+                        </button>
+                        <button type="button" @click="selectProvider('anilist', 'watchlist', 'AniList Watchlist')" class="bg-[#111115] hover:bg-[#2a2a32] border border-[#3f3f46] hover:border-[#d40060] rounded-xl p-4 text-left transition-all group flex flex-col justify-between">
+                            <div class="flex items-center gap-3 mb-2">
+                                <div class="w-10 h-10 rounded-lg bg-[#d40060]/15 text-[#d40060] flex items-center justify-center font-bold text-lg">A</div>
+                                <div>
+                                    <div class="font-bold text-white group-hover:text-[#d40060] transition-colors">AniList</div>
+                                    <div class="text-xs text-[#a1a1aa]">Watchlist Integration</div>
+                                </div>
+                            </div>
+                            <p class="text-xs text-[#71717a] mt-1">Sync your AniList anime list using your public username (access token only needed for private profiles).</p>
+                        </button>
+                        <button type="button" @click="selectProvider('plex', 'watchlist', 'Plex Watchlist')" class="bg-[#111115] hover:bg-[#2a2a32] border border-[#3f3f46] hover:border-[#d40060] rounded-xl p-4 text-left transition-all group flex flex-col justify-between">
+                            <div class="flex items-center gap-3 mb-2">
+                                <div class="w-10 h-10 rounded-lg bg-[#d40060]/15 text-[#d40060] flex items-center justify-center font-bold text-lg">P</div>
+                                <div>
+                                    <div class="font-bold text-white group-hover:text-[#d40060] transition-colors">Plex</div>
+                                    <div class="text-xs text-[#a1a1aa]">Watchlist Integration</div>
+                                </div>
+                            </div>
+                            <p class="text-xs text-[#71717a] mt-1">Sync your Plex Discover watchlist via PIN login or a manual token.</p>
+                        </button>
+                        <button type="button" @click="selectProvider('mal', 'watchlist', 'MyAnimeList')" class="bg-[#111115] hover:bg-[#2a2a32] border border-[#3f3f46] hover:border-[#d40060] rounded-xl p-4 text-left transition-all group flex flex-col justify-between">
+                            <div class="flex items-center gap-3 mb-2">
+                                <div class="w-10 h-10 rounded-lg bg-[#d40060]/15 text-[#d40060] flex items-center justify-center font-bold text-lg">M</div>
+                                <div>
+                                    <div class="font-bold text-white group-hover:text-[#d40060] transition-colors">MyAnimeList</div>
+                                    <div class="text-xs text-[#a1a1aa]">Watchlist Integration</div>
+                                </div>
+                            </div>
+                            <p class="text-xs text-[#71717a] mt-1">Sync your MyAnimeList anime list via OAuth 2.0 PKCE with your own MAL API client ID.</p>
                         </button>
                     </div>
                 </div>
@@ -124,8 +156,8 @@
             <!-- STEP 2: DYNAMIC CONFIGURATION VIEW -->
             <div x-show="step === 2" class="animate-fade-in">
                 <form id="provider-form" hx-post="/settings/provider{% if provider %}/{{ provider.id }}{% endif %}" class="space-y-6">
-                    <input type="hidden" name="provider_type" :value="providerType" value="{{ provider.type if provider else '' }}">
-                    <input type="hidden" name="category" :value="providerCategory" value="{{ provider.category if provider else '' }}">
+                    <input type="hidden" name="provider_type" :value="providerType" value="{{ ptype }}">
+                    <input type="hidden" name="category" :value="providerCategory" value="{{ pcat }}">
 
                     <!-- Basic Info -->
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -237,7 +269,7 @@
                             <div class="flex flex-col col-span-1 md:col-span-2">
                                 <label class="h-6 text-[#d1d5db] font-medium mb-1 flex items-center">Simkl Access Token</label>
                                 <div class="flex gap-2 w-full">
-                                    <input type="password" id="access_token" name="access_token" value="{{ provider.access_token if provider and provider.access_token else '' }}" class="flex-1 min-w-0 h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors font-mono">
+                                    <input type="password" id="access_token" name="access_token" value="{{ provider.access_token if provider and ptype == 'simkl' and provider.access_token else '' }}" class="flex-1 min-w-0 h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors font-mono">
                                     <button type="button" hx-post="/simkl/auth/start" hx-include="[name='client_id'], [name='provider_id']" hx-target="#simkl-auth-container-modal" class="h-11 bg-blue-600 hover:bg-blue-700 text-white px-4 rounded-lg font-medium transition-colors text-sm whitespace-nowrap shrink-0">
                                         Get PIN &amp; Connect
                                     </button>
@@ -275,7 +307,7 @@
                     </fieldset>
 
                     <!-- ANILIST CONFIGURATION -->
-                    <fieldset :disabled="providerType !== 'anilist'" x-show="providerType === 'anilist'" class="border-0 p-0 m-0 space-y-6">
+                    <fieldset :disabled="!(providerType === 'anilist' && providerCategory === 'metadata')" x-show="providerType === 'anilist' && providerCategory === 'metadata'" class="border-0 p-0 m-0 space-y-6">
                         <div class="bg-[#111115] border border-[#3f3f46] rounded-xl p-4 text-xs text-[#a1a1aa] leading-relaxed">
                             AniList uses the public GraphQL API for anime metadata, chronological sequel chains, and episode air dates — <strong class="text-white">no API key or credentials are required</strong>. Username and Access Token below are completely optional.
                         </div>
@@ -286,8 +318,77 @@
                             </div>
                             <div class="flex flex-col">
                                 <label class="h-6 text-[#d1d5db] font-medium mb-1 flex items-center">Access Token (Optional)</label>
-                                <input type="password" name="access_token" value="{{ provider.access_token if provider and provider.access_token else '' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors font-mono" placeholder="Optional token">
+                                <input type="password" name="access_token" value="{{ provider.access_token if provider and pcat == 'metadata' and provider.access_token else '' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors font-mono" placeholder="Optional token">
                             </div>
+                        </div>
+                    </fieldset>
+
+                    <!-- ANILIST WATCHLIST CONFIGURATION -->
+                    <fieldset :disabled="!(providerType === 'anilist' && providerCategory === 'watchlist')" x-show="providerType === 'anilist' && providerCategory === 'watchlist'" class="border-0 p-0 m-0 space-y-6">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div class="flex flex-col">
+                                <label class="h-6 text-[#d1d5db] font-medium mb-1 flex items-center">AniList Username <span class="text-red-500 ml-1">*</span></label>
+                                <input type="text" name="username" value="{{ provider.username if provider and provider.username else '' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors" placeholder="AniList username">
+                            </div>
+                            <div class="flex flex-col">
+                                <label class="h-6 text-[#d1d5db] font-medium mb-1 flex items-center">Access Token (Optional)</label>
+                                <input type="password" name="access_token" value="" autocomplete="off" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors font-mono" placeholder="{{ 'Token set — leave blank to keep' if provider and provider.access_token else 'Only needed for private profiles' }}">
+                            </div>
+                        <div class="flex flex-col">
+                            <label class="h-6 text-[#d1d5db] font-medium mb-1 flex items-center">Sync Interval (Minutes, 0 = manual only)</label>
+                            <input type="number" name="sync_interval_minutes" min="0" max="1440" value="{{ cfg.get('sync_interval_minutes', 0) if provider else 0 }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors font-mono">
+                        </div>
+                        </div>
+                    </fieldset>
+
+                    <!-- PLEX WATCHLIST CONFIGURATION -->
+                    <fieldset :disabled="providerType !== 'plex'" x-show="providerType === 'plex'" class="border-0 p-0 m-0 space-y-6">
+                        <div class="bg-[#111115] border border-[#3f3f46] rounded-xl p-4 space-y-3">
+                            {% if provider and ptype == 'plex' %}
+                            <button type="button" hx-post="/settings/provider/plex/auth/start" hx-vals='{"provider_id": "{{ provider.id }}"}' hx-target="#plex-pin-container-modal" class="h-10 bg-blue-600 hover:bg-blue-700 text-white px-4 rounded-lg font-medium transition-colors text-sm">Get PIN &amp; Connect</button>
+                            <div id="plex-pin-container-modal"></div>
+                            {% else %}
+                            <p class="text-xs text-[#a1a1aa]">Save the provider first, then edit it to connect via PIN.</p>
+                            {% endif %}
+                        </div>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div class="flex flex-col">
+                                <label class="h-6 text-[#d1d5db] font-medium mb-1 flex items-center">Plex Token (Manual)</label>
+                                <input type="password" name="access_token" value="" autocomplete="off" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors font-mono" placeholder="{{ 'Token set — leave blank to keep' if provider and provider.access_token else 'Optional manual token' }}">
+                            </div>
+                        <div class="flex flex-col">
+                            <label class="h-6 text-[#d1d5db] font-medium mb-1 flex items-center">Sync Interval (Minutes, 0 = manual only)</label>
+                            <input type="number" name="sync_interval_minutes" min="0" max="1440" value="{{ cfg.get('sync_interval_minutes', 0) if provider else 0 }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors font-mono">
+                        </div>
+                        </div>
+                    </fieldset>
+
+                    <!-- MYANIMELIST CONFIGURATION -->
+                    <fieldset :disabled="providerType !== 'mal'" x-show="providerType === 'mal'" class="border-0 p-0 m-0 space-y-6">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div class="flex flex-col">
+                                <label class="h-6 text-[#d1d5db] font-medium mb-1 flex items-center justify-between">
+                                    <span>MAL Client ID <span class="text-red-500 ml-1">*</span></span>
+                                    <a href="https://myanimelist.net/apiconfig" target="_blank" rel="noopener noreferrer" class="text-xs text-blue-400 hover:underline">Get Client ID</a>
+                                </label>
+                                <input type="text" name="client_id" value="{{ provider.client_id if provider and provider.client_id else '' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors font-mono">
+                            </div>
+                        <div class="flex flex-col">
+                            <label class="h-6 text-[#d1d5db] font-medium mb-1 flex items-center">Sync Interval (Minutes, 0 = manual only)</label>
+                            <input type="number" name="sync_interval_minutes" min="0" max="1440" value="{{ cfg.get('sync_interval_minutes', 0) if provider else 0 }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors font-mono">
+                        </div>
+                            <div class="flex flex-col col-span-1 md:col-span-2">
+                                <label class="h-6 text-[#d1d5db] font-medium mb-1 flex items-center">Redirect URI (register in your MAL app)</label>
+                                <input type="text" readonly value="{{ mal_redirect_uri }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] rounded-lg px-3.5 text-[#a1a1aa] font-mono text-sm">
+                            </div>
+                        </div>
+                        <div class="bg-[#111115] border border-[#3f3f46] rounded-xl p-4 space-y-3">
+                            {% if provider and ptype == 'mal' %}
+                            <button type="button" hx-post="/settings/provider/mal/auth/start" hx-vals='{"provider_id": "{{ provider.id }}"}' hx-include="[name='client_id']" hx-target="#mal-connect-container-modal" class="h-10 bg-blue-600 hover:bg-blue-700 text-white px-4 rounded-lg font-medium transition-colors text-sm">Authorize with MyAnimeList</button>
+                            <div id="mal-connect-container-modal"></div>
+                            {% else %}
+                            <p class="text-xs text-[#a1a1aa]">Save the provider first, then edit it to authorize.</p>
+                            {% endif %}
                         </div>
                     </fieldset>
 

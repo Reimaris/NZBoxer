@@ -94,7 +94,7 @@
                 {% for provider in providers %}
                 {% set cat = provider.category.value if provider.category.value is defined else provider.category %}
                 {% set pcfg = provider.config %}
-                <div class="bg-[#1e1e24] border rounded-xl p-5 transition-all group shadow-lg flex flex-col justify-between
+                <div {% if cat == 'watchlist' %}id="provider-card-{{ provider.id }}" {% endif %}class="bg-[#1e1e24] border rounded-xl p-5 transition-all group shadow-lg flex flex-col justify-between
                     {% if cat == 'watchlist' %}border-[#d40060]/60 hover:border-[#d40060]
                     {% elif cat == 'metadata' %}border-amber-500/50 hover:border-amber-400
                     {% elif cat == 'downloader' %}border-purple-500/50 hover:border-purple-400
@@ -136,7 +136,7 @@
                                 {% elif cat == 'downloader' %}bg-purple-500/15 border border-purple-500/30 text-purple-400
                                 {% elif cat == 'indexer' %}bg-blue-500/15 border border-blue-500/30 text-blue-400
                                 {% else %}bg-zinc-700 text-zinc-300{% endif %}">
-                                {% if cat == 'watchlist' %}S
+                                {% if cat == 'watchlist' %}{{ provider.name[:1]|upper }}
                                 {% elif cat == 'downloader' %}TB
                                 {% elif cat == 'indexer' %}<span class="text-xs">NZB</span>
                                 {% elif provider.type == 'tmdb' %}T
@@ -157,6 +157,19 @@
                                 {% endif %}
                             </div>
                         </div>
+
+                        {% if cat == 'watchlist' %}
+                        {% set wstatus = provider.watchlist_connection_status %}
+                        <div class="mb-2 space-y-1">
+                            <span id="provider-status-badge-{{ provider.id }}" class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold {% if wstatus == 'connected' %}bg-emerald-500/15 text-emerald-400 border border-emerald-500/30{% elif wstatus == 'reconnect_required' %}bg-amber-500/15 text-amber-400 border border-amber-500/30{% else %}bg-slate-500/15 text-slate-400 border border-slate-500/30{% endif %}">{% if wstatus == 'connected' %}Connected{% elif wstatus == 'reconnect_required' %}Reconnect Required{% else %}Not Connected{% endif %}</span>
+                            {% if pcfg.get('last_synced_at') %}
+                            <p class="text-[11px] text-[#71717a] font-mono truncate">Last sync: {{ pcfg.get('last_synced_at') }}</p>
+                            {% endif %}
+                            {% if pcfg.get('last_error') %}
+                            <p class="text-[11px] text-red-400 truncate" title="{{ pcfg.get('last_error') }}">{{ pcfg.get('last_error') }}</p>
+                            {% endif %}
+                        </div>
+                        {% endif %}
 
                         {% if provider.type == 'simkl' %}
                         <div class="mb-2">
@@ -199,6 +212,9 @@
                             {% endif %}
                         </div>
 
+                        {% if cat == 'watchlist' %}
+                        <button type="button" id="provider-sync-btn-{{ provider.id }}" hx-post="/settings/provider/{{ provider.id }}/sync" hx-target="#sync-result" hx-disabled-elt="this" class="px-2.5 py-1 rounded-md text-xs font-bold shrink-0 bg-[#d40060]/20 text-[#d40060] border border-[#d40060]/30 hover:bg-[#d40060]/30">Sync</button>
+                        {% endif %}
                         <button hx-post="/settings/provider/{{ provider.id }}/toggle-active" class="px-2.5 py-1 rounded-md text-xs font-bold shrink-0 {% if provider.is_active %}bg-emerald-500/20 text-emerald-400 border border-emerald-500/30{% else %}bg-[#3f3f46]/50 text-[#71717a]{% endif %}">
                             {{ 'Active' if provider.is_active else 'Inactive' }}
                         </button>

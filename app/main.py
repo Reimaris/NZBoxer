@@ -19,7 +19,15 @@ from pathlib import Path
 from typing import Any, Literal
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from fastapi import BackgroundTasks, FastAPI, Form, HTTPException, Request, Response
+from fastapi import (
+    BackgroundTasks,
+    FastAPI,
+    Form,
+    HTTPException,
+    Query,
+    Request,
+    Response,
+)
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -1442,9 +1450,16 @@ async def save_global_settings(request: Request):
     )
 
 
+_WATCHLIST_TYPES = ("simkl", "anilist", "plex", "mal")
+
+
 @app.get("/settings/provider/new", response_class=HTMLResponse)
 @app.get("/settings/provider/{provider_id}/edit", response_class=HTMLResponse)
-async def provider_modal(request: Request, provider_id: int | None = None):
+async def provider_modal(
+    request: Request,
+    provider_id: int | None = None,
+    type: str = Query("", max_length=32),
+):
     from sqlalchemy import select
 
     from app.db.models import NotificationChannel, Provider
@@ -1458,10 +1473,16 @@ async def provider_modal(request: Request, provider_id: int | None = None):
             (await session.execute(select(NotificationChannel))).scalars().all()
         )
 
+    new_type = type.strip().lower() if type.strip().lower() in _WATCHLIST_TYPES else ""
     return templates.TemplateResponse(
         request=request,
         name="modals/provider.html",
-        context={"provider": provider, "notifications": notifications},
+        context={
+            "provider": provider,
+            "notifications": notifications,
+            "new_type": new_type if provider is None else "",
+            "mal_redirect_uri": str(request.base_url).rstrip("/") + _MAL_CALLBACK_PATH,
+        },
     )
 
 
@@ -1472,6 +1493,7 @@ async def save_provider(
     provider_id: int | None = None,
     name: str = Form(...),
     simkl_username: str = Form(""),
+    username: str = Form(""),
     access_token: str = Form(""),
     refresh_token: str = Form(""),
     token_expires_at: str = Form(""),
@@ -1498,6 +1520,8 @@ async def save_provider(
     if not resolved_category:
         type_cat_map = {
             "simkl": ProviderCategory.WATCHLIST.value,
+            "plex": ProviderCategory.WATCHLIST.value,
+            "mal": ProviderCategory.WATCHLIST.value,
             "tmdb": ProviderCategory.METADATA.value,
             "anilist": ProviderCategory.METADATA.value,
             "torbox": ProviderCategory.DOWNLOADER.value,
@@ -1534,14 +1558,22 @@ async def save_provider(
             provider = Provider(type=provider_type, category=resolved_category)
             session.add(provider)
 
+        is_new_watchlist = (
+            resolved_category == ProviderCategory.WATCHLIST.value
+            and provider_type.lower() != "simkl"
+        )
+        # Secrets are never echoed into forms: a blank token keeps the stored one.
+        keep_old_token = old_access_token and (
+            access_token.strip() == "***"
+            or (is_new_watchlist and not access_token.strip())
+        )
         effective_access_token = (
-            old_access_token
-            if access_token.strip() == "***" and old_access_token
-            else access_token.strip()
+            old_access_token if keep_old_token else access_token.strip()
         )
 
         provider.name = name
-        provider.username = simkl_username
+        if not (is_new_watchlist and provider_type.lower() in ("plex", "mal")):
+            provider.username = simkl_username or username
         provider.access_token = effective_access_token
         provider.client_id = client_id.strip()
         provider.api_key = api_key
@@ -1550,8 +1582,6 @@ async def save_provider(
         provider.is_active = is_active
 
         if provider.type.lower() == "simkl":
-            import json
-
             existing_cfg = provider.simkl_config
             # If user manually replaced an existing token with a different one, best-effort revoke old token
             if (
@@ -1609,6 +1639,15 @@ async def save_provider(
                 existing_cfg["token_expires_at"] = None
 
             provider.config_json = json.dumps(existing_cfg)
+        elif is_new_watchlist:
+            try:
+                raw_cfg = json.loads(provider.config_json or "{}")
+            except ValueError:
+                raw_cfg = {}
+            raw_cfg["sync_interval_minutes"] = normalize_sync_interval_minutes(
+                sync_interval_minutes
+            )
+            provider.config_json = json.dumps(raw_cfg)
 
         await session.flush()  # get ID
 
@@ -3265,6 +3304,42 @@ async def manual_sync() -> HTMLResponse:
         <div class="bg-[#3f3f46] text-white px-4 py-3 rounded-md shadow-lg border border-[#52525b] flex items-center justify-between animate-fade-in-down mb-4">
             <div class="flex items-center gap-3">
                 <svg class="w-5 h-5 shrink-0 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                <span class="text-sm font-medium">{msg}</span>
+            </div>
+            <button onclick="this.parentElement.remove()" class="p-1 text-gray-400 hover:text-white hover:bg-black/20 rounded transition-colors focus:outline-none">
+                <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+            </button>
+        </div>
+    """,
+        headers={"HX-Trigger": "refreshDashboard"},
+    )
+
+
+@app.post("/settings/provider/{provider_id}/sync", response_class=HTMLResponse)
+async def sync_provider(provider_id: int) -> HTMLResponse:
+    """Sync a single watchlist provider and return a toast fragment."""
+    import html
+
+    from app.core.automation import sync_single_provider
+
+    result = await sync_single_provider(provider_id)
+    status = result.get("status")
+    if status == "busy":
+        msg, icon = "A sync is already running.", "text-amber-400"
+    elif status == "error":
+        err = html.escape(str(result.get("error") or "unknown error"))
+        msg, icon = f"Sync failed: {err}", "text-red-400"
+    else:
+        msg = (
+            f"Sync complete ({result.get('ingested', 0)} ingested, "
+            f"{result.get('added', 0)} added, {result.get('pruned', 0)} pruned)."
+        )
+        icon = "text-emerald-400"
+    return HTMLResponse(
+        content=f"""
+        <div class="bg-[#3f3f46] text-white px-4 py-3 rounded-md shadow-lg border border-[#52525b] flex items-center justify-between animate-fade-in-down mb-4">
+            <div class="flex items-center gap-3">
+                <svg class="w-5 h-5 shrink-0 {icon}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
                 <span class="text-sm font-medium">{msg}</span>
             </div>
             <button onclick="this.parentElement.remove()" class="p-1 text-gray-400 hover:text-white hover:bg-black/20 rounded transition-colors focus:outline-none">
