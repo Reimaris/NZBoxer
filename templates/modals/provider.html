@@ -9,12 +9,14 @@
              step: {{ 2 if (provider or new_type) else 1 }},
              providerType: '{{ ptype }}',
              providerCategory: '{{ pcat }}',
+             autoName: '',
              selectProvider(type, category, defaultName) {
                  this.providerType = type;
                  this.providerCategory = category;
                  const nameInput = document.getElementById('provider-name-input');
-                 if (nameInput && !nameInput.value) {
+                 if (nameInput && (!nameInput.value || nameInput.value === this.autoName)) {
                      nameInput.value = defaultName;
+                     this.autoName = defaultName;
                  }
                  this.step = 2;
              }
@@ -48,9 +50,9 @@
                 <div class="space-y-3">
                     <h3 class="text-xs font-bold text-[#d40060] uppercase tracking-wider">Watchlist Providers</h3>
                     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        <button type="button" @click="selectProvider('simkl', 'watchlist', 'Simkl Watchlist')" class="bg-[#111115] hover:bg-[#2a2a32] border border-[#3f3f46] hover:border-[#d40060] rounded-xl p-4 text-left transition-all group flex flex-col justify-between">
+                        <button type="button" @click="selectProvider('simkl', 'watchlist', 'Simkl')" class="bg-[#111115] hover:bg-[#2a2a32] border border-[#3f3f46] hover:border-[#d40060] rounded-xl p-4 text-left transition-all group flex flex-col justify-between">
                             <div class="flex items-center gap-3 mb-2">
-                                <div class="w-10 h-10 rounded-lg bg-sky-500/20 text-sky-400 flex items-center justify-center font-bold text-lg">S</div>
+                                <div class="w-10 h-10 rounded-lg bg-[#d40060]/15 text-[#d40060] flex items-center justify-center font-bold text-lg">S</div>
                                 <div>
                                     <div class="font-bold text-white group-hover:text-[#d40060] transition-colors">Simkl</div>
                                     <div class="text-xs text-[#a1a1aa]">Watchlist Integration</div>
@@ -58,7 +60,7 @@
                             </div>
                             <p class="text-xs text-[#71717a] mt-1">Sync movies, TV shows, and anime watchlists via OAuth 2.0 Device Flow (AUTH V2) with auto-refreshing tokens and watch-progress season expansion.</p>
                         </button>
-                        <button type="button" @click="selectProvider('anilist', 'watchlist', 'AniList Watchlist')" class="bg-[#111115] hover:bg-[#2a2a32] border border-[#3f3f46] hover:border-[#d40060] rounded-xl p-4 text-left transition-all group flex flex-col justify-between">
+                        <button type="button" @click="selectProvider('anilist', 'watchlist', 'AniList')" class="bg-[#111115] hover:bg-[#2a2a32] border border-[#3f3f46] hover:border-[#d40060] rounded-xl p-4 text-left transition-all group flex flex-col justify-between">
                             <div class="flex items-center gap-3 mb-2">
                                 <div class="w-10 h-10 rounded-lg bg-[#d40060]/15 text-[#d40060] flex items-center justify-center font-bold text-lg">A</div>
                                 <div>
@@ -68,7 +70,7 @@
                             </div>
                             <p class="text-xs text-[#71717a] mt-1">Sync your AniList anime list using your public username (access token only needed for private profiles).</p>
                         </button>
-                        <button type="button" @click="selectProvider('plex', 'watchlist', 'Plex Watchlist')" class="bg-[#111115] hover:bg-[#2a2a32] border border-[#3f3f46] hover:border-[#d40060] rounded-xl p-4 text-left transition-all group flex flex-col justify-between">
+                        <button type="button" @click="selectProvider('plex', 'watchlist', 'Plex')" class="bg-[#111115] hover:bg-[#2a2a32] border border-[#3f3f46] hover:border-[#d40060] rounded-xl p-4 text-left transition-all group flex flex-col justify-between">
                             <div class="flex items-center gap-3 mb-2">
                                 <div class="w-10 h-10 rounded-lg bg-[#d40060]/15 text-[#d40060] flex items-center justify-center font-bold text-lg">P</div>
                                 <div>
