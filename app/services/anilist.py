@@ -8,6 +8,7 @@ provider (user media list). Kept flat on purpose; do not move into
 import asyncio
 import logging
 import re
+from datetime import datetime, timezone
 from typing import Any
 
 import httpx
@@ -354,6 +355,46 @@ async def get_anime_media_by_id(anilist_id: int) -> dict[str, Any] | None:
                 _sanitize_error_message(e),
             )
             return None
+
+
+async def get_anime_airing_schedule(anilist_id: int) -> list[tuple[int, datetime]]:
+    """Return (episode_number, airing_at_utc) for every not-yet-aired episode, sorted by episode."""
+    query_str = """
+    query ($id: Int) {
+      Media(id: $id, type: ANIME) {
+        airingSchedule(notYetAired: true, perPage: 50) {
+          nodes { episode airingAt }
+        }
+      }
+    }
+    """
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        try:
+            resp = await _post_with_retry(
+                client, {"query": query_str, "variables": {"id": anilist_id}}
+            )
+            media = (resp.json().get("data") or {}).get("Media") or {}
+            nodes = (media.get("airingSchedule") or {}).get("nodes") or []
+        except Exception as e:
+            logger.error(
+                "AniList get_anime_airing_schedule failed for ID %d: %s",
+                anilist_id,
+                _sanitize_error_message(e),
+            )
+            return []
+
+    schedule: list[tuple[int, datetime]] = []
+    for node in nodes:
+        try:
+            episode, airing_at = node["episode"], node["airingAt"]
+            if isinstance(episode, bool) or isinstance(airing_at, bool):
+                continue
+            schedule.append(
+                (int(episode), datetime.fromtimestamp(int(airing_at), tz=timezone.utc))
+            )
+        except (KeyError, TypeError, ValueError, OverflowError, OSError):
+            continue
+    return sorted(schedule, key=lambda entry: entry[0])
 
 
 async def get_anime_aliases(anilist_id: int) -> list[str]:
