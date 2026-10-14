@@ -4,6 +4,7 @@
      x-data="{
          step: 1,
          watchlistType: {{ watchlist_type|tojson }},
+         downloaderType: {{ downloader_type|tojson }},
          error: '',
          saving: false,
          async post(url, formId) {
@@ -147,16 +148,53 @@
                     </label>
                 </div>
                 <div class="bg-[#111115] border border-[#3f3f46] rounded-lg p-4 space-y-3">
-                    <div class="flex items-center justify-between"><h4 class="text-sm font-bold text-white">TorBox</h4><a href="https://torbox.app/settings" target="_blank" rel="noopener noreferrer" class="text-[11px] text-[#d40060] hover:underline">Get API Key / Register ↗</a></div>
-                    <label class="block text-xs text-[#a1a1aa]">API Key
+                    <h4 class="text-sm font-bold text-white">Downloader</h4>
+                    <select name="downloader_type" id="onboarding-downloader-type" x-model="downloaderType" class="w-full bg-[#111115] border border-[#3f3f46] rounded-lg px-3 py-2 text-white text-xs focus:border-[#d40060] focus:outline-none">
+                        <option value="">None / Skip</option>
+                        <option value="torbox">TorBox</option>
+                        <option value="sabnzbd">SABnzbd</option>
+                        <option value="premiumize">Premiumize</option>
+                    </select>
+                    <div id="onboarding-downloader-panel-torbox" x-show="downloaderType === 'torbox'" x-cloak class="space-y-3">
+                        <div class="flex justify-end"><a href="https://torbox.app/settings" target="_blank" rel="noopener noreferrer" class="text-[11px] text-[#d40060] hover:underline">Get API Key / Register ↗</a></div>
+                        <label class="block text-xs text-[#a1a1aa]">API Key
                         <div class="relative mt-1" x-data="{ show: false }">
                             <input :type="show ? 'text' : 'password'" name="torbox_api_key" value="{{ torbox.api_key }}" autocomplete="off" placeholder="" class="w-full bg-[#111115] border border-[#3f3f46] rounded-lg px-3 py-2 text-white text-xs focus:border-[#d40060] focus:outline-none">
                             <button type="button" @click="show = !show" class="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-[#a1a1aa] hover:text-white" x-text="show ? 'Hide' : 'Show'">Show</button>
                         </div>
-                    </label>
-                    <label class="block text-xs text-[#a1a1aa]">API Base URL
-                        <input type="text" name="torbox_api_url" value="{{ torbox.api_url }}" autocomplete="off" placeholder="" class="mt-1 w-full bg-[#111115] border border-[#3f3f46] rounded-lg px-3 py-2 text-white text-xs focus:border-[#d40060] focus:outline-none">
-                    </label>
+                        </label>
+                        <label class="block text-xs text-[#a1a1aa]">API Base URL
+                            <input type="text" name="torbox_api_url" value="{{ torbox.api_url }}" autocomplete="off" placeholder="https://api.torbox.app/v1/api" class="mt-1 w-full bg-[#111115] border border-[#3f3f46] rounded-lg px-3 py-2 text-white text-xs focus:border-[#d40060] focus:outline-none">
+                        </label>
+                    </div>
+                    <div id="onboarding-downloader-panel-sabnzbd" x-show="downloaderType === 'sabnzbd'" x-cloak class="space-y-3">
+                        <label class="block text-xs text-[#a1a1aa]">Host
+                            <input type="text" name="sabnzbd_host" value="{{ sabnzbd.host }}" autocomplete="off" placeholder="192.168.1.10" class="mt-1 w-full bg-[#111115] border border-[#3f3f46] rounded-lg px-3 py-2 text-white text-xs focus:border-[#d40060] focus:outline-none">
+                            <span class="block mt-1 text-[11px]">Must be reachable from the NZBoxer container (not <code>localhost</code> unless SABnzbd runs in the same container).</span>
+                        </label>
+                        <label class="block text-xs text-[#a1a1aa]">Port
+                            <input type="text" inputmode="numeric" name="sabnzbd_port" value="{{ sabnzbd.port }}" autocomplete="off" placeholder="8080" class="mt-1 w-full bg-[#111115] border border-[#3f3f46] rounded-lg px-3 py-2 text-white text-xs focus:border-[#d40060] focus:outline-none">
+                        </label>
+                        <label class="block text-xs text-[#a1a1aa]">API Key
+                        <div class="relative mt-1" x-data="{ show: false }">
+                            <input :type="show ? 'text' : 'password'" name="sabnzbd_api_key" value="{{ sabnzbd.api_key }}" autocomplete="off" placeholder="" class="w-full bg-[#111115] border border-[#3f3f46] rounded-lg px-3 py-2 text-white text-xs focus:border-[#d40060] focus:outline-none">
+                            <button type="button" @click="show = !show" class="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-[#a1a1aa] hover:text-white" x-text="show ? 'Hide' : 'Show'">Show</button>
+                        </div>
+                        </label>
+                        <label class="flex items-center gap-2 text-xs text-[#a1a1aa]">
+                            <input type="checkbox" name="sabnzbd_ssl" {% if sabnzbd.ssl %}checked{% endif %} class="rounded border-[#3f3f46] bg-[#111115]">
+                            Use HTTPS
+                        </label>
+                    </div>
+                    <div id="onboarding-downloader-panel-premiumize" x-show="downloaderType === 'premiumize'" x-cloak class="space-y-3">
+                        <div class="flex justify-end"><a href="https://www.premiumize.me/account" target="_blank" rel="noopener noreferrer" class="text-[11px] text-[#d40060] hover:underline">Get API Key / Register ↗</a></div>
+                        <label class="block text-xs text-[#a1a1aa]">API Key
+                        <div class="relative mt-1" x-data="{ show: false }">
+                            <input :type="show ? 'text' : 'password'" name="premiumize_api_key" value="{{ premiumize.api_key }}" autocomplete="off" placeholder="" class="w-full bg-[#111115] border border-[#3f3f46] rounded-lg px-3 py-2 text-white text-xs focus:border-[#d40060] focus:outline-none">
+                            <button type="button" @click="show = !show" class="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-[#a1a1aa] hover:text-white" x-text="show ? 'Hide' : 'Show'">Show</button>
+                        </div>
+                        </label>
+                    </div>
                 </div>
                 <div class="bg-[#111115] border border-[#3f3f46] rounded-lg p-4 space-y-3">
                     <div class="flex items-center justify-between"><h4 class="text-sm font-bold text-white">Usenet Indexer</h4><a href="https://nzbgeek.info/" target="_blank" rel="noopener noreferrer" class="text-[11px] text-[#d40060] hover:underline">Get API Key / Register ↗</a></div>
