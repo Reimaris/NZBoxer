@@ -838,7 +838,7 @@ async def _run_provider_sync(
                         "[SYNC] Provider sync failed for %s: %s", provider.name, message
                     )
                     result.update(status="error", error=message)
-                    if getattr(adapter, "stamp_sync_on_error", False) and prov_after_rb:
+                    if prov_after_rb:
                         rb_cfg = prov_after_rb.watchlist_config
                         rb_cfg["last_synced_at"] = datetime.now(
                             timezone.utc

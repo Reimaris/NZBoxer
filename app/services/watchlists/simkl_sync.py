@@ -980,9 +980,6 @@ _KIND_BY_KEY = {"movie": "movie", "show": "show", "anime": "anime"}
 class SimklWatchlistAdapter:
     """Simkl watchlist adapter with a native, franchise-aware sync pipeline."""
 
-    # A failed sync still stamps ``last_synced_at`` so the periodic poller backs off.
-    stamp_sync_on_error = True
-
     async def fetch_entries(self, provider: Provider) -> list[WatchlistEntry]:
         async with async_session_factory() as session:
             target = (
