@@ -16,7 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.phase_stats import AirDateRefreshStats, IngestStats
+from app.core.phase_stats import IngestStats
 from app.db.models import (
     MediaItem,
     MediaItemWatchlistSource,
@@ -27,9 +27,7 @@ from app.db.models import (
     SeasonStatus,
 )
 from app.services.watchlist_ingest import IngestResult, _upsert_source
-from app.services.watchlist_providers import _ADAPTERS, WatchlistEntry
-from app.services.watchlists import simkl
-from app.services.watchlists.simkl_adapter import SimklWatchlistAdapter
+from app.services.watchlist_providers import WatchlistEntry
 
 # Pipeline phase logs keep the orchestrator logger name (log filters, tests).
 logger = logging.getLogger("app.core.automation")
@@ -590,116 +588,3 @@ async def _sync_items(
             item.status.value if hasattr(item.status, "value") else str(item.status),
         )
         await session.commit()
-
-
-async def sync_provider(
-    session: AsyncSession, provider: Provider, result: dict[str, Any]
-) -> None:
-    """Run the full Simkl watchlist sync pipeline for *provider* (5 phases; maintenance runs after the cycle)."""
-    import json
-
-    from app.core import automation as au
-
-    client_id, access_token = await simkl.ensure_valid_simkl_token(session, provider)
-    cfg = provider.watchlist_config
-    sync_movies = bool(cfg.get("sync_movies", True))
-    sync_series = bool(cfg.get("sync_series", True))
-    sync_anime = bool(cfg.get("sync_anime", True))
-    active_simkl_ids: set[int] = set()
-
-    # Release any read transaction snapshot before outbound HTTP calls
-    await session.commit()
-
-    fetched: dict[str, list[dict[str, Any]]] = {}
-    for category, enabled in (
-        ("movies", sync_movies),
-        ("shows", sync_series),
-        ("anime", sync_anime),
-    ):
-        fetched[category] = []
-        if not enabled:
-            continue
-        (
-            fetched[category],
-            client_id,
-            access_token,
-        ) = await simkl._fetch_simkl_category_with_retry(
-            session,
-            provider,
-            category,
-            client_id,
-            access_token,
-        )
-        active_simkl_ids.update(simkl._extract_active_simkl_ids(fetched[category]))
-    logger.info(
-        "[SYNC] [1/5] Fetched %d movies, %d shows, %d anime",
-        len(fetched["movies"]),
-        len(fetched["shows"]),
-        len(fetched["anime"]),
-    )
-
-    ingest_stats = IngestStats()
-    for category, media_type in (
-        ("movies", MediaType.MOVIE),
-        ("shows", MediaType.SHOW),
-        ("anime", MediaType.ANIME),
-    ):
-        await au._sync_items(
-            session,
-            fetched[category],
-            media_type,
-            provider.id,
-            provider_name=provider.name,
-            stats=ingest_stats,
-        )
-    logger.info(
-        "[SYNC] [2/5] Ingested %d items (%d newly added)",
-        ingest_stats.ingested,
-        ingest_stats.added,
-    )
-
-    air_stats = AirDateRefreshStats()
-    await au.enrich_active_shows_episode_air_dates(session, stats=air_stats)
-    logger.info(
-        "[SYNC] [3/5] Air date refresh: %d episode dates updated across %d titles",
-        air_stats.episodes_updated,
-        air_stats.titles_updated,
-    )
-
-    rolled = await au.rollover_due_future_episodes_and_seasons(session)
-    logger.info(
-        "[SYNC] [4/5] Rollover: %d items transitioned to searching",
-        rolled["episodes_rolled_over"] + rolled["seasons_rolled_over"],
-    )
-
-    from app.services.watchlist_ingest import (
-        mark_absent_sources_completed,
-        seen_ids_with_disabled_categories,
-    )
-
-    completed = await mark_absent_sources_completed(
-        session,
-        provider,
-        await seen_ids_with_disabled_categories(
-            session, provider, {str(i) for i in active_simkl_ids}
-        ),
-    )
-    logger.info("[SYNC] [5/5] %d departed entries marked completed", completed)
-
-    result.update(ingested=ingest_stats.ingested, added=ingest_stats.added)
-    cfg = provider.watchlist_config
-    cfg["last_synced_at"] = datetime.now(timezone.utc).isoformat()
-    cfg.pop("last_error", None)
-    provider.config_json = json.dumps(cfg)
-    await session.commit()
-
-
-class SimklSyncAdapter(SimklWatchlistAdapter):
-    """Simkl adapter plus its native, franchise-aware sync pipeline."""
-
-    sync_provider = staticmethod(sync_provider)
-
-
-ADAPTER = SimklSyncAdapter()
-# Until the generic flow replaces this pipeline, the sync-capable adapter is the active one.
-_ADAPTERS["simkl"] = ADAPTER

@@ -799,7 +799,6 @@ async def _run_provider_sync(
     results: list[dict[str, Any]] = []
     log_process_start(logger, "Provider Sync Engine")
     from app.db.models import Provider
-    from app.services.watchlist_providers import get_adapter
 
     async with async_session_factory() as session:
         try:
@@ -835,19 +834,16 @@ async def _run_provider_sync(
                     continue
 
                 results.append(result)
-                adapter = get_adapter(provider.type)
                 try:
-                    native_sync = getattr(adapter, "sync_provider", None)
-                    if native_sync is not None:
-                        await native_sync(session, provider, result)
-                    else:
-                        await _sync_adapter_provider(session, provider, result)
+                    await _sync_adapter_provider(session, provider, result)
                     any_synced = True
                     include_anime = include_anime or bool(
                         provider.watchlist_config.get("sync_anime", True)
                     )
                 except Exception as prov_err:  # noqa: BLE001
                     await session.rollback()
+                    # Adapters may commit via their own session (e.g. token clearing)
+                    session.expire_all()
                     prov_after_rb = await session.get(Provider, prov_id)
                     target = prov_after_rb or provider
                     message = _record_provider_error(target, prov_err)

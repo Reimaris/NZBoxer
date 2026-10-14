@@ -10,6 +10,11 @@ from app.db.models import Provider
 from app.services.watchlist_providers import ListStatus, WatchlistEntry
 from app.services.watchlists import simkl
 
+_TOGGLE_BY_CATEGORY = {
+    "movies": "sync_movies",
+    "shows": "sync_series",
+    "anime": "sync_anime",
+}
 _KIND_BY_KEY = {"movie": "movie", "show": "show", "anime": "anime"}
 
 
@@ -69,7 +74,10 @@ class SimklWatchlistAdapter:
                 session, target
             )
             entries: list[WatchlistEntry] = []
-            for category in ("movies", "shows", "anime"):
+            cfg = target.watchlist_config
+            for category, toggle in _TOGGLE_BY_CATEGORY.items():
+                if not cfg.get(toggle, True):
+                    continue
                 (
                     raw,
                     client_id,
@@ -86,7 +94,10 @@ class SimklWatchlistAdapter:
                     entries.append(
                         WatchlistEntry(
                             remote_id=str(ids["simkl"]),
-                            media_kind=_KIND_BY_KEY[key or "show"],  # type: ignore[arg-type]
+                            # Simkl nests anime under a "show" key; the category decides.
+                            media_kind="anime"
+                            if category == "anime"
+                            else _KIND_BY_KEY[key or "show"],  # type: ignore[arg-type]
                             title=str(media.get("title") or ""),
                             year=media.get("year"),
                             list_status=_simkl_list_status(item.get("status")),
