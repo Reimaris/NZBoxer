@@ -1,5 +1,5 @@
 <!-- Provider Modal (v3.0.0) -->
-{% set cfg = provider.config if provider else {} %}
+{% set cfg = provider.watchlist_config if provider else {} %}
 {% set pcat = (provider.category.value if provider.category.value is defined else provider.category) if provider else ('watchlist' if new_type else '') %}
 {% set ptype = provider.type if provider else new_type %}
 {% set indexer_badge_classes = {
@@ -334,13 +334,13 @@
 
                         <div class="flex items-center justify-between bg-[#111115] border border-[#3f3f46] rounded-xl px-4 py-3">
                             <span class="text-xs font-bold text-[#a1a1aa] uppercase tracking-wider">Simkl Auth Status</span>
-                            {% if provider and provider.is_simkl_v2_authenticated %}
+                            {% if provider and provider.is_authenticated %}
                             <span id="simkl-modal-status-badge" class="px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
-                                {{ provider.simkl_auth_status_label }}
+                                {{ provider.auth_status_label }}
                             </span>
-                            {% elif provider and provider.simkl_auth_status_label == 'Reconnect Required (Legacy V1 / Expired)' %}
+                            {% elif provider and provider.auth_status_label == 'Reconnect Required (Legacy V1 / Expired)' %}
                             <span id="simkl-modal-status-badge" class="px-2.5 py-1 rounded-full text-xs font-bold bg-amber-500/15 text-amber-400 border border-amber-500/30">
-                                {{ provider.simkl_auth_status_label }}
+                                {{ provider.auth_status_label }}
                             </span>
                             {% else %}
                             <span id="simkl-modal-status-badge" class="px-2.5 py-1 rounded-full text-xs font-bold bg-slate-500/15 text-slate-400 border border-slate-500/30">

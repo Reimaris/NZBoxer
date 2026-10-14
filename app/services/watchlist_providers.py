@@ -91,7 +91,9 @@ class PlexWatchlistAdapter:
     async def fetch_entries(self, provider: Provider) -> list[WatchlistEntry]:
         from app.services.watchlists import plex
 
-        client_identifier = str(provider.config.get("plex_client_identifier") or "")
+        client_identifier = str(
+            provider.watchlist_config.get("plex_client_identifier") or ""
+        )
         raw = await plex.get_watchlist(provider.access_token or "", client_identifier)
         entries: list[WatchlistEntry] = []
         for item in raw:

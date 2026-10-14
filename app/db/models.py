@@ -261,7 +261,7 @@ class Provider(Base):
     priority: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="1")
 
-    # Simkl specific fields
+    # Watchlist/OAuth credential fields (provider-type dependent)
     username: Mapped[str | None] = mapped_column(String(200), nullable=True)
     client_id: Mapped[str | None] = mapped_column(String(500), nullable=True)
     access_token: Mapped[str | None] = mapped_column(String(500), nullable=True)
@@ -354,37 +354,31 @@ class Provider(Base):
         return defaults
 
     @property
-    def is_simkl_v2_authenticated(self) -> bool:
-        """Return True when Simkl provider has a valid V2 access_token and refresh_token."""
-        if (self.type or "").lower() != "simkl" and (
-            self.name or ""
-        ).lower() != "simkl":
-            return False
-        cfg = self.simkl_config
+    def is_authenticated(self) -> bool:
+        """True when the watchlist provider holds valid credentials for its type."""
+        ptype = (self.type or "").lower()
+        cfg = self.watchlist_config
         token = str(self.access_token or cfg.get("access_token") or "").strip()
-        refresh = str(cfg.get("refresh_token") or "").strip()
-        return bool(token and refresh)
+        if ptype == "simkl":
+            return bool(token and str(cfg.get("refresh_token") or "").strip())
+        if ptype == "anilist":
+            return bool((self.username or "").strip())
+        if ptype in ("plex", "mal"):
+            return bool(token)
+        return False
 
     @property
-    def simkl_auth_status_label(self) -> str:
-        """Return human-readable Simkl AUTH V2 connection status label."""
-        if self.is_simkl_v2_authenticated:
-            return "Connected · AUTH V2 (Auto-Refresh)"
-        cfg = self.simkl_config
+    def auth_status_label(self) -> str:
+        """Return human-readable connection status label."""
+        if self.is_authenticated:
+            if (self.type or "").lower() == "simkl":
+                return "Connected · AUTH V2 (Auto-Refresh)"
+            return "Connected"
+        cfg = self.watchlist_config
         token = str(self.access_token or cfg.get("access_token") or "").strip()
-        if token:
+        if (self.type or "").lower() == "simkl" and token:
             return "Reconnect Required (Legacy V1 / Expired)"
         return "Not Connected"
-
-    @property
-    def simkl_config(self) -> dict[str, Any]:
-        """Alias for watchlist_config (legacy name)."""
-        return self.watchlist_config
-
-    @property
-    def config(self) -> dict[str, Any]:
-        """Alias for watchlist_config used by templates."""
-        return self.watchlist_config
 
     @property
     def watchlist_connection_status(self) -> str:
@@ -393,7 +387,7 @@ class Provider(Base):
         cfg = self.watchlist_config
         token = str(self.access_token or cfg.get("access_token") or "").strip()
         if ptype == "simkl":
-            if self.is_simkl_v2_authenticated:
+            if self.is_authenticated:
                 return "connected"
             return "reconnect_required" if token else "not_connected"
         if ptype == "anilist":

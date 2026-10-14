@@ -1729,7 +1729,7 @@ async def save_provider(
                 provider = Provider(type=provider_type, category=resolved_category)
                 session.add(provider)
             else:
-                old_cfg = provider.simkl_config
+                old_cfg = provider.watchlist_config
                 old_client_id = str(
                     provider.client_id or old_cfg.get("client_id") or ""
                 ).strip()
@@ -1770,7 +1770,7 @@ async def save_provider(
         provider.is_active = is_active
 
         if provider.type.lower() == "simkl":
-            existing_cfg = provider.simkl_config
+            existing_cfg = provider.watchlist_config
             # If user manually replaced an existing token with a different one, best-effort revoke old token
             if (
                 old_access_token
@@ -1906,7 +1906,7 @@ async def delete_provider(provider_id: int) -> HTMLResponse:
             if (provider.type or "").lower() == "simkl" or (
                 provider.name or ""
             ).lower() == "simkl":
-                cfg = provider.simkl_config
+                cfg = provider.watchlist_config
                 cid = str(provider.client_id or cfg.get("client_id") or "").strip()
                 tok = str(
                     cfg.get("refresh_token")
@@ -2570,7 +2570,7 @@ async def poll_simkl_auth(session_id: str = "") -> HTMLResponse:
             provider = (await session.execute(stmt)).scalars().first()
 
         if provider is not None:
-            old_cfg = provider.simkl_config
+            old_cfg = provider.watchlist_config
             old_cid = str(
                 provider.client_id or old_cfg.get("client_id") or client_id
             ).strip()
@@ -3370,7 +3370,9 @@ async def run_system_check(request: Request):
                     simkl.check_simkl_user_settings(cid, tok),
                     timeout=5.0,
                 )
-                if r.status_code == 401 and db_prov.simkl_config.get("refresh_token"):
+                if r.status_code == 401 and db_prov.watchlist_config.get(
+                    "refresh_token"
+                ):
                     cid, tok = await asyncio.wait_for(
                         simkl.refresh_provider_simkl_token(s, db_prov),
                         timeout=5.0,
@@ -3652,8 +3654,8 @@ async def run_system_check(request: Request):
             if (
                 wl.client_id
                 or wl.access_token
-                or wl.simkl_config.get("client_id")
-                or wl.simkl_config.get("access_token")
+                or wl.watchlist_config.get("client_id")
+                or wl.watchlist_config.get("access_token")
             ):
                 probes.append(probe_simkl(wl))
         elif (

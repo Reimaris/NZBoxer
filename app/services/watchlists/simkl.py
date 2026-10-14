@@ -361,7 +361,7 @@ async def refresh_provider_simkl_token(
     session: AsyncSession, provider: Provider
 ) -> tuple[str, str]:
     """Force an immediate refresh_token exchange for a Simkl Provider and persist to SQLite."""
-    cfg = provider.simkl_config
+    cfg = provider.watchlist_config
     client_id = str(provider.client_id or cfg.get("client_id") or "").strip()
     refresh_token = str(cfg.get("refresh_token") or "").strip()
 
@@ -406,7 +406,7 @@ async def ensure_valid_simkl_token(
     now: datetime | None = None,
 ) -> tuple[str, str]:
     """Ensure the Simkl provider has a valid access_token, refreshing proactively if <24h remain."""
-    cfg = provider.simkl_config
+    cfg = provider.watchlist_config
     client_id = str(provider.client_id or cfg.get("client_id") or "").strip()
     access_token = str(provider.access_token or cfg.get("access_token") or "").strip()
     refresh_token = str(cfg.get("refresh_token") or "").strip()

@@ -97,7 +97,7 @@
             <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
                 {% for provider in providers %}
                 {% set cat = provider.category.value if provider.category.value is defined else provider.category %}
-                {% set pcfg = provider.config %}
+                {% set pcfg = provider.watchlist_config %}
                 <div {% if cat == 'watchlist' %}id="provider-card-{{ provider.id }}" {% endif %}class="bg-[#1e1e24] border rounded-xl p-5 transition-all group shadow-lg flex flex-col justify-between
                     {% if cat == 'watchlist' %}border-[#d40060]/60 hover:border-[#d40060]
                     {% elif cat == 'metadata' %}border-amber-500/50 hover:border-amber-400
@@ -191,17 +191,17 @@
 
                         {% if provider.type == 'simkl' %}
                         <div class="mb-2">
-                            {% if provider.is_simkl_v2_authenticated %}
+                            {% if provider.is_authenticated %}
                             <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
-                                {{ provider.simkl_auth_status_label }}
+                                {{ provider.auth_status_label }}
                             </span>
-                            {% elif provider.simkl_auth_status_label == 'Reconnect Required (Legacy V1 / Expired)' %}
+                            {% elif provider.auth_status_label == 'Reconnect Required (Legacy V1 / Expired)' %}
                             <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-500/15 text-amber-400 border border-amber-500/30">
-                                {{ provider.simkl_auth_status_label }}
+                                {{ provider.auth_status_label }}
                             </span>
                             {% else %}
                             <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-slate-500/15 text-slate-400 border border-slate-500/30">
-                                {{ provider.simkl_auth_status_label }}
+                                {{ provider.auth_status_label }}
                             </span>
                             {% endif %}
                         </div>

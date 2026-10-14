@@ -277,7 +277,7 @@ def is_simkl_sync_due_on_load(
         return False
     if not getattr(provider, "is_active", True):
         return False
-    cfg = provider.simkl_config
+    cfg = provider.watchlist_config
     if not (provider.client_id or cfg.get("client_id")) or not (
         provider.access_token or cfg.get("access_token") or cfg.get("refresh_token")
     ):
@@ -321,7 +321,7 @@ def evaluate_periodic_simkl_sync(
             continue
         if not getattr(provider, "is_active", True):
             continue
-        cfg = provider.simkl_config
+        cfg = provider.watchlist_config
         if not (provider.client_id or cfg.get("client_id")) or not (
             provider.access_token or cfg.get("access_token") or cfg.get("refresh_token")
         ):
@@ -333,7 +333,7 @@ def evaluate_periodic_simkl_sync(
 
     best: SimklPeriodicSyncStatus | None = None
     for provider in eligible:
-        cfg = provider.simkl_config
+        cfg = provider.watchlist_config
         interval = normalize_sync_interval_minutes(cfg.get("sync_interval_minutes"))
         if interval == 0:
             continue
@@ -736,7 +736,7 @@ async def _fetch_simkl_category_with_retry(
         items = await simkl.get_watchlist(media_type_key, client_id, access_token)
         return items, client_id, access_token
     except simkl.SimklUnauthorizedError:
-        if provider.simkl_config.get("refresh_token"):
+        if provider.watchlist_config.get("refresh_token"):
             client_id, access_token = await simkl.refresh_provider_simkl_token(
                 session, provider
             )
@@ -932,7 +932,7 @@ async def _run_provider_sync(
                         await session.commit()
                     continue
 
-                cfg = provider.simkl_config
+                cfg = provider.watchlist_config
                 has_cid = bool(provider.client_id or cfg.get("client_id"))
                 has_tok = bool(
                     provider.access_token
@@ -951,7 +951,7 @@ async def _run_provider_sync(
                     client_id, access_token = await simkl.ensure_valid_simkl_token(
                         session, provider
                     )
-                    cfg = provider.simkl_config
+                    cfg = provider.watchlist_config
                     sync_movies = bool(cfg.get("sync_movies", True))
                     sync_series = bool(cfg.get("sync_series", True))
                     sync_anime = bool(cfg.get("sync_anime", True))
@@ -1078,7 +1078,7 @@ async def _run_provider_sync(
                         added=ingest_stats.added,
                         pruned=pruned,
                     )
-                    cfg = provider.simkl_config
+                    cfg = provider.watchlist_config
                     cfg["last_synced_at"] = datetime.now(timezone.utc).isoformat()
                     cfg.pop("last_error", None)
                     provider.config_json = json.dumps(cfg)
@@ -1094,7 +1094,7 @@ async def _run_provider_sync(
                     )
                     result.update(status="error", error=message)
                     if prov_after_rb is not None:
-                        rb_cfg = prov_after_rb.simkl_config
+                        rb_cfg = prov_after_rb.watchlist_config
                         rb_cfg["last_synced_at"] = datetime.now(
                             timezone.utc
                         ).isoformat()
@@ -3063,7 +3063,7 @@ async def enrich_active_shows_episode_air_dates(
     async def _resolve_simkl_creds(prov: Provider | None) -> tuple[str, str] | None:
         if prov is None or not getattr(prov, "is_active", True) or prov.type != "simkl":
             return None
-        cfg = prov.simkl_config
+        cfg = prov.watchlist_config
         has_cid = bool(prov.client_id or cfg.get("client_id"))
         has_tok = bool(
             prov.access_token or cfg.get("access_token") or cfg.get("refresh_token")
