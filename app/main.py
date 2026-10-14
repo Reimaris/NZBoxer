@@ -147,6 +147,7 @@ from app.services.provider_service import ActiveDownloaderName  # noqa: E402
 
 templates.env.globals["downloader_name"] = ActiveDownloaderName()
 from app.services.indexer_catalog import (  # noqa: E402
+    INDEXER_PRESETS,
     get_preset,
     is_indexer_type,
 )
@@ -2718,7 +2719,17 @@ async def onboarding_modal(request: Request) -> Response:
             .scalars()
             .first()
         )
-        indexer_p = await _first_provider(session, "treasure_maps")
+        indexer_p = (
+            (
+                await session.execute(
+                    select(Provider)
+                    .where(Provider.category == "indexer")
+                    .order_by(Provider.id)
+                )
+            )
+            .scalars()
+            .first()
+        )
         sys_settings = await session.get(SystemSettings, 1)
         telegram_c = (
             (
@@ -2782,6 +2793,14 @@ async def onboarding_modal(request: Request) -> Response:
             "api_key": (sab_p.api_key if sab_p else None) or "",
         },
         "premiumize": {"api_key": (pmz_p.api_key if pmz_p else None) or ""},
+        "indexer_type": (
+            indexer_p.type if indexer_p and is_indexer_type(indexer_p.type) else ""
+        ),
+        "indexer_presets": INDEXER_PRESETS,
+        "indexer_preset_map": {
+            p.type: {"name": p.name, "api_url": p.api_url, "key_url": p.key_url}
+            for p in INDEXER_PRESETS
+        },
         "indexer": {
             "name": (indexer_p.name if indexer_p else None) or "",
             "api_url": (indexer_p.api_url if indexer_p else None) or "",
@@ -2889,7 +2908,26 @@ async def onboarding_step1(request: Request) -> Response:
             {"ok": False, "error": "AniList requires a username."}, status_code=400
         )
 
-    indexer_provided = bool(indexer_url or indexer_key)
+    try:
+        indexer_type = _resolve_onboarding_type(
+            payload,
+            "indexer_type",
+            frozenset(p.type for p in INDEXER_PRESETS),
+            label="indexer",
+            legacy="treasure_maps" if indexer_url or indexer_key else "",
+        )
+    except ValueError as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
+
+    indexer_preset = get_preset(indexer_type)
+    indexer_provided = bool(indexer_type and (indexer_url or indexer_key))
+    if (
+        indexer_provided
+        and not indexer_url
+        and "indexer_type" in payload
+        and indexer_preset is not None
+    ):
+        indexer_url = indexer_preset.api_url
     if indexer_provided and not (indexer_url and indexer_key):
         return JSONResponse(
             {"ok": False, "error": "Indexer requires both URL and API key."},
@@ -2931,7 +2969,17 @@ async def onboarding_step1(request: Request) -> Response:
             "tmdb": await _first("tmdb"),
             "torbox": await _first("torbox"),
             "downloader": None,
-            "indexer": await _first("treasure_maps"),
+            "indexer": (
+                (
+                    await session.execute(
+                        select(Provider)
+                        .where(Provider.category == "indexer")
+                        .order_by(Provider.id)
+                    )
+                )
+                .scalars()
+                .first()
+            ),
         }
 
         if watchlist_type == "simkl" and wl_provided:
@@ -3024,9 +3072,9 @@ async def onboarding_step1(request: Request) -> Response:
                 )
                 selected_dl.api_key = pmz_key
 
-        if indexer_provided:
+        if indexer_provided and indexer_preset is not None:
             indexer = await _upsert(
-                "treasure_maps", ProviderCategory.INDEXER, "Newznab Indexer"
+                indexer_type, ProviderCategory.INDEXER, indexer_preset.name
             )
             if indexer_name:
                 indexer.name = indexer_name
