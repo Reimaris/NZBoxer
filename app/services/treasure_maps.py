@@ -146,7 +146,7 @@ async def search_movie(
     imdb_id: str | None = None,
     tmdb_id: int | None = None,
     title: str | None = None,
-    category: int | None = None,
+    category: int | str | None = None,
     api_url: str | None = None,
     api_key: str | None = None,
     session: AsyncSession | None = None,
@@ -199,7 +199,7 @@ async def search_show(
     title: str | None = None,
     season: int | None = None,
     ep: int | str | None = None,
-    category: int | None = None,
+    category: int | str | None = None,
     api_url: str | None = None,
     api_key: str | None = None,
     session: AsyncSession | None = None,
@@ -300,7 +300,11 @@ async def search_raw(
     search_type = "search"
     if season is not None or ep is not None or tvdb_id is not None:
         search_type = "tvsearch"
-    elif imdb_id is not None and category == 2000:
+    elif (
+        imdb_id is not None
+        and category is not None
+        and str(category).split(",")[0] == "2000"
+    ):
         search_type = "movie"
 
     params: dict[str, Any] = {
