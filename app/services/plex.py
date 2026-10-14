@@ -6,6 +6,8 @@ Read-only. Only ``plex.tv`` and ``discover.provider.plex.tv`` are contacted.
 from __future__ import annotations
 
 import logging
+import uuid
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import httpx
@@ -19,6 +21,52 @@ PLEX_PINS_URL = "https://plex.tv/api/v2/pins"
 PLEX_WATCHLIST_URL = "https://discover.provider.plex.tv/library/sections/watchlist/all"
 PAGE_SIZE = 50
 _TIMEOUT = 20.0
+SESSION_TTL = timedelta(minutes=15)
+
+_PIN_SESSIONS: dict[str, dict[str, Any]] = {}
+
+
+def create_pin_session(
+    pin: dict[str, Any], client_identifier: str, provider_id: int
+) -> dict[str, Any]:
+    """Store a PIN server-side under an opaque session_id (15 min TTL)."""
+    now = datetime.now(timezone.utc)
+    _prune_expired_sessions(now)
+    session_id = uuid.uuid4().hex
+    record: dict[str, Any] = {
+        "session_id": session_id,
+        "pin_id": int(pin["id"]),
+        "code": str(pin["code"]),
+        "client_identifier": client_identifier,
+        "provider_id": provider_id,
+        "expires_at": now + SESSION_TTL,
+    }
+    _PIN_SESSIONS[session_id] = record
+    return record
+
+
+def get_pin_session(session_id: str) -> dict[str, Any] | None:
+    """Return an active PIN session, ``None`` if missing or expired."""
+    if not session_id:
+        return None
+    _prune_expired_sessions(datetime.now(timezone.utc))
+    return _PIN_SESSIONS.get(session_id)
+
+
+def pop_pin_session(session_id: str) -> dict[str, Any] | None:
+    return _PIN_SESSIONS.pop(session_id, None)
+
+
+def _prune_expired_sessions(now: datetime) -> None:
+    for sid in [s for s, r in _PIN_SESSIONS.items() if r["expires_at"] <= now]:
+        _PIN_SESSIONS.pop(sid, None)
+
+
+def build_auth_url(client_identifier: str, code: str) -> str:
+    return (
+        f"https://app.plex.tv/auth#?clientID={client_identifier}&code={code}"
+        f"&context[device][product]={PLEX_PRODUCT}"
+    )
 
 
 def _headers(client_identifier: str, token: str | None = None) -> dict[str, str]:

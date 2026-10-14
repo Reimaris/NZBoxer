@@ -2047,6 +2047,109 @@ async def start_simkl_auth(
     return HTMLResponse(content=_render_simkl_device_card(auth_session))
 
 
+_PLEX_ERR = (
+    '<div class="p-3 bg-red-900/30 border border-red-500/40 rounded-lg '
+    'text-red-300 text-xs mt-2">{}</div>'
+)
+
+
+def _render_plex_pin_card(sess: dict[str, Any]) -> str:
+    import html
+
+    from app.services import plex
+
+    url = html.escape(
+        plex.build_auth_url(sess["client_identifier"], sess["code"]), quote=True
+    )
+    poll = html.escape(
+        f"/settings/provider/plex/auth/poll?session_id={sess['session_id']}"
+    )
+    return (
+        f'<div class="p-3 bg-slate-800 rounded-lg text-xs mt-2" hx-get="{poll}" '
+        'hx-trigger="every 3s" hx-swap="outerHTML">'
+        f'Your PIN: <strong class="font-mono text-base">{html.escape(sess["code"])}</strong><br>'
+        f'<a href="{url}" target="_blank" rel="noopener" class="text-sky-400 underline">'
+        "Open Plex to authorize</a></div>"
+    )
+
+
+@app.post("/settings/provider/plex/auth/start")
+async def start_plex_auth(provider_id: str = Form("")) -> HTMLResponse:
+    """Request a Plex PIN for an already-saved Plex provider row."""
+    import uuid
+
+    from app.db.models import Provider
+    from app.services import plex
+
+    missing = HTMLResponse(
+        content=_PLEX_ERR.format("Save the Plex provider first."), status_code=400
+    )
+    if not provider_id.strip().isdigit():
+        return missing
+    async with async_session_factory() as session:
+        provider = await session.get(Provider, int(provider_id))
+        if provider is None or provider.type != "plex":
+            return missing
+        cfg = provider.watchlist_config
+        client_identifier = str(cfg.get("plex_client_identifier") or "")
+        if not client_identifier:
+            client_identifier = str(uuid.uuid4())
+            try:
+                raw = json.loads(provider.config_json or "{}")
+            except ValueError:
+                raw = {}
+            raw["plex_client_identifier"] = client_identifier
+            provider.config_json = json.dumps(raw)
+            await session.commit()
+    try:
+        pin = await plex.create_pin(client_identifier)
+    except Exception as e:
+        return HTMLResponse(
+            content=_PLEX_ERR.format(f"Error requesting Plex PIN: {type(e).__name__}")
+        )
+    sess = plex.create_pin_session(pin, client_identifier, int(provider_id))
+    return HTMLResponse(content=_render_plex_pin_card(sess))
+
+
+@app.get("/settings/provider/plex/auth/poll")
+async def poll_plex_auth(session_id: str = "") -> HTMLResponse:
+    """Poll plex.tv for the PIN claim; on success persist the token."""
+    from app.db.models import Provider
+    from app.services import plex
+
+    sess = plex.get_pin_session(session_id)
+    if sess is None:
+        return HTMLResponse(
+            content='<div class="p-3 bg-amber-900/30 border border-amber-500/40 rounded-lg '
+            'text-amber-200 text-xs mt-2">Expired PIN — please click Get PIN again.</div>'
+        )
+    try:
+        token = await plex.poll_pin(
+            sess["pin_id"], sess["code"], sess["client_identifier"]
+        )
+    except Exception as e:
+        plex.pop_pin_session(session_id)
+        return HTMLResponse(
+            content=_PLEX_ERR.format(f"Error polling Plex: {type(e).__name__}")
+        )
+    if not token:
+        return HTMLResponse(content=_render_plex_pin_card(sess))
+    plex.pop_pin_session(session_id)
+    async with async_session_factory() as session:
+        provider = await session.get(Provider, int(sess["provider_id"]))
+        if provider is None:
+            return HTMLResponse(
+                content=_PLEX_ERR.format("Save the Plex provider first."),
+                status_code=400,
+            )
+        provider.access_token = token
+        await session.commit()
+    return HTMLResponse(
+        content='<div class="p-3 bg-emerald-900/30 border border-emerald-500/40 '
+        'rounded-lg text-emerald-300 text-xs mt-2">Connected</div>'
+    )
+
+
 @app.get("/simkl/auth/poll")
 async def poll_simkl_auth(session_id: str = "") -> HTMLResponse:
     """Poll Simkl AUTH V2 token endpoint using server-side session_id without exposing device_code."""
