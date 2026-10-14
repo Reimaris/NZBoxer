@@ -368,6 +368,21 @@ class Provider(Base):
         return False
 
     @property
+    def sync_eligible(self) -> bool:
+        """True when the provider is active and configured well enough to attempt a sync.
+
+        Legacy tokens without a refresh token still count as configured for the token-refresh provider type.
+        """
+        if not self.is_active:
+            return False
+        if (self.type or "").lower() == "simkl":
+            cfg = self.watchlist_config
+            return bool(self.client_id or cfg.get("client_id")) and bool(
+                self.access_token or cfg.get("access_token") or cfg.get("refresh_token")
+            )
+        return self.watchlist_connection_status == "connected"
+
+    @property
     def auth_status_label(self) -> str:
         """Return human-readable connection status label."""
         if self.is_authenticated:

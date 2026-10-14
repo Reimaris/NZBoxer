@@ -269,22 +269,15 @@ def _parse_iso_utc(ts_str: str | None) -> datetime | None:
         return None
 
 
-# simkl inline sync (allowlisted, m59-32)
 def is_watchlist_sync_due_on_load(
     provider: Provider,
     now: datetime | None = None,
     cooldown_minutes: int = 15,
 ) -> bool:
-    """Return True if a Simkl provider is active, configured, and >15m have elapsed since last_synced_at."""
-    if getattr(provider, "type", None) != "simkl":
-        return False
-    if not getattr(provider, "is_active", True):
+    """Return True if a watchlist provider is sync-eligible and >15m have elapsed since last_synced_at."""
+    if not provider.sync_eligible:
         return False
     cfg = provider.watchlist_config
-    if not (provider.client_id or cfg.get("client_id")) or not (
-        provider.access_token or cfg.get("access_token") or cfg.get("refresh_token")
-    ):
-        return False
 
     last_synced = _parse_iso_utc(cfg.get("last_synced_at"))
     if last_synced is None:
@@ -318,18 +311,7 @@ def evaluate_periodic_watchlist_sync(
     if now.tzinfo is None:
         now = now.replace(tzinfo=timezone.utc)
 
-    eligible = []
-    for provider in providers:
-        if getattr(provider, "type", None) != "simkl":
-            continue
-        if not getattr(provider, "is_active", True):
-            continue
-        cfg = provider.watchlist_config
-        if not (provider.client_id or cfg.get("client_id")) or not (
-            provider.access_token or cfg.get("access_token") or cfg.get("refresh_token")
-        ):
-            continue
-        eligible.append(provider)
+    eligible = [p for p in providers if p.sync_eligible]
 
     if not eligible:
         return WatchlistPeriodicSyncStatus("no_provider", 0, None, 0)
@@ -355,24 +337,14 @@ def evaluate_periodic_watchlist_sync(
     return best or WatchlistPeriodicSyncStatus("disabled", 0, None, 0)
 
 
-# simkl inline sync (allowlisted, m59-32)
 def is_provider_periodic_sync_due(
     provider: Provider,
     now: datetime | None = None,
 ) -> bool:
     """Return True if a connected watchlist provider has periodic sync enabled and is due."""
-    if not getattr(provider, "is_active", True):
+    if not provider.sync_eligible:
         return False
     cfg = provider.watchlist_config
-    if provider.type == "simkl":
-        # Legacy Simkl tokens (no refresh token) still count as configured.
-        configured = bool(provider.client_id or cfg.get("client_id")) and bool(
-            provider.access_token or cfg.get("access_token") or cfg.get("refresh_token")
-        )
-    else:
-        configured = provider.watchlist_connection_status == "connected"
-    if not configured:
-        return False
     if now is None:
         now = datetime.now(timezone.utc)
     elif now.tzinfo is None:
@@ -386,25 +358,23 @@ def is_provider_periodic_sync_due(
     return (now - last) >= timedelta(minutes=interval)
 
 
-# simkl inline sync (allowlisted, m59-32)
 def is_watchlist_periodic_sync_due(
     provider: Provider,
     now: datetime | None = None,
 ) -> bool:
-    """Return True if a Simkl provider has periodic sync enabled and its interval has elapsed."""
+    """Return True if a watchlist provider has periodic sync enabled and its interval has elapsed."""
     return is_provider_periodic_sync_due(provider, now)
 
 
-# simkl inline sync (allowlisted, m59-32)
 async def should_trigger_dashboard_watchlist_sync(
     session: AsyncSession,
     now: datetime | None = None,
     cooldown_minutes: int = 15,
 ) -> bool:
-    """Check if any active Simkl provider is due for an automatic page-load sync (>15m cooldown)."""
+    """Check if any active watchlist provider is due for an automatic page-load sync (>15m cooldown)."""
     if _sync_lock.locked():
         return False
-    stmt = select(Provider).where(Provider.type == "simkl")
+    stmt = select(Provider).where(Provider.category == "watchlist")
     providers = (await session.execute(stmt)).scalars().all()
     return any(
         is_watchlist_sync_due_on_load(p, now=now, cooldown_minutes=cooldown_minutes)
