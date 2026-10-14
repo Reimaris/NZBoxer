@@ -19,10 +19,11 @@ from app.config import settings
 from app.core.fake_detector import extract_nzb_password
 from app.core.parser import parse_release_name
 from app.db.models import DownloadHistory, Provider
-from app.services import provider_service, torbox, treasure_maps
+from app.services import provider_service, torbox
 from app.services.downloaders.base import DownloaderError
 from app.services.downloaders.factory import get_active_downloader_client
-from app.services.indexer_catalog import resolve_categories
+from app.services.indexers import newznab as newznab_client
+from app.services.indexers.catalog import resolve_categories
 
 logger = logging.getLogger(__name__)
 
@@ -175,7 +176,7 @@ async def _fetch_raw_releases(
             )
             idx_kwargs = {}
         if kind in ("movie", "anime-movie"):
-            return treasure_maps.search_movie(
+            return newznab_client.search_movie(
                 title=title,
                 category=cat_id,
                 tmdb_id=tmdb_id,
@@ -183,7 +184,7 @@ async def _fetch_raw_releases(
                 **idx_kwargs,
             )
         if kind == "series":
-            return treasure_maps.search_show(
+            return newznab_client.search_show(
                 title=title,
                 category=cat_id,
                 season=season,
@@ -193,7 +194,7 @@ async def _fetch_raw_releases(
                 imdb_id=imdb_id,
                 **idx_kwargs,
             )
-        return treasure_maps.search_raw(
+        return newznab_client.search_raw(
             query=title,
             category=cat_id,
             season=season,
@@ -209,9 +210,9 @@ async def _fetch_raw_releases(
         return_exceptions=True,
     )
     merged: list[dict[str, Any]] = []
-    errors: list[treasure_maps.IndexerError] = []
+    errors: list[newznab_client.IndexerError] = []
     for outcome in outcomes:
-        if isinstance(outcome, treasure_maps.IndexerError):
+        if isinstance(outcome, newznab_client.IndexerError):
             errors.append(outcome)
         elif isinstance(outcome, BaseException):
             raise outcome
@@ -530,7 +531,7 @@ async def push_adhoc_release(
                     )
                 result = await torbox.send_magnet_link(release_link, is_manual=True)
             else:
-                nzb_bytes, filename = await treasure_maps.fetch_nzb_bytes(
+                nzb_bytes, filename = await newznab_client.fetch_nzb_bytes(
                     release_link,
                     api_url=indexer.api_url if indexer else None,
                     api_key=indexer.api_key if indexer else None,
@@ -553,7 +554,7 @@ async def push_adhoc_release(
                     if upload.success
                     else {"error": upload.detail}
                 )
-        except treasure_maps.IndexerError as exc:
+        except newznab_client.IndexerError as exc:
             return AdHocPushOutcome(False, f"NZB Download Error: {exc}", 400)
         except DownloaderError as exc:
             return AdHocPushOutcome(False, str(exc), 400)

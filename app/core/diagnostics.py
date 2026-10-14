@@ -10,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Provider
-from app.services.indexer_catalog import INDEXER_PRESETS
+from app.services.indexers.catalog import INDEXER_PRESETS
 from app.version import APP_VERSION
 
 GITHUB_REPO_URL: str = "https://github.com/Reimaris/NZBoxer"

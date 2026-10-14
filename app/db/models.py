@@ -282,7 +282,7 @@ class Provider(Base):
     @property
     def indexer_config(self) -> dict[str, str | None]:
         """Parsed indexer category overrides; malformed or invalid values coerce to None."""
-        from app.services.indexer_catalog import (
+        from app.services.indexers.catalog import (
             DEFAULT_MOVIE_CATEGORIES,
             DEFAULT_TV_CATEGORIES,
             normalize_category_csv,

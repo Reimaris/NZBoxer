@@ -146,7 +146,7 @@ templates.env.globals["app_version"] = APP_VERSION
 from app.services.provider_service import ActiveDownloaderName  # noqa: E402
 
 templates.env.globals["downloader_name"] = ActiveDownloaderName()
-from app.services.indexer_catalog import (  # noqa: E402
+from app.services.indexers.catalog import (  # noqa: E402
     INDEXER_PRESETS,
     get_preset,
     is_indexer_type,
@@ -902,8 +902,9 @@ async def manual_push_to_torbox(magnet: str = Form(...)):
     """Push a search result directly to TorBox."""
     import logging
 
-    from app.services import torbox, treasure_maps
+    from app.services import torbox
     from app.services.downloaders.base import DownloaderError
+    from app.services.indexers import newznab as newznab_client
 
     logger = logging.getLogger(__name__)
     sent_to = "TorBox"
@@ -918,7 +919,7 @@ async def manual_push_to_torbox(magnet: str = Form(...)):
             try:
                 from app.core.fake_detector import extract_nzb_password
 
-                nzb_bytes, filename = await treasure_maps.fetch_nzb_bytes(magnet)
+                nzb_bytes, filename = await newznab_client.fetch_nzb_bytes(magnet)
                 nzb_pass = extract_nzb_password(nzb_bytes)
                 from app.core.push_engine import dispatch_nzb_to_active_downloader
                 from app.db.database import async_session_factory
@@ -938,7 +939,7 @@ async def manual_push_to_torbox(magnet: str = Form(...)):
                     if upload.success
                     else {"error": upload.detail}
                 )
-            except treasure_maps.IndexerError as e:
+            except newznab_client.IndexerError as e:
                 result = {"error": f"NZB Download Error: {e}"}
             except DownloaderError as e:
                 result = {"error": str(e)}
@@ -1494,7 +1495,7 @@ async def provider_modal(
     from sqlalchemy import select
 
     from app.db.models import NotificationChannel, Provider
-    from app.services.indexer_catalog import INDEXER_PRESETS
+    from app.services.indexers.catalog import INDEXER_PRESETS
 
     async with async_session_factory() as session:
         provider = None
@@ -1641,7 +1642,7 @@ async def save_provider(
 ):
     from app.db.models import Provider, ProviderCategory
     from app.services import provider_service, simkl
-    from app.services.indexer_catalog import (
+    from app.services.indexers.catalog import (
         DEFAULT_MOVIE_CATEGORIES,
         DEFAULT_TV_CATEGORIES,
         get_preset,

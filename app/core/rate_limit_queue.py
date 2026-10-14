@@ -23,8 +23,9 @@ from typing import TYPE_CHECKING, Any
 from sqlalchemy import func, select
 
 from app.db.models import DownloadHistory, MediaItem
-from app.services import torbox, treasure_maps
+from app.services import torbox
 from app.services.downloaders import premiumize
+from app.services.indexers import newznab as newznab_client
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -63,7 +64,7 @@ def downloader_cooldown_remaining() -> float:
 def resume_time_label() -> str:
     """Human-readable resume time for the longest active provider cooldown."""
     tb_rem = downloader_cooldown_remaining()
-    idx_rem = treasure_maps.get_all_indexer_cooldowns_remaining()
+    idx_rem = newznab_client.get_all_indexer_cooldowns_remaining()
     remaining = max(tb_rem, idx_rem)
     if remaining <= 0:
         return "resuming shortly"
@@ -78,7 +79,7 @@ def clear_all_rate_limit_cooldowns() -> None:
         torbox.clear_cooldown()
     else:
         torbox.set_cooldown(0.0)
-    treasure_maps.clear_all_indexer_cooldowns()
+    newznab_client.clear_all_indexer_cooldowns()
 
 
 class RateLimitQueueState:
@@ -240,7 +241,7 @@ async def resume_rate_limited_pushes() -> int:
     from app.db.database import async_session_factory
 
     tb_rem = downloader_cooldown_remaining()
-    idx_rem = treasure_maps.get_all_indexer_cooldowns_remaining()
+    idx_rem = newznab_client.get_all_indexer_cooldowns_remaining()
     if max(tb_rem, idx_rem) > 0:
         return 0
 
@@ -319,7 +320,7 @@ async def resume_rate_limited_pushes() -> int:
     resumed = 0
     for mode, item_id, payload in work_items:
         tb_rem = downloader_cooldown_remaining()
-        idx_rem = treasure_maps.get_all_indexer_cooldowns_remaining()
+        idx_rem = newznab_client.get_all_indexer_cooldowns_remaining()
         if max(tb_rem, idx_rem) > 0:
             break
         if not item_lock_manager.try_acquire(item_id, owner="background"):
@@ -377,7 +378,7 @@ async def resume_rate_limited_pushes() -> int:
 async def run_rate_limit_resume_tick() -> None:
     """APScheduler entry point (cheap in-memory cooldown check first)."""
     tb_rem = downloader_cooldown_remaining()
-    idx_rem = treasure_maps.get_all_indexer_cooldowns_remaining()
+    idx_rem = newznab_client.get_all_indexer_cooldowns_remaining()
     rem = max(tb_rem, idx_rem)
     if rem > 0:
         logger.debug(

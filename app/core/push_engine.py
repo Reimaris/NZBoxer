@@ -54,13 +54,14 @@ from app.db.models import (
     Season,
     SeasonStatus,
 )
-from app.services import torbox, treasure_maps
+from app.services import torbox
 from app.services.downloaders.base import (
     BaseDownloader,
     DownloaderError,
     DownloaderUploadResult,
 )
-from app.services.indexer_catalog import (
+from app.services.indexers import newznab as newznab_client
+from app.services.indexers.catalog import (
     ANIME_CATEGORY_FALLBACK,
     DEFAULT_MOVIE_CATEGORIES,
     DEFAULT_TV_CATEGORIES,
@@ -670,7 +671,7 @@ async def _query_movie_across_indexers(
                     search_title,
                     cat_id,
                 )
-                res = await treasure_maps.search_movie(
+                res = await newznab_client.search_movie(
                     imdb_id=imdb_id,
                     tmdb_id=tmdb_id,
                     title=search_title,
@@ -698,7 +699,7 @@ async def _query_movie_across_indexers(
             search_title,
             cat_id,
         )
-        res = await treasure_maps.search_movie(
+        res = await newznab_client.search_movie(
             imdb_id=imdb_id,
             tmdb_id=tmdb_id,
             title=search_title,
@@ -746,7 +747,7 @@ async def _query_show_across_indexers(
                     search_label,
                     cat_id,
                 )
-                res = await treasure_maps.search_show(
+                res = await newznab_client.search_show(
                     tvdb_id=item.tvdb_id,
                     tmdb_id=item.tmdb_id,
                     imdb_id=item.imdb_id,
@@ -777,7 +778,7 @@ async def _query_show_across_indexers(
             search_label,
             cat_id,
         )
-        res = await treasure_maps.search_show(
+        res = await newznab_client.search_show(
             tvdb_id=item.tvdb_id,
             tmdb_id=item.tmdb_id,
             imdb_id=item.imdb_id,
@@ -1000,13 +1001,13 @@ async def _dispatch_candidate_list_to_torbox(
             nzb_bytes, filename = prefetched
         else:
             try:
-                nzb_bytes, filename = await treasure_maps.fetch_nzb_bytes(
+                nzb_bytes, filename = await newznab_client.fetch_nzb_bytes(
                     guid,
                     api_url=cand.get("indexer_url"),
                     api_key=cand.get("indexer_key"),
                     session=session,
                 )
-            except treasure_maps.IndexerRateLimitError as exc:
+            except newznab_client.IndexerRateLimitError as exc:
                 logger.warning(
                     "Indexer '%s' grab limit reached (HTTP 429): %s",
                     cand.get("indexer_url") or "unknown",
@@ -1300,7 +1301,7 @@ async def _verify_layer2_in_memory(
         if prefetched is not None:
             return cand
         try:
-            nzb_bytes, filename = await treasure_maps.fetch_nzb_bytes(
+            nzb_bytes, filename = await newznab_client.fetch_nzb_bytes(
                 guid,
                 api_url=cand.get("indexer_url"),
                 api_key=cand.get("indexer_key"),
@@ -1494,10 +1495,10 @@ async def _record_auto_push_failure(
     await _recalculate_parent_status(session, item)
     if rate_limited:
         from app.core.rate_limit_queue import downloader_cooldown_remaining
-        from app.services import treasure_maps
+        from app.services.indexers import newznab as newznab_client
 
         tb_cooldown = int(downloader_cooldown_remaining())
-        idx_cooldown = int(treasure_maps.get_all_indexer_cooldowns_remaining())
+        idx_cooldown = int(newznab_client.get_all_indexer_cooldowns_remaining())
         source_name = "Indexer" if "indexer" in reason.lower() else "TorBox"
         cooldown_sec = idx_cooldown if "indexer" in reason.lower() else tb_cooldown
         t_label = (
