@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "partials/_experimental_pill.html" import experimental_pill %}
 
 {% block content %}
 <div class="max-w-7xl mx-auto space-y-6 text-sm"
@@ -110,7 +111,7 @@
                     <div>
                         <!-- Category Header Pill & Actions -->
                         <div class="flex items-center justify-between gap-2 mb-3">
-                            <div>
+                            <div class="flex items-center gap-1.5 flex-wrap">
                                 {% if cat == 'watchlist' %}
                                 <span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold tracking-wide uppercase bg-[#d40060]/15 text-[#d40060] border border-[#d40060]/30">Watchlist</span>
                                 {% elif cat == 'metadata' %}
@@ -122,6 +123,7 @@
                                 {% else %}
                                 <span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold tracking-wide uppercase bg-zinc-500/15 text-zinc-400 border border-zinc-500/30">{{ cat|capitalize }}</span>
                                 {% endif %}
+                                {{ experimental_pill(provider.type) }}
                             </div>
 
                             <div class="flex items-center gap-1.5 shrink-0">

@@ -182,6 +182,12 @@ from app.services.indexers.catalog import (  # noqa: E402
 
 templates.env.globals["indexer_preset"] = get_preset
 
+from app.core.diagnostics import GITHUB_BUG_REPORT_URL  # noqa: E402
+from app.core.experimental import experimental_types, is_experimental  # noqa: E402
+
+templates.env.globals["is_experimental"] = is_experimental
+templates.env.globals["bug_report_url"] = GITHUB_BUG_REPORT_URL
+
 
 async def run_orchestrator_tick(now: datetime | None = None) -> None:
     """Execute scheduled periodic watchlist sync and air date rollover aligned to wall-clock intervals."""
@@ -1621,6 +1627,7 @@ async def provider_modal(
             "new_type": new_type if provider is None else "",
             "mal_redirect_uri": str(request.base_url).rstrip("/") + _MAL_CALLBACK_PATH,
             "indexer_presets": INDEXER_PRESETS,
+            "experimental_types": experimental_types(),
             "indexer_cfg": provider.indexer_config if provider else {},
         },
     )

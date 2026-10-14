@@ -1,3 +1,4 @@
+{% from "partials/_experimental_pill.html" import experimental_pill %}
 <!-- Provider Modal (v3.0.0) -->
 {% set cfg = provider.watchlist_config if provider else {} %}
 {% set pcat = (provider.category.value if provider.category.value is defined else provider.category) if provider else ('watchlist' if new_type else '') %}
@@ -25,6 +26,7 @@
              autoName: '',
              indexerTypes: {{ indexer_presets|map(attribute='type')|list|tojson|forceescape }},
              indexerKeyUrl: '',
+             experimentalTypes: {{ experimental_types|tojson|forceescape }},
              selectProvider(type, category, defaultName) {
                  this.providerType = type;
                  this.providerCategory = category;
@@ -55,6 +57,7 @@
                 <h2 class="text-xl font-bold text-white flex items-center gap-2">
                     <svg class="w-5 h-5 shrink-0 text-[#d40060]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 002-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
                     <span x-text="isEdit ? 'Edit Provider: {{ provider.name if provider else '' }}' : (step === 1 ? 'Add New Provider — Select Type' : 'Configure Provider')">Add New Provider</span>
+                    <span x-show="step === 2 && experimentalTypes.includes(providerType)" x-cloak class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold tracking-wide uppercase bg-orange-500/15 text-orange-400 border border-orange-500/30" title="Not tested by the maintainer against the live service. Please report problems.">Experimental</span>
                 </h2>
             </div>
             <button onclick="document.getElementById('modal-container').innerHTML = '';" class="p-1.5 text-[#a1a1aa] hover:text-white hover:bg-[#3f3f46]/50 rounded-lg transition-colors focus:outline-none">
@@ -75,7 +78,7 @@
                             <div class="flex items-center gap-3 mb-2">
                                 <div class="w-10 h-10 rounded-lg bg-[#d40060]/15 text-[#d40060] flex items-center justify-center font-bold text-lg">S</div>
                                 <div>
-                                    <div class="font-bold text-white group-hover:text-[#d40060] transition-colors">Simkl</div> <!-- provider-specific code (allowlisted) -->
+                                    <div class="flex items-center gap-2 flex-wrap"><div class="font-bold text-white group-hover:text-[#d40060] transition-colors">Simkl</div>{{ experimental_pill('simkl') }}</div> <!-- provider-specific code (allowlisted) -->
                                     <div class="text-xs text-[#a1a1aa]">Watchlist Integration</div>
                                 </div>
                             </div>
@@ -85,7 +88,7 @@
                             <div class="flex items-center gap-3 mb-2">
                                 <div class="w-10 h-10 rounded-lg bg-[#d40060]/15 text-[#d40060] flex items-center justify-center font-bold text-lg">A</div>
                                 <div>
-                                    <div class="font-bold text-white group-hover:text-[#d40060] transition-colors">AniList</div>
+                                    <div class="flex items-center gap-2 flex-wrap"><div class="font-bold text-white group-hover:text-[#d40060] transition-colors">AniList</div>{{ experimental_pill('anilist') }}</div>
                                     <div class="text-xs text-[#a1a1aa]">Watchlist Integration</div>
                                 </div>
                             </div>
@@ -95,7 +98,7 @@
                             <div class="flex items-center gap-3 mb-2">
                                 <div class="w-10 h-10 rounded-lg bg-[#d40060]/15 text-[#d40060] flex items-center justify-center font-bold text-lg">P</div>
                                 <div>
-                                    <div class="font-bold text-white group-hover:text-[#d40060] transition-colors">Plex</div>
+                                    <div class="flex items-center gap-2 flex-wrap"><div class="font-bold text-white group-hover:text-[#d40060] transition-colors">Plex</div>{{ experimental_pill('plex') }}</div>
                                     <div class="text-xs text-[#a1a1aa]">Watchlist Integration</div>
                                 </div>
                             </div>
@@ -105,7 +108,7 @@
                             <div class="flex items-center gap-3 mb-2">
                                 <div class="w-10 h-10 rounded-lg bg-[#d40060]/15 text-[#d40060] flex items-center justify-center font-bold text-lg">M</div>
                                 <div>
-                                    <div class="font-bold text-white group-hover:text-[#d40060] transition-colors">MyAnimeList</div>
+                                    <div class="flex items-center gap-2 flex-wrap"><div class="font-bold text-white group-hover:text-[#d40060] transition-colors">MyAnimeList</div>{{ experimental_pill('mal') }}</div>
                                     <div class="text-xs text-[#a1a1aa]">Watchlist Integration</div>
                                 </div>
                             </div>
@@ -122,7 +125,7 @@
                             <div class="flex items-center gap-3 mb-2">
                                 <div class="w-10 h-10 rounded-lg bg-amber-500/20 text-amber-400 flex items-center justify-center font-bold text-lg">T</div>
                                 <div>
-                                    <div class="font-bold text-white group-hover:text-amber-400 transition-colors">TMDB</div>
+                                    <div class="flex items-center gap-2 flex-wrap"><div class="font-bold text-white group-hover:text-amber-400 transition-colors">TMDB</div>{{ experimental_pill('tmdb') }}</div>
                                     <div class="text-xs text-[#a1a1aa]">The Movie Database</div>
                                 </div>
                             </div>
@@ -132,7 +135,7 @@
                             <div class="flex items-center gap-3 mb-2">
                                 <div class="w-10 h-10 rounded-lg bg-indigo-500/20 text-indigo-400 flex items-center justify-center font-bold text-lg">A</div>
                                 <div>
-                                    <div class="font-bold text-white group-hover:text-amber-400 transition-colors">AniList</div>
+                                    <div class="flex items-center gap-2 flex-wrap"><div class="font-bold text-white group-hover:text-amber-400 transition-colors">AniList</div>{{ experimental_pill('anilist') }}</div>
                                     <div class="text-xs text-[#a1a1aa]">Anime Metadata</div>
                                 </div>
                             </div>
@@ -149,7 +152,7 @@
                             <div class="flex items-center gap-3 mb-2">
                                 <div class="w-10 h-10 rounded-lg bg-purple-500/20 text-purple-400 flex items-center justify-center font-bold text-lg">TB</div>
                                 <div>
-                                    <div class="font-bold text-white group-hover:text-purple-400 transition-colors">TorBox</div> <!-- provider-specific code (allowlisted) -->
+                                    <div class="flex items-center gap-2 flex-wrap"><div class="font-bold text-white group-hover:text-purple-400 transition-colors">TorBox</div>{{ experimental_pill('torbox') }}</div> <!-- provider-specific code (allowlisted) -->
                                     <div class="text-xs text-[#a1a1aa]">Debrid &amp; Usenet Client</div>
                                 </div>
                             </div>
@@ -159,7 +162,7 @@
                             <div class="flex items-center gap-3 mb-2">
                                 <div class="w-10 h-10 rounded-lg bg-green-500/20 text-green-400 flex items-center justify-center font-bold text-lg">SB</div>
                                 <div>
-                                    <div class="font-bold text-white group-hover:text-purple-400 transition-colors">SABnzbd</div>
+                                    <div class="flex items-center gap-2 flex-wrap"><div class="font-bold text-white group-hover:text-purple-400 transition-colors">SABnzbd</div>{{ experimental_pill('sabnzbd') }}</div>
                                     <div class="text-xs text-[#a1a1aa]">Self-hosted Usenet Client</div>
                                 </div>
                             </div>
@@ -169,7 +172,7 @@
                             <div class="flex items-center gap-3 mb-2">
                                 <div class="w-10 h-10 rounded-lg bg-blue-500/20 text-blue-400 flex items-center justify-center font-bold text-lg">PM</div>
                                 <div>
-                                    <div class="font-bold text-white group-hover:text-purple-400 transition-colors">Premiumize</div>
+                                    <div class="flex items-center gap-2 flex-wrap"><div class="font-bold text-white group-hover:text-purple-400 transition-colors">Premiumize</div>{{ experimental_pill('premiumize') }}</div>
                                     <div class="text-xs text-[#a1a1aa]">Cloud Debrid Service</div>
                                 </div>
                             </div>
@@ -187,7 +190,7 @@
                             <div class="flex items-center gap-3 mb-2">
                                 <div data-badge="{{ preset.badge }}" class="w-10 h-10 rounded-lg {{ indexer_badge_classes[preset.color] }} flex items-center justify-center font-bold text-xs">{{ preset.badge }}</div>
                                 <div>
-                                    <div class="font-bold text-white group-hover:text-blue-400 transition-colors">{{ preset.name }}</div>
+                                    <div class="flex items-center gap-2 flex-wrap"><div class="font-bold text-white group-hover:text-blue-400 transition-colors">{{ preset.name }}</div>{{ experimental_pill(preset.type) }}</div>
                                     <div class="text-xs text-[#a1a1aa]">{{ 'Any Newznab-compatible indexer' if preset.type == 'newznab' else 'Usenet Indexer (Newznab API)' }}</div>
                                 </div>
                             </div>

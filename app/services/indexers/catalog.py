@@ -23,6 +23,7 @@ class IndexerPreset:
     key_url: str
     badge: str
     color: str
+    experimental: bool = True
 
 
 INDEXER_PRESETS: tuple[IndexerPreset, ...] = (
@@ -33,6 +34,7 @@ INDEXER_PRESETS: tuple[IndexerPreset, ...] = (
         "https://treasure-maps.com/profile",
         "TM",
         "blue",
+        experimental=False,
     ),
     IndexerPreset(
         "drunkenslug",

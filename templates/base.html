@@ -160,6 +160,16 @@
     </div>
     {% endif %}
 
+    <!-- Experimental Providers Banner -->
+    {% if setup is defined and setup and setup.experimental_active %}
+    <div class="bg-orange-500/15 border-b border-orange-500/40 text-orange-300 px-4 py-2 text-center text-xs sm:text-sm font-medium flex flex-wrap items-center justify-center gap-x-2 gap-y-1"
+         data-experimental-banner="true">
+        <span aria-hidden="true">🧪</span>
+        <span><strong>Experimental providers in use:</strong> {{ setup.experimental_active|join(', ') }}. These are untested by the maintainer and may misbehave.</span>
+        <a href="{{ bug_report_url }}" target="_blank" rel="noopener noreferrer" class="underline font-bold text-orange-200 hover:text-white whitespace-nowrap">Report a bug &rarr;</a>
+    </div>
+    {% endif %}
+
     <!-- Global Alerts (Sync results etc) -->
     <div id="sync-result" class="max-w-[1600px] w-full mx-auto px-4 sm:px-6 lg:px-8 mt-4 empty:hidden"></div>
 

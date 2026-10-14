@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.experimental import is_experimental
 from app.db.database import async_session_factory
 from app.db.models import Provider, ProviderCategory
 from app.services import tmdb
@@ -21,6 +22,7 @@ _last_blocked: dict[str, tuple[str, ...]] = {}
 class SetupStatus:
     missing_core: tuple[str, ...]  # subset of ("tmdb", "indexer", "downloader")
     has_watchlist: bool
+    experimental_active: tuple[str, ...] = ()  # names of active experimental providers
 
     @property
     def core_ready(self) -> bool:
@@ -54,7 +56,10 @@ async def get_setup_status(session: AsyncSession) -> SetupStatus:
         p.category == ProviderCategory.WATCHLIST.value and p.sync_eligible
         for p in providers
     )
-    return SetupStatus(tuple(missing), has_watchlist)
+    experimental = tuple(
+        p.name for p in providers if p.is_active and is_experimental(p.type)
+    )
+    return SetupStatus(tuple(missing), has_watchlist, experimental)
 
 
 async def setup_blocks(
