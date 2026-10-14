@@ -3115,7 +3115,10 @@ async def run_system_check(request: Request):
         if p.category == "indexer" or p.type in ("treasure_maps", "newznab")
     ]
     active_downloaders = [
-        p for p in active_providers if p.category == "downloader" or p.type == "torbox"
+        p
+        for p in active_providers
+        if p.category == "downloader"
+        or p.type in ("torbox", "sabnzbd", "premiumize")
     ]
     active_watchlists = [p for p in active_providers if p.category == "watchlist"]
     active_tmdb = next(
@@ -3127,7 +3130,7 @@ async def run_system_check(request: Request):
     vital_warnings: list[str] = []
     if not active_downloaders:
         vital_warnings.append(
-            "No Usenet Downloader (TorBox) active. Downloads cannot be dispatched."
+            "No Usenet Downloader active. Downloads cannot be dispatched."
         )
     if not active_indexers:
         vital_warnings.append(
@@ -3373,6 +3376,35 @@ async def run_system_check(request: Request):
                 "latency_ms": latency,
             }
 
+    async def probe_downloader(p: Provider) -> dict[str, Any]:
+        if p.type == "torbox":
+            return await probe_torbox(p)
+        from app.services.downloaders.factory import get_downloader_client
+
+        start = time.perf_counter()
+        result: dict[str, Any] = {
+            "name": f"{p.name or p.type} (Downloader)",
+            "category": "Usenet Downloader",
+            "ok": False,
+            "msg": "",
+            "latency_ms": 0,
+        }
+        if p.type == "sabnzbd" and not (p.api_url or "").strip():
+            result["msg"] = "Host missing"
+            return result
+        if not (p.api_key or "").strip():
+            result["msg"] = "API Key missing"
+            return result
+        try:
+            ok, msg = await asyncio.wait_for(
+                get_downloader_client(p).test_connection(), timeout=10.0
+            )
+            result.update(ok=ok, msg=msg)
+        except Exception as e:
+            result["msg"] = str(e) or type(e).__name__
+        result["latency_ms"] = int((time.perf_counter() - start) * 1000)
+        return result
+
     async def probe_tmdb(p: Provider) -> dict[str, Any]:
         start = time.perf_counter()
         tmdb_key = (p.api_key or "").strip()
@@ -3565,8 +3597,8 @@ async def run_system_check(request: Request):
         ):
             probes.append(probe_watchlist(wl))
 
-    for tb in active_downloaders:
-        probes.append(probe_torbox(tb))
+    for dl in active_downloaders:
+        probes.append(probe_downloader(dl))
 
     if active_tmdb and active_tmdb.api_key:
         probes.append(probe_tmdb(active_tmdb))
