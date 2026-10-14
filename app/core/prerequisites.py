@@ -1,12 +1,20 @@
 """Setup status: which prerequisites are still missing to run the app (m64)."""
 
+import logging
 from dataclasses import dataclass
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.db.database import async_session_factory
 from app.db.models import Provider, ProviderCategory
 from app.services import tmdb
+
+logger = logging.getLogger(__name__)
+
+# Background jobs honour the guard unless a test switches it off (m64).
+JOB_GUARD_ENABLED: bool = True
+_last_blocked: dict[str, tuple[str, ...]] = {}
 
 
 @dataclass(frozen=True)
@@ -47,3 +55,26 @@ async def get_setup_status(session: AsyncSession) -> SetupStatus:
         for p in providers
     )
     return SetupStatus(tuple(missing), has_watchlist)
+
+
+async def setup_blocks(job: str, *, watchlist: bool = False) -> SetupStatus | None:
+    """Return the status when *job* must be skipped (core missing, or no watchlist if ``watchlist``)."""
+    if not JOB_GUARD_ENABLED:
+        return None
+    async with async_session_factory() as session:
+        status = await get_setup_status(session)
+    missing = status.missing_core
+    if not missing and watchlist and not status.has_watchlist:
+        missing = ("watchlist",)
+    if not missing:
+        _last_blocked.pop(job, None)
+        return None
+    level = logging.INFO if _last_blocked.get(job) != missing else logging.DEBUG
+    _last_blocked[job] = missing
+    logger.log(
+        level,
+        "[GUARD] Setup incomplete (missing: %s): %s skipped",
+        ", ".join(missing),
+        job,
+    )
+    return status

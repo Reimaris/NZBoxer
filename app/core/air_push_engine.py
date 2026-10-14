@@ -18,6 +18,7 @@ from app.config import settings
 from app.core.automation import is_date_only_air_date
 from app.core.parser import parse_release_name
 from app.core.phase_stats import AirPushStats
+from app.core.prerequisites import setup_blocks
 from app.core.push_engine import (
     _dispatch_candidate_list_to_downloader,
     _load_blacklisted_sets,
@@ -378,6 +379,8 @@ async def run_episode_upgrades(
 
 async def run_air_date_push_and_upgrade_tick(now_utc: datetime | None = None) -> None:
     """Hourly job: initial air pushes, then upgrades; each step's failure is isolated."""
+    if await setup_blocks("air-date push"):
+        return
     now = now_utc or datetime.now(timezone.utc)
     async with async_session_factory() as session:
         push_stats = AirPushStats()

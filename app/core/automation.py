@@ -25,6 +25,7 @@ from app.core.phase_stats import (
     TbaDiscoveryStats,
     WatchlistPeriodicSyncStatus,
 )
+from app.core.prerequisites import setup_blocks
 from app.core.time_utils import format_local_datetime
 from app.db.database import async_session_factory
 from app.db.models import (
@@ -387,9 +388,15 @@ async def should_trigger_dashboard_watchlist_sync(
     )
 
 
+class _SyncSkipped(Exception):
+    """Raised inside the orchestrator tick when the watchlist sync step is guarded off."""
+
+
 async def run_periodic_watchlist_sync_if_due(now: datetime | None = None) -> bool:
     """Run sync_all_providers if any active watchlist provider's periodic interval is due."""
     if _sync_lock.locked():
+        return False
+    if await setup_blocks("periodic watchlist sync", watchlist=True):
         return False
     now = now or datetime.now(timezone.utc)
     async with async_session_factory() as session:
@@ -405,6 +412,8 @@ async def run_periodic_watchlist_sync_if_due(now: datetime | None = None) -> boo
 async def run_orchestrator_tick(now: datetime | None = None) -> None:
     """Execute 15-minute background orchestrator tasks: episode air date rollover, periodic watchlist sync,
     and (at xx:00) the air-date push and upgrade pass."""
+    if await setup_blocks("orchestrator"):
+        return
     start = time.monotonic()
     if now is None:
         now = datetime.now(timezone.utc)
@@ -469,6 +478,8 @@ async def run_orchestrator_tick(now: datetime | None = None) -> None:
 
     # 2. Check and run periodic watchlist sync if due
     try:
+        if await setup_blocks("periodic watchlist sync", watchlist=True):
+            raise _SyncSkipped
         async with async_session_factory() as session:
             providers = (
                 (
@@ -507,6 +518,8 @@ async def run_orchestrator_tick(now: datetime | None = None) -> None:
             logger.info("%s disabled (interval 0)", tag)
         else:
             logger.info("%s no active watchlist provider with credentials", tag)
+    except _SyncSkipped:
+        pass
     except Exception as e:  # noqa: BLE001
         logger.error("Error during periodic watchlist sync: %s", e)
         logger.info(
