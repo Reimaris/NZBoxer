@@ -87,7 +87,10 @@ class AniListWatchlistAdapter:
 
 
 class PlexWatchlistAdapter:
-    """Plex Cloud (Discover) watchlist adapter; every entry is ``plantowatch``."""
+    """Plex Cloud (Discover) watchlist adapter; every entry is ``plantowatch``.
+
+    No progress by design: ``watched_episodes`` is always ``0``.
+    """
 
     async def fetch_entries(self, provider: Provider) -> list[WatchlistEntry]:
         from app.services.watchlists import plex
