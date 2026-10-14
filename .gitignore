@@ -56,3 +56,4 @@ scratch/
 # Docker Local Overrides
 compose.override.yaml
 compose.dev.yaml
+PROVIDER_CANDIDATES.md
