@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,9 +17,124 @@ from sqlalchemy.orm import selectinload
 
 from app.core.phase_stats import AirDateRefreshStats
 from app.db.models import Provider
+from app.services import tmdb
 from app.services.watchlists import simkl
 
 logger = logging.getLogger("app.core.automation")
+
+
+def keep_existing_air_date(existing: datetime | None, incoming: datetime) -> bool:
+    """True when ``incoming`` would downgrade an exact air time to a date-only one.
+
+    Only the same UTC calendar day counts: a date-only value for a different day
+    is a genuine reschedule and must be written.
+    """
+    from app.core.automation import _as_utc, is_date_only_air_date
+
+    if existing is None or not is_date_only_air_date(incoming):
+        return False
+    if is_date_only_air_date(existing):
+        return False
+    return _as_utc(existing).date() == _as_utc(incoming).date()
+
+
+async def _fetch_tmdb_episode_dates(
+    item: Any, log_prefix: str
+) -> list[tuple[int, int, str]] | None:
+    """Fetch (season, episode, YYYY-MM-DD) tuples for an item's unreleased seasons.
+
+    Returns None when TMDB cannot be used (no id, unconfigured, HTTP failure).
+    """
+    from app.db.models import EpisodeStatus, SeasonStatus
+
+    if not item.tmdb_id:
+        return None
+    rows: list[tuple[int, int, str]] = []
+    for season in item.seasons or []:
+        unreleased = season.status == SeasonStatus.FUTURE or any(
+            ep.status == EpisodeStatus.FUTURE for ep in season.episodes or []
+        )
+        if not unreleased:
+            continue
+        try:
+            data = await tmdb.get_season_details(
+                int(item.tmdb_id), season.season_number
+            )
+        except Exception as e:
+            logger.warning(
+                "%s TMDB season air dates failed for item %s S%s: %s",
+                log_prefix,
+                item.id,
+                season.season_number,
+                e,
+            )
+            return None
+        if data is None:
+            logger.warning(
+                "%s TMDB season air dates unavailable for item %s S%s.",
+                log_prefix,
+                item.id,
+                season.season_number,
+            )
+            return None
+        for ep in data.get("episodes") or []:
+            e_num = ep.get("episode_number")
+            date_raw = ep.get("air_date")
+            if e_num is None or not date_raw:
+                continue
+            rows.append((season.season_number, int(e_num), str(date_raw)))
+    return rows
+
+
+def _apply_episode_dates(item: Any, rows: Any) -> int:
+    """Write (season, episode, raw date) rows onto matching local episodes.
+
+    Never downgrades an exact air time to a date-only one for the same day.
+    Restores FUTURE on not-yet-released searchable episodes. Returns the number
+    of changes made.
+    """
+    from app.core.automation import is_episode_aired, parse_broadcast_air_date
+    from app.core.transfer_poller import _sync_season_status_from_episodes
+    from app.db.models import EpisodeStatus
+
+    local_episodes_map = {
+        (s.season_number, ep.episode_number): ep
+        for s in item.seasons or []
+        for ep in s.episodes or []
+    }
+    changed = 0
+    for s_num, e_num, date_raw in rows:
+        if s_num is None or e_num is None or not date_raw:
+            continue
+        try:
+            key = (int(s_num), int(e_num))
+        except (ValueError, TypeError):
+            continue
+
+        local_ep = local_episodes_map.get(key)
+        if local_ep is None:
+            continue
+        parsed_dt = parse_broadcast_air_date(date_raw)
+        if (
+            parsed_dt is not None
+            and local_ep.air_date != parsed_dt
+            and not keep_existing_air_date(local_ep.air_date, parsed_dt)
+        ):
+            local_ep.air_date = parsed_dt
+            changed += 1
+
+        # If episode is not yet released and is in a searchable/pending state, restore FUTURE
+        now_utc = datetime.now(timezone.utc)
+        if (
+            local_ep.air_date is not None
+            and not is_episode_aired(local_ep.air_date, now_utc)
+            and local_ep.status in (EpisodeStatus.SEARCHING, EpisodeStatus.PENDING)
+        ):
+            local_ep.status = EpisodeStatus.FUTURE
+            changed += 1
+            if local_ep.season is not None:
+                _sync_season_status_from_episodes(local_ep.season)
+    return changed
 
 
 async def enrich_active_shows_episode_air_dates(
@@ -48,12 +164,9 @@ async def enrich_active_shows_episode_air_dates(
         _as_utc,
         _refresh_future_movie_release_dates,
         is_air_date_refresh_due,
-        is_episode_aired,
-        parse_broadcast_air_date,
     )
     from app.core.transfer_poller import (
         _recalculate_parent_status,
-        _sync_season_status_from_episodes,
     )
     from app.db.models import (
         Episode,
@@ -137,6 +250,16 @@ async def enrich_active_shows_episode_air_dates(
     total_items = len(items)
     for item_idx, item in enumerate(items, start=1):
         if not item.simkl_id:
+            if item.media_type != MediaType.SHOW:
+                continue
+            tmdb_rows = await _fetch_tmdb_episode_dates(item, log_prefix)
+            item.last_air_dates_refreshed_at = now
+            if not tmdb_rows:
+                continue
+            changed = _apply_episode_dates(item, tmdb_rows)
+            if changed:
+                titles_updated_count += 1
+                updated_episodes_count += changed
             continue
 
         prov_id = item.provider_id
@@ -194,50 +317,12 @@ async def enrich_active_shows_episode_air_dates(
         if not episodes_data:
             continue
 
-        # Map local episodes by (season_number, episode_number)
-        local_episodes_map: dict[tuple[int, int], Episode] = {}
-        for s in item.seasons or []:
-            for ep in s.episodes or []:
-                local_episodes_map[(s.season_number, ep.episode_number)] = ep
-
-        item_episodes_updated = 0
-        for ep_info in episodes_data:
-            s_num = ep_info.get("season")
-            e_num = ep_info.get("episode")
-            date_raw = ep_info.get("date")
-            if s_num is None or e_num is None or not date_raw:
-                continue
-
-            try:
-                key = (int(s_num), int(e_num))
-            except (ValueError, TypeError):
-                continue
-
-            local_ep = local_episodes_map.get(key)
-            if local_ep is not None:
-                parsed_dt = parse_broadcast_air_date(date_raw)
-                if parsed_dt is not None and local_ep.air_date != parsed_dt:
-                    local_ep.air_date = parsed_dt
-                    item_episodes_updated += 1
-                    updated_episodes_count += 1
-
-                # If episode is not yet released and is in a searchable/pending state, restore FUTURE
-                now_utc = datetime.now(timezone.utc)
-                if (
-                    local_ep.air_date is not None
-                    and not is_episode_aired(local_ep.air_date, now_utc)
-                    and local_ep.status
-                    in (
-                        EpisodeStatus.SEARCHING,
-                        EpisodeStatus.PENDING,
-                    )
-                ):
-                    local_ep.status = EpisodeStatus.FUTURE
-                    item_episodes_updated += 1
-                    updated_episodes_count += 1
-                    season_obj = local_ep.season
-                    if season_obj is not None:
-                        _sync_season_status_from_episodes(season_obj)
+        simkl_rows = [
+            (ep_info.get("season"), ep_info.get("episode"), ep_info.get("date"))
+            for ep_info in episodes_data
+        ]
+        item_episodes_updated = _apply_episode_dates(item, simkl_rows)
+        updated_episodes_count += item_episodes_updated
 
         if item_episodes_updated > 0:
             titles_updated_count += 1
