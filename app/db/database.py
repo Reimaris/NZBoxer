@@ -1377,7 +1377,47 @@ async def init_db(database_url: str) -> None:
 
             await session.commit()
 
+    async with _session_factory() as session:
+        await backfill_watchlist_sources(session)
+
     logger.info("Database initialized successfully.")
+
+
+async def backfill_watchlist_sources(session: AsyncSession) -> int:
+    """Insert one ``watchlist_sources`` row per MediaItem that has none (idempotent).
+
+    Returns the number of rows inserted.
+    """
+    from sqlalchemy import select
+
+    from app.db.models import MediaItem, MediaItemWatchlistSource
+
+    items = (
+        await session.execute(
+            select(MediaItem).where(
+                ~select(MediaItemWatchlistSource.id)
+                .where(MediaItemWatchlistSource.media_item_id == MediaItem.id)
+                .exists()
+            )
+        )
+    ).scalars()
+    created = 0
+    for item in items:
+        order = item.last_watched_order_simkl or 0
+        session.add(
+            MediaItemWatchlistSource(
+                media_item_id=item.id,
+                provider_id=item.provider_id,
+                remote_id=str(item.simkl_id) if item.simkl_id else str(item.id),
+                list_status="watching" if order > 0 else "plantowatch",
+                last_watched_order=order,
+            )
+        )
+        created += 1
+    if created:
+        await session.commit()
+        logger.info("Backfilled %d watchlist source row(s).", created)
+    return created
 
 
 async def close_db() -> None:

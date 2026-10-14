@@ -1671,9 +1671,37 @@ async def delete_provider(provider_id: int) -> HTMLResponse:
                 ).strip()
                 if cid and tok:
                     await simkl.revoke_token(cid, tok)
+            await _rehome_or_detach_provider_items(session, provider)
             await session.delete(provider)
             await session.commit()
     return HTMLResponse(content="<script>window.location.reload();</script>")
+
+
+async def _rehome_or_detach_provider_items(session: Any, provider: Any) -> None:
+    """Re-home items still listed by another provider; detach history of the rest."""
+    from sqlalchemy import select
+
+    from app.core.push_engine import detach_item_download_history
+    from app.db.models import MediaItem
+
+    items = (
+        (
+            await session.execute(
+                select(MediaItem).where(MediaItem.provider_id == provider.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    for item in items:
+        other = next(
+            (s for s in item.watchlist_sources if s.provider_id != provider.id), None
+        )
+        if other is not None:
+            item.provider_id = other.provider_id
+        else:
+            await detach_item_download_history(session, item)
+    await session.flush()
 
 
 @app.get("/settings/notification/new", response_class=HTMLResponse)
