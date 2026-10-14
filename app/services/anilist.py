@@ -757,3 +757,28 @@ async def get_user_media_list(
     for lst in collection.get("lists") or []:
         entries.extend(e for e in (lst.get("entries") or []) if e.get("media"))
     return entries
+
+
+_CHECK_USER_QUERY = "query ($u: String) { User(name: $u) { id name } }"
+
+
+async def check_user(
+    username: str, access_token: str | None = None
+) -> tuple[bool, str]:
+    """Diagnostics probe: does the AniList user exist (and is it readable)?"""
+    headers = {"Authorization": f"Bearer {access_token}"} if access_token else None
+    payload = {"query": _CHECK_USER_QUERY, "variables": {"u": username}}
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await _post_with_retry(client, payload, extra_headers=headers)
+        body = resp.json()
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code in (403, 404):
+            return False, "AniList user not found or private"
+        return False, f"HTTP {exc.response.status_code}"
+    except (httpx.RequestError, ValueError) as exc:
+        return False, f"AniList request failed: {_sanitize_error_message(exc)}"
+    user = ((body.get("data") or {}).get("User")) if isinstance(body, dict) else None
+    if not user or body.get("errors"):
+        return False, "AniList user not found or private"
+    return True, f"User: {user.get('name') or username}"

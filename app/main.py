@@ -2857,7 +2857,7 @@ async def run_system_check(request: Request):
 
     from app.config import DEFAULT_USER_AGENT
     from app.db.models import NotificationChannel, Provider, SystemSettings
-    from app.services import anilist, simkl
+    from app.services import anilist, mal, plex, simkl
 
     async with async_session_factory() as session:
         providers = (await session.execute(select(Provider))).scalars().all()
@@ -2884,10 +2884,7 @@ async def run_system_check(request: Request):
     active_downloaders = [
         p for p in active_providers if p.category == "downloader" or p.type == "torbox"
     ]
-    active_simkl = next(
-        (p for p in active_providers if p.type == "simkl"),
-        None,
-    )
+    active_watchlists = [p for p in active_providers if p.category == "watchlist"]
     active_tmdb = next(
         (p for p in active_providers if p.type == "tmdb"),
         None,
@@ -3050,6 +3047,42 @@ async def run_system_check(request: Request):
                 "msg": str(e),
                 "latency_ms": latency,
             }
+
+    async def probe_watchlist(p: Provider) -> dict[str, Any]:
+        start = time.perf_counter()
+        ok, msg = False, ""
+        try:
+            if p.type == "anilist":
+                ok, msg = await asyncio.wait_for(
+                    anilist.check_user(p.username or "", p.access_token or None),
+                    timeout=5.0,
+                )
+            elif p.type == "plex":
+                ok, msg = await asyncio.wait_for(
+                    plex.check_account(
+                        p.access_token or "",
+                        str(p.watchlist_config.get("plex_client_identifier") or ""),
+                    ),
+                    timeout=5.0,
+                )
+            elif p.type == "mal":
+                async with async_session_factory() as s:
+                    db_prov = await s.get(Provider, p.id)
+                    if not db_prov:
+                        raise ValueError("Provider not found")
+                    token = await asyncio.wait_for(
+                        mal.ensure_valid_mal_token(s, db_prov), timeout=5.0
+                    )
+                ok, msg = await asyncio.wait_for(mal.check_account(token), timeout=5.0)
+        except Exception as e:
+            ok, msg = False, str(e) or type(e).__name__
+        return {
+            "name": f"{p.name or p.type} (Watchlist)",
+            "category": "Watchlist Provider",
+            "ok": ok,
+            "msg": msg,
+            "latency_ms": int((time.perf_counter() - start) * 1000),
+        }
 
     async def probe_torbox(p: Provider) -> dict[str, Any]:
         start = time.perf_counter()
@@ -3284,13 +3317,20 @@ async def run_system_check(request: Request):
         probe_anilist(),
     ]
 
-    if active_simkl and (
-        active_simkl.client_id
-        or active_simkl.access_token
-        or active_simkl.simkl_config.get("client_id")
-        or active_simkl.simkl_config.get("access_token")
-    ):
-        probes.append(probe_simkl(active_simkl))
+    for wl in active_watchlists:
+        if wl.type == "simkl":
+            if (
+                wl.client_id
+                or wl.access_token
+                or wl.simkl_config.get("client_id")
+                or wl.simkl_config.get("access_token")
+            ):
+                probes.append(probe_simkl(wl))
+        elif (
+            wl.type in ("anilist", "plex", "mal")
+            and wl.watchlist_connection_status != "not_connected"
+        ):
+            probes.append(probe_watchlist(wl))
 
     for tb in active_downloaders:
         probes.append(probe_torbox(tb))

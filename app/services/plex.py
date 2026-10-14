@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 
 PLEX_PRODUCT = "NZBoxer"
 PLEX_PINS_URL = "https://plex.tv/api/v2/pins"
+PLEX_USER_URL = "https://plex.tv/api/v2/user"
 PLEX_WATCHLIST_URL = "https://discover.provider.plex.tv/library/sections/watchlist/all"
 PAGE_SIZE = 50
 _TIMEOUT = 20.0
@@ -158,3 +159,23 @@ async def get_watchlist(
     except httpx.RequestError as exc:
         raise WatchlistFetchError(f"Plex request failed: {type(exc).__name__}") from exc
     return items
+
+
+async def check_account(auth_token: str, client_identifier: str) -> tuple[bool, str]:
+    """Diagnostics probe: is the Plex auth token still valid?"""
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.get(
+                PLEX_USER_URL, headers=_headers(client_identifier, auth_token)
+            )
+    except httpx.RequestError as exc:
+        return False, f"Plex request failed: {type(exc).__name__}"
+    if resp.status_code == 401:
+        return False, "Reconnect required"
+    if resp.status_code != 200:
+        return False, f"HTTP {resp.status_code}"
+    try:
+        name = (resp.json() or {}).get("username") or "unknown"
+    except ValueError:
+        name = "unknown"
+    return True, f"Plex account: {name}"

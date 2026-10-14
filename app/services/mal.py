@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
 
 MAL_AUTHORIZE_URL = "https://myanimelist.net/v1/oauth2/authorize"
 MAL_TOKEN_URL = "https://myanimelist.net/v1/oauth2/token"
+MAL_USER_URL = "https://api.myanimelist.net/v2/users/@me"
 MAL_ANIMELIST_URL = "https://api.myanimelist.net/v2/users/@me/animelist"
 REFRESH_BUFFER = timedelta(hours=24)
 _TIMEOUT = 20.0
@@ -219,3 +220,23 @@ async def get_animelist(access_token: str) -> list[dict[str, Any]]:
             f"MyAnimeList request failed: {type(exc).__name__}"
         ) from exc
     return items
+
+
+async def check_account(access_token: str) -> tuple[bool, str]:
+    """Diagnostics probe: is the MAL access token accepted?"""
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "User-Agent": DEFAULT_USER_AGENT,
+    }
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.get(MAL_USER_URL, headers=headers)
+    except httpx.RequestError as exc:
+        return False, f"MyAnimeList request failed: {type(exc).__name__}"
+    if resp.status_code != 200:
+        return False, f"HTTP {resp.status_code}"
+    try:
+        name = (resp.json() or {}).get("name") or "unknown"
+    except ValueError:
+        name = "unknown"
+    return True, f"User: {name}"
