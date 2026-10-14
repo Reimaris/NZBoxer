@@ -57,14 +57,19 @@ async def get_setup_status(session: AsyncSession) -> SetupStatus:
     return SetupStatus(tuple(missing), has_watchlist)
 
 
-async def setup_blocks(job: str, *, watchlist: bool = False) -> SetupStatus | None:
-    """Return the status when *job* must be skipped (core missing, or no watchlist if ``watchlist``)."""
+async def setup_blocks(
+    job: str, *, watchlist: bool = False, only: tuple[str, ...] | None = None
+) -> SetupStatus | None:
+    """Return the status when *job* must be skipped (core missing, or no watchlist if ``watchlist``).
+
+    ``only`` restricts which missing core items block the job (default: any).
+    """
     if not JOB_GUARD_ENABLED:
         return None
     async with async_session_factory() as session:
         status = await get_setup_status(session)
-    missing = status.missing_core
-    if not missing and watchlist and not status.has_watchlist:
+    missing = tuple(m for m in status.missing_core if only is None or m in only)
+    if not status.missing_core and watchlist and not status.has_watchlist:
         missing = ("watchlist",)
     if not missing:
         _last_blocked.pop(job, None)

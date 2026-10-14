@@ -36,6 +36,7 @@ from sqlalchemy.orm import selectinload
 from app.core.failure_logger import log_failure
 from app.core.fake_detector import is_transfer_filelist_fake
 from app.core.parser import build_release_feature_pills
+from app.core.prerequisites import setup_blocks
 from app.core.rate_limit_queue import (
     downloader_rate_limit_detail,
     get_downloader_cooldown_remaining,
@@ -986,6 +987,13 @@ async def run_transfer_poller_tick(
     Guarded by `_poller_lock` so concurrent invocations from the 8s HTMX active-pushes
     endpoint and the 20s APScheduler job never overlap.
     """
+    if await setup_blocks("transfer poller", only=("downloader",)):
+        return {
+            "polled": False,
+            "active_count": 0,
+            "remaining_active": 0,
+            "sleeping": not transfer_poller.is_awake,
+        }
     async with _poller_lock:
         if session is None:
             async with async_session_factory() as owned_session:

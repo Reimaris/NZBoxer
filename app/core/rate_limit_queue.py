@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from sqlalchemy import func, select
 
+from app.core.prerequisites import setup_blocks
 from app.db.models import DownloadHistory, MediaItem
 from app.services.downloaders.base import DOWNLOADER_DISPLAY_NAMES
 from app.services.downloaders.factory import downloader_classes
@@ -422,6 +423,8 @@ async def resume_rate_limited_pushes() -> int:
 
 async def run_rate_limit_resume_tick() -> None:
     """APScheduler entry point (cheap in-memory cooldown check first)."""
+    if await setup_blocks("rate-limit resume", only=("downloader", "indexer")):
+        return
     tb_rem = get_downloader_cooldown_remaining()
     idx_rem = newznab_client.get_all_indexer_cooldowns_remaining()
     rem = max(tb_rem, idx_rem)

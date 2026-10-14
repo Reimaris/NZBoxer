@@ -76,6 +76,11 @@ NZBoxer is built around an **on-demand workflow**:
   - [TMDB](https://www.themoviedb.org/) (API Key for movie & TV metadata)
   - At least one **Newznab-compatible Usenet Indexer**
   - A downloader: [TorBox](https://torbox.app/) (API Key for Usenet cloud downloads), [SABnzbd](https://sabnzbd.org/) (host, port, API key; it must be reachable from the NZBoxer container via its LAN IP or `host.docker.internal`, not `localhost`) or [Premiumize](https://www.premiumize.me/account) (API key). Only one downloader is active at a time.
+
+**Required to run:** a TMDB API key, at least one indexer and at least one downloader. Until all three are configured in Settings, NZBoxer shows a **Setup required** screen (with a guided setup wizard) and background jobs stay idle. Without a connected watchlist provider the app runs in **Ad-Hoc Search only** mode: the dashboard shows just the Ad-Hoc Search card and watchlist sync is disabled.
+
+> **Upgrade note:** Installs without a TMDB key will see a Setup required screen until one is added in Settings.
+
 - *(Optional)* **Discord Webhook URL** or **Telegram Bot Token & Chat ID** for push and completion notifications (AniList anime metadata requires no API key).
 
 ---
