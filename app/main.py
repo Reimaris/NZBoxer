@@ -3034,8 +3034,10 @@ async def manual_sync() -> HTMLResponse:
     """Trigger manual sync for all configured providers — synchronous, blocks until complete."""
     from app.core.automation import sync_all_providers
 
-    await sync_all_providers()
+    errors = await sync_all_providers()
     msg = "Watchlist sync complete."
+    if isinstance(errors, int) and errors > 0:
+        msg = f"Watchlist sync complete ({errors} provider error(s))."
 
     return HTMLResponse(
         content=f"""

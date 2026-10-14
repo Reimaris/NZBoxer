@@ -351,14 +351,42 @@ def evaluate_periodic_simkl_sync(
     return best or SimklPeriodicSyncStatus("disabled", 0, None, 0)
 
 
+def is_provider_periodic_sync_due(
+    provider: Provider,
+    now: datetime | None = None,
+) -> bool:
+    """Return True if a connected watchlist provider has periodic sync enabled and is due."""
+    if not getattr(provider, "is_active", True):
+        return False
+    cfg = provider.watchlist_config
+    if provider.type == "simkl":
+        # Legacy Simkl tokens (no refresh token) still count as configured.
+        configured = bool(provider.client_id or cfg.get("client_id")) and bool(
+            provider.access_token or cfg.get("access_token") or cfg.get("refresh_token")
+        )
+    else:
+        configured = provider.watchlist_connection_status == "connected"
+    if not configured:
+        return False
+    if now is None:
+        now = datetime.now(timezone.utc)
+    elif now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
+    interval = normalize_sync_interval_minutes(cfg.get("sync_interval_minutes"))
+    if interval == 0:
+        return False
+    last = _parse_iso_utc(cfg.get("last_synced_at"))
+    if last is None:
+        return True
+    return (now - last) >= timedelta(minutes=interval)
+
+
 def is_simkl_periodic_sync_due(
     provider: Provider,
     now: datetime | None = None,
 ) -> bool:
     """Return True if a Simkl provider has periodic sync enabled and its interval has elapsed."""
-    if now is None:
-        now = datetime.now(timezone.utc)
-    return evaluate_periodic_simkl_sync([provider], now).state == "due"
+    return is_provider_periodic_sync_due(provider, now)
 
 
 async def should_trigger_dashboard_simkl_sync(
@@ -377,23 +405,22 @@ async def should_trigger_dashboard_simkl_sync(
     )
 
 
-async def run_periodic_simkl_sync_if_due(now: datetime | None = None) -> bool:
-    """Run sync_all_providers if any active Simkl provider's periodic sync interval is due."""
+async def run_periodic_watchlist_sync_if_due(now: datetime | None = None) -> bool:
+    """Run sync_all_providers if any active watchlist provider's periodic interval is due."""
     if _sync_lock.locked():
         return False
+    now = now or datetime.now(timezone.utc)
     async with async_session_factory() as session:
-        stmt = select(Provider).where(Provider.type == "simkl")
+        stmt = select(Provider).where(Provider.category == "watchlist")
         providers = (await session.execute(stmt)).scalars().all()
-        due = (
-            evaluate_periodic_simkl_sync(
-                providers, now or datetime.now(timezone.utc)
-            ).state
-            == "due"
-        )
+        due = any(is_provider_periodic_sync_due(p, now) for p in providers)
     if due:
         await sync_all_providers()
         return True
     return False
+
+
+run_periodic_simkl_sync_if_due = run_periodic_watchlist_sync_if_due
 
 
 async def run_orchestrator_tick(now: datetime | None = None) -> None:
@@ -467,14 +494,22 @@ async def run_orchestrator_tick(now: datetime | None = None) -> None:
             providers = (
                 (
                     await session.execute(
-                        select(Provider).where(Provider.type == "simkl")
+                        select(Provider).where(Provider.category == "watchlist")
                     )
                 )
                 .scalars()
                 .all()
             )
             status = evaluate_periodic_simkl_sync(providers, now)
+            other_due = any(
+                is_provider_periodic_sync_due(p, now)
+                for p in providers
+                if p.type != "simkl"
+            )
         tag = "[ORCHESTRATOR] [3/3] Periodic Simkl sync:"
+        if status.state != "due" and other_due:
+            tag = "[ORCHESTRATOR] [3/3] Periodic watchlist sync:"
+            status = SimklPeriodicSyncStatus("due", 0, None, 0)
         if status.state == "due":
             if _sync_lock.locked():
                 logger.info("%s due but a sync is already running; skipping", tag)
@@ -775,199 +810,328 @@ async def _simkl_seen_remote_ids(
     return seen
 
 
-async def sync_all_providers() -> None:
-    """Sync watchlists and libraries from all configured providers (Simkl, etc.)."""
+def _record_provider_error(provider: Provider, error: object) -> str:
+    """Store a redacted ``last_error`` on the provider config and return the message."""
     import json
 
-    async with _sync_lock:
-        log_process_start(logger, "Provider Sync Engine")
-        from app.db.models import Provider
+    from app.core.log_redaction import redact_text
 
-        async with async_session_factory() as session:
-            try:
-                stmt = select(Provider)
-                providers_res = await session.execute(stmt)
-                provider_ids = [
-                    p.id
-                    for p in providers_res.scalars().unique().all()
-                    if p.type == "simkl" and getattr(p, "is_active", True)
-                ]
+    message = redact_text(str(error)) or type(error).__name__
+    cfg = provider.watchlist_config
+    cfg["last_error"] = message
+    provider.config_json = json.dumps(cfg)
+    return message
 
-                any_synced = False
-                for prov_id in provider_ids:
-                    provider = await session.get(Provider, prov_id)
-                    if provider is None or not getattr(provider, "is_active", True):
-                        continue
 
-                    cfg = provider.simkl_config
-                    has_cid = bool(provider.client_id or cfg.get("client_id"))
-                    has_tok = bool(
-                        provider.access_token
-                        or cfg.get("access_token")
-                        or cfg.get("refresh_token")
-                    )
-                    if not has_cid or not has_tok:
+async def _sync_adapter_provider(
+    session: AsyncSession, provider: Provider, result: dict[str, Any]
+) -> None:
+    """Fetch, ingest, complete-absent and prune one non-Simkl watchlist provider."""
+    import json
+
+    from app.services.watchlist_ingest import (
+        ingest_entries,
+        mark_absent_sources_completed,
+    )
+    from app.services.watchlist_providers import get_adapter
+
+    adapter = get_adapter(provider.type)
+    # Release any read transaction snapshot before outbound HTTP calls
+    await session.commit()
+    entries = await adapter.fetch_entries(provider)
+    logger.info("[SYNC] [1/4] %s: fetched %d entries", provider.name, len(entries))
+
+    ingest = await ingest_entries(session, provider, entries)
+    logger.info(
+        "[SYNC] [2/4] %s: ingested %d (%d added, %d linked, %d status changes)",
+        provider.name,
+        ingest.ingested,
+        ingest.added,
+        ingest.linked,
+        ingest.transitioned,
+    )
+
+    completed = await mark_absent_sources_completed(
+        session, provider, {e.remote_id for e in entries}
+    )
+    logger.info(
+        "[SYNC] [3/4] %s: %d departed entries marked completed",
+        provider.name,
+        completed,
+    )
+
+    pruned = await prune_inactive_media_items(session)
+    logger.info("[SYNC] [4/4] %s: %d inactive titles pruned", provider.name, pruned)
+
+    result.update(ingested=ingest.ingested, added=ingest.added, pruned=pruned)
+    cfg = provider.watchlist_config
+    cfg["last_synced_at"] = datetime.now(timezone.utc).isoformat()
+    cfg.pop("last_error", None)
+    provider.config_json = json.dumps(cfg)
+    await session.commit()
+
+
+async def _run_provider_sync(
+    only_provider_id: int | None = None,
+) -> list[dict[str, Any]]:
+    """Sync active watchlist providers sequentially; caller must hold ``_sync_lock``."""
+    import json
+
+    results: list[dict[str, Any]] = []
+    log_process_start(logger, "Provider Sync Engine")
+    from app.db.models import Provider
+
+    async with async_session_factory() as session:
+        try:
+            stmt = (
+                select(Provider)
+                .where(Provider.category == "watchlist", Provider.is_active.is_(True))
+                .order_by(Provider.priority.asc(), Provider.id.asc())
+            )
+            if only_provider_id is not None:
+                stmt = stmt.where(Provider.id == only_provider_id)
+            providers_res = await session.execute(stmt)
+            provider_ids = [p.id for p in providers_res.scalars().unique().all()]
+
+            any_synced = False
+            for prov_id in provider_ids:
+                provider = await session.get(Provider, prov_id)
+                if provider is None or not getattr(provider, "is_active", True):
+                    continue
+
+                result: dict[str, Any] = {
+                    "status": "ok",
+                    "ingested": 0,
+                    "added": 0,
+                    "pruned": 0,
+                    "error": None,
+                }
+
+                if provider.type != "simkl":
+                    if provider.watchlist_connection_status != "connected":
                         logger.warning(
-                            "Provider %s lacks Simkl credentials, skipping.",
-                            provider.name,
+                            "Provider %s is not connected, skipping.", provider.name
                         )
                         continue
-
+                    results.append(result)
                     try:
-                        client_id, access_token = await simkl.ensure_valid_simkl_token(
-                            session, provider
-                        )
-                        cfg = provider.simkl_config
-                        sync_movies = bool(cfg.get("sync_movies", True))
-                        sync_series = bool(cfg.get("sync_series", True))
-                        sync_anime = bool(cfg.get("sync_anime", True))
-                        active_simkl_ids: set[int] = set()
-
-                        # Release any read transaction snapshot before outbound HTTP calls
-                        await session.commit()
-
-                        fetched: dict[str, list[dict[str, Any]]] = {}
-                        for category, enabled in (
-                            ("movies", sync_movies),
-                            ("shows", sync_series),
-                            ("anime", sync_anime),
-                        ):
-                            fetched[category] = []
-                            if not enabled:
-                                continue
-                            (
-                                fetched[category],
-                                client_id,
-                                access_token,
-                            ) = await _fetch_simkl_category_with_retry(
-                                session,
-                                provider,
-                                category,
-                                client_id,
-                                access_token,
-                            )
-                            active_simkl_ids.update(
-                                _extract_active_simkl_ids(fetched[category])
-                            )
-                        logger.info(
-                            "[SYNC] [1/7] Fetched %d movies, %d shows, %d anime",
-                            len(fetched["movies"]),
-                            len(fetched["shows"]),
-                            len(fetched["anime"]),
-                        )
-
-                        ingest_stats = IngestStats()
-                        for category, media_type in (
-                            ("movies", MediaType.MOVIE),
-                            ("shows", MediaType.SHOW),
-                            ("anime", MediaType.ANIME),
-                        ):
-                            await _sync_items(
-                                session,
-                                fetched[category],
-                                media_type,
-                                provider.id,
-                                provider_name=provider.name,
-                                stats=ingest_stats,
-                            )
-                        logger.info(
-                            "[SYNC] [2/7] Ingested %d items (%d newly added)",
-                            ingest_stats.ingested,
-                            ingest_stats.added,
-                        )
-
-                        sequels_consolidated = 0
-                        anime_seasons_updated = 0
-                        if sync_anime:
-                            sequels_consolidated = (
-                                await consolidate_standalone_anime_sequels(session)
-                            )
-                            anime_seasons_updated = (
-                                await refresh_due_future_anime_seasons(session)
-                            )
-                        logger.info(
-                            "[SYNC] [3/7] Reconciled anime hierarchies (%d sequels consolidated, %d TBA seasons updated)",
-                            sequels_consolidated,
-                            anime_seasons_updated,
-                        )
-
-                        air_stats = AirDateRefreshStats()
-                        await enrich_active_shows_episode_air_dates(
-                            session, stats=air_stats
-                        )
-                        logger.info(
-                            "[SYNC] [4/7] Air date refresh: %d episode dates updated across %d titles",
-                            air_stats.episodes_updated,
-                            air_stats.titles_updated,
-                        )
-
-                        rolled = await rollover_due_future_episodes_and_seasons(session)
-                        logger.info(
-                            "[SYNC] [5/7] Rollover: %d items transitioned to searching",
-                            rolled["episodes_rolled_over"]
-                            + rolled["seasons_rolled_over"],
-                        )
-
-                        tba_stats = TbaDiscoveryStats()
-                        await refresh_due_future_tv_seasons(session, stats=tba_stats)
-                        logger.info(
-                            "[SYNC] [6/7] TMDB TBA season discovery: %d TV shows evaluated, %d seasons discovered",
-                            tba_stats.shows_evaluated,
-                            tba_stats.seasons_discovered,
-                        )
-
-                        from app.services.watchlist_ingest import (
-                            mark_absent_sources_completed,
-                        )
-
-                        await mark_absent_sources_completed(
-                            session,
-                            provider,
-                            await _simkl_seen_remote_ids(
-                                session,
-                                provider.id,
-                                active_simkl_ids,
-                                sync_movies=sync_movies,
-                                sync_series=sync_series,
-                                sync_anime=sync_anime,
-                            ),
-                        )
-                        duplicates_merged = await deduplicate_media_items(session)
-                        pruned = await prune_inactive_media_items(session)
-                        logger.info(
-                            "[SYNC] [7/7] Maintenance: %d duplicates merged, %d completed/dropped titles pruned",
-                            duplicates_merged,
-                            pruned,
-                        )
-
-                        cfg = provider.simkl_config
-                        cfg["last_synced_at"] = datetime.now(timezone.utc).isoformat()
-                        provider.config_json = json.dumps(cfg)
-                        await session.commit()
+                        await _sync_adapter_provider(session, provider, result)
                         any_synced = True
                     except Exception as prov_err:  # noqa: BLE001
-                        logger.error(
-                            "Provider sync failed for %s: %s",
-                            provider.name,
-                            prov_err,
-                        )
                         await session.rollback()
                         prov_after_rb = await session.get(Provider, prov_id)
-                        if prov_after_rb is not None:
-                            rb_cfg = prov_after_rb.simkl_config
-                            rb_cfg["last_synced_at"] = datetime.now(
-                                timezone.utc
-                            ).isoformat()
-                            prov_after_rb.config_json = json.dumps(rb_cfg)
-                            await session.commit()
+                        target = prov_after_rb or provider
+                        message = _record_provider_error(target, prov_err)
+                        logger.error(
+                            "[SYNC] Provider sync failed for %s: %s",
+                            provider.name,
+                            message,
+                        )
+                        result.update(status="error", error=message)
+                        await session.commit()
+                    continue
 
-                if any_synced:
-                    logger.info("All provider watchlists synced successfully.")
-            except Exception as e:  # noqa: BLE001
-                logger.error("Provider sync failed: %s", e)
-                await session.rollback()
-            finally:
-                log_process_end(logger, "Provider Sync Engine")
+                cfg = provider.simkl_config
+                has_cid = bool(provider.client_id or cfg.get("client_id"))
+                has_tok = bool(
+                    provider.access_token
+                    or cfg.get("access_token")
+                    or cfg.get("refresh_token")
+                )
+                if not has_cid or not has_tok:
+                    logger.warning(
+                        "Provider %s lacks Simkl credentials, skipping.",
+                        provider.name,
+                    )
+                    continue
+
+                results.append(result)
+                try:
+                    client_id, access_token = await simkl.ensure_valid_simkl_token(
+                        session, provider
+                    )
+                    cfg = provider.simkl_config
+                    sync_movies = bool(cfg.get("sync_movies", True))
+                    sync_series = bool(cfg.get("sync_series", True))
+                    sync_anime = bool(cfg.get("sync_anime", True))
+                    active_simkl_ids: set[int] = set()
+
+                    # Release any read transaction snapshot before outbound HTTP calls
+                    await session.commit()
+
+                    fetched: dict[str, list[dict[str, Any]]] = {}
+                    for category, enabled in (
+                        ("movies", sync_movies),
+                        ("shows", sync_series),
+                        ("anime", sync_anime),
+                    ):
+                        fetched[category] = []
+                        if not enabled:
+                            continue
+                        (
+                            fetched[category],
+                            client_id,
+                            access_token,
+                        ) = await _fetch_simkl_category_with_retry(
+                            session,
+                            provider,
+                            category,
+                            client_id,
+                            access_token,
+                        )
+                        active_simkl_ids.update(
+                            _extract_active_simkl_ids(fetched[category])
+                        )
+                    logger.info(
+                        "[SYNC] [1/7] Fetched %d movies, %d shows, %d anime",
+                        len(fetched["movies"]),
+                        len(fetched["shows"]),
+                        len(fetched["anime"]),
+                    )
+
+                    ingest_stats = IngestStats()
+                    for category, media_type in (
+                        ("movies", MediaType.MOVIE),
+                        ("shows", MediaType.SHOW),
+                        ("anime", MediaType.ANIME),
+                    ):
+                        await _sync_items(
+                            session,
+                            fetched[category],
+                            media_type,
+                            provider.id,
+                            provider_name=provider.name,
+                            stats=ingest_stats,
+                        )
+                    logger.info(
+                        "[SYNC] [2/7] Ingested %d items (%d newly added)",
+                        ingest_stats.ingested,
+                        ingest_stats.added,
+                    )
+
+                    sequels_consolidated = 0
+                    anime_seasons_updated = 0
+                    if sync_anime:
+                        sequels_consolidated = (
+                            await consolidate_standalone_anime_sequels(session)
+                        )
+                        anime_seasons_updated = await refresh_due_future_anime_seasons(
+                            session
+                        )
+                    logger.info(
+                        "[SYNC] [3/7] Reconciled anime hierarchies (%d sequels consolidated, %d TBA seasons updated)",
+                        sequels_consolidated,
+                        anime_seasons_updated,
+                    )
+
+                    air_stats = AirDateRefreshStats()
+                    await enrich_active_shows_episode_air_dates(
+                        session, stats=air_stats
+                    )
+                    logger.info(
+                        "[SYNC] [4/7] Air date refresh: %d episode dates updated across %d titles",
+                        air_stats.episodes_updated,
+                        air_stats.titles_updated,
+                    )
+
+                    rolled = await rollover_due_future_episodes_and_seasons(session)
+                    logger.info(
+                        "[SYNC] [5/7] Rollover: %d items transitioned to searching",
+                        rolled["episodes_rolled_over"] + rolled["seasons_rolled_over"],
+                    )
+
+                    tba_stats = TbaDiscoveryStats()
+                    await refresh_due_future_tv_seasons(session, stats=tba_stats)
+                    logger.info(
+                        "[SYNC] [6/7] TMDB TBA season discovery: %d TV shows evaluated, %d seasons discovered",
+                        tba_stats.shows_evaluated,
+                        tba_stats.seasons_discovered,
+                    )
+
+                    from app.services.watchlist_ingest import (
+                        mark_absent_sources_completed,
+                    )
+
+                    await mark_absent_sources_completed(
+                        session,
+                        provider,
+                        await _simkl_seen_remote_ids(
+                            session,
+                            provider.id,
+                            active_simkl_ids,
+                            sync_movies=sync_movies,
+                            sync_series=sync_series,
+                            sync_anime=sync_anime,
+                        ),
+                    )
+                    duplicates_merged = await deduplicate_media_items(session)
+                    pruned = await prune_inactive_media_items(session)
+                    logger.info(
+                        "[SYNC] [7/7] Maintenance: %d duplicates merged, %d completed/dropped titles pruned",
+                        duplicates_merged,
+                        pruned,
+                    )
+
+                    result.update(
+                        ingested=ingest_stats.ingested,
+                        added=ingest_stats.added,
+                        pruned=pruned,
+                    )
+                    cfg = provider.simkl_config
+                    cfg["last_synced_at"] = datetime.now(timezone.utc).isoformat()
+                    cfg.pop("last_error", None)
+                    provider.config_json = json.dumps(cfg)
+                    await session.commit()
+                    any_synced = True
+                except Exception as prov_err:  # noqa: BLE001
+                    await session.rollback()
+                    prov_after_rb = await session.get(Provider, prov_id)
+                    target = prov_after_rb or provider
+                    message = _record_provider_error(target, prov_err)
+                    logger.error(
+                        "Provider sync failed for %s: %s", provider.name, message
+                    )
+                    result.update(status="error", error=message)
+                    if prov_after_rb is not None:
+                        rb_cfg = prov_after_rb.simkl_config
+                        rb_cfg["last_synced_at"] = datetime.now(
+                            timezone.utc
+                        ).isoformat()
+                        prov_after_rb.config_json = json.dumps(rb_cfg)
+                        await session.commit()
+
+            if any_synced:
+                logger.info("All provider watchlists synced successfully.")
+        except Exception as e:  # noqa: BLE001
+            logger.error("Provider sync failed: %s", e)
+            await session.rollback()
+        finally:
+            log_process_end(logger, "Provider Sync Engine")
+    return results
+
+
+async def sync_all_providers() -> int:
+    """Sync every active watchlist provider sequentially; returns the provider error count."""
+    async with _sync_lock:
+        results = await _run_provider_sync()
+    return sum(1 for r in results if r["status"] == "error")
+
+
+async def sync_single_provider(provider_id: int) -> dict[str, Any]:
+    """Sync one watchlist provider; returns ``status`` ok/error/busy plus counters."""
+    if _sync_lock.locked():
+        return {"status": "busy", "ingested": 0, "added": 0, "pruned": 0, "error": None}
+    async with _sync_lock:
+        results = await _run_provider_sync(provider_id)
+    if not results:
+        return {
+            "status": "error",
+            "ingested": 0,
+            "added": 0,
+            "pruned": 0,
+            "error": "Provider not found, inactive or not connected.",
+        }
+    return results[0]
 
 
 async def enrich_movie_show_metadata(
