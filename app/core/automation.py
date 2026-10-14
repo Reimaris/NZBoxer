@@ -1261,6 +1261,9 @@ async def enrich_anime_metadata(session: AsyncSession, item: MediaItem) -> Media
                 other_root.poster_url = item.poster_url
             for sid in item.associated_franchise_ids:
                 other_root.add_associated_franchise_id(sid)
+            # Remember the merged entry's AniList id so later syncs resolve it to the root
+            # instead of re-creating and re-consolidating it (many AniList queries each time).
+            other_root.add_associated_franchise_id(original_anilist_id)
             if other_root.status == MediaStatus.IGNORED:
                 other_root.status = (
                     MediaStatus.FUTURE
@@ -1869,6 +1872,7 @@ async def reset_anime_metadata(session: AsyncSession, item_id: int) -> MediaItem
                     other_root.poster_url = item.poster_url
                 for sid in item.associated_franchise_ids:
                     other_root.add_associated_franchise_id(sid)
+                other_root.add_associated_franchise_id(item.anilist_id)
                 await session.delete(item)
                 await session.commit()
                 return other_root

@@ -100,6 +100,26 @@ async def _first_item(session: AsyncSession, *conditions) -> MediaItem | None:
     return (await session.execute(stmt)).scalars().first()
 
 
+async def _anime_merged_into(
+    session: AsyncSession, anilist_id: int
+) -> MediaItem | None:
+    """Anime franchise item that already absorbed AniList entry *anilist_id* (no Season row)."""
+    stmt = (
+        select(MediaItem)
+        .where(
+            MediaItem.media_type == MediaType.ANIME,
+            # LIKE is only a prefilter; the exact id is confirmed below.
+            MediaItem.associated_franchise_ids_json.like(f"%{anilist_id}%"),
+        )
+        .order_by(MediaItem.id.asc())
+        .options(selectinload(MediaItem.seasons))
+    )
+    for item in (await session.execute(stmt)).scalars():
+        if anilist_id in item.associated_franchise_ids:
+            return item
+    return None
+
+
 async def resolve_existing_item(
     session: AsyncSession,
     entry: WatchlistEntry,
@@ -136,6 +156,9 @@ async def resolve_existing_item(
             )
             if season and season.media_item:
                 return await _first_item(session, MediaItem.id == season.media_item_id)
+            merged = await _anime_merged_into(session, anilist_id)
+            if merged:
+                return merged
         if entry.mal_id:
             item = await _first_item(
                 session,

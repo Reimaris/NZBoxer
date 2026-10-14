@@ -115,7 +115,16 @@ static_dir = Path(__file__).parent / "static"
 templates_dir.mkdir(exist_ok=True)
 static_dir.mkdir(exist_ok=True)
 
-templates = Jinja2Templates(directory=str(templates_dir))
+
+def _setup_context(request: Request) -> dict[str, Any]:
+    """Expose the per-request SetupStatus (set by ``setup_guard``) to every template."""
+    setup = getattr(request.state, "setup", None)
+    return {"setup": setup} if setup is not None else {}
+
+
+templates = Jinja2Templates(
+    directory=str(templates_dir), context_processors=[_setup_context]
+)
 
 
 def relative_date(dt: datetime | None) -> str:
@@ -297,13 +306,15 @@ async def setup_guard(request: Request, call_next):
 
     if not request.app.state.setup_guard_enabled:
         return await call_next(request)
-    path_class = classify_path(request.url.path, request.method)
-    if path_class == "open":
+    if request.url.path.startswith("/static"):
         return await call_next(request)
 
     async with async_session_factory() as session:
         status = await get_setup_status(session)
     request.state.setup = status
+    path_class = classify_path(request.url.path, request.method)
+    if path_class == "open":
+        return await call_next(request)
     is_htmx = request.headers.get("HX-Request") == "true"
     accepts_json = "application/json" in request.headers.get("accept", "")
 
@@ -2753,6 +2764,18 @@ def _resolve_onboarding_type(
 
 _ONBOARDING_WATCHLIST_TYPES = WATCHLIST_TYPES
 _ONBOARDING_DOWNLOADER_TYPES = DOWNLOADER_TYPES
+
+
+@app.get("/setup/status")
+async def setup_status(request: Request) -> dict[str, Any]:
+    """Polled by the Setup required page to reload once the prerequisites are met."""
+    from app.core.prerequisites import get_setup_status
+
+    status = getattr(request.state, "setup", None)
+    if status is None:  # guard disabled (tests)
+        async with async_session_factory() as session:
+            status = await get_setup_status(session)
+    return {"ready": status.core_ready, "missing": list(status.missing_core)}
 
 
 # provider-specific code (allowlisted)
