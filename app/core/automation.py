@@ -18,6 +18,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.air_dates import enrich_active_shows_episode_air_dates  # noqa: F401
 from app.core.logging_config import log_process_end, log_process_start
 from app.core.phase_stats import (
     AirDateRefreshStats,
@@ -41,11 +42,8 @@ from app.services.library_maintenance import run_library_maintenance
 from app.services.watchlist_ingest import (
     prune_inactive_media_items,  # noqa: F401  (au.* patch target)
 )
-
-# provider-specific code (allowlisted): re-exports keep legacy patch targets valid
-from app.services.watchlists.simkl_sync import (  # noqa: F401
-    _sync_items,
-    enrich_active_shows_episode_air_dates,
+from app.services.watchlists.simkl_sync import (
+    _sync_items,  # noqa: F401  (legacy patch target)
 )
 
 logger = logging.getLogger(__name__)
