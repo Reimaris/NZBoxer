@@ -241,6 +241,31 @@ async def _monitor_matched_season(session: AsyncSession, season: Season) -> None
             ep.status = EpisodeStatus.SEARCHING
 
 
+async def _prefer_franchise_parent(
+    session: AsyncSession, standalone: MediaItem, anilist_id: int
+) -> MediaItem:
+    """If another item tracks *anilist_id* as a season, retire the standalone and use that parent."""
+    season = (
+        (
+            await session.execute(
+                select(Season).where(
+                    Season.anilist_id == anilist_id,
+                    Season.media_item_id != standalone.id,
+                )
+            )
+        )
+        .scalars()
+        .first()
+    )
+    if season is None:
+        return standalone
+    parent = await _first_item(session, MediaItem.id == season.media_item_id)
+    if parent is None:
+        return standalone
+    standalone.status = MediaStatus.IGNORED
+    return parent
+
+
 async def _upsert_source(
     session: AsyncSession,
     item: MediaItem,
@@ -383,10 +408,14 @@ async def ingest_entries(
             continue
 
         item = await resolve_existing_item(session, entry, mal_to_anilist)
+        if item is not None and anilist_id and item.anilist_id == anilist_id:
+            item = await _prefer_franchise_parent(session, item, anilist_id)
         if item is None:
             item = await _create_item(session, provider, entry, anilist_id)
             result.added += 1
+            created = True
         else:
+            created = False
             _fill_missing_ids(item, entry, anilist_id)
             result.linked += 1
 
@@ -397,6 +426,23 @@ async def ingest_entries(
             matched = _matched_season(item, entry)
         if matched is not None:
             await _monitor_matched_season(session, matched)
+            if (
+                item.status == MediaStatus.IGNORED
+                and entry.list_status in ACTIVE_LIST_STATUSES
+            ):
+                item.status = MediaStatus.SEARCHING  # restore a consolidated parent
+        elif (
+            not created
+            and entry.media_kind in _ANIME_KINDS
+            and item.anilist_id
+            and not item.seasons
+            and item.last_metadata_refreshed_at is None
+        ):
+            # Existing anime that never got its season hierarchy.
+            from app.core import automation
+
+            await session.commit()
+            await automation.enrich_anime_metadata(session, item)
         order = _entry_order(item, entry, matched) if has_progress else 0
         source = await _upsert_source(session, item, provider, entry, order, result)
 
@@ -461,6 +507,7 @@ async def prune_inactive_media_items(session: AsyncSession) -> int:
                     selectinload(MediaItem.watchlist_sources),
                     selectinload(MediaItem.seasons).selectinload(SeasonModel.episodes),
                 )
+                .execution_options(populate_existing=True)
             )
         )
         .scalars()
