@@ -9,6 +9,7 @@ and API endpoints for HTMX interactions.
 from __future__ import annotations
 
 import asyncio
+import html
 import json
 import logging
 import uuid
@@ -1281,6 +1282,7 @@ async def get_settings_page(request: Request):
         db_settings = (await session.execute(stmt)).scalars().first()
 
         raw_providers = (await session.execute(select(Provider))).scalars().all()
+        downloader_name = await _active_downloader_name(session)
 
         category_order = {"watchlist": 0, "metadata": 1, "downloader": 2, "indexer": 3}
 
@@ -1335,6 +1337,7 @@ async def get_settings_page(request: Request):
             "default_preset": default_preset,
             "notifications": notifications,
             "blacklisted_releases": blacklisted_releases,
+            "downloader_name": downloader_name,
         },
     )
 
@@ -1490,6 +1493,7 @@ async def provider_modal(
         notifications = (
             (await session.execute(select(NotificationChannel))).scalars().all()
         )
+        downloader_name = await _active_downloader_name(session)
 
     new_type = type.strip().lower() if type.strip().lower() in _WATCHLIST_TYPES else ""
     return templates.TemplateResponse(
@@ -1497,11 +1501,101 @@ async def provider_modal(
         name="modals/provider.html",
         context={
             "provider": provider,
+            "downloader_name": downloader_name,
             "notifications": notifications,
             "new_type": new_type if provider is None else "",
             "mal_redirect_uri": str(request.base_url).rstrip("/") + _MAL_CALLBACK_PATH,
         },
     )
+
+
+_DOWNLOADER_TYPES = ("torbox", "sabnzbd", "premiumize")
+
+
+async def _active_downloader_name(session: Any) -> str:
+    """Display name of the active downloader; 'TorBox' when none is active."""
+    from app.services import provider_service
+    from app.services.downloaders import DOWNLOADER_DISPLAY_NAMES
+
+    active = await provider_service.get_active_downloader(session)
+    return DOWNLOADER_DISPLAY_NAMES.get(active.type, "TorBox") if active else "TorBox"
+
+
+def _validate_downloader_form(provider_type: str, api_key: str, api_url: str) -> str:
+    """Return an error message for an invalid downloader form, '' when valid (spec §4.10)."""
+    if provider_type not in _DOWNLOADER_TYPES:
+        return f"Unsupported downloader type: {provider_type}"
+    if not api_key.strip():
+        return "API key is required."
+    if provider_type == "sabnzbd" and not api_url.strip().lower().startswith(
+        ("http://", "https://")
+    ):
+        return "SABnzbd URL is required and must start with http:// or https://."
+    return ""
+
+
+async def _sab_categories_from_form(request: Request) -> dict[str, str]:
+    """SABnzbd categories from the raw form; an omitted field gets its default,
+    an empty string is preserved (FastAPI Form() would collapse '' to a default)."""
+    form = await request.form()
+
+    def pick(key: str, default: str) -> str:
+        value = form.get(key)
+        return default if not isinstance(value, str) else value.strip()
+
+    return {
+        "category_movie": pick("category_movie", "movies"),
+        "category_series": pick("category_series", "tv"),
+        "category_anime": pick("category_anime", "anime"),
+    }
+
+
+def _reload_response(flash: str = "") -> HTMLResponse:
+    alert = f"alert({json.dumps(flash)});" if flash else ""
+    return HTMLResponse(content=f"<script>{alert}window.location.reload();</script>")
+
+
+async def _foreign_transfer_flash(session: Any, new_type: str) -> str:
+    """Non-blocking notice about in-flight transfers staying on another downloader."""
+    from app.services import provider_service
+    from app.services.downloaders import DOWNLOADER_DISPLAY_NAMES
+
+    counts = await provider_service.count_foreign_downloading(session, new_type)
+    return " ".join(
+        f"{n} running transfer(s) stay on "
+        f"{DOWNLOADER_DISPLAY_NAMES.get(t, 'TorBox')} and keep being tracked."
+        for t, n in sorted(counts.items())
+    )
+
+
+@app.post("/api/providers/test")
+async def test_downloader_provider(
+    request: Request,
+    provider_type: str = Form(""),
+    api_key: str = Form(""),
+    api_url: str = Form(""),
+) -> JSONResponse:
+    """Test connectivity of an unsaved downloader form."""
+    from app.db.models import Provider, ProviderCategory
+    from app.services.downloaders.factory import get_downloader_client
+
+    ptype = provider_type.strip().lower()
+    error = _validate_downloader_form(ptype, api_key, api_url)
+    if error:
+        return JSONResponse({"ok": False, "message": error}, status_code=422)
+    provider = Provider(
+        type=ptype,
+        category=ProviderCategory.DOWNLOADER.value,
+        name=ptype,
+        api_key=api_key.strip(),
+        api_url=api_url.strip(),
+        config_json=json.dumps(await _sab_categories_from_form(request)),
+    )
+    try:
+        ok, message = await get_downloader_client(provider).test_connection()
+    except Exception as exc:  # noqa: BLE001 - surface any client failure inline
+        return JSONResponse({"ok": False, "message": f"Connection failed: {exc}"})
+    return JSONResponse({"ok": ok, "message": message})
 
 
 @app.post("/settings/provider", response_class=HTMLResponse)
@@ -1543,6 +1637,8 @@ async def save_provider(
             "tmdb": ProviderCategory.METADATA.value,
             "anilist": ProviderCategory.METADATA.value,
             "torbox": ProviderCategory.DOWNLOADER.value,
+            "sabnzbd": ProviderCategory.DOWNLOADER.value,
+            "premiumize": ProviderCategory.DOWNLOADER.value,
             "treasure_maps": ProviderCategory.INDEXER.value,
         }
         resolved_category = type_cat_map.get(
@@ -1551,6 +1647,15 @@ async def save_provider(
 
     from app.core.automation import normalize_sync_interval_minutes
 
+    if resolved_category == ProviderCategory.DOWNLOADER.value:
+        error = _validate_downloader_form(provider_type.lower(), api_key, api_url)
+        if error:
+            return HTMLResponse(
+                content=f'<p class="text-sm text-red-400">{html.escape(error)}</p>',
+                status_code=422,
+            )
+
+    flash = ""
     async with async_session_factory() as session:
         old_client_id = ""
         old_access_token = ""
@@ -1666,6 +1771,8 @@ async def save_provider(
                 sync_interval_minutes
             )
             provider.config_json = json.dumps(raw_cfg)
+        elif provider_type.lower() == "sabnzbd":
+            provider.config_json = json.dumps(await _sab_categories_from_form(request))
 
         await session.flush()  # get ID
 
@@ -1674,12 +1781,13 @@ async def save_provider(
             provider.category == ProviderCategory.DOWNLOADER.value
             and provider.is_active
         ):
+            flash = await _foreign_transfer_flash(session, provider.type)
             await provider_service.set_active_downloader(session, provider.id)
 
         await session.commit()
 
     # Reload page
-    return HTMLResponse(content="<script>window.location.reload();</script>")
+    return _reload_response(flash)
 
 
 @app.post("/settings/provider/{provider_id}/toggle-active", response_class=HTMLResponse)
@@ -1687,6 +1795,7 @@ async def toggle_provider_active(provider_id: int) -> HTMLResponse:
     from app.db.models import Provider, ProviderCategory
     from app.services import provider_service
 
+    flash = ""
     async with async_session_factory() as session:
         provider = await session.get(Provider, provider_id)
         if provider:
@@ -1696,6 +1805,7 @@ async def toggle_provider_active(provider_id: int) -> HTMLResponse:
             )
             if is_downloader:
                 if not provider.is_active:
+                    flash = await _foreign_transfer_flash(session, provider.type)
                     await provider_service.set_active_downloader(session, provider.id)
                 else:
                     provider.is_active = False
@@ -1704,7 +1814,7 @@ async def toggle_provider_active(provider_id: int) -> HTMLResponse:
                 provider.is_active = not provider.is_active
                 await session.commit()
 
-    return HTMLResponse(content="<script>window.location.reload();</script>")
+    return _reload_response(flash)
 
 
 @app.delete("/settings/provider/{provider_id}", response_class=HTMLResponse)

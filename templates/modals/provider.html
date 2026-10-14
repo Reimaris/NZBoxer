@@ -134,6 +134,26 @@
                             </div>
                             <p class="text-xs text-[#71717a] mt-1">Cloud Usenet downloader for multipart NZB uploads, active transfer polling, and Layer 3 video verification.</p>
                         </button>
+                        <button type="button" @click="selectProvider('sabnzbd', 'downloader', 'SABnzbd')" class="bg-[#111115] hover:bg-[#2a2a32] border border-[#3f3f46] hover:border-purple-400 rounded-xl p-4 text-left transition-all group flex flex-col justify-between">
+                            <div class="flex items-center gap-3 mb-2">
+                                <div class="w-10 h-10 rounded-lg bg-green-500/20 text-green-400 flex items-center justify-center font-bold text-lg">SB</div>
+                                <div>
+                                    <div class="font-bold text-white group-hover:text-purple-400 transition-colors">SABnzbd</div>
+                                    <div class="text-xs text-[#a1a1aa]">Self-hosted Usenet Client</div>
+                                </div>
+                            </div>
+                            <p class="text-xs text-[#71717a] mt-1">Local or LAN SABnzbd instance with per-media categories and queue polling.</p>
+                        </button>
+                        <button type="button" @click="selectProvider('premiumize', 'downloader', 'Premiumize')" class="bg-[#111115] hover:bg-[#2a2a32] border border-[#3f3f46] hover:border-purple-400 rounded-xl p-4 text-left transition-all group flex flex-col justify-between">
+                            <div class="flex items-center gap-3 mb-2">
+                                <div class="w-10 h-10 rounded-lg bg-blue-500/20 text-blue-400 flex items-center justify-center font-bold text-lg">PM</div>
+                                <div>
+                                    <div class="font-bold text-white group-hover:text-purple-400 transition-colors">Premiumize</div>
+                                    <div class="text-xs text-[#a1a1aa]">Cloud Debrid Service</div>
+                                </div>
+                            </div>
+                            <p class="text-xs text-[#71717a] mt-1">Premiumize cloud downloader with fair-use rate limit handling.</p>
+                        </button>
                     </div>
                 </div>
 
@@ -157,7 +177,7 @@
 
             <!-- STEP 2: DYNAMIC CONFIGURATION VIEW -->
             <div x-show="step === 2" class="animate-fade-in">
-                <form id="provider-form" hx-post="/settings/provider{% if provider %}/{{ provider.id }}{% endif %}" class="space-y-6">
+                <form id="provider-form" hx-post="/settings/provider{% if provider %}/{{ provider.id }}{% endif %}" hx-target="#provider-form-status" hx-swap="innerHTML" hx-on::before-swap="if (event.detail.xhr.status === 422) { event.detail.shouldSwap = true; event.detail.isError = false; }" class="space-y-6">
                     <input type="hidden" name="provider_type" :value="providerType" value="{{ ptype }}">
                     <input type="hidden" name="category" :value="providerCategory" value="{{ pcat }}">
 
@@ -191,6 +211,47 @@
                             <div class="flex flex-col col-span-1 md:col-span-2">
                                 <label class="h-6 text-[#d1d5db] font-medium mb-1 flex items-center">TorBox API Base URL</label>
                                 <input type="text" name="api_url" value="{{ provider.api_url if provider and provider.api_url else 'https://api.torbox.app/v1/api' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors font-mono" placeholder="https://api.torbox.app/v1/api">
+                            </div>
+                        </div>
+                    </fieldset>
+
+                    <!-- SABNZBD CONFIGURATION -->
+                    <fieldset :disabled="providerType !== 'sabnzbd'" x-show="providerType === 'sabnzbd'" class="border-0 p-0 m-0 space-y-6">
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                            <div class="flex flex-col col-span-1 md:col-span-3">
+                                <label class="h-6 text-[#d1d5db] font-medium mb-1 flex items-center">SABnzbd URL <span class="text-red-500 ml-1">*</span></label>
+                                <input type="text" name="api_url" value="{{ provider.api_url if provider and provider.api_url and provider.type == 'sabnzbd' else '' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors font-mono" placeholder="http://localhost:8080/sabnzbd">
+                                <p class="text-xs text-[#71717a] mt-1">HTTPS is recommended: the API key is sent to this host.</p>
+                            </div>
+                            <div class="flex flex-col col-span-1 md:col-span-3">
+                                <label class="h-6 text-[#d1d5db] font-medium mb-1 flex items-center">SABnzbd API Key <span class="text-red-500 ml-1">*</span></label>
+                                <input type="password" name="api_key" value="{{ provider.api_key if provider and provider.api_key else '' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors font-mono" placeholder="Your SABnzbd API Key">
+                            </div>
+                            <div class="flex flex-col">
+                                <label class="h-6 text-[#d1d5db] font-medium mb-1 flex items-center">Movie Category</label>
+                                <input type="text" name="category_movie" value="{{ provider.sabnzbd_config.category_movie if provider and provider.type == 'sabnzbd' else 'movies' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors font-mono" placeholder="movies">
+                            </div>
+                            <div class="flex flex-col">
+                                <label class="h-6 text-[#d1d5db] font-medium mb-1 flex items-center">Series Category</label>
+                                <input type="text" name="category_series" value="{{ provider.sabnzbd_config.category_series if provider and provider.type == 'sabnzbd' else 'tv' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors font-mono" placeholder="tv">
+                            </div>
+                            <div class="flex flex-col">
+                                <label class="h-6 text-[#d1d5db] font-medium mb-1 flex items-center">Anime Category</label>
+                                <input type="text" name="category_anime" value="{{ provider.sabnzbd_config.category_anime if provider and provider.type == 'sabnzbd' else 'anime' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors font-mono" placeholder="anime">
+                            </div>
+                            <p class="text-xs text-[#71717a] md:col-span-3 -mt-3">Leave empty to use SABnzbd's default category.</p>
+                        </div>
+                    </fieldset>
+
+                    <!-- PREMIUMIZE CONFIGURATION -->
+                    <fieldset :disabled="providerType !== 'premiumize'" x-show="providerType === 'premiumize'" class="border-0 p-0 m-0 space-y-6">
+                        <div class="grid grid-cols-1 gap-6">
+                            <div class="flex flex-col">
+                                <label class="h-6 text-[#d1d5db] font-medium mb-1 flex items-center justify-between">
+                                    <span>Premiumize API Key <span class="text-red-500 ml-1">*</span></span>
+                                    <a href="https://www.premiumize.me/account" target="_blank" class="text-xs text-blue-400 hover:underline">Get API Key</a>
+                                </label>
+                                <input type="password" name="api_key" value="{{ provider.api_key if provider and provider.api_key else '' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors font-mono" placeholder="Your Premiumize API Key">
                             </div>
                         </div>
                     </fieldset>
@@ -393,6 +454,18 @@
                             {% endif %}
                         </div>
                     </fieldset>
+
+                    <!-- Downloader connection test -->
+                    <div x-show="providerCategory === 'downloader'" x-data="{ result: null, busy: false }" class="flex items-center gap-3">
+                        <button type="button" :disabled="busy"
+                                @click="busy = true; result = null; fetch('/api/providers/test', {method: 'POST', body: new URLSearchParams(new FormData(document.getElementById('provider-form')))}).then(r => r.json()).then(j => result = j).catch(() => result = {ok: false, message: 'Request failed'}).finally(() => busy = false)"
+                                class="px-4 py-2 bg-[#3f3f46] hover:bg-[#52525b] text-white rounded-lg font-medium transition-colors text-sm">
+                            Test Connection
+                        </button>
+                        <span x-show="result" x-text="result && result.message" :class="result && result.ok ? 'text-green-400' : 'text-red-400'" class="text-sm"></span>
+                    </div>
+
+                    <div id="provider-form-status"></div>
 
                     <!-- Form Submit Actions -->
                     <div class="flex justify-end gap-3 pt-4 border-t border-[#3f3f46]">

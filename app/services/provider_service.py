@@ -9,10 +9,10 @@ from __future__ import annotations
 import logging
 from typing import Sequence
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import Provider, ProviderCategory
+from app.db.models import DownloadHistory, Provider, ProviderCategory
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +49,21 @@ async def set_active_downloader(db: AsyncSession, provider_id: int) -> None:
         .values(is_active=True)
     )
     await db.commit()
+
+
+async def count_foreign_downloading(
+    db: AsyncSession, downloader_type: str
+) -> dict[str, int]:
+    """Count in-flight (downloading) history rows per downloader type other than the given one."""
+    stmt = (
+        select(DownloadHistory.downloader_type, func.count())
+        .where(
+            DownloadHistory.status_detail == "downloading",
+            DownloadHistory.downloader_type != downloader_type,
+        )
+        .group_by(DownloadHistory.downloader_type)
+    )
+    return {t: n for t, n in (await db.execute(stmt)).all()}
 
 
 async def get_active_indexers(db: AsyncSession) -> Sequence[Provider]:
