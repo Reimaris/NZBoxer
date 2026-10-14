@@ -697,7 +697,10 @@ class MediaItem(Base):
                 if s.season_number > 0 and s.air_date is not None
             ]
             if air_dates:
-                return min(air_dates)
+                return min(
+                    d.replace(tzinfo=timezone.utc) if d.tzinfo is None else d
+                    for d in air_dates
+                )
         return None
 
     @property

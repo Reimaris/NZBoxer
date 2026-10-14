@@ -3096,7 +3096,7 @@ async def rollover_due_future_episodes_and_seasons(
         if (
             season.status == SeasonStatus.FUTURE
             and season.air_date is not None
-            and season.air_date <= now
+            and _as_utc(season.air_date) <= now
             and all(ep.status != EpisodeStatus.FUTURE for ep in (season.episodes or []))
         ):
             season.status = SeasonStatus.SEARCHING
