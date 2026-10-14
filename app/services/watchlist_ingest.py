@@ -289,6 +289,21 @@ async def _prefer_franchise_parent(
     return parent
 
 
+async def _remote_id_taken(
+    session: AsyncSession, provider: Provider, remote_id: str, own_source_id: int
+) -> bool:
+    """True if another source of *provider* already holds *remote_id* (unique per provider)."""
+    return (
+        await session.execute(
+            select(MediaItemWatchlistSource.id).where(
+                MediaItemWatchlistSource.provider_id == provider.id,
+                MediaItemWatchlistSource.remote_id == remote_id,
+                MediaItemWatchlistSource.id != own_source_id,
+            )
+        )
+    ).first() is not None
+
+
 async def _upsert_source(
     session: AsyncSession,
     item: MediaItem,
@@ -332,7 +347,9 @@ async def _upsert_source(
             or source.list_status not in ACTIVE_LIST_STATUSES
             else source.list_status
         )
-        if entry.list_status in ACTIVE_LIST_STATUSES:
+        if entry.list_status in ACTIVE_LIST_STATUSES and not await _remote_id_taken(
+            session, provider, entry.remote_id, source.id
+        ):
             # Track an id that is currently on the list so absence detection stays correct.
             source.remote_id = entry.remote_id
     if new_status != source.list_status:
