@@ -64,6 +64,10 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+LOCAL_POLL_INTERVAL_SECONDS: int = 5  # SABnzbd
+CLOUD_POLL_INTERVAL_SECONDS: int = 20  # TorBox, Premiumize
+RATE_LIMIT_COOLDOWN_SECONDS: int = 900
+
 NOT_FOUND_GRACE_PERIOD_SECONDS = 900
 COMPLETED_RETENTION_SECONDS = 300
 FAILED_RETENTION_SECONDS = 300
@@ -178,6 +182,7 @@ class TransferPollerState:
         self.last_polled_at: datetime | None = None
         self.active_count: int = 0
         self._scheduler: Any | None = None
+        self.interval_seconds: int = CLOUD_POLL_INTERVAL_SECONDS
         # Maps item_id -> human-readable item title currently being searched/dispatched in background
         self.in_flight_pushes: dict[int, str] = {}
 
@@ -207,11 +212,30 @@ class TransferPollerState:
     def in_flight_titles(self) -> list[str]:
         return list(self.in_flight_pushes.values())
 
-    def wake(self) -> None:
+    def wake(self, active_types: set[str] | None = None) -> None:
+        """Wake the poller; with ``active_types`` also pick the effective cadence.
+
+        5 s iff every active row is SABnzbd (all-local), else 20 s.
+        """
         was_awake = self.is_awake
         self.is_awake = True
         if self._scheduler is not None:
             try:
+                if active_types is not None:
+                    interval = (
+                        LOCAL_POLL_INTERVAL_SECONDS
+                        if active_types and active_types <= {"sabnzbd"}
+                        else CLOUD_POLL_INTERVAL_SECONDS
+                    )
+                    if interval != self.interval_seconds:
+                        from apscheduler.triggers.interval import IntervalTrigger
+
+                        self._scheduler.reschedule_job(
+                            "transfer_poller_job",
+                            trigger=IntervalTrigger(seconds=interval),
+                        )
+                        self.interval_seconds = interval
+                        logger.info("Transfer Poller cadence set to %ds.", interval)
                 job = self._scheduler.get_job("transfer_poller_job")
                 if job is not None and job.next_run_time is None:
                     self._scheduler.resume_job("transfer_poller_job")
@@ -1006,7 +1030,6 @@ async def _run_transfer_poller_tick_with_session(
         in_flight_count,
     )
 
-    transfer_poller.wake()
     transfer_poller.last_polled_at = datetime.now(timezone.utc)
 
     active_types = set(
@@ -1025,6 +1048,7 @@ async def _run_transfer_poller_tick_with_session(
         .scalars()
         .all()
     )
+    transfer_poller.wake(active_types)
     non_torbox_types = sorted(t for t in active_types if t != "torbox")
     tb_map: dict[str, dict[str, Any]] = {}
     if (
