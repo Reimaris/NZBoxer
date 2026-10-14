@@ -297,18 +297,35 @@ async def setup_guard(request: Request, call_next):
 
     if not request.app.state.setup_guard_enabled:
         return await call_next(request)
-    if classify_path(request.url.path, request.method) == "open":
+    path_class = classify_path(request.url.path, request.method)
+    if path_class == "open":
         return await call_next(request)
 
     async with async_session_factory() as session:
         status = await get_setup_status(session)
     request.state.setup = status
-    if status.core_ready:
-        return await call_next(request)
-
-    missing_labels = [SETUP_LABELS[m] for m in status.missing_core]
     is_htmx = request.headers.get("HX-Request") == "true"
     accepts_json = "application/json" in request.headers.get("accept", "")
+
+    def refuse(missing: list[str], message: str) -> Response:
+        if is_htmx:
+            return HTMLResponse(
+                content=f'<div class="text-red-400 text-sm">{html.escape(message)}</div>',
+                status_code=403,
+                headers={"HX-Trigger": json.dumps({"showAutoSaveToast": message})},
+            )
+        return JSONResponse(
+            {"detail": "setup_required", "missing": missing}, status_code=403
+        )
+
+    if status.core_ready:
+        if status.has_watchlist or path_class != "watchlist":
+            return await call_next(request)
+        return refuse(
+            ["watchlist"], "Connect a watchlist provider in Settings to use this."
+        )
+
+    missing_labels = [SETUP_LABELS[m] for m in status.missing_core]
     is_page = (
         request.method == "GET"
         and not is_htmx
@@ -321,16 +338,8 @@ async def setup_guard(request: Request, call_next):
             name="setup_required.html",
             context={"setup": status, "missing_labels": missing_labels},
         )
-    message = "Setup required: " + ", ".join(missing_labels)
-    if is_htmx:
-        return HTMLResponse(
-            content=f'<div class="text-red-400 text-sm">{html.escape(message)}</div>',
-            status_code=403,
-            headers={"HX-Trigger": json.dumps({"showAutoSaveToast": message})},
-        )
-    return JSONResponse(
-        {"detail": "setup_required", "missing": list(status.missing_core)},
-        status_code=403,
+    return refuse(
+        list(status.missing_core), "Setup required: " + ", ".join(missing_labels)
     )
 
 
