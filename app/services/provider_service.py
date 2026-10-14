@@ -18,6 +18,26 @@ logger = logging.getLogger(__name__)
 
 _active_name = "TorBox"
 
+_METADATA_TYPES: frozenset[str] = frozenset({"tmdb"})
+
+
+def provider_category_for_type(type: str) -> str:
+    """Map a provider type to its category value; unknown types raise ``ValueError``."""
+    from app.services.downloaders.base import DOWNLOADER_TYPES
+    from app.services.indexers.catalog import is_indexer_type
+    from app.services.watchlists import WATCHLIST_TYPES
+
+    t = (type or "").strip().lower()
+    if t in WATCHLIST_TYPES:
+        return ProviderCategory.WATCHLIST.value
+    if t in DOWNLOADER_TYPES:
+        return ProviderCategory.DOWNLOADER.value
+    if t == "newznab" or is_indexer_type(t):
+        return ProviderCategory.INDEXER.value
+    if t in _METADATA_TYPES:
+        return ProviderCategory.METADATA.value
+    raise ValueError(f"Unknown provider type: {type!r}")
+
 
 class ActiveDownloaderName:
     """Template global: renders the active downloader's display name ('TorBox' fallback)."""

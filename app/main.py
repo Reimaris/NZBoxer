@@ -149,6 +149,8 @@ templates.env.globals["downloader_name"] = ActiveDownloaderName()
 from app.services.downloaders.base import (  # noqa: E402
     DOWNLOADER_DISPLAY_NAMES as _DL_NAMES,
 )
+from app.services.downloaders.base import DOWNLOADER_TYPES  # noqa: E402
+from app.services.watchlists import WATCHLIST_TYPES  # noqa: E402
 
 templates.env.globals["downloader_display_names"] = _DL_NAMES
 
@@ -1499,7 +1501,7 @@ async def save_global_settings(request: Request):
     )
 
 
-_WATCHLIST_TYPES = ("simkl", "anilist", "plex", "mal")
+_WATCHLIST_TYPES = WATCHLIST_TYPES
 
 
 @app.get("/settings/provider/new", response_class=HTMLResponse)
@@ -1540,7 +1542,7 @@ async def provider_modal(
     )
 
 
-_DOWNLOADER_TYPES = ("torbox", "sabnzbd", "premiumize")
+_DOWNLOADER_TYPES = DOWNLOADER_TYPES
 
 
 async def _active_downloader_name(session: Any) -> str:
@@ -1649,7 +1651,7 @@ async def save_provider(
     enable_movies: bool = Form(False),
     enable_series: bool = Form(False),
     enable_anime: bool = Form(False),
-    provider_type: str = Form("simkl"),
+    provider_type: str = Form(...),
     sync_interval_minutes: int = Form(0),
     sync_movies: bool | None = Form(None),
     sync_series: bool | None = Form(None),
@@ -1668,24 +1670,11 @@ async def save_provider(
     )
     from app.services.watchlists import simkl
 
-    # Determine standard category from provider type if not explicitly supplied
-    resolved_category = category
-    if not resolved_category:
-        type_cat_map = {
-            "simkl": ProviderCategory.WATCHLIST.value,
-            "plex": ProviderCategory.WATCHLIST.value,
-            "mal": ProviderCategory.WATCHLIST.value,
-            "tmdb": ProviderCategory.METADATA.value,
-            "anilist": ProviderCategory.METADATA.value,
-            "torbox": ProviderCategory.DOWNLOADER.value,
-            "sabnzbd": ProviderCategory.DOWNLOADER.value,
-            "premiumize": ProviderCategory.DOWNLOADER.value,
-        }
-        resolved_category = type_cat_map.get(
-            provider_type.lower(), ProviderCategory.WATCHLIST.value
-        )
-        if is_indexer_type(provider_type):
-            resolved_category = ProviderCategory.INDEXER.value
+    try:
+        type_category = provider_service.provider_category_for_type(provider_type)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    resolved_category = category or type_category
 
     indexer_categories: dict[str, str | None] = {}
     if is_indexer_type(provider_type):
@@ -2678,8 +2667,8 @@ def _resolve_onboarding_type(
     return value
 
 
-_ONBOARDING_WATCHLIST_TYPES = frozenset({"simkl", "anilist", "plex", "mal"})
-_ONBOARDING_DOWNLOADER_TYPES = frozenset({"torbox", "sabnzbd", "premiumize"})
+_ONBOARDING_WATCHLIST_TYPES = WATCHLIST_TYPES
+_ONBOARDING_DOWNLOADER_TYPES = DOWNLOADER_TYPES
 
 
 @app.get("/onboarding/modal", response_class=HTMLResponse)

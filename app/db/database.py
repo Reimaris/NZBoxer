@@ -944,26 +944,21 @@ async def init_db(database_url: str) -> None:
                         "DELETE FROM providers WHERE type IN ('hardcover', 'openlibrary') OR category = 'print_media';"
                     )
                 )
-                await session.execute(
-                    __import__("sqlalchemy").text(
-                        "UPDATE providers SET category = 'metadata' WHERE type IN ('anilist', 'tmdb');"
-                    )
+                from app.services.provider_service import provider_category_for_type
+
+                sa_text = __import__("sqlalchemy").text
+                type_rows = await session.execute(
+                    sa_text("SELECT DISTINCT type FROM providers")
                 )
-                await session.execute(
-                    __import__("sqlalchemy").text(
-                        "UPDATE providers SET category = 'downloader' WHERE type = 'torbox';"
+                for (ptype,) in type_rows.fetchall():
+                    try:
+                        cat = provider_category_for_type(ptype)
+                    except ValueError:
+                        continue
+                    await session.execute(
+                        sa_text("UPDATE providers SET category = :c WHERE type = :t"),
+                        {"c": cat, "t": ptype},
                     )
-                )
-                await session.execute(
-                    __import__("sqlalchemy").text(
-                        "UPDATE providers SET category = 'indexer' WHERE type = 'newznab';"
-                    )
-                )
-                await session.execute(
-                    __import__("sqlalchemy").text(
-                        "UPDATE providers SET category = 'watchlist' WHERE type = 'simkl';"
-                    )
-                )
             except Exception:
                 pass
 

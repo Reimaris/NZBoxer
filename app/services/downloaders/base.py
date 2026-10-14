@@ -15,6 +15,7 @@ DOWNLOADER_DISPLAY_NAMES: dict[str, str] = {
     "sabnzbd": "SABnzbd",
     "premiumize": "Premiumize",
 }
+DOWNLOADER_TYPES: frozenset[str] = frozenset(DOWNLOADER_DISPLAY_NAMES)
 
 
 class TransferState(str, enum.Enum):
