@@ -2604,6 +2604,7 @@ def _resolve_onboarding_type(
 
 
 _ONBOARDING_WATCHLIST_TYPES = frozenset({"simkl", "anilist", "plex", "mal"})
+_ONBOARDING_DOWNLOADER_TYPES = frozenset({"torbox", "sabnzbd", "premiumize"})
 
 
 @app.get("/onboarding/modal", response_class=HTMLResponse)
@@ -2646,6 +2647,22 @@ async def onboarding_modal(request: Request) -> Response:
         )
         tmdb_p = await _first_provider(session, "tmdb")
         torbox_p = await _first_provider(session, "torbox")
+        sab_p = await _first_provider(session, "sabnzbd")
+        pmz_p = await _first_provider(session, "premiumize")
+        active_dl = (
+            (
+                await session.execute(
+                    select(Provider)
+                    .where(
+                        Provider.category == "downloader",
+                        Provider.is_active.is_(True),
+                    )
+                    .order_by(Provider.id)
+                )
+            )
+            .scalars()
+            .first()
+        )
         indexer_p = await _first_provider(session, "treasure_maps")
         sys_settings = await session.get(SystemSettings, 1)
         telegram_c = (
@@ -2660,6 +2677,11 @@ async def onboarding_modal(request: Request) -> Response:
             .first()
         )
 
+    from app.services.downloaders.sabnzbd import parse_sabnzbd_api_url
+
+    sab_host, sab_port, sab_ssl = parse_sabnzbd_api_url(
+        sab_p.api_url if sab_p else None
+    )
     context: dict[str, Any] = {
         "simkl": {
             "client_id": (simkl_p.client_id if simkl_p else None) or "",
@@ -2693,6 +2715,18 @@ async def onboarding_modal(request: Request) -> Response:
             "api_url": (torbox_p.api_url if torbox_p else None)
             or "https://api.torbox.app/v1/api",
         },
+        "downloader_type": (
+            active_dl.type
+            if active_dl and active_dl.type in _ONBOARDING_DOWNLOADER_TYPES
+            else ""
+        ),
+        "sabnzbd": {
+            "host": sab_host,
+            "port": str(sab_port),
+            "ssl": sab_ssl,
+            "api_key": (sab_p.api_key if sab_p else None) or "",
+        },
+        "premiumize": {"api_key": (pmz_p.api_key if pmz_p else None) or ""},
         "indexer": {
             "name": (indexer_p.name if indexer_p else None) or "",
             "api_url": (indexer_p.api_url if indexer_p else None) or "",
@@ -2721,6 +2755,7 @@ async def onboarding_step1(request: Request) -> Response:
 
     from app.db.models import Provider, ProviderCategory
     from app.services import provider_service
+    from app.services.downloaders.sabnzbd import build_sabnzbd_api_url
 
     payload = await _parse_request_payload(request)
 
@@ -2746,6 +2781,43 @@ async def onboarding_step1(request: Request) -> Response:
         )
     except ValueError as exc:
         return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
+
+    try:
+        downloader_type = _resolve_onboarding_type(
+            payload,
+            "downloader_type",
+            _ONBOARDING_DOWNLOADER_TYPES,
+            label="downloader",
+            legacy="torbox" if torbox_api_key else "",
+        )
+    except ValueError as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
+
+    sab_host, sab_key = _f("sabnzbd_host"), _f("sabnzbd_api_key")
+    sab_port = 8080
+    sab_ssl = _f("sabnzbd_ssl").lower() in ("1", "true", "on", "yes")
+    pmz_key = _f("premiumize_api_key")
+    dl_provided = {
+        "torbox": bool(torbox_api_key),
+        "sabnzbd": bool(sab_host or sab_key),
+        "premiumize": bool(pmz_key),
+    }.get(downloader_type, False)
+    if downloader_type == "sabnzbd" and dl_provided:
+        error = ""
+        if not (sab_host and sab_key):
+            error = "SABnzbd requires host and API key."
+        elif "://" in sab_host or "/" in sab_host:
+            error = "SABnzbd host must be a hostname or IP address."
+        else:
+            port_raw = _f("sabnzbd_port")
+            try:
+                sab_port = int(port_raw) if port_raw else 8080
+            except ValueError:
+                sab_port = 0
+            if not 1 <= sab_port <= 65535:
+                error = "SABnzbd port must be between 1 and 65535."
+        if error:
+            return JSONResponse({"ok": False, "error": error}, status_code=400)
 
     anilist_username, anilist_token = _f("anilist_username"), _f("anilist_access_token")
     plex_token = _f("plex_auth_token")
@@ -2803,6 +2875,7 @@ async def onboarding_step1(request: Request) -> Response:
             "simkl": await _first("simkl"),
             "tmdb": await _first("tmdb"),
             "torbox": await _first("torbox"),
+            "downloader": None,
             "indexer": await _first("treasure_maps"),
         }
 
@@ -2866,11 +2939,35 @@ async def onboarding_step1(request: Request) -> Response:
             tmdb.api_key = tmdb_api_key
             providers["tmdb"] = tmdb
 
-        if torbox_api_key:
-            torbox = await _upsert("torbox", ProviderCategory.DOWNLOADER, "TorBox")
-            torbox.api_key = torbox_api_key
-            torbox.api_url = torbox_api_url or "https://api.torbox.app/v1/api"
-            providers["torbox"] = torbox
+        selected_dl: Provider | None = None
+        if dl_provided:
+            if downloader_type == "torbox":
+                selected_dl = await _upsert(
+                    "torbox", ProviderCategory.DOWNLOADER, "TorBox"
+                )
+                selected_dl.api_key = torbox_api_key
+                selected_dl.api_url = torbox_api_url or "https://api.torbox.app/v1/api"
+                providers["torbox"] = selected_dl
+            elif downloader_type == "sabnzbd":
+                sab_is_new = await _first("sabnzbd") is None
+                selected_dl = await _upsert(
+                    "sabnzbd", ProviderCategory.DOWNLOADER, "SABnzbd"
+                )
+                if sab_is_new:
+                    selected_dl.config_json = json.dumps(
+                        {
+                            "category_movie": "movies",
+                            "category_series": "tv",
+                            "category_anime": "anime",
+                        }
+                    )
+                selected_dl.api_key = sab_key
+                selected_dl.api_url = build_sabnzbd_api_url(sab_host, sab_port, sab_ssl)
+            else:
+                selected_dl = await _upsert(
+                    "premiumize", ProviderCategory.DOWNLOADER, "Premiumize"
+                )
+                selected_dl.api_key = pmz_key
 
         if indexer_provided:
             indexer = await _upsert(
@@ -2883,10 +2980,9 @@ async def onboarding_step1(request: Request) -> Response:
             providers["indexer"] = indexer
 
         await session.flush()
-        torbox_prov = providers["torbox"]
-        if torbox_api_key and torbox_prov is not None:
+        if selected_dl is not None:
             # set_active_downloader commits the whole transaction.
-            await provider_service.set_active_downloader(session, torbox_prov.id)
+            await provider_service.set_active_downloader(session, selected_dl.id)
         else:
             await session.commit()
 
@@ -2894,6 +2990,7 @@ async def onboarding_step1(request: Request) -> Response:
             key: (prov.id if prov is not None else None)
             for key, prov in providers.items()
         }
+        provider_ids["downloader"] = selected_dl.id if selected_dl is not None else None
         provider_ids["watchlist"] = selected_wl.id if selected_wl is not None else None
     return JSONResponse({"ok": True, "provider_ids": provider_ids})
 

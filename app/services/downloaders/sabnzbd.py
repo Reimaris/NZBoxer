@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from typing import TYPE_CHECKING, Any
+from urllib.parse import urlsplit
 
 import httpx
 
@@ -60,6 +61,23 @@ def normalize_api_url(api_url: str | None) -> str:
     if url and not url.endswith("/api"):
         url += "/api"
     return url
+
+
+def build_sabnzbd_api_url(host: str, port: int, ssl: bool) -> str:
+    """API URL for SABnzbd's default ``url_base`` (``/sabnzbd``)."""
+    return f"{'https' if ssl else 'http'}://{host.strip()}:{port}/sabnzbd/api"
+
+
+def parse_sabnzbd_api_url(api_url: str | None) -> tuple[str, int, bool]:
+    """``(host, port, ssl)`` for modal prefill; custom url_base is not round-tripped."""
+    try:
+        parts = urlsplit((api_url or "").strip())
+        host = parts.hostname or ""
+        ssl = parts.scheme == "https"
+        port = parts.port or (443 if ssl else 8080)
+    except ValueError:
+        return "", 8080, False
+    return host, port, ssl
 
 
 def _parse_timeleft(value: Any) -> int | None:
