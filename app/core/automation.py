@@ -42,6 +42,8 @@ from app.services.library_maintenance import run_library_maintenance
 from app.services.watchlist_ingest import (
     prune_inactive_media_items,  # noqa: F401  (au.* patch target)
 )
+
+# provider-specific code (allowlisted)
 from app.services.watchlists.simkl_sync import (
     _sync_items,  # noqa: F401  (legacy patch target)
 )
