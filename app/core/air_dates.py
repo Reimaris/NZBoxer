@@ -17,7 +17,7 @@ from sqlalchemy.orm import selectinload
 
 from app.core.phase_stats import AirDateRefreshStats
 from app.db.models import Provider
-from app.services import tmdb
+from app.services import anilist, tmdb
 from app.services.watchlists import simkl
 
 logger = logging.getLogger("app.core.automation")
@@ -86,6 +86,46 @@ async def _fetch_tmdb_episode_dates(
     return rows
 
 
+async def _fetch_anilist_episode_dates(
+    item: Any, log_prefix: str
+) -> list[tuple[int, int, datetime]] | None:
+    """Fetch exact (season, episode, airing_at) tuples from the AniList schedule.
+
+    Returns None when the item has no AniList id to query; an empty list when
+    AniList has nothing (or failed), so stored dates stay untouched.
+    """
+    from app.db.models import EpisodeStatus, SeasonStatus
+
+    seasons = list(item.seasons or [])
+    rows: list[tuple[int, int, datetime]] = []
+    queried = False
+    for season in seasons:
+        anilist_id = season.anilist_id or (
+            item.anilist_id if len(seasons) == 1 else None
+        )
+        if not anilist_id:
+            continue
+        unreleased = season.status == SeasonStatus.FUTURE or any(
+            ep.status == EpisodeStatus.FUTURE for ep in season.episodes or []
+        )
+        if not unreleased:
+            continue
+        queried = True
+        try:
+            schedule = await anilist.get_anime_airing_schedule(int(anilist_id))
+        except Exception as e:
+            logger.warning(
+                "%s AniList airing schedule failed for item %s S%s: %s",
+                log_prefix,
+                item.id,
+                season.season_number,
+                e,
+            )
+            continue
+        rows.extend((season.season_number, ep, at) for ep, at in schedule)
+    return rows if queried else None
+
+
 def _apply_episode_dates(item: Any, rows: Any) -> int:
     """Write (season, episode, raw date) rows onto matching local episodes.
 
@@ -114,7 +154,11 @@ def _apply_episode_dates(item: Any, rows: Any) -> int:
         local_ep = local_episodes_map.get(key)
         if local_ep is None:
             continue
-        parsed_dt = parse_broadcast_air_date(date_raw)
+        parsed_dt = (
+            date_raw
+            if isinstance(date_raw, datetime)
+            else parse_broadcast_air_date(date_raw)
+        )
         if (
             parsed_dt is not None
             and local_ep.air_date != parsed_dt
@@ -250,6 +294,15 @@ async def enrich_active_shows_episode_air_dates(
     total_items = len(items)
     for item_idx, item in enumerate(items, start=1):
         is_show = item.media_type == MediaType.SHOW
+        if item.media_type == MediaType.ANIME:
+            anilist_rows = await _fetch_anilist_episode_dates(item, log_prefix)
+            if anilist_rows is not None:
+                item.last_air_dates_refreshed_at = now
+                changed = _apply_episode_dates(item, anilist_rows)
+                if changed:
+                    titles_updated_count += 1
+                    updated_episodes_count += changed
+                continue
         creds: tuple[str, str] | None = None
         if item.simkl_id:
             prov_id = item.provider_id
