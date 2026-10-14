@@ -85,7 +85,50 @@ class AniListWatchlistAdapter:
         return entries
 
 
-_ADAPTERS: dict[str, WatchlistAdapter] = {"anilist": AniListWatchlistAdapter()}
+class PlexWatchlistAdapter:
+    """Plex Cloud (Discover) watchlist adapter; every entry is ``plantowatch``."""
+
+    async def fetch_entries(self, provider: Provider) -> list[WatchlistEntry]:
+        from app.services import plex
+
+        client_identifier = str(provider.config.get("plex_client_identifier") or "")
+        raw = await plex.get_watchlist(provider.access_token or "", client_identifier)
+        entries: list[WatchlistEntry] = []
+        for item in raw:
+            rating_key = item.get("ratingKey")
+            kind = item.get("type")
+            if not rating_key or kind not in ("movie", "show"):
+                continue
+            ids: dict[str, str] = {}
+            for guid in item.get("Guid") or []:
+                scheme, sep, value = str(guid.get("id", "")).partition("://")
+                if sep and value:
+                    ids[scheme] = value
+            entries.append(
+                WatchlistEntry(
+                    remote_id=str(rating_key),
+                    media_kind="movie" if kind == "movie" else "show",
+                    title=str(item.get("title") or ""),
+                    year=item.get("year"),
+                    tmdb_id=_int_or_none(ids.get("tmdb")),
+                    imdb_id=ids.get("imdb"),
+                    tvdb_id=_int_or_none(ids.get("tvdb")),
+                )
+            )
+        return entries
+
+
+def _int_or_none(value: str | None) -> int | None:
+    try:
+        return int(value) if value is not None else None
+    except ValueError:
+        return None
+
+
+_ADAPTERS: dict[str, WatchlistAdapter] = {
+    "anilist": AniListWatchlistAdapter(),
+    "plex": PlexWatchlistAdapter(),
+}
 
 
 def get_adapter(provider_type: str) -> WatchlistAdapter:
