@@ -4,6 +4,7 @@ Serves two roles — metadata provider (anime hierarchy, posters) and watchlist
 provider (user media list). Kept flat on purpose; do not move into
 `watchlists/` or `metadata/`.
 """
+
 import asyncio
 import logging
 import re
