@@ -35,7 +35,6 @@ from sqlalchemy.orm import (
     Mapped,
     mapped_column,
     relationship,
-    synonym,
     validates,
 )
 
@@ -1273,7 +1272,7 @@ class Episode(Base):
 
 
 class DownloadHistory(Base):
-    """Records every NZB that has been sent to TorBox (Push History Ledger).
+    """A record of an NZB dispatched to a downloader (Push History Ledger).
 
     Stores nullable foreign keys to MediaItem/Season/Episode and denormalized
     snapshot columns so push history survives Simkl watchlist pruning or manual
@@ -1345,10 +1344,6 @@ class DownloadHistory(Base):
     dispatched_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
-    # Legacy names kept as synonyms so reads, writes and query expressions work.
-    torbox_id = synonym("downloader_transfer_id")
-    torbox_sent_at = synonym("dispatched_at")
-    torbox_hash = synonym("downloader_hash")
 
     # --- Language tracking ---
     is_fallback: Mapped[bool] = mapped_column(
