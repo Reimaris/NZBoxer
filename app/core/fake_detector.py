@@ -351,14 +351,14 @@ def is_nzb_content_fake(
 
 
 # Layer 3 Conservative Video File Lower Bounds
-MIN_TORBOX_VIDEO_MOVIE_BYTES = 150 * 1024 * 1024  # 150MB
-MIN_TORBOX_VIDEO_EPISODE_BYTES = (
+MIN_VIDEO_MOVIE_BYTES = 150 * 1024 * 1024  # 150MB
+MIN_VIDEO_EPISODE_BYTES = (
     25 * 1024 * 1024
 )  # 25MB (protects anime shorts and mini-episodes)
 
 
 def _extract_file_entries(files: list[Any]) -> list[tuple[str, int]]:
-    """Recursively extract (file_name, file_size) tuples from flat or nested TorBox file entries."""
+    """Recursively extract (file_name, file_size) tuples from flat or nested downloader file entries."""
     entries: list[tuple[str, int]] = []
     for f in files:
         if isinstance(f, str):
@@ -383,23 +383,23 @@ def _extract_file_entries(files: list[Any]) -> list[tuple[str, int]]:
 
 
 def _extract_file_names(files: list[Any]) -> list[str]:
-    """Recursively extract file names from flat or nested TorBox file entries."""
+    """Recursively extract file names from flat or nested downloader file entries."""
     return [name for name, _ in _extract_file_entries(files)]
 
 
-_TORBOX_ARCHIVE_RE = re.compile(
+_ARCHIVE_RE = re.compile(
     r"\.(?:part\d+\.rar|r\d{2}|rar|7z|zip|par2)$",
     re.IGNORECASE,
 )
 
 
-def is_torbox_filelist_fake(
+def is_transfer_filelist_fake(
     tb_files: list[Any] | None,
     media_type: str = "movie",
     is_season_pack: bool = False,
     release_name: str | None = None,
 ) -> tuple[bool, str | None, bool]:
-    """Layer 3: Evaluates completed TorBox files list.
+    """Layer 3: Evaluates a completed transfer's file list.
 
     Returns:
         tuple[is_fake: bool, reason: str | None, is_unextracted_archive: bool]
@@ -423,11 +423,11 @@ def is_torbox_filelist_fake(
         return is_fake, reason, is_archive
 
     if not tb_files:
-        return _ret(True, "TorBox returned empty file list", False)
+        return _ret(True, "Downloader returned empty file list", False)
 
     file_entries = _extract_file_entries(tb_files)
     if not file_entries:
-        return _ret(True, "TorBox returned empty file list", False)
+        return _ret(True, "Downloader returned empty file list", False)
 
     has_valid_payload = False
     has_sample_video = False
@@ -452,7 +452,7 @@ def is_torbox_filelist_fake(
                     playable_videos.append((raw_name, size))
                 break
 
-        if not matched_vid and _TORBOX_ARCHIVE_RE.search(fname):
+        if not matched_vid and _ARCHIVE_RE.search(fname):
             has_archive = True
 
     if not has_valid_payload:
@@ -473,14 +473,14 @@ def is_torbox_filelist_fake(
             else str(media_type or "").lower()
         )
         if mtype in ("movie", "anime-movie") and not is_season_pack:
-            if max_video_size < MIN_TORBOX_VIDEO_MOVIE_BYTES:
+            if max_video_size < MIN_VIDEO_MOVIE_BYTES:
                 return _ret(
                     True,
                     f"Downloaded video payload ({_bytes_to_mb(max_video_size):.1f}MB) is unrealistically small (< 150MB)",
                     False,
                 )
         else:
-            if max_video_size < MIN_TORBOX_VIDEO_EPISODE_BYTES:
+            if max_video_size < MIN_VIDEO_EPISODE_BYTES:
                 return _ret(
                     True,
                     f"Downloaded video payload ({_bytes_to_mb(max_video_size):.1f}MB) is unrealistically small (< 25MB)",
@@ -488,7 +488,3 @@ def is_torbox_filelist_fake(
                 )
 
     return _ret(False, None, False)
-
-
-# Provider-neutral name (m57): accepts ``list[DownloaderFile]``, TorBox dicts or names.
-is_filelist_fake = is_torbox_filelist_fake

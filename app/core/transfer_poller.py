@@ -9,7 +9,7 @@ Responsibilities:
 1. Auto-Wake / Auto-Sleep lifecycle (`transfer_poller.wake()` / `transfer_poller.sleep()`).
 2. Live progress tracking (`progress_pct`, `download_speed_bytes`, `eta_seconds`, `status_detail`)
    on active `DownloadHistory` rows.
-3. Layer 3 Playable Video Verification (`is_torbox_filelist_fake`) with 10-minute
+3. Layer 3 Playable Video Verification (`is_transfer_filelist_fake`) with 10-minute
    unpack grace period for archives (`status_detail = "unpacking"`), immediate
    Tick-1 rejection for non-archive fake payloads (samples, executables),
    transitioning verified transfers to `COMPLETED` and dispatching `Ready on <downloader>` notifications.
@@ -34,7 +34,7 @@ from sqlalchemy import CursorResult, delete, exists, func, select
 from sqlalchemy.orm import selectinload
 
 from app.core.failure_logger import log_failure
-from app.core.fake_detector import is_torbox_filelist_fake
+from app.core.fake_detector import is_transfer_filelist_fake
 from app.core.parser import build_release_feature_pills
 from app.core.time_utils import to_local_datetime
 from app.db.database import async_session_factory
@@ -1354,11 +1354,13 @@ async def _run_transfer_poller_tick_with_session(
                     True,
                 )
             else:
-                is_fake, fake_reason, is_unextracted_archive = is_torbox_filelist_fake(
-                    tb_files,
-                    media_type=media_type_str,
-                    is_season_pack=is_sp,
-                    release_name=history.nzb_title,
+                is_fake, fake_reason, is_unextracted_archive = (
+                    is_transfer_filelist_fake(
+                        tb_files,
+                        media_type=media_type_str,
+                        is_season_pack=is_sp,
+                        release_name=history.nzb_title,
+                    )
                 )
 
             if is_unextracted_archive:
