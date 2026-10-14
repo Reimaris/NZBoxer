@@ -30,6 +30,48 @@ logger = logging.getLogger(__name__)
 
 _ANIME_KINDS = frozenset({"anime", "anime_movie"})
 
+CATEGORY_TOGGLE_BY_KIND: dict[str, str] = {
+    "movie": "sync_movies",
+    "show": "sync_series",
+    "anime": "sync_anime",
+    "anime_movie": "sync_anime",
+}
+_TOGGLE_BY_MEDIA_TYPE: dict[MediaType, str] = {
+    MediaType.MOVIE: "sync_movies",
+    MediaType.SHOW: "sync_series",
+    MediaType.ANIME: "sync_anime",
+}
+
+
+def filter_enabled_entries(
+    provider: Provider, entries: list[WatchlistEntry]
+) -> list[WatchlistEntry]:
+    """Drop entries whose category sync toggle is off for *provider*."""
+    cfg = provider.watchlist_config
+    return [e for e in entries if cfg.get(CATEGORY_TOGGLE_BY_KIND[e.media_kind], True)]
+
+
+async def seen_ids_with_disabled_categories(
+    session: AsyncSession, provider: Provider, fetched_remote_ids: set[str]
+) -> set[str]:
+    """Fetched ids plus existing sources of disabled categories, so a toggle never completes them."""
+    cfg = provider.watchlist_config
+    disabled = [
+        mt for mt, toggle in _TOGGLE_BY_MEDIA_TYPE.items() if not cfg.get(toggle, True)
+    ]
+    seen = set(fetched_remote_ids)
+    if disabled:
+        rows = await session.execute(
+            select(MediaItemWatchlistSource.remote_id)
+            .join(MediaItem, MediaItem.id == MediaItemWatchlistSource.media_item_id)
+            .where(
+                MediaItemWatchlistSource.provider_id == provider.id,
+                MediaItem.media_type.in_(disabled),
+            )
+        )
+        seen.update(rows.scalars().all())
+    return seen
+
 
 @dataclass
 class IngestResult:
