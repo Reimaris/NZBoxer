@@ -1,13 +1,10 @@
 DEFAULT_SCORING_CONFIG = {
     "api": {
-        "torbox_base_url": "https://api.torbox.app/v1",
-        "simkl_base_url": "https://api.simkl.com",
         "tmdb_base_url": "https://api.themoviedb.org/3",
     },
     "automation": {
         "search_interval_minutes": 30,
         "min_age_days": 1,
-        "auto_send_to_torbox": True,
         "auto_monitor_new_seasons": False,
     },
     "scoring": {

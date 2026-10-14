@@ -10,7 +10,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Provider
+from app.services.downloaders.base import DOWNLOADER_DISPLAY_NAMES
 from app.services.indexers.catalog import INDEXER_PRESETS
+from app.services.watchlists import WATCHLIST_DISPLAY_NAMES
 from app.version import APP_VERSION
 
 GITHUB_REPO_URL: str = "https://github.com/Reimaris/NZBoxer"
@@ -22,10 +24,9 @@ GITHUB_QUESTION_URL: str = f"{GITHUB_REPO_URL}/issues/new?template=question.yml"
 GITHUB_SECURITY_ADVISORY_URL: str = f"{GITHUB_REPO_URL}/security/advisories/new"
 
 PROVIDER_TYPE_LABELS: dict[str, str] = {
-    "simkl": "Simkl",
+    **DOWNLOADER_DISPLAY_NAMES,
+    **WATCHLIST_DISPLAY_NAMES,
     "tmdb": "TMDB",
-    "anilist": "AniList",
-    "torbox": "TorBox",
     **{p.type: p.name for p in INDEXER_PRESETS},
     "newznab": "Newznab",
 }
