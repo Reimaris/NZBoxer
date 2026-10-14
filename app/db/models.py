@@ -35,6 +35,7 @@ from sqlalchemy.orm import (
     Mapped,
     mapped_column,
     relationship,
+    synonym,
     validates,
 )
 
@@ -527,9 +528,10 @@ class MediaItem(Base):
     simkl_id: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, server_default="0", index=True
     )
-    associated_simkl_ids_json: Mapped[str | None] = mapped_column(
-        Text, nullable=True, default=None
+    associated_franchise_ids_json: Mapped[str] = mapped_column(
+        Text, nullable=False, default="[]", server_default="[]"
     )
+    associated_simkl_ids_json = synonym("associated_franchise_ids_json")
     imdb_id: Mapped[str | None] = mapped_column(String(20), nullable=True, index=True)
     tmdb_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     tvdb_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
@@ -544,14 +546,14 @@ class MediaItem(Base):
         )
 
     @property
-    def associated_simkl_ids(self) -> set[int]:
-        """Return all Simkl IDs associated with this franchise MediaItem (including merged cours/OVAs/seasons)."""
+    def associated_franchise_ids(self) -> set[int]:
+        """Return all external IDs associated with this franchise MediaItem (including merged cours/OVAs/seasons)."""
         ids: set[int] = set()
         if self.simkl_id and int(self.simkl_id) > 0:
             ids.add(int(self.simkl_id))
-        if self.associated_simkl_ids_json:
+        if self.associated_franchise_ids_json:
             try:
-                raw = json.loads(self.associated_simkl_ids_json)
+                raw = json.loads(self.associated_franchise_ids_json)
                 if isinstance(raw, list):
                     for x in raw:
                         if x is not None and int(x) > 0:
@@ -560,14 +562,22 @@ class MediaItem(Base):
                 pass
         return ids
 
-    def add_associated_simkl_id(self, simkl_id: int | None) -> None:
-        """Record a Simkl ID as permanently associated with this franchise MediaItem."""
-        if not simkl_id or int(simkl_id) <= 0:
+    def add_associated_franchise_id(self, external_id: int | None) -> None:
+        """Record an external ID as permanently associated with this franchise MediaItem."""
+        if not external_id or int(external_id) <= 0:
             return
-        sid = int(simkl_id)
-        current = self.associated_simkl_ids
-        current.add(sid)
-        self.associated_simkl_ids_json = json.dumps(sorted(current))
+        current = self.associated_franchise_ids
+        current.add(int(external_id))
+        self.associated_franchise_ids_json = json.dumps(sorted(current))
+
+    @property
+    def associated_simkl_ids(self) -> set[int]:
+        """Alias of ``associated_franchise_ids`` (removed in m59-08)."""
+        return self.associated_franchise_ids
+
+    def add_associated_simkl_id(self, simkl_id: int | None) -> None:
+        """Alias of ``add_associated_franchise_id`` (removed in m59-08)."""
+        self.add_associated_franchise_id(simkl_id)
 
     # --- Metadata ---
     title: Mapped[str] = mapped_column(String(500), nullable=False)
@@ -615,12 +625,14 @@ class MediaItem(Base):
     auto_advance_seasons: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="0"
     )
-    last_watched_order_simkl: Mapped[int] = mapped_column(
+    last_watched_order: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, server_default="0"
     )
-    simkl_watched_completed: Mapped[bool] = mapped_column(
+    watched_completed: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="0"
     )
+    last_watched_order_simkl = synonym("last_watched_order")
+    simkl_watched_completed = synonym("watched_completed")
 
     @validates("custom_search_config_json")
     def _validate_custom_search_config_json(self, _key: str, value: Any) -> str | None:
@@ -631,9 +643,10 @@ class MediaItem(Base):
         return str(value)
 
     # --- Sync & Search Timestamps ---
-    simkl_synced_at: Mapped[datetime | None] = mapped_column(
+    watchlist_synced_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    simkl_synced_at = synonym("watchlist_synced_at")
     fail_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     last_searched_at: Mapped[datetime | None] = mapped_column(

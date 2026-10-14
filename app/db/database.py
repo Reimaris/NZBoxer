@@ -154,6 +154,58 @@ async def _migrate_downloader_columns(conn: AsyncConnection) -> None:
     )
 
 
+async def _migrate_watchlist_neutral_columns(conn: AsyncConnection) -> None:
+    """m59 (spec §2.2): legacy ``*_simkl*`` media_items columns -> watchlist-neutral."""
+    from sqlalchemy import text as sa_text
+
+    for old, new in (
+        ("last_watched_order_simkl", "last_watched_order"),
+        ("simkl_watched_completed", "watched_completed"),
+        ("associated_simkl_ids_json", "associated_franchise_ids_json"),
+        ("simkl_synced_at", "watchlist_synced_at"),
+    ):
+        await _rename_or_merge_column(conn, "media_items", old, new)
+
+    async def _cols() -> dict[str, tuple[int, str | None]]:
+        rows = await conn.execute(sa_text('PRAGMA table_info("media_items")'))
+        return {r[1]: (r[3], r[4]) for r in rows}
+
+    cols = await _cols()
+    for col, ddl in (
+        ("last_watched_order", "INTEGER NOT NULL DEFAULT 0"),
+        ("watched_completed", "BOOLEAN NOT NULL DEFAULT 0"),
+        ("watchlist_synced_at", "DATETIME"),
+    ):
+        if col not in cols:
+            await conn.execute(
+                sa_text(f"ALTER TABLE media_items ADD COLUMN {col} {ddl}")
+            )
+
+    # SQLite cannot add NOT NULL to an existing column: add a NOT NULL twin,
+    # copy, drop the nullable original and rename the twin into place.
+    name = "associated_franchise_ids_json"
+    if name not in cols:
+        await conn.execute(
+            sa_text(
+                f"ALTER TABLE media_items ADD COLUMN {name} TEXT NOT NULL DEFAULT '[]'"
+            )
+        )
+    elif cols[name][0] == 0:
+        await conn.execute(
+            sa_text(f"UPDATE media_items SET {name} = '[]' WHERE {name} IS NULL")
+        )
+        await conn.execute(
+            sa_text(
+                f"ALTER TABLE media_items ADD COLUMN {name}_tmp TEXT NOT NULL DEFAULT '[]'"
+            )
+        )
+        await conn.execute(sa_text(f"UPDATE media_items SET {name}_tmp = {name}"))
+        await conn.execute(sa_text(f"ALTER TABLE media_items DROP COLUMN {name}"))
+        await conn.execute(
+            sa_text(f"ALTER TABLE media_items RENAME COLUMN {name}_tmp TO {name}")
+        )
+
+
 def _backup_db_before_m59(db_path: Path) -> None:
     """Copy the SQLite file to ``<name>.pre-m59.bak`` once (skipped if present)."""
     if str(db_path) == ":memory:" or not db_path.is_file():
@@ -906,14 +958,11 @@ async def init_db(database_url: str) -> None:
                 "ALTER TABLE search_presets ADD COLUMN allow_season_packs BOOLEAN NOT NULL DEFAULT 0;",
                 "ALTER TABLE search_presets ADD COLUMN prefer_season_packs BOOLEAN NOT NULL DEFAULT 0;",
                 # MediaItem sticky & Simkl watch progress columns
-                "ALTER TABLE media_items ADD COLUMN associated_simkl_ids_json TEXT;",
                 "ALTER TABLE media_items ADD COLUMN preset_id INTEGER REFERENCES search_presets(id) ON DELETE SET NULL;",
                 "ALTER TABLE media_items ADD COLUMN custom_search_config_json TEXT;",
                 "ALTER TABLE media_items ADD COLUMN allow_season_packs BOOLEAN NOT NULL DEFAULT 0;",
                 "ALTER TABLE media_items ADD COLUMN prefer_season_packs BOOLEAN NOT NULL DEFAULT 0;",
                 "ALTER TABLE media_items ADD COLUMN auto_advance_seasons BOOLEAN NOT NULL DEFAULT 0;",
-                "ALTER TABLE media_items ADD COLUMN last_watched_order_simkl INTEGER NOT NULL DEFAULT 0;",
-                "ALTER TABLE media_items ADD COLUMN simkl_watched_completed BOOLEAN NOT NULL DEFAULT 0;",
                 # Season chronological franchise columns
                 "ALTER TABLE seasons ADD COLUMN entry_type VARCHAR(20) NOT NULL DEFAULT 'season';",
                 "ALTER TABLE seasons ADD COLUMN watch_order INTEGER NOT NULL DEFAULT 1;",
@@ -1073,6 +1122,7 @@ async def init_db(database_url: str) -> None:
                             )
                         )
                 await _migrate_downloader_columns(await session.connection())
+                await _migrate_watchlist_neutral_columns(await session.connection())
                 await session.execute(
                     sa_text(
                         "CREATE INDEX IF NOT EXISTS ix_download_history_downloader_transfer_id "
