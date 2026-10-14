@@ -39,7 +39,7 @@ class Settings:
         "DATABASE_URL", "sqlite+aiosqlite:///./config/nzboxer.db"
     )
 
-    # TorBox Transfer Poller & Failure Recovery
+    # Downloader Transfer Poller & Failure Recovery
     sh_max_retries: int = int(os.getenv("SH_MAX_RETRIES", "3"))
     download_timeout_minutes: int = (
         int(os.environ["DOWNLOAD_TIMEOUT_MINUTES"])

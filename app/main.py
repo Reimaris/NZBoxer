@@ -915,7 +915,7 @@ async def reset_anime_metadata_endpoint(request: Request, item_id: int):
 
 
 @app.post("/api/torbox/add", response_class=HTMLResponse)
-async def manual_push_to_torbox(magnet: str = Form(...)):
+async def manual_push_to_downloader(magnet: str = Form(...)):
     """Push a search result directly to the active downloader."""
     import logging
 
@@ -975,7 +975,7 @@ async def manual_push_to_torbox(magnet: str = Form(...)):
                 status_code=400,
             )
     except Exception as e:
-        logger.error(f"Error in manual_push_to_torbox: {e}")
+        logger.error(f"Error in manual_push_to_downloader: {e}")
         return HTMLResponse(
             content='<span class="text-red-400 font-medium text-xs px-2 py-1.5 bg-red-500/10 border border-red-500/20 rounded-md">Error</span>',
             status_code=500,
@@ -3442,65 +3442,7 @@ async def run_system_check(request: Request):
             "latency_ms": int((time.perf_counter() - start) * 1000),
         }
 
-    async def probe_torbox(p: Provider) -> dict[str, Any]:
-        start = time.perf_counter()
-        tb_key = (p.api_key or "").strip()
-        tb_url = (p.api_url or "https://api.torbox.app/v1/api").strip()
-        if not tb_key:
-            return {
-                "name": f"{p.name or 'TorBox'} (Downloader)",
-                "category": "Usenet Downloader",
-                "ok": False,
-                "msg": "API Key missing",
-                "latency_ms": 0,
-            }
-        try:
-            base_url = tb_url.rstrip("/")
-            endpoint = (
-                f"{base_url}/user/me"
-                if base_url.endswith("/api")
-                else f"{base_url}/api/user/me"
-            )
-            async with httpx.AsyncClient(
-                timeout=5.0, headers={"User-Agent": DEFAULT_USER_AGENT}
-            ) as client:
-                r = await client.get(
-                    endpoint,
-                    headers={"Authorization": f"Bearer {tb_key}"},
-                )
-            latency = int((time.perf_counter() - start) * 1000)
-            ok = r.status_code == 200
-            detail = "Account verified"
-            if ok:
-                try:
-                    data = r.json().get("data") or {}
-                    email = data.get("email")
-                    plan = data.get("plan")
-                    if email:
-                        detail = f"{email} (Plan {plan})" if plan is not None else email
-                except Exception:
-                    pass
-            msg = detail if ok else f"HTTP {r.status_code}"
-            return {
-                "name": f"{p.name or 'TorBox'} (Downloader)",
-                "category": "Usenet Downloader",
-                "ok": ok,
-                "msg": msg,
-                "latency_ms": latency,
-            }
-        except Exception as e:
-            latency = int((time.perf_counter() - start) * 1000)
-            return {
-                "name": f"{p.name or 'TorBox'} (Downloader)",
-                "category": "Usenet Downloader",
-                "ok": False,
-                "msg": str(e),
-                "latency_ms": latency,
-            }
-
     async def probe_downloader(p: Provider) -> dict[str, Any]:
-        if p.type == "torbox":
-            return await probe_torbox(p)
         from app.services.downloaders.factory import get_downloader_client
 
         start = time.perf_counter()

@@ -18,7 +18,7 @@ from app.config import settings
 from app.core.parser import parse_release_name
 from app.core.phase_stats import AirPushStats
 from app.core.push_engine import (
-    _dispatch_candidate_list_to_torbox,
+    _dispatch_candidate_list_to_downloader,
     _load_blacklisted_sets,
     _query_show_across_indexers,
     _score_and_partition_candidates,
@@ -294,7 +294,7 @@ async def _evaluate_episode_upgrade(
 
     dispatched = False
     if approved and not _upgrade_rate_limited():
-        new_hist = await _dispatch_candidate_list_to_torbox(
+        new_hist = await _dispatch_candidate_list_to_downloader(
             session,
             [max(approved, key=lambda c: float(c.get("score") or 0.0))],
             item=item,

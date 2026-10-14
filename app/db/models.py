@@ -6,7 +6,7 @@ SQLAlchemy 2.0 ORM definitions for all database entities.
 Models:
     - MediaItem:       A movie or series tracked from the Simkl watchlist.
     - Season:          A season belonging to a series MediaItem.
-    - DownloadHistory: A record of an NZB sent to TorBox (for upgrade logic).
+    - DownloadHistory: A record of an NZB sent to the downloader (for upgrade logic).
 """
 
 from __future__ import annotations

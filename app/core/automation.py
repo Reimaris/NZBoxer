@@ -2,7 +2,7 @@
 Automation Orchestrator
 =======================
 Handles syncing the Simkl watchlist to the local database, searching
-Newznab indexers, evaluating scores, and sending releases to TorBox.
+Newznab indexers, evaluating scores, and sending releases to the downloader.
 """
 
 from __future__ import annotations

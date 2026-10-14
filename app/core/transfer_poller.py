@@ -277,7 +277,7 @@ transfer_poller = TransferPollerState()
 
 
 def wake_transfer_poller() -> None:
-    """Wake the transfer poller when a new push is dispatched to TorBox."""
+    """Wake the transfer poller when a new push is dispatched to the downloader."""
     transfer_poller.wake()
 
 
@@ -479,7 +479,7 @@ async def _auto_replace_failed_push(
     from sqlalchemy import inspect as sa_inspect
 
     from app.core.push_engine import (
-        _dispatch_candidate_list_to_torbox,
+        _dispatch_candidate_list_to_downloader,
         _load_blacklisted_sets,
         _push_single_season_or_movie_entry,
         _query_movie_across_indexers,
@@ -543,7 +543,7 @@ async def _auto_replace_failed_push(
             session=session,
             item_id=item.id,
         )
-        res = await _dispatch_candidate_list_to_torbox(
+        res = await _dispatch_candidate_list_to_downloader(
             session,
             partitioned["all_valid"],
             item=item,
@@ -618,7 +618,7 @@ async def _auto_replace_failed_push(
         session=session,
         item_id=item.id,
     )
-    res_movie = await _dispatch_candidate_list_to_torbox(
+    res_movie = await _dispatch_candidate_list_to_downloader(
         session,
         partitioned["all_valid"],
         item=item,
@@ -672,9 +672,6 @@ def _match_downloader_transfer(
         return "not_found", None
 
     return str(tb_item.get("download_state") or "downloading"), tb_item
-
-
-_match_torbox_transfer = _match_downloader_transfer
 
 
 _STATE_TO_DOWNLOAD_STATE: dict[TransferState, str] = {
@@ -2585,11 +2582,11 @@ async def reconcile_completed_history(
     return updated
 
 
-async def reconcile_completed_history_with_torbox(
+async def reconcile_completed_history_with_downloader(
     session: AsyncSession,
     live_transfer_ids: set[str],
 ) -> int:
-    """TorBox-specific entry point; delegates to ``reconcile_completed_history``."""
+    """Downloader-specific entry point; delegates to ``reconcile_completed_history``."""
     return await reconcile_completed_history(session, "torbox", live_transfer_ids)
 
 

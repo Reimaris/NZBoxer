@@ -12,7 +12,7 @@ Powers the Unified Push Modal with two execution modes:
 2. Search & Pick Manually (`push_mode = "manual"`):
    - Returns scored candidates partitioned into Season Packs / Movie Releases
      and Episode Accordions with 3-tier language grouping (`primary`, `fallback`, `mismatched`)
-   - 1-click Manual Grab dispatch to TorBox with `push_mode = "manual"`
+   - 1-click Manual Grab dispatch to the downloader with `push_mode = "manual"`
 """
 
 from __future__ import annotations
@@ -962,7 +962,7 @@ async def dispatch_nzb_to_active_downloader(
     return client, result
 
 
-async def _dispatch_candidate_list_to_torbox(
+async def _dispatch_candidate_list_to_downloader(
     session: AsyncSession,
     candidates: list[dict[str, Any]],
     item: MediaItem,
@@ -976,7 +976,7 @@ async def _dispatch_candidate_list_to_torbox(
     is_upgrade: bool = False,
     replaces_history_id: int | None = None,
 ) -> DownloadHistory | dict[str, Any] | None:
-    """Iterate through scored candidates, verify Layer 2 NZB fake check, and dispatch to TorBox."""
+    """Iterate through scored candidates, verify Layer 2 NZB fake check, and dispatch to the downloader."""
     is_movie = episode is None and (
         season is None or getattr(season, "entry_type", "season") == "movie"
     )
@@ -1051,7 +1051,7 @@ async def _dispatch_candidate_list_to_torbox(
             or (season is not None and episode is None and not is_movie)
         )
         logger.debug(
-            "[SEARCH] Dispatching '%s' to TorBox (Push Mode: %s, Season Pack: %s)...",
+            "[SEARCH] Dispatching '%s' to the downloader (Push Mode: %s, Season Pack: %s)...",
             title,
             push_mode,
             cand_sp_flag,
@@ -1108,7 +1108,7 @@ async def _dispatch_candidate_list_to_torbox(
                 upload.detail,
             )
             continue
-        torbox_result = upload.raw
+        downloader_result = upload.raw
 
         parsed = cand.get("parsed")
         score_res = cand.get("score_res")
@@ -1120,8 +1120,8 @@ async def _dispatch_candidate_list_to_torbox(
         new_transfer_id = upload.transfer_id
 
         logger.debug(
-            "[SEARCH] Dispatched successfully to TorBox -> Transfer ID: %s.",
-            new_transfer_id or torbox_result.get("hash"),
+            "[SEARCH] Dispatched successfully to the downloader -> Transfer ID: %s.",
+            new_transfer_id or downloader_result.get("hash"),
         )
 
         superseded_transfer_ids: list[str] = []
@@ -1179,8 +1179,8 @@ async def _dispatch_candidate_list_to_torbox(
             bitrate_mbps=(
                 score_res.bitrate_mbps if score_res else cand.get("bitrate_mbps")
             ),
-            downloader_hash=str(torbox_result.get("hash"))
-            if client.provider_type == "torbox" and torbox_result.get("hash")
+            downloader_hash=str(downloader_result.get("hash"))
+            if client.provider_type == "torbox" and downloader_result.get("hash")
             else None,
             downloader_type=client.provider_type,
             downloader_transfer_id=new_transfer_id,
@@ -1295,7 +1295,7 @@ async def _verify_layer2_in_memory(
     blacklisted_guids: set[str] | None = None,
     blacklisted_titles: set[str] | None = None,
 ) -> dict[str, Any] | None:
-    """Fetch NZB bytes and run Layer 2 fake detection in memory without uploading to TorBox."""
+    """Fetch NZB bytes and run Layer 2 fake detection in memory without uploading to the downloader."""
     for cand in candidates:
         guid = cand["guid"]
         title = cand["title"]
@@ -1608,7 +1608,7 @@ async def _push_single_season_or_movie_entry(
         if partitioned["had_candidates"] and _candidates_found_acc is not None:
             _candidates_found_acc.append(True)
         tb_errors: list[str] = []
-        hist = await _dispatch_candidate_list_to_torbox(
+        hist = await _dispatch_candidate_list_to_downloader(
             session,
             partitioned["all_valid"],
             item=item,
@@ -1716,7 +1716,7 @@ async def _push_single_season_or_movie_entry(
         if pack_partitioned["had_candidates"] and _candidates_found_acc is not None:
             _candidates_found_acc.append(True)
         pack_tb_errors: list[str] = []
-        hist = await _dispatch_candidate_list_to_torbox(
+        hist = await _dispatch_candidate_list_to_downloader(
             session,
             pack_partitioned["all_valid"],
             item=item,
@@ -1795,7 +1795,7 @@ async def _push_single_season_or_movie_entry(
 
         if verified_pack is not None and not missing_released_eps:
             pack_tb_errors = []
-            hist = await _dispatch_candidate_list_to_torbox(
+            hist = await _dispatch_candidate_list_to_downloader(
                 session,
                 [verified_pack],
                 item=item,
@@ -1877,7 +1877,7 @@ async def _push_single_season_or_movie_entry(
             # Case 2a: Pack wins or ties on E01 probe -> dispatch verified Pack immediately without querying E02..En
             if verified_e01 is None:
                 pack_tb_errors = []
-                hist = await _dispatch_candidate_list_to_torbox(
+                hist = await _dispatch_candidate_list_to_downloader(
                     session,
                     [verified_pack],
                     item=item,
@@ -1977,7 +1977,7 @@ async def _push_single_season_or_movie_entry(
 
             if abort_to_pack:
                 pack_tb_errors = []
-                hist = await _dispatch_candidate_list_to_torbox(
+                hist = await _dispatch_candidate_list_to_downloader(
                     session,
                     [verified_pack],
                     item=item,
@@ -2016,7 +2016,7 @@ async def _push_single_season_or_movie_entry(
             else:
                 for ep, verified_cand in verified_ep_candidates:
                     ep_tb_errors: list[str] = []
-                    ep_hist = await _dispatch_candidate_list_to_torbox(
+                    ep_hist = await _dispatch_candidate_list_to_downloader(
                         session,
                         [verified_cand],
                         item=item,
@@ -2109,7 +2109,7 @@ async def _push_single_season_or_movie_entry(
         if ep_partitioned["had_candidates"] and _candidates_found_acc is not None:
             _candidates_found_acc.append(True)
         ep_tb_errors = []
-        ep_hist = await _dispatch_candidate_list_to_torbox(
+        ep_hist = await _dispatch_candidate_list_to_downloader(
             session,
             ep_partitioned["all_valid"],
             item=item,
@@ -2590,7 +2590,7 @@ async def execute_auto_push(
             if movie_partitioned["had_candidates"]:
                 any_candidates_found = True
             movie_tb_errors: list[str] = []
-            hist = await _dispatch_candidate_list_to_torbox(
+            hist = await _dispatch_candidate_list_to_downloader(
                 session,
                 movie_partitioned["all_valid"],
                 item=item,
@@ -2733,7 +2733,7 @@ async def execute_auto_push(
                 if ep_partitioned["had_candidates"]:
                     any_candidates_found = True
                 ep_tb_errors: list[str] = []
-                ep_hist = await _dispatch_candidate_list_to_torbox(
+                ep_hist = await _dispatch_candidate_list_to_downloader(
                     session,
                     ep_partitioned["all_valid"],
                     item=item,
@@ -3053,7 +3053,7 @@ async def execute_manual_grab(
     item_id: int,
     payload: dict[str, Any],
 ) -> dict[str, Any]:
-    """Dispatch a manually selected release from the Push Modal to TorBox with `push_mode = 'manual'`."""
+    """Dispatch a manually selected release from the Push Modal to the downloader with `push_mode = 'manual'`."""
     from app.services.discord import dispatch_batch_notification_event
 
     stmt = (
@@ -3137,7 +3137,7 @@ async def execute_manual_grab(
     }
 
     manual_tb_errors: list[str] = []
-    hist = await _dispatch_candidate_list_to_torbox(
+    hist = await _dispatch_candidate_list_to_downloader(
         session,
         [candidate],
         item=item,
