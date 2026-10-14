@@ -89,7 +89,7 @@ class PlexWatchlistAdapter:
     """Plex Cloud (Discover) watchlist adapter; every entry is ``plantowatch``."""
 
     async def fetch_entries(self, provider: Provider) -> list[WatchlistEntry]:
-        from app.services import plex
+        from app.services.watchlists import plex
 
         client_identifier = str(provider.config.get("plex_client_identifier") or "")
         raw = await plex.get_watchlist(provider.access_token or "", client_identifier)
@@ -133,7 +133,8 @@ class MalWatchlistAdapter:
     async def fetch_entries(self, provider: Provider) -> list[WatchlistEntry]:
         from app.db.database import async_session_factory
         from app.db.models import Provider as ProviderModel
-        from app.services import anilist, mal
+        from app.services import anilist
+        from app.services.watchlists import mal
 
         async with async_session_factory() as session:
             target = (

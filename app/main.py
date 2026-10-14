@@ -1641,7 +1641,7 @@ async def save_provider(
     custom_tv_categories: str = Form(""),
 ):
     from app.db.models import Provider, ProviderCategory
-    from app.services import provider_service, simkl
+    from app.services import provider_service
     from app.services.indexers.catalog import (
         DEFAULT_MOVIE_CATEGORIES,
         DEFAULT_TV_CATEGORIES,
@@ -1649,6 +1649,7 @@ async def save_provider(
         is_indexer_type,
         normalize_category_csv,
     )
+    from app.services.watchlists import simkl
 
     # Determine standard category from provider type if not explicitly supplied
     resolved_category = category
@@ -1880,7 +1881,7 @@ async def toggle_provider_active(provider_id: int) -> HTMLResponse:
 @app.delete("/settings/provider/{provider_id}", response_class=HTMLResponse)
 async def delete_provider(provider_id: int) -> HTMLResponse:
     from app.db.models import Provider
-    from app.services import simkl
+    from app.services.watchlists import simkl
 
     async with async_session_factory() as session:
         provider = await session.get(Provider, provider_id)
@@ -2225,7 +2226,7 @@ async def start_simkl_auth(
     provider_id: str | None = Form(None),
 ) -> HTMLResponse:
     """Start the Simkl AUTH V2 RFC 8628 Device Authorization Flow."""
-    from app.services import simkl
+    from app.services.watchlists import simkl
 
     clean_client_id = (client_id or "").strip()
     if not clean_client_id:
@@ -2283,7 +2284,7 @@ _PLEX_ERR = (
 def _render_plex_pin_card(sess: dict[str, Any]) -> str:
     import html
 
-    from app.services import plex
+    from app.services.watchlists import plex
 
     url = html.escape(
         plex.build_auth_url(sess["client_identifier"], sess["code"]), quote=True
@@ -2306,7 +2307,7 @@ async def start_plex_auth(provider_id: str = Form("")) -> HTMLResponse:
     import uuid
 
     from app.db.models import Provider
-    from app.services import plex
+    from app.services.watchlists import plex
 
     missing = HTMLResponse(
         content=_PLEX_ERR.format("Save the Plex provider first."), status_code=400
@@ -2342,7 +2343,7 @@ async def start_plex_auth(provider_id: str = Form("")) -> HTMLResponse:
 async def poll_plex_auth(session_id: str = "") -> HTMLResponse:
     """Poll plex.tv for the PIN claim; on success persist the token."""
     from app.db.models import Provider
-    from app.services import plex
+    from app.services.watchlists import plex
 
     sess = plex.get_pin_session(session_id)
     if sess is None:
@@ -2398,7 +2399,7 @@ async def start_mal_auth(
     import html
 
     from app.db.models import Provider
-    from app.services import mal
+    from app.services.watchlists import mal
 
     def err(msg: str) -> HTMLResponse:
         return HTMLResponse(content=_PLEX_ERR.format(msg), status_code=400)
@@ -2439,7 +2440,7 @@ async def mal_auth_callback(
 ) -> HTMLResponse:
     """OAuth redirect target: verify state, exchange the code, store tokens."""
     from app.db.models import Provider
-    from app.services import mal
+    from app.services.watchlists import mal
 
     pending = mal.pop_auth_state(state) if state else None
     if pending is None or not code:
@@ -2503,7 +2504,7 @@ async def poll_simkl_auth(session_id: str = "") -> HTMLResponse:
     from sqlalchemy import select
 
     from app.db.models import Provider
-    from app.services import simkl
+    from app.services.watchlists import simkl
 
     auth_session = simkl.get_device_auth_session(session_id)
     if auth_session is None:
@@ -3194,7 +3195,8 @@ async def run_system_check(request: Request):
 
     from app.config import DEFAULT_USER_AGENT
     from app.db.models import NotificationChannel, Provider, SystemSettings
-    from app.services import anilist, mal, plex, simkl
+    from app.services import anilist
+    from app.services.watchlists import mal, plex, simkl
 
     async with async_session_factory() as session:
         providers = (await session.execute(select(Provider))).scalars().all()

@@ -37,8 +37,9 @@ from app.db.models import (
     Season,
     SeasonStatus,
 )
-from app.services import simkl, tmdb
+from app.services import tmdb
 from app.services.watchlist_ingest import prune_inactive_media_items
+from app.services.watchlists import simkl
 
 logger = logging.getLogger(__name__)
 
