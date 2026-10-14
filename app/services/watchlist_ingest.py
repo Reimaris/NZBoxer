@@ -198,6 +198,9 @@ async def _upsert_source(
             or source.list_status not in ACTIVE_LIST_STATUSES
             else source.list_status
         )
+        if entry.list_status in ACTIVE_LIST_STATUSES:
+            # Track an id that is currently on the list so absence detection stays correct.
+            source.remote_id = entry.remote_id
     if new_status != source.list_status:
         source.list_status = new_status
         result.transitioned += 1
@@ -348,3 +351,58 @@ async def mark_absent_sources_completed(
     if count:
         await session.commit()
     return count
+
+
+async def prune_inactive_media_items(session: AsyncSession) -> int:
+    """Delete items whose watchlist sources are all inactive; push history is preserved.
+
+    Items without any source row are never pruned. Items with an active transfer
+    (DOWNLOADING / RATE_LIMITED) are deferred to a later sync.
+    """
+    from app.core.automation import _item_has_active_downloading_entity
+    from app.core.push_engine import detach_item_download_history
+    from app.db.models import Season as SeasonModel
+
+    items = (
+        (
+            await session.execute(
+                select(MediaItem)
+                .where(MediaItem.watchlist_sources.any())
+                .options(
+                    selectinload(MediaItem.watchlist_sources),
+                    selectinload(MediaItem.seasons).selectinload(SeasonModel.episodes),
+                )
+            )
+        )
+        .scalars()
+        .unique()
+        .all()
+    )
+    logger.debug(
+        "[SYNC] [7/7] Evaluating %d sourced local items for pruning...", len(items)
+    )
+    pruned = 0
+    for item in items:
+        if any(s.list_status in ACTIVE_LIST_STATUSES for s in item.watchlist_sources):
+            continue
+        if _item_has_active_downloading_entity(item):
+            logger.info(
+                "    ⏳ Deferring prune for '%s' (ID %d) because a transfer is active.",
+                item.title,
+                item.id,
+            )
+            continue
+        title = item.title
+        await detach_item_download_history(session, item)
+        await session.delete(item)
+        pruned += 1
+        logger.debug(
+            "[SYNC] [7/7] Pruned '%s' (no longer in active watchlists, 0 active downloads).",
+            title,
+        )
+        logger.info(
+            "    🗑️ Pruned inactive watchlist item '%s'; push history preserved.", title
+        )
+    if pruned:
+        await session.flush()
+    return pruned

@@ -30,6 +30,7 @@ from app.db.database import async_session_factory
 from app.db.models import (
     EpisodeStatus,
     MediaItem,
+    MediaItemWatchlistSource,
     MediaStatus,
     MediaType,
     Provider,
@@ -37,6 +38,7 @@ from app.db.models import (
     SeasonStatus,
 )
 from app.services import simkl, tmdb
+from app.services.watchlist_ingest import prune_inactive_media_items
 
 logger = logging.getLogger(__name__)
 
@@ -610,6 +612,22 @@ async def deduplicate_media_items(session: AsyncSession) -> int:
                     s.simkl_id = dup.simkl_id
                     break
 
+        canonical_provider_ids = {
+            src.provider_id for src in canonical.watchlist_sources or []
+        }
+        for src in list(dup.watchlist_sources or []):
+            if src.provider_id in canonical_provider_ids:
+                await session.delete(src)
+            else:
+                await session.execute(
+                    update(MediaItemWatchlistSource)
+                    .where(MediaItemWatchlistSource.id == src.id)
+                    .values(media_item_id=canonical.id)
+                )
+                canonical_provider_ids.add(src.provider_id)
+        await session.flush()
+        session.expire(dup, ["watchlist_sources"])
+        session.expire(canonical, ["watchlist_sources"])
         await session.execute(
             update(DownloadHistory)
             .where(DownloadHistory.media_item_id == dup.id)
@@ -710,94 +728,16 @@ def _extract_active_simkl_ids(raw_items: list[dict[str, Any]]) -> set[int]:
 
 
 def _item_has_active_downloading_entity(item: MediaItem) -> bool:
-    """Return True if the MediaItem or any of its child Seasons/Episodes is currently DOWNLOADING."""
-    if item.status == MediaStatus.DOWNLOADING:
+    """Return True if the MediaItem or any child Season/Episode has an active transfer (DOWNLOADING or RATE_LIMITED)."""
+    if item.status in (MediaStatus.DOWNLOADING, MediaStatus.RATE_LIMITED):
         return True
     for s in item.seasons or []:
-        if s.status == SeasonStatus.DOWNLOADING:
+        if s.status in (SeasonStatus.DOWNLOADING, SeasonStatus.RATE_LIMITED):
             return True
         for ep in s.episodes or []:
-            if ep.status == EpisodeStatus.DOWNLOADING:
+            if ep.status in (EpisodeStatus.DOWNLOADING, EpisodeStatus.RATE_LIMITED):
                 return True
     return False
-
-
-async def _prune_completed_or_dropped_simkl_items(
-    session: AsyncSession,
-    provider_id: int,
-    active_simkl_ids: set[int],
-    *,
-    sync_movies: bool,
-    sync_series: bool,
-    sync_anime: bool,
-) -> int:
-    """Prune local Simkl MediaItems absent from Simkl plantowatch + watching after detaching their DownloadHistory."""
-    from app.core.push_engine import detach_item_download_history
-
-    stmt = (
-        select(MediaItem)
-        .where(MediaItem.provider_id == provider_id)
-        .options(
-            selectinload(MediaItem.seasons).selectinload(Season.episodes),
-        )
-    )
-    local_items = (await session.execute(stmt)).scalars().all()
-    logger.debug(
-        "[SYNC] [7/7] Evaluating %d local items against %d active Simkl IDs for pruning...",
-        len(local_items),
-        len(active_simkl_ids),
-    )
-    pruned_count = 0
-
-    for item in local_items:
-        if item.media_type == MediaType.SHOW and not sync_series:
-            continue
-        if item.media_type == MediaType.ANIME and not sync_anime:
-            continue
-        if item.media_type == MediaType.MOVIE:
-            is_anime_m = bool(getattr(item, "is_anime_movie", False))
-            if is_anime_m and not (sync_anime or sync_movies):
-                continue
-            if not is_anime_m and not sync_movies:
-                continue
-
-        item_simkl_ids: set[int] = set(item.associated_simkl_ids)
-        if item.simkl_id:
-            item_simkl_ids.add(int(item.simkl_id))
-        for s in item.seasons or []:
-            if s.simkl_id:
-                item_simkl_ids.add(int(s.simkl_id))
-
-        if not item_simkl_ids:
-            continue
-        if item_simkl_ids & active_simkl_ids:
-            continue
-        if _item_has_active_downloading_entity(item):
-            logger.info(
-                "    ⏳ Deferring Simkl prune for '%s' (ID %d) because a transfer is actively DOWNLOADING.",
-                item.title,
-                item.id,
-            )
-            continue
-
-        item_title = item.title
-        item_simkl = item.simkl_id
-        await detach_item_download_history(session, item)
-        await session.delete(item)
-        pruned_count += 1
-        logger.debug(
-            "[SYNC] [7/7] Pruned '%s' (no longer in active watchlists, 0 active downloads).",
-            item_title,
-        )
-        logger.info(
-            "    🗑️ Pruned completed/dropped Simkl watchlist item '%s' (Simkl ID %s); push history preserved.",
-            item_title,
-            item_simkl,
-        )
-
-    if pruned_count > 0:
-        await session.flush()
-    return pruned_count
 
 
 async def _simkl_seen_remote_ids(
@@ -993,14 +933,7 @@ async def sync_all_providers() -> None:
                             ),
                         )
                         duplicates_merged = await deduplicate_media_items(session)
-                        pruned = await _prune_completed_or_dropped_simkl_items(
-                            session,
-                            provider.id,
-                            active_simkl_ids,
-                            sync_movies=sync_movies,
-                            sync_series=sync_series,
-                            sync_anime=sync_anime,
-                        )
+                        pruned = await prune_inactive_media_items(session)
                         logger.info(
                             "[SYNC] [7/7] Maintenance: %d duplicates merged, %d completed/dropped titles pruned",
                             duplicates_merged,
