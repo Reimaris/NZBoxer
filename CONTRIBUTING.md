@@ -23,10 +23,10 @@ python -m venv .venv
 .venv/bin/ruff check .
 .venv/bin/ruff format --check .
 .venv/bin/mypy app/
-.venv/bin/pytest -q tests/
 ```
 
-- Add or update tests for behavior changes.
+- The automated test suite is maintained privately. The maintainer runs it before
+  merging, so please describe in the PR how you verified your change manually.
 - Use [Conventional Commits](https://www.conventionalcommits.org/) (`feat:`, `fix:`, `docs:`, ...).
 - Keep code, UI labels and commit messages in English.
 - By contributing you agree your work is licensed under the project's AGPL-3.0 license.
