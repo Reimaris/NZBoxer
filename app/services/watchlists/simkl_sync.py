@@ -54,40 +54,6 @@ async def upsert_simkl_source(
     return source
 
 
-async def _simkl_seen_remote_ids(
-    session: AsyncSession,
-    provider_id: int,
-    active_simkl_ids: set[int],
-    *,
-    sync_movies: bool,
-    sync_series: bool,
-    sync_anime: bool,
-) -> set[str]:
-    """Remote ids still present on the Simkl list; disabled categories count as seen."""
-
-    seen = {str(i) for i in active_simkl_ids}
-    disabled = [
-        mt
-        for mt, enabled in (
-            (MediaType.MOVIE, sync_movies),
-            (MediaType.SHOW, sync_series),
-            (MediaType.ANIME, sync_anime),
-        )
-        if not enabled
-    ]
-    if disabled:
-        rows = await session.execute(
-            select(MediaItemWatchlistSource.remote_id)
-            .join(MediaItem, MediaItem.id == MediaItemWatchlistSource.media_item_id)
-            .where(
-                MediaItemWatchlistSource.provider_id == provider_id,
-                MediaItem.media_type.in_(disabled),
-            )
-        )
-        seen.update(rows.scalars().all())
-    return seen
-
-
 async def _upsert_simkl_source_for_item(
     session: AsyncSession,
     item: MediaItem,
@@ -950,18 +916,14 @@ async def sync_provider(
 
     from app.services.watchlist_ingest import (
         mark_absent_sources_completed,
+        seen_ids_with_disabled_categories,
     )
 
     completed = await mark_absent_sources_completed(
         session,
         provider,
-        await _simkl_seen_remote_ids(
-            session,
-            provider.id,
-            active_simkl_ids,
-            sync_movies=sync_movies,
-            sync_series=sync_series,
-            sync_anime=sync_anime,
+        await seen_ids_with_disabled_categories(
+            session, provider, {str(i) for i in active_simkl_ids}
         ),
     )
     logger.info("[SYNC] [5/5] %d departed entries marked completed", completed)

@@ -735,16 +735,24 @@ async def _sync_adapter_provider(
     import json
 
     from app.services.watchlist_ingest import (
+        filter_enabled_entries,
         ingest_entries,
         mark_absent_sources_completed,
+        seen_ids_with_disabled_categories,
     )
     from app.services.watchlist_providers import get_adapter
 
     adapter = get_adapter(provider.type)
     # Release any read transaction snapshot before outbound HTTP calls
     await session.commit()
-    entries = await adapter.fetch_entries(provider)
-    logger.info("[SYNC] [1/3] %s: fetched %d entries", provider.name, len(entries))
+    fetched = await adapter.fetch_entries(provider)
+    entries = filter_enabled_entries(provider, fetched)
+    logger.info(
+        "[SYNC] [1/3] %s: fetched %d entries (%d in enabled categories)",
+        provider.name,
+        len(fetched),
+        len(entries),
+    )
 
     ingest = await ingest_entries(session, provider, entries)
     logger.info(
@@ -757,7 +765,11 @@ async def _sync_adapter_provider(
     )
 
     completed = await mark_absent_sources_completed(
-        session, provider, {e.remote_id for e in entries}
+        session,
+        provider,
+        await seen_ids_with_disabled_categories(
+            session, provider, {e.remote_id for e in fetched}
+        ),
     )
     logger.info(
         "[SYNC] [3/3] %s: %d departed entries marked completed",
