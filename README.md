@@ -14,6 +14,10 @@
   <img src="https://img.shields.io/badge/license-AGPLv3-green" alt="License" />
 </p>
 
+<p align="center">
+  <img src="screenshots/dashboard.png" alt="NZBoxer dashboard" width="900" />
+</p>
+
 ---
 
 ## What is NZBoxer?
@@ -33,6 +37,33 @@ It keeps your **Movies**, **TV Series** and **Anime** in sync with your watchlis
 - **Ad-Hoc Multi-Tier Search:** Search any title, IMDb ID, or TMDB/AniList ID and grab releases without adding anything to a watchlist.
 - **Release Scoring & Presets:** Scoring by codec, source, HDR and bitrate density, plus a primary/fallback language hierarchy, all tunable through reusable search presets.
 - **Global Dry-Run Sandbox:** Simulate entire push pipelines with zero remote mutations.
+
+---
+
+## Screenshots
+
+<table>
+  <tr>
+    <td width="50%"><img src="screenshots/push-modal.png" alt="Push modal with scored releases" /><br /><sub><b>Push modal:</b> scored releases, presets and language rules</sub></td>
+    <td width="50%"><img src="screenshots/anime-franchise.png" alt="Anime franchise push modal" /><br /><sub><b>Anime franchises:</b> pick seasons, movies or single episodes</sub></td>
+  </tr>
+  <tr>
+    <td><img src="screenshots/active-pushes.png" alt="Live transfer monitor" /><br /><sub><b>Live transfer monitor</b> (shown in dry-run mode)</sub></td>
+    <td><img src="screenshots/providers.png" alt="Connected providers" /><br /><sub><b>Connected providers:</b> watchlists, metadata, downloaders, indexers</sub></td>
+  </tr>
+</table>
+
+<p align="center">
+  <img src="screenshots/ad-hoc-search.png" alt="Ad-hoc search" width="800" /><br />
+  <sub><b>Ad-hoc search:</b> find releases for any title without adding it to a watchlist</sub>
+</p>
+
+<p align="center">
+  <img src="screenshots/mobile-dashboard.png" alt="Mobile dashboard" width="300" />
+  &nbsp;&nbsp;
+  <img src="screenshots/mobile-push-modal.png" alt="Mobile push modal" width="300" /><br />
+  <sub><b>Mobile-friendly:</b> the full UI works on your phone</sub>
+</p>
 
 ---
 
