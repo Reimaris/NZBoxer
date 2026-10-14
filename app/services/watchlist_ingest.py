@@ -289,6 +289,8 @@ async def ingest_entries(
             result.linked += 1
 
         has_progress = entry.watched_episodes > 0 or entry.list_status == "completed"
+        if has_progress:
+            await session.refresh(item, ["seasons"])  # async-safe lazy load
         order, matched = _entry_order(item, entry) if has_progress else (0, None)
         source = await _upsert_source(session, item, provider, entry, order, result)
 

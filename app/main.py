@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import uuid
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -2445,6 +2446,30 @@ async def feedback_modal(
     )
 
 
+def _resolve_onboarding_type(
+    payload: dict[str, Any],
+    key: str,
+    valid: frozenset[str],
+    *,
+    label: str,
+    legacy: str = "",
+) -> str:
+    """Selected type slug for an onboarding Step 1 section; "" = None/Skip.
+
+    A present key wins (blank skips, unknown raises ``ValueError``); an absent key
+    falls back to the caller-computed ``legacy`` inference.
+    """
+    if key not in payload:
+        return legacy
+    value = str(payload.get(key) or "").strip().lower()
+    if value and value not in valid:
+        raise ValueError(f"Unknown {label} type.")
+    return value
+
+
+_ONBOARDING_WATCHLIST_TYPES = frozenset({"simkl", "anilist", "plex", "mal"})
+
+
 @app.get("/onboarding/modal", response_class=HTMLResponse)
 async def onboarding_modal(request: Request) -> Response:
     """Render the first-run Setup Wizard, pre-populated from existing records."""
@@ -2465,6 +2490,24 @@ async def onboarding_modal(request: Request) -> Response:
 
     async with async_session_factory() as session:
         simkl_p = await _first_provider(session, "simkl")
+        anilist_p = await _first_provider(session, "anilist")
+        plex_p = await _first_provider(session, "plex")
+        mal_p = await _first_provider(session, "mal")
+        active_wl = (
+            (
+                await session.execute(
+                    select(Provider)
+                    .where(
+                        Provider.category == "watchlist",
+                        Provider.is_active.is_(True),
+                        Provider.type.in_(_ONBOARDING_WATCHLIST_TYPES),
+                    )
+                    .order_by(Provider.priority, Provider.id)
+                )
+            )
+            .scalars()
+            .first()
+        )
         tmdb_p = await _first_provider(session, "tmdb")
         torbox_p = await _first_provider(session, "torbox")
         indexer_p = await _first_provider(session, "treasure_maps")
@@ -2487,6 +2530,26 @@ async def onboarding_modal(request: Request) -> Response:
             "username": (simkl_p.username if simkl_p else None) or "",
             "provider_id": str(simkl_p.id) if simkl_p else "",
             "connected": "1" if simkl_p and simkl_p.access_token else "",
+        },
+        "watchlist_type": active_wl.type if active_wl else "",
+        "anilist": {
+            "username": (anilist_p.username if anilist_p else None) or "",
+            "has_token": bool(anilist_p and anilist_p.access_token),
+        },
+        "plex": {
+            "provider_id": str(plex_p.id) if plex_p else "",
+            "connected": "1"
+            if plex_p and plex_p.watchlist_connection_status == "connected"
+            else "",
+            "has_token": bool(plex_p and plex_p.access_token),
+        },
+        "mal": {
+            "client_id": (mal_p.client_id if mal_p else None) or "",
+            "provider_id": str(mal_p.id) if mal_p else "",
+            "connected": "1"
+            if mal_p and mal_p.watchlist_connection_status == "connected"
+            else "",
+            "redirect_uri": str(request.base_url).rstrip("/") + _MAL_CALLBACK_PATH,
         },
         "tmdb": {"api_key": (tmdb_p.api_key if tmdb_p else None) or ""},
         "torbox": {
@@ -2537,6 +2600,32 @@ async def onboarding_step1(request: Request) -> Response:
         _f("indexer_api_key"),
     )
 
+    try:
+        watchlist_type = _resolve_onboarding_type(
+            payload,
+            "watchlist_type",
+            _ONBOARDING_WATCHLIST_TYPES,
+            label="watchlist",
+            legacy="simkl" if simkl_client_id or simkl_username else "",
+        )
+    except ValueError as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
+
+    anilist_username, anilist_token = _f("anilist_username"), _f("anilist_access_token")
+    plex_token = _f("plex_auth_token")
+    plex_prepare = _f("watchlist_prepare").lower() in ("1", "true", "on", "yes")
+    mal_client_id = _f("mal_client_id")
+    wl_provided = {
+        "simkl": bool(simkl_client_id or simkl_username),
+        "anilist": bool(anilist_username or anilist_token),
+        "plex": bool(plex_token or plex_prepare),
+        "mal": bool(mal_client_id),
+    }.get(watchlist_type, False)
+    if watchlist_type == "anilist" and wl_provided and not anilist_username:
+        return JSONResponse(
+            {"ok": False, "error": "AniList requires a username."}, status_code=400
+        )
+
     indexer_provided = bool(indexer_url or indexer_key)
     if indexer_provided and not (indexer_url and indexer_key):
         return JSONResponse(
@@ -2581,7 +2670,7 @@ async def onboarding_step1(request: Request) -> Response:
             "indexer": await _first("treasure_maps"),
         }
 
-        if simkl_client_id or simkl_username:
+        if watchlist_type == "simkl" and wl_provided:
             is_new = providers["simkl"] is None
             simkl = await _upsert("simkl", ProviderCategory.WATCHLIST, "Simkl")
             simkl.client_id = simkl_client_id
@@ -2602,6 +2691,39 @@ async def onboarding_step1(request: Request) -> Response:
                 )
             simkl.config_json = json.dumps(cfg)
             providers["simkl"] = simkl
+
+        selected_wl: Provider | None = None
+        if watchlist_type == "simkl":
+            selected_wl = providers["simkl"]
+        elif watchlist_type:
+            names = {"anilist": "AniList", "plex": "Plex", "mal": "MyAnimeList"}
+            selected_wl = await _first(watchlist_type)
+            if wl_provided:
+                if selected_wl is None:
+                    selected_wl = await _upsert(
+                        watchlist_type,
+                        ProviderCategory.WATCHLIST,
+                        names[watchlist_type],
+                    )
+                    selected_wl.config_json = json.dumps({"sync_interval_minutes": 0})
+                if watchlist_type == "anilist":
+                    selected_wl.username = anilist_username
+                    if anilist_token:
+                        selected_wl.access_token = anilist_token
+                elif watchlist_type == "plex":
+                    if plex_token:
+                        selected_wl.access_token = plex_token
+                    try:
+                        plex_cfg = json.loads(selected_wl.config_json or "{}")
+                    except ValueError:
+                        plex_cfg = {}
+                    if not isinstance(plex_cfg, dict):
+                        plex_cfg = {}
+                    if not plex_cfg.get("plex_client_identifier"):
+                        plex_cfg["plex_client_identifier"] = str(uuid.uuid4())
+                    selected_wl.config_json = json.dumps(plex_cfg)
+                else:
+                    selected_wl.client_id = mal_client_id
 
         if tmdb_api_key:
             tmdb = await _upsert("tmdb", ProviderCategory.METADATA, "TMDB")
@@ -2636,6 +2758,7 @@ async def onboarding_step1(request: Request) -> Response:
             key: (prov.id if prov is not None else None)
             for key, prov in providers.items()
         }
+        provider_ids["watchlist"] = selected_wl.id if selected_wl is not None else None
     return JSONResponse({"ok": True, "provider_ids": provider_ids})
 
 
