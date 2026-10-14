@@ -1226,7 +1226,7 @@ document.addEventListener('alpine:init', () => {
                                 {% endif %}
                                 {% if h.can_delete_torbox %}
                                 <button type="button"
-                                        hx-post="/api/history/{{ h.id }}/delete-torbox"
+                                        hx-post="/api/history/{{ h.id }}/delete-transfer"
                                         hx-target="#ledger-status-{{ h.id }}"
                                         hx-swap="innerHTML"
                                         hx-confirm="Delete this transfer from {{ h.downloader_name }} and reset target to Ready to Push?"

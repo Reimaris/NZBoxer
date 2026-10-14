@@ -348,7 +348,7 @@
 
                     {% if not entries and item.status.value in ('completed', 'downloaded') %}
                     <button type="button"
-                            hx-post="/api/items/{{ item.id }}/delete-torbox"
+                            hx-post="/api/items/{{ item.id }}/delete-transfer"
                             hx-target="#modal-container"
                             hx-swap="innerHTML"
                             hx-confirm="Delete this movie from {{ downloader_name }} and reset to Ready to Push?"
@@ -464,7 +464,7 @@
                                 {% endif %}
                                 {% if entry.has_deletable_transfers %}
                                 <button type="button"
-                                        hx-post="/api/items/{{ item.id }}/delete-torbox?season_id={{ entry.id }}"
+                                        hx-post="/api/items/{{ item.id }}/delete-transfer?season_id={{ entry.id }}"
                                         hx-target="#modal-container"
                                         hx-swap="innerHTML"
                                         hx-confirm="Delete this season/movie from {{ downloader_name }} and reset to Ready to Push?"
@@ -514,7 +514,7 @@
                                     {% endif %}
                                     {% if ep.status.value in ('completed', 'downloaded') %}
                                     <button type="button"
-                                            hx-post="/api/items/{{ item.id }}/delete-torbox?season_id={{ entry.id }}&episode_id={{ ep.id }}"
+                                            hx-post="/api/items/{{ item.id }}/delete-transfer?season_id={{ entry.id }}&episode_id={{ ep.id }}"
                                             hx-target="#modal-container"
                                             hx-swap="innerHTML"
                                             hx-confirm="Delete episode E{{ '%02d'|format(ep.episode_number) }} from {{ downloader_name }} and reset to Ready to Push?"

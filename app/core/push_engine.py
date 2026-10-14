@@ -1234,10 +1234,10 @@ async def _dispatch_candidate_list_to_torbox(
         await session.commit()
 
         if superseded_transfer_ids:
-            from app.core.transfer_poller import _delete_and_purge_torbox_transfer
+            from app.core.transfer_poller import _delete_and_purge_transfer
 
             for old_tid in superseded_transfer_ids:
-                await _delete_and_purge_torbox_transfer(session, old_tid)
+                await _delete_and_purge_transfer(session, old_tid)
             await session.commit()
 
         from app.core.transfer_poller import wake_transfer_poller

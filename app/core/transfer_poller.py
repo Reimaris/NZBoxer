@@ -400,22 +400,16 @@ async def _delete_and_purge_transfer(
         )
 
 
-_delete_and_purge_torbox_transfer = _delete_and_purge_transfer
-
-
 async def _purge_for_row(
     session: AsyncSession,
     transfer_id: str | None,
     downloader_type: str | None,
     tb_item: dict[str, Any] | None = None,
 ) -> None:
-    """Delete via the row's own downloader; TorBox goes through the legacy-named hook."""
-    if (downloader_type or "torbox") == "torbox":
-        await _delete_and_purge_torbox_transfer(session, transfer_id, tb_item)
-    else:
-        await _delete_and_purge_transfer(
-            session, transfer_id, tb_item, downloader_type=downloader_type
-        )
+    """Delete via the row's own downloader."""
+    await _delete_and_purge_transfer(
+        session, transfer_id, tb_item, downloader_type=downloader_type
+    )
 
 
 async def _finalize_upgrade_replacement(
@@ -2852,7 +2846,7 @@ async def reconcile_all_items_transfer_truth(session: AsyncSession) -> int:
     return reconciled
 
 
-async def manual_delete_from_downloader(
+async def manual_delete_transfer(
     session: AsyncSession,
     *,
     history_id: int | None = None,
@@ -3068,9 +3062,6 @@ async def manual_delete_from_downloader(
     }
 
 
-manual_delete_from_torbox = manual_delete_from_downloader
-
-
 async def ensure_blacklisted_release(
     session: AsyncSession,
     *,
@@ -3136,7 +3127,7 @@ async def blacklist_from_history(
     )
     await session.commit()
 
-    res = await manual_delete_from_downloader(session, history_id=history_id)
+    res = await manual_delete_transfer(session, history_id=history_id)
     res["blacklist_id"] = bl.id
     return res
 
@@ -3169,7 +3160,7 @@ async def blacklist_from_active_pushes(
 
     detail_lower = (history.status_detail or "").strip().lower()
     if detail_lower == "completed":
-        await manual_delete_from_downloader(session, history_id=history_id)
+        await manual_delete_transfer(session, history_id=history_id)
         return True
     if (
         detail_lower.startswith("failed") or detail_lower == "rate_limited"

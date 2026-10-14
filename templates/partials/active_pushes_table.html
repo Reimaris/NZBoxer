@@ -201,7 +201,7 @@
                             <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                             Dismiss
                         </button>
-                        <button hx-post="/api/pushes/{{ p.history_id }}/delete-torbox"
+                        <button hx-post="/api/pushes/{{ p.history_id }}/delete-transfer"
                                 hx-target="#active-pushes-container"
                                 hx-swap="innerHTML"
                                 hx-confirm="Delete this transfer from {{ p.downloader_name }} and reset target to Ready to Push?"

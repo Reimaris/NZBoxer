@@ -4805,18 +4805,23 @@ async def api_dismiss_all_active_pushes(request: Request) -> Response:
     )
 
 
-@app.post("/api/pushes/{history_id}/delete-torbox")
-async def api_active_push_delete_torbox(history_id: int, request: Request) -> Response:
+@app.post("/api/pushes/{history_id}/delete-transfer")
+@app.post(
+    "/api/pushes/{history_id}/delete-torbox", include_in_schema=False
+)  # legacy alias (m59) — remove after one release
+async def api_active_push_delete_transfer(
+    history_id: int, request: Request
+) -> Response:
     """Delete a completed transfer from TorBox via Active Pushes, mark row 'deleted', and reset target to SEARCHING."""
     from app.core.transfer_poller import (
         count_downloading_entities,
         get_active_pushes,
-        manual_delete_from_torbox,
+        manual_delete_transfer,
         transfer_poller,
     )
 
     async with async_session_factory() as session:
-        res = await manual_delete_from_torbox(session, history_id=history_id)
+        res = await manual_delete_transfer(session, history_id=history_id)
         if res.get("status") == "not_found":
             return JSONResponse(
                 status_code=404,
@@ -5127,13 +5132,16 @@ async def api_get_push_history(request: Request) -> Response:
     )
 
 
-@app.post("/api/history/{history_id}/delete-torbox")
-async def api_history_delete_torbox(history_id: int, request: Request) -> Response:
+@app.post("/api/history/{history_id}/delete-transfer")
+@app.post(
+    "/api/history/{history_id}/delete-torbox", include_in_schema=False
+)  # legacy alias (m59) — remove after one release
+async def api_history_delete_transfer(history_id: int, request: Request) -> Response:
     """Delete transfer from TorBox via Push History Ledger row, mark row 'deleted', reset target to SEARCHING, and recalculate parent status."""
-    from app.core.transfer_poller import manual_delete_from_torbox
+    from app.core.transfer_poller import manual_delete_transfer
 
     async with async_session_factory() as session:
-        res = await manual_delete_from_torbox(session, history_id=history_id)
+        res = await manual_delete_transfer(session, history_id=history_id)
         if res.get("status") == "not_found":
             return JSONResponse(
                 status_code=404,
@@ -5306,8 +5314,11 @@ async def api_delete_dry_run_history(request: Request) -> Response:
     )
 
 
-@app.post("/api/items/{item_id}/delete-torbox")
-async def api_item_delete_torbox(
+@app.post("/api/items/{item_id}/delete-transfer")
+@app.post(
+    "/api/items/{item_id}/delete-torbox", include_in_schema=False
+)  # legacy alias (m59) — remove after one release
+async def api_item_delete_transfer(
     item_id: int,
     request: Request,
     season_id: int | None = None,
@@ -5315,7 +5326,7 @@ async def api_item_delete_torbox(
 ) -> Response:
     """Delete transfer from TorBox for a Movie, Season/Franchise Movie, or Episode from the Push Modal."""
     from app.core.push_engine import get_push_modal_context
-    from app.core.transfer_poller import manual_delete_from_torbox
+    from app.core.transfer_poller import manual_delete_transfer
 
     payload = await _parse_request_payload(request)
     if season_id is None and payload.get("season_id") is not None:
@@ -5330,7 +5341,7 @@ async def api_item_delete_torbox(
             episode_id = None
 
     async with async_session_factory() as session:
-        res = await manual_delete_from_torbox(
+        res = await manual_delete_transfer(
             session,
             item_id=item_id,
             season_id=season_id,
