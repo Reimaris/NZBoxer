@@ -1431,13 +1431,19 @@ async def backfill_watchlist_sources(session: AsyncSession) -> int:
 
     items = (
         await session.execute(
-            select(MediaItem).where(
+            select(
+                MediaItem.id,
+                MediaItem.provider_id,
+                MediaItem.simkl_id,
+                MediaItem.last_watched_order_simkl,
+            ).where(
+                MediaItem.provider_id.is_not(None),
                 ~select(MediaItemWatchlistSource.id)
                 .where(MediaItemWatchlistSource.media_item_id == MediaItem.id)
-                .exists()
+                .exists(),
             )
         )
-    ).scalars()
+    ).all()
     created = 0
     for item in items:
         order = item.last_watched_order_simkl or 0

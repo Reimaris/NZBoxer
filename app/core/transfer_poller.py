@@ -1811,7 +1811,9 @@ async def get_active_pushes(session: AsyncSession) -> list[dict[str, Any]]:
         )
 
         if is_recently_completed:
-            status_badge = f"Ready on {DOWNLOADER_DISPLAY_NAMES[_row_downloader_type(h)]}"
+            status_badge = (
+                f"Ready on {DOWNLOADER_DISPLAY_NAMES[_row_downloader_type(h)]}"
+            )
         elif is_rate_limited:
             from app.core.rate_limit_queue import resume_time_label
 

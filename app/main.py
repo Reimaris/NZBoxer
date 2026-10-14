@@ -3117,8 +3117,7 @@ async def run_system_check(request: Request):
     active_downloaders = [
         p
         for p in active_providers
-        if p.category == "downloader"
-        or p.type in ("torbox", "sabnzbd", "premiumize")
+        if p.category == "downloader" or p.type in ("torbox", "sabnzbd", "premiumize")
     ]
     active_watchlists = [p for p in active_providers if p.category == "watchlist"]
     active_tmdb = next(
