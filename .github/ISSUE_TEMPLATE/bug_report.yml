@@ -1,0 +1,64 @@
+name: Bug report
+description: Report something that is not working as expected
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! In NZBoxer use **Settings → Report a Bug → Copy Diagnostics Table** and paste it below. Never post API keys or private URLs.
+  - type: textarea
+    id: what_happened
+    attributes:
+      label: What happened
+      description: A clear description of the problem.
+    validations:
+      required: true
+  - type: textarea
+    id: steps_to_reproduce
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+  - type: textarea
+    id: expected_behavior
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual_behavior
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Environment Diagnostics
+      description: Paste the table copied from NZBoxer (Settings → Report a Bug → Copy Diagnostics Table).
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant Log Output
+      description: Remove any secrets before pasting.
+      render: shell
+    validations:
+      required: false
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Pre-submission Checklist
+      options:
+        - label: I am running the latest NZBoxer version
+          required: true
+        - label: I searched existing issues and found no duplicate
+          required: true
+        - label: I removed all secrets / API keys from this report
+          required: true

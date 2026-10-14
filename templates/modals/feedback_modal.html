@@ -1,14 +1,13 @@
-<!-- Feedback Helper Modal (Bug Report / Feature Request, ADR-127) -->
+<!-- Feedback Helper Modal (Bug / Feature / Question launcher, ADR-127, ADR-135) -->
 <div class="nzb-modal-backdrop fixed inset-0 z-[100] flex items-center justify-center p-2 sm:p-4 bg-black/80 backdrop-blur-sm animate-fade-in"
      id="feedback-modal-backdrop"
      x-data='{
          activeTab: {{ initial_tab | tojson }},
-         bugText: {{ bug_markdown | tojson }},
-         featureText: {{ feature_markdown | tojson }},
+         issueFormUrls: {{ issue_form_urls | tojson }},
+         diagnosticsText: {{ diagnostics_markdown | tojson }},
          copied: false,
          copy() {
-             const ta = this.$refs[this.activeTab === "bug" ? "bugArea" : "featureArea"];
-             const text = this.activeTab === "bug" ? this.bugText : this.featureText;
+             const ta = this.$refs.diagnosticsArea;
              const done = () => { this.copied = true; setTimeout(() => { this.copied = false; }, 2000); };
              const fallback = () => {
                  ta.focus();
@@ -16,7 +15,7 @@
                  try { if (document.execCommand("copy")) done(); } catch (e) {}
              };
              if (navigator.clipboard && navigator.clipboard.writeText) {
-                 navigator.clipboard.writeText(text).then(done, fallback);
+                 navigator.clipboard.writeText(this.diagnosticsText).then(done, fallback);
              } else {
                  fallback();
              }
@@ -39,24 +38,26 @@
         </div>
 
         <div class="p-6 space-y-4 overflow-y-auto flex-1">
-            <div class="flex gap-2">
+            <div class="flex flex-wrap gap-2">
                 <button type="button" @click="activeTab = 'bug'"
                         :class="activeTab === 'bug' ? 'bg-[#d40060] text-white' : 'bg-[#2a2a32] text-[#a1a1aa] hover:text-white'"
                         class="px-3 py-1.5 rounded-lg text-xs font-bold border border-[#3f3f46] transition-colors">Bug Report</button>
                 <button type="button" @click="activeTab = 'feature'"
                         :class="activeTab === 'feature' ? 'bg-[#d40060] text-white' : 'bg-[#2a2a32] text-[#a1a1aa] hover:text-white'"
                         class="px-3 py-1.5 rounded-lg text-xs font-bold border border-[#3f3f46] transition-colors">Feature Request</button>
+                <button type="button" @click="activeTab = 'question'"
+                        :class="activeTab === 'question' ? 'bg-[#d40060] text-white' : 'bg-[#2a2a32] text-[#a1a1aa] hover:text-white'"
+                        class="px-3 py-1.5 rounded-lg text-xs font-bold border border-[#3f3f46] transition-colors">Question</button>
             </div>
 
-            <p class="text-xs text-[#a1a1aa]">Edit the template below, copy it, then paste it into a new GitHub issue. Nothing is sent automatically.</p>
+            <p x-show="activeTab === 'bug'" class="text-xs text-[#a1a1aa]">Copy the diagnostics table, open the bug form and paste it into the <em>Environment Diagnostics</em> field. Remove any secrets from logs.</p>
+            <p x-show="activeTab === 'feature'" x-cloak class="text-xs text-[#a1a1aa]">Describe the problem you want solved. Diagnostics are optional for feature requests.</p>
+            <p x-show="activeTab === 'question'" x-cloak class="text-xs text-[#a1a1aa]">Check the README first. Diagnostics are optional but help us answer faster.</p>
 
-            <textarea x-ref="bugArea" x-show="activeTab === 'bug'" x-model="bugText" rows="16" spellcheck="false"
-                      class="w-full bg-[#111115] border border-[#3f3f46] rounded-lg px-3 py-2 text-white font-mono text-xs focus:border-[#d40060] focus:outline-none"></textarea>
-            <textarea x-ref="featureArea" x-show="activeTab === 'feature'" x-cloak x-model="featureText" rows="16" spellcheck="false"
-                      class="w-full bg-[#111115] border border-[#3f3f46] rounded-lg px-3 py-2 text-white font-mono text-xs focus:border-[#d40060] focus:outline-none"></textarea>
+            <textarea x-ref="diagnosticsArea" x-model="diagnosticsText" readonly tabindex="-1" aria-hidden="true" class="sr-only"></textarea>
 
-            <div x-show="activeTab === 'bug'" class="bg-[#111115] border border-[#3f3f46] rounded-lg p-3">
-                <div class="text-xs font-semibold text-[#a1a1aa] mb-2">Environment diagnostics included (no keys, URLs or names)</div>
+            <div class="bg-[#111115] border border-[#3f3f46] rounded-lg p-3">
+                <div class="text-xs font-semibold text-[#a1a1aa] mb-2">Environment diagnostics (no keys, URLs or names)</div>
                 <table class="w-full text-xs">
                     <tbody>
                         <tr><td class="text-[#a1a1aa] pr-4 py-0.5">NZBoxer Version</td><td class="text-white">{{ diagnostics.app_version }}</td></tr>
@@ -70,11 +71,12 @@
         </div>
 
         <div class="px-6 py-4 bg-[#2a2a32] border-t border-[#3f3f46] flex flex-col sm:flex-row gap-2 sm:justify-end">
+            <a href="{{ security_advisory_url }}" target="_blank" rel="noopener noreferrer" class="text-xs text-[#a1a1aa] hover:text-white underline self-center sm:mr-auto">Security issue? Report it privately</a>
             <button type="button" @click="copy()" class="w-full sm:w-auto bg-[#2a2a32] hover:bg-[#3f3f46] border border-[#3f3f46] text-white px-4 py-2 rounded-lg text-xs font-bold transition-colors">
-                <span x-show="!copied">Copy to Clipboard</span>
+                <span x-show="!copied">Copy Diagnostics Table</span>
                 <span x-show="copied" x-cloak class="text-green-400">✓ Copied to Clipboard!</span>
             </button>
-            <a href="{{ github_issues_url }}" target="_blank" rel="noopener noreferrer" class="w-full sm:w-auto text-center bg-[#d40060] hover:bg-[#a3004a] text-white px-4 py-2 rounded-lg text-xs font-bold transition-all shadow-lg shadow-[#d40060]/20">Open GitHub Issues</a>
+            <a :href="issueFormUrls[activeTab]" href="{{ issue_form_urls[initial_tab] }}" target="_blank" rel="noopener noreferrer" class="w-full sm:w-auto text-center bg-[#d40060] hover:bg-[#a3004a] text-white px-4 py-2 rounded-lg text-xs font-bold transition-all shadow-lg shadow-[#d40060]/20">Open GitHub Issue Form</a>
         </div>
     </div>
 </div>

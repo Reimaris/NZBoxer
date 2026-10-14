@@ -1,4 +1,4 @@
-"""Privacy-safe environment diagnostics for the in-app feedback helper (ADR-127)."""
+"""Privacy-safe environment diagnostics for the in-app feedback helper (ADR-127, ADR-135)."""
 
 from __future__ import annotations
 
@@ -12,7 +12,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models import Provider
 from app.version import APP_VERSION
 
-GITHUB_NEW_ISSUE_URL: str = "https://github.com/Reimaris/NZBoxer/issues/new"
+GITHUB_REPO_URL: str = "https://github.com/Reimaris/NZBoxer"
+GITHUB_BUG_REPORT_URL: str = f"{GITHUB_REPO_URL}/issues/new?template=bug_report.yml"
+GITHUB_FEATURE_REQUEST_URL: str = (
+    f"{GITHUB_REPO_URL}/issues/new?template=feature_request.yml"
+)
+GITHUB_QUESTION_URL: str = f"{GITHUB_REPO_URL}/issues/new?template=question.yml"
+GITHUB_SECURITY_ADVISORY_URL: str = f"{GITHUB_REPO_URL}/security/advisories/new"
 
 PROVIDER_TYPE_LABELS: dict[str, str] = {
     "simkl": "Simkl",
@@ -61,17 +67,10 @@ async def collect_feedback_diagnostics(session: AsyncSession) -> FeedbackDiagnos
     )
 
 
-def build_bug_markdown(diag: FeedbackDiagnostics) -> str:
-    """Return the GitHub bug-report Markdown template with the diagnostics table."""
+def build_diagnostics_table_markdown(diag: FeedbackDiagnostics) -> str:
+    """Return the diagnostics as a Markdown table for one-click clipboard copy."""
     providers = ", ".join(diag.active_provider_types) or "None"
     return (
-        "### Summary\n"
-        "<!-- Briefly describe the problem -->\n\n"
-        "### Steps to Reproduce\n"
-        "1.\n2.\n3.\n\n"
-        "### Expected Behavior\n\n"
-        "### Actual Behavior\n\n"
-        "### Environment Diagnostics\n"
         "| Field | Value |\n"
         "| --- | --- |\n"
         f"| NZBoxer Version | {diag.app_version} |\n"
@@ -79,15 +78,4 @@ def build_bug_markdown(diag: FeedbackDiagnostics) -> str:
         f"| OS / Architecture | {diag.os_arch} |\n"
         f"| Deployment | {diag.deployment} |\n"
         f"| Active Providers | {providers} |\n"
-    )
-
-
-def build_feature_markdown(diag: FeedbackDiagnostics) -> str:
-    """Return the GitHub feature-request Markdown template."""
-    return (
-        "### Problem Statement\n\n"
-        "### Proposed Solution / Feature Idea\n\n"
-        "### Alternatives Considered\n\n"
-        "### Additional Context\n"
-        f"NZBoxer version: {diag.app_version}\n"
     )

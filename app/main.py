@@ -2421,13 +2421,15 @@ async def system_check_modal(request: Request):
 
 @app.get("/feedback/modal", response_class=HTMLResponse)
 async def feedback_modal(
-    request: Request, type: Literal["bug", "feature"] = "bug"
+    request: Request, type: Literal["bug", "feature", "question"] = "bug"
 ) -> Response:
-    """Render the bug report / feature request modal with privacy-safe diagnostics."""
+    """Render the feedback launcher modal with privacy-safe diagnostics."""
     from app.core.diagnostics import (
-        GITHUB_NEW_ISSUE_URL,
-        build_bug_markdown,
-        build_feature_markdown,
+        GITHUB_BUG_REPORT_URL,
+        GITHUB_FEATURE_REQUEST_URL,
+        GITHUB_QUESTION_URL,
+        GITHUB_SECURITY_ADVISORY_URL,
+        build_diagnostics_table_markdown,
         collect_feedback_diagnostics,
     )
 
@@ -2439,9 +2441,13 @@ async def feedback_modal(
         context={
             "initial_tab": type,
             "diagnostics": diag,
-            "bug_markdown": build_bug_markdown(diag),
-            "feature_markdown": build_feature_markdown(diag),
-            "github_issues_url": GITHUB_NEW_ISSUE_URL,
+            "diagnostics_markdown": build_diagnostics_table_markdown(diag),
+            "issue_form_urls": {
+                "bug": GITHUB_BUG_REPORT_URL,
+                "feature": GITHUB_FEATURE_REQUEST_URL,
+                "question": GITHUB_QUESTION_URL,
+            },
+            "security_advisory_url": GITHUB_SECURITY_ADVISORY_URL,
         },
     )
 
