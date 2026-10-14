@@ -1,0 +1,18 @@
+title = "NZBoxer gitleaks config"
+
+[extend]
+useDefault = true
+
+# Obvious dummy values used by the test suite. Real secrets must never be added here.
+[[allowlists]]
+description = "Placeholder credentials in tests"
+condition = "AND"
+paths = ['''^tests/''']
+regexes = [
+  '''tmdb-key-0123456789abcdef''',
+  '''abcd1234efgh5678ijkl''',
+  '''abcdef123456''',
+  '''legacy_v1_tok''',
+  '''simkl_dc_[a-z_]*[0-9]{10,}''',
+  '''complex_pass_42''',
+]
