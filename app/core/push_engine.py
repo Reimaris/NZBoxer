@@ -55,6 +55,11 @@ from app.db.models import (
     SeasonStatus,
 )
 from app.services import torbox, treasure_maps
+from app.services.downloaders.base import (
+    BaseDownloader,
+    DownloaderError,
+    DownloaderUploadResult,
+)
 from app.services.preset_service import (
     CUSTOM_CONFIG_KEYS,
     extract_custom_config_json,
@@ -909,6 +914,42 @@ async def _simulate_push_candidate(
     return history
 
 
+async def dispatch_nzb_to_active_downloader(
+    session: AsyncSession,
+    nzb_bytes: bytes,
+    filename: str,
+    *,
+    password: str | None,
+    media_type: MediaType | str,
+    is_anime: bool,
+) -> tuple[BaseDownloader, DownloaderUploadResult]:
+    """Upload an NZB through the active downloader (m57, ADR-131).
+
+    Raises ``DownloaderError`` when no downloader is active; transport errors
+    propagate as ``DownloaderNetworkError``.
+    """
+    from app.services.downloaders.factory import (
+        category_for_media,
+        get_active_downloader_client,
+    )
+    from app.services.downloaders.torbox import TorBoxDownloader
+
+    client = await get_active_downloader_client(session)
+    if client is None:
+        raise DownloaderError("No active downloader configured")
+    if isinstance(client, TorBoxDownloader):
+        client.session = session
+        result = await client.upload_nzb(
+            nzb_bytes, filename, password=password, is_manual=True
+        )
+    else:
+        category = category_for_media(client.provider, media_type, is_anime)
+        result = await client.upload_nzb(
+            nzb_bytes, filename, password=password, category=category
+        )
+    return client, result
+
+
 async def _dispatch_candidate_list_to_torbox(
     session: AsyncSession,
     candidates: list[dict[str, Any]],
@@ -1018,27 +1059,44 @@ async def _dispatch_candidate_list_to_torbox(
         nzb_password = cand.get("_nzb_password") or extract_nzb_password(nzb_bytes)
 
         try:
-            torbox_result = await torbox.send_nzb_file(
+            client, upload = await dispatch_nzb_to_active_downloader(
+                session,
                 nzb_bytes,
-                filename=filename,
-                session=session,
-                is_manual=True,
+                filename,
                 password=nzb_password,
+                media_type=item.media_type,
+                is_anime=bool(
+                    item.media_type == MediaType.ANIME
+                    or getattr(item, "is_anime_movie", False)
+                ),
             )
-        except (torbox.DownloaderNetworkError, torbox.TorBoxError) as exc:
+        except DownloaderError as exc:
             logger.warning(
-                "TorBox dispatch halted for '%s' due to downloader error/cooldown: %s",
+                "Downloader dispatch halted for '%s' due to downloader error/cooldown: %s",
                 title,
                 exc,
             )
             if error_out is not None:
                 error_out.append(str(exc))
             return None
-        if not torbox_result or (
-            not torbox_result.get("hash") and not torbox_result.get("id")
-        ):
-            logger.warning("TorBox dispatch failed for '%s': %s", title, torbox_result)
+        if upload.is_rate_limited:
+            err_str = upload.detail or (
+                f"{client.display_name} rate limit exceeded "
+                f"(cooldown: {int(upload.cooldown_seconds or 0)}s)"
+            )
+            logger.warning("Downloader dispatch halted for '%s': %s", title, err_str)
+            if error_out is not None:
+                error_out.append(err_str)
+            return None
+        if not upload.success or not (upload.transfer_id or upload.raw.get("hash")):
+            logger.warning(
+                "%s dispatch failed for '%s': %s",
+                client.display_name,
+                title,
+                upload.detail,
+            )
             continue
+        torbox_result = upload.raw
 
         parsed = cand.get("parsed")
         score_res = cand.get("score_res")
@@ -1047,9 +1105,7 @@ async def _dispatch_candidate_list_to_torbox(
             season.id if season else (episode.season_id if episode else None)
         )
         target_episode_id = episode.id if episode else None
-        new_torbox_id = (
-            str(torbox_result.get("id")) if torbox_result.get("id") else None
-        )
+        new_torbox_id = upload.transfer_id
 
         logger.debug(
             "[SEARCH] Dispatched successfully to TorBox -> Transfer ID: %s.",
@@ -1110,10 +1166,11 @@ async def _dispatch_candidate_list_to_torbox(
                 score_res.bitrate_mbps if score_res else cand.get("bitrate_mbps")
             ),
             torbox_hash=str(torbox_result.get("hash"))
-            if torbox_result.get("hash")
+            if client.provider_type == "torbox" and torbox_result.get("hash")
             else None,
-            torbox_id=new_torbox_id,
-            torbox_sent_at=datetime.now(timezone.utc),
+            downloader_type=client.provider_type,
+            downloader_transfer_id=new_torbox_id,
+            dispatched_at=datetime.now(timezone.utc),
             is_fallback=bool(cand.get("is_fallback", False)),
             grabbed_language=cand.get("matched_language"),
             push_mode=push_mode,
@@ -1130,7 +1187,7 @@ async def _dispatch_candidate_list_to_torbox(
         populate_history_snapshot(history, item, season=season, episode=episode)
         session.add(history)
 
-        pushed_at = history.torbox_sent_at
+        pushed_at = history.dispatched_at
         if episode is not None:
             episode.status = EpisodeStatus.DOWNLOADING
             if not is_upgrade and episode.first_pushed_at is None:

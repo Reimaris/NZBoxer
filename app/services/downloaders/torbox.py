@@ -110,7 +110,7 @@ class TorBoxDownloader(BaseDownloader):
         try:
             result = await torbox.send_nzb_file(
                 nzb_bytes,
-                filename,
+                filename=filename,
                 session=self.session,
                 explicit_key=self._key,
                 is_manual=is_manual,

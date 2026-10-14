@@ -892,8 +892,10 @@ async def manual_push_to_torbox(magnet: str = Form(...)):
     import logging
 
     from app.services import torbox, treasure_maps
+    from app.services.downloaders.base import DownloaderError
 
     logger = logging.getLogger(__name__)
+    sent_to = "TorBox"
 
     try:
         if magnet.startswith("magnet:"):
@@ -907,17 +909,32 @@ async def manual_push_to_torbox(magnet: str = Form(...)):
 
                 nzb_bytes, filename = await treasure_maps.fetch_nzb_bytes(magnet)
                 nzb_pass = extract_nzb_password(nzb_bytes)
-                result = await torbox.send_nzb_file(
-                    nzb_bytes, filename=filename, is_manual=True, password=nzb_pass
+                from app.core.push_engine import dispatch_nzb_to_active_downloader
+                from app.db.database import async_session_factory
+
+                async with async_session_factory() as dispatch_session:
+                    client, upload = await dispatch_nzb_to_active_downloader(
+                        dispatch_session,
+                        nzb_bytes,
+                        filename,
+                        password=nzb_pass,
+                        media_type="",
+                        is_anime=False,
+                    )
+                sent_to = client.display_name
+                result = (
+                    {**upload.raw, "id": upload.transfer_id}
+                    if upload.success
+                    else {"error": upload.detail}
                 )
             except treasure_maps.IndexerError as e:
                 result = {"error": f"NZB Download Error: {e}"}
-            except (torbox.DownloaderNetworkError, torbox.TorBoxError) as e:
+            except DownloaderError as e:
                 result = {"error": str(e)}
 
         if result and (result.get("hash") or result.get("id")):
             return HTMLResponse(
-                content='<span class="text-emerald-400 font-medium text-xs px-2 py-1.5 bg-emerald-500/10 border border-emerald-500/20 rounded-md">Sent to TorBox!</span>'
+                content=f'<span class="text-emerald-400 font-medium text-xs px-2 py-1.5 bg-emerald-500/10 border border-emerald-500/20 rounded-md">Sent to {sent_to}!</span>'
             )
         else:
             err_msg = (

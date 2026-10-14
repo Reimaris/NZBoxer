@@ -5,7 +5,10 @@ from __future__ import annotations
 import enum
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from app.db.models import Provider
 
 DOWNLOADER_DISPLAY_NAMES: dict[str, str] = {
     "torbox": "TorBox",
@@ -62,6 +65,7 @@ class DownloaderNetworkError(DownloaderError):
 
 
 class BaseDownloader(ABC):
+    provider: Provider
     provider_type: str  # "torbox" | "sabnzbd" | "premiumize"
     display_name: str  # "TorBox" | "SABnzbd" | "Premiumize"
     poll_interval_seconds: int  # SAB 5, cloud 20

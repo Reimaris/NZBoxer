@@ -20,6 +20,8 @@ from app.core.fake_detector import extract_nzb_password
 from app.core.parser import parse_release_name
 from app.db.models import DownloadHistory
 from app.services import provider_service, torbox, treasure_maps
+from app.services.downloaders.base import DownloaderError
+from app.services.downloaders.factory import get_active_downloader_client
 
 logger = logging.getLogger(__name__)
 
@@ -478,11 +480,24 @@ async def push_adhoc_release(
         )
 
     result: dict[str, Any] | None = None
+    downloader_type = "torbox"
+    downloader_name = "TorBox"
     if settings.dry_run:
         result = {}
+        active = await get_active_downloader_client(session)
+        if active is not None:
+            downloader_type = active.provider_type
+            downloader_name = active.display_name
     else:
         try:
             if is_magnet:
+                active = await get_active_downloader_client(session)
+                if active is not None and active.provider_type != "torbox":
+                    return AdHocPushOutcome(
+                        False,
+                        f"Magnet links are not supported by {active.display_name}.",
+                        400,
+                    )
                 result = await torbox.send_magnet_link(release_link, is_manual=True)
             else:
                 nzb_bytes, filename = await treasure_maps.fetch_nzb_bytes(
@@ -491,16 +506,26 @@ async def push_adhoc_release(
                     api_key=indexer.api_key if indexer else None,
                     session=session,
                 )
-                result = await torbox.send_nzb_file(
+                from app.core.push_engine import dispatch_nzb_to_active_downloader
+
+                client, upload = await dispatch_nzb_to_active_downloader(
+                    session,
                     nzb_bytes,
-                    filename=filename,
-                    session=session,
-                    is_manual=True,
+                    filename,
                     password=extract_nzb_password(nzb_bytes),
+                    media_type=media_kind or "",
+                    is_anime=(media_kind or "").lower() == "anime",
+                )
+                downloader_type = client.provider_type
+                downloader_name = client.display_name
+                result = (
+                    {**upload.raw, "id": upload.transfer_id}
+                    if upload.success
+                    else {"error": upload.detail}
                 )
         except treasure_maps.IndexerError as exc:
             return AdHocPushOutcome(False, f"NZB Download Error: {exc}", 400)
-        except (torbox.DownloaderNetworkError, torbox.TorBoxError) as exc:
+        except DownloaderError as exc:
             return AdHocPushOutcome(False, str(exc), 400)
         if not result or not (result.get("hash") or result.get("id")):
             err = (result or {}).get("error") or "Failed to send"
@@ -532,9 +557,12 @@ async def push_adhoc_release(
         audio_codec=parsed.audio_codec if parsed else None,
         source=parsed.source if parsed else None,
         release_group=parsed.release_group if parsed else None,
-        torbox_hash=str(result["hash"]) if result.get("hash") else None,
-        torbox_id=str(result["id"]) if result.get("id") else None,
-        torbox_sent_at=now_utc,
+        torbox_hash=str(result["hash"])
+        if downloader_type == "torbox" and result.get("hash")
+        else None,
+        downloader_type=downloader_type,
+        downloader_transfer_id=str(result["id"]) if result.get("id") else None,
+        dispatched_at=now_utc,
         is_fallback=is_fallback,
         grabbed_language=matched_language or None,
         notification_sent=False,
@@ -578,4 +606,4 @@ async def push_adhoc_release(
         from app.core.transfer_poller import wake_transfer_poller
 
         wake_transfer_poller()
-    return AdHocPushOutcome(True, "Sent to TorBox!", 200, history)
+    return AdHocPushOutcome(True, f"Sent to {downloader_name}!", 200, history)
