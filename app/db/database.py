@@ -24,9 +24,12 @@ Usage (in background jobs / non-FastAPI contexts)::
 from __future__ import annotations
 
 import logging
+import shutil
 from collections.abc import AsyncGenerator
+from pathlib import Path
 
 from sqlalchemy.ext.asyncio import (
+    AsyncConnection,
     AsyncEngine,
     AsyncSession,
     async_sessionmaker,
@@ -69,6 +72,77 @@ def get_session_factory() -> async_sessionmaker[AsyncSession]:
     return _session_factory
 
 
+async def _rename_or_merge_column(
+    conn: AsyncConnection,
+    table: str,
+    old: str,
+    new: str,
+    *,
+    sentinel_default: str | None = None,
+) -> None:
+    """Rename ``old`` to ``new`` in place, or merge into ``new`` and drop ``old``.
+
+    Idempotent (m59, ADR-134): ``old`` absent is a no-op; ``new`` absent renames;
+    both present copies ``old`` into ``new`` where ``new`` is NULL (or equals
+    ``sentinel_default`` for NOT NULL columns), drops indexes on ``old``, then
+    drops the column. Runs inside the caller's transaction.
+    """
+    from sqlalchemy import text as sa_text
+
+    try:
+        cols = {
+            r[1] for r in (await conn.execute(sa_text(f'PRAGMA table_info("{table}")')))
+        }
+        if old not in cols:
+            return
+        if new not in cols:
+            await conn.execute(
+                sa_text(f'ALTER TABLE "{table}" RENAME COLUMN "{old}" TO "{new}"')
+            )
+            return
+        cond = f'"{new}" IS NULL'
+        params: dict[str, str] = {}
+        if sentinel_default is not None:
+            cond = f'({cond} OR "{new}" = :sentinel)'
+            params["sentinel"] = sentinel_default
+        await conn.execute(
+            sa_text(
+                f'UPDATE "{table}" SET "{new}" = "{old}" '
+                f'WHERE {cond} AND "{old}" IS NOT NULL'
+            ),
+            params,
+        )
+        for idx in (await conn.execute(sa_text(f'PRAGMA index_list("{table}")'))).all():
+            idx_name, origin = idx[1], idx[3]
+            if origin != "c":
+                continue
+            idx_cols = {
+                r[2]
+                for r in (
+                    await conn.execute(sa_text(f'PRAGMA index_info("{idx_name}")'))
+                )
+            }
+            if old in idx_cols:
+                await conn.execute(sa_text(f'DROP INDEX "{idx_name}"'))
+        await conn.execute(sa_text(f'ALTER TABLE "{table}" DROP COLUMN "{old}"'))
+    except Exception as exc:
+        raise RuntimeError(
+            f"m59 migration failed for {table}.{old} -> {new}: {exc}. "
+            "Restore the database from the .pre-m59.bak backup if needed."
+        ) from exc
+
+
+def _backup_db_before_m59(db_path: Path) -> None:
+    """Copy the SQLite file to ``<name>.pre-m59.bak`` once (skipped if present)."""
+    if str(db_path) == ":memory:" or not db_path.is_file():
+        return
+    backup_path = db_path.with_name(f"{db_path.name}.pre-m59.bak")
+    if backup_path.exists():
+        return
+    shutil.copy2(db_path, backup_path)
+    logger.info("Backed up database before m59 migrations to %s", backup_path)
+
+
 async def init_db(database_url: str) -> None:
     """Initialize the async engine, create all tables, and configure WAL mode.
 
@@ -84,6 +158,13 @@ async def init_db(database_url: str) -> None:
 
     from sqlalchemy import event
     from sqlalchemy.pool import StaticPool
+
+    if database_url.startswith("sqlite"):
+        from sqlalchemy.engine import make_url
+
+        db_file = make_url(database_url).database
+        if db_file and db_file != ":memory:" and "mode=memory" not in database_url:
+            _backup_db_before_m59(Path(db_file))
 
     connect_args: dict[str, Any] = {"check_same_thread": False}
     if database_url.startswith("sqlite"):
@@ -141,8 +222,6 @@ async def init_db(database_url: str) -> None:
     async with _engine.begin() as conn:
         if database_url.startswith("sqlite"):
             import json
-            import shutil
-            from pathlib import Path
 
             from sqlalchemy import text as sa_text
             from sqlalchemy.engine import make_url
