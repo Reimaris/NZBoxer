@@ -118,6 +118,69 @@ class PlexWatchlistAdapter:
         return entries
 
 
+_MAL_STATUS_MAP: dict[str, ListStatus] = {
+    "plan_to_watch": "plantowatch",
+    "watching": "watching",
+    "on_hold": "watching",
+    "completed": "completed",
+    "dropped": "dropped",
+}
+
+
+class MalWatchlistAdapter:
+    """MyAnimeList anime list adapter (token auto-refresh)."""
+
+    async def fetch_entries(self, provider: Provider) -> list[WatchlistEntry]:
+        from app.db.database import async_session_factory
+        from app.db.models import Provider as ProviderModel
+        from app.services import anilist, mal
+
+        async with async_session_factory() as session:
+            target = (
+                await session.get(ProviderModel, provider.id) if provider.id else None
+            ) or provider
+            token = await mal.ensure_valid_mal_token(session, target)
+            try:
+                raw = await mal.get_animelist(token)
+            except mal.MalUnauthorizedError:
+                token = await mal.ensure_valid_mal_token(session, target, force=True)
+                try:
+                    raw = await mal.get_animelist(token)
+                except mal.MalUnauthorizedError as exc:
+                    raise WatchlistFetchError("MyAnimeList reconnect required") from exc
+
+        nodes = [
+            (item.get("node") or {}, item.get("list_status") or {}) for item in raw
+        ]
+        mal_ids = [int(n["id"]) for n, _ in nodes if n.get("id")]
+        anilist_map = await anilist.get_anime_ids_by_mal_ids(mal_ids) if mal_ids else {}
+        entries: list[WatchlistEntry] = []
+        for node, status in nodes:
+            if not node.get("id"):
+                continue
+            mal_id = int(node["id"])
+            start = str(node.get("start_date") or "")[:4]
+            entries.append(
+                WatchlistEntry(
+                    remote_id=str(mal_id),
+                    media_kind="anime_movie"
+                    if node.get("media_type") == "movie"
+                    else "anime",
+                    title=str(node.get("title") or ""),
+                    year=int(start) if start.isdigit() else None,
+                    list_status=_MAL_STATUS_MAP.get(
+                        str(status.get("status")), "plantowatch"
+                    ),
+                    watched_episodes=max(
+                        0, int(status.get("num_episodes_watched") or 0)
+                    ),
+                    anilist_id=anilist_map.get(mal_id),
+                    mal_id=mal_id,
+                )
+            )
+        return entries
+
+
 def _int_or_none(value: str | None) -> int | None:
     try:
         return int(value) if value is not None else None
@@ -128,6 +191,7 @@ def _int_or_none(value: str | None) -> int | None:
 _ADAPTERS: dict[str, WatchlistAdapter] = {
     "anilist": AniListWatchlistAdapter(),
     "plex": PlexWatchlistAdapter(),
+    "mal": MalWatchlistAdapter(),
 }
 
 
