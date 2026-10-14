@@ -556,3 +556,95 @@ async def test_consolidated_entry_keeps_root_source_when_remote_id_taken(
         .all()
     )
     assert sorted(remote_ids) == ["100", "200"]
+
+
+async def _only_item(session: AsyncSession) -> MediaItem:
+    return (await session.execute(select(MediaItem))).scalars().one()
+
+
+async def test_simkl_poster_is_stored_on_new_item(db_session, watchlist_provider):
+    from tests.conftest import ingest_simkl_payloads
+
+    payload = [
+        {
+            "status": "plantowatch",
+            "movie": {
+                "title": "Big Buck Bunny",
+                "year": 2008,
+                "poster": "12/12345abc",
+                "ids": {"simkl": 777, "tmdb": "10378"},
+            },
+        }
+    ]
+    await ingest_simkl_payloads(
+        db_session, watchlist_provider, payload, MediaType.MOVIE
+    )
+
+    item = await _only_item(db_session)
+    assert item.poster_url == "https://simkl.in/posters/12/12345abc_m.webp"
+
+
+async def test_entry_poster_fills_existing_item_without_overwriting(db_session):
+    provider = await make_watchlist_provider(db_session, "anilist")
+    bare = await make_movie(db_session, tmdb_id=603, provider_id=provider.id)
+    other = await make_movie(
+        db_session,
+        tmdb_id=604,
+        simkl_id=10002,
+        provider_id=provider.id,
+        poster_url="https://example.com/keep.jpg",
+    )
+    await db_session.commit()
+
+    await ingest_entries(
+        db_session,
+        provider,
+        [
+            _movie(
+                remote_id="a", tmdb_id=603, poster_url="https://example.com/new.jpg"
+            ),
+            _movie(
+                remote_id="b", tmdb_id=604, poster_url="https://example.com/new.jpg"
+            ),
+        ],
+    )
+
+    await db_session.refresh(bare)
+    await db_session.refresh(other)
+    assert bare.poster_url == "https://example.com/new.jpg"
+    assert other.poster_url == "https://example.com/keep.jpg"
+
+
+async def test_tmdb_poster_is_fallback_when_provider_has_none(
+    db_session, watchlist_provider, monkeypatch
+):
+    monkeypatch.setattr(
+        tmdb,
+        "get_movie_details",
+        AsyncMock(return_value={"title": "X", "poster_path": "/abc.jpg"}),
+    )
+    provider = await make_watchlist_provider(db_session, "plex")
+
+    await ingest_entries(db_session, provider, [_movie(tmdb_id=55)])
+
+    item = await _only_item(db_session)
+    assert item.poster_url == "https://image.tmdb.org/t/p/w185/abc.jpg"
+
+
+async def test_tmdb_poster_does_not_replace_provider_poster(db_session, monkeypatch):
+    monkeypatch.setattr(
+        tmdb,
+        "get_movie_details",
+        AsyncMock(return_value={"title": "X", "poster_path": "/abc.jpg"}),
+    )
+    provider = await make_watchlist_provider(db_session, "plex")
+
+    await ingest_entries(
+        db_session,
+        provider,
+        [_movie(tmdb_id=55, poster_url="https://example.com/provider.jpg")],
+    )
+
+    assert (
+        await _only_item(db_session)
+    ).poster_url == "https://example.com/provider.jpg"

@@ -190,7 +190,7 @@ async def get_animelist(access_token: str) -> list[dict[str, Any]]:
     }
     url: str | None = MAL_ANIMELIST_URL
     params: dict[str, Any] | None = {
-        "fields": "list_status,num_episodes,media_type",
+        "fields": "list_status,num_episodes,media_type,main_picture",
         "limit": 100,
         "nsfw": "true",
     }

@@ -35,6 +35,7 @@ class WatchlistEntry:
     tvdb_id: int | None = None
     anilist_id: int | None = None
     mal_id: int | None = None
+    poster_url: str | None = None
 
 
 class WatchlistAdapter(Protocol):
@@ -82,6 +83,7 @@ class AniListWatchlistAdapter:
                     watched_episodes=max(0, int(item.get("progress") or 0)),
                     anilist_id=int(media_id),
                     mal_id=media.get("idMal"),
+                    poster_url=(media.get("coverImage") or {}).get("large") or None,
                 )
             )
         return entries
@@ -184,6 +186,9 @@ class MalWatchlistAdapter:
                     ),
                     anilist_id=anilist_map.get(mal_id),
                     mal_id=mal_id,
+                    poster_url=(node.get("main_picture") or {}).get("large")
+                    or (node.get("main_picture") or {}).get("medium")
+                    or None,
                 )
             )
         return entries

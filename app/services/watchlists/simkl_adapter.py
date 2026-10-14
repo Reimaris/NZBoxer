@@ -62,6 +62,11 @@ def _simkl_watched_season(item: dict[str, Any]) -> int | None:
     return max(positive) if positive else None
 
 
+def _simkl_poster_url(media: dict[str, Any]) -> str | None:
+    poster = media.get("poster")
+    return f"https://simkl.in/posters/{poster}_m.webp" if poster else None
+
+
 class SimklWatchlistAdapter:
     """Read-only Simkl list adapter."""
 
@@ -108,6 +113,7 @@ class SimklWatchlistAdapter:
                             tvdb_id=_int_or_none(ids.get("tvdb")),
                             anilist_id=_int_or_none(ids.get("anilist")),
                             mal_id=_int_or_none(ids.get("mal")),
+                            poster_url=_simkl_poster_url(media),
                         )
                     )
         return entries

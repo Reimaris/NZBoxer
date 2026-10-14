@@ -201,7 +201,7 @@ async def resolve_existing_item(
 def _fill_missing_ids(
     item: MediaItem, entry: WatchlistEntry, anilist_id: int | None
 ) -> None:
-    """Populate empty external ids on *item*; never overwrite or null a value."""
+    """Populate empty external ids and poster on *item*; never overwrite or null a value."""
     for attr, value in (
         ("tmdb_id", entry.tmdb_id),
         ("imdb_id", entry.imdb_id),
@@ -211,6 +211,8 @@ def _fill_missing_ids(
     ):
         if value and not getattr(item, attr):
             setattr(item, attr, value)
+    if entry.poster_url and not item.poster_url:
+        item.poster_url = entry.poster_url
 
 
 def _matched_season(item: MediaItem, entry: WatchlistEntry) -> Season | None:
@@ -381,6 +383,7 @@ async def _create_item(
         tvdb_id=entry.tvdb_id,
         mal_id=entry.mal_id,
         anilist_id=anilist_id,
+        poster_url=entry.poster_url,
         title=entry.title,
         year=entry.year,
         media_type=media_type,

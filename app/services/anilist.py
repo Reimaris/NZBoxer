@@ -753,6 +753,7 @@ query ($u: String) {
           format
           title { romaji english }
           startDate { year }
+          coverImage { large }
         }
       }
     }

@@ -25,6 +25,7 @@ ANILIST_ENTRY = {
         "format": "TV",
         "title": {"romaji": "Shingeki no Kyojin", "english": "Attack on Titan"},
         "startDate": {"year": 2013},
+        "coverImage": {"large": "https://example.com/aot.jpg"},
     },
 }
 
@@ -71,6 +72,7 @@ async def test_anilist_entry_maps_to_watchlist_entry(monkeypatch):
             watched_episodes=3,
             anilist_id=16498,
             mal_id=16498,
+            poster_url="https://example.com/aot.jpg",
         )
     ]
 
@@ -378,6 +380,25 @@ async def test_mal_adapter_mapping(monkeypatch, status, kind, expected, watched)
     assert entry.watched_episodes == watched
     assert entry.media_kind == ("anime_movie" if kind == "movie" else "anime")
     assert (entry.mal_id, entry.anilist_id, entry.remote_id) == (5114, 5114, "5114")
+
+
+async def test_mal_adapter_maps_main_picture_to_poster(monkeypatch):
+    from app.services import anilist
+    from app.services.watchlists import mal
+
+    node = {
+        **MAL_ITEM["node"],
+        "main_picture": {
+            "medium": "https://example.com/m.jpg",
+            "large": "https://example.com/l.jpg",
+        },
+    }
+    monkeypatch.setattr(
+        mal, "get_animelist", AsyncMock(return_value=[{**MAL_ITEM, "node": node}])
+    )
+    monkeypatch.setattr(anilist, "get_anime_ids_by_mal_ids", AsyncMock(return_value={}))
+    (entry,) = await get_adapter("mal").fetch_entries(_mal_provider())
+    assert entry.poster_url == "https://example.com/l.jpg"
 
 
 async def test_mal_refresh_near_expiry_persists_without_secret(monkeypatch, db_session):

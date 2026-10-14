@@ -23,6 +23,7 @@ logger = logging.getLogger(__name__)
 _limiter = RateLimiter(0.1)
 
 TMDB_BASE_URL = "https://api.themoviedb.org/3"
+TMDB_POSTER_BASE = "https://image.tmdb.org/t/p/w185"
 
 
 class TMDBError(Exception):

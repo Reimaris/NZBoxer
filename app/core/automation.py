@@ -954,6 +954,10 @@ async def enrich_movie_show_metadata(
                     media_type = MediaType.SHOW
                 details = await tmdb.get_show_details(tmdb_id)
 
+    # Poster fallback for providers that supply none; never replaces an existing poster.
+    if details and not item.poster_url and details.get("poster_path"):
+        item.poster_url = f"{tmdb.TMDB_POSTER_BASE}{details['poster_path']}"
+
     if media_type == MediaType.MOVIE:
         if details:
             # Update title to TMDB's english/default title if it differs from the romanji one
