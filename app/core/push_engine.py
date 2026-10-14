@@ -2453,6 +2453,21 @@ def extract_watched_order(
     return max(detected_orders) if detected_orders else 0
 
 
+def effective_watch_order(item: MediaItem) -> int:
+    """Furthest watch order across the item and all its watchlist sources (furthest wins)."""
+    from sqlalchemy import inspect as sa_inspect
+
+    sources = (
+        []
+        if "watchlist_sources" in sa_inspect(item).unloaded
+        else item.watchlist_sources or []
+    )
+    return max(
+        [int(item.last_watched_order or 0)]
+        + [int(s.last_watched_order or 0) for s in sources]
+    )
+
+
 async def evaluate_watch_progress_and_advance(
     session: AsyncSession,
     item: MediaItem,
@@ -2468,11 +2483,17 @@ async def evaluate_watch_progress_and_advance(
         if matched_season is None:
             item.watched_completed = True
 
-    if "seasons" in sa_inspect(item).unloaded and hasattr(session, "refresh"):
-        await session.refresh(item, ["seasons"])
+    unloaded = sa_inspect(item).unloaded
+    if hasattr(session, "refresh"):
+        stale = [a for a in ("seasons", "watchlist_sources") if a in unloaded]
+        if stale:
+            await session.refresh(item, stale)
 
-    detected_order = extract_watched_order(
-        item=item, item_data=item_data, matched_season=matched_season
+    detected_order = max(
+        extract_watched_order(
+            item=item, item_data=item_data, matched_season=matched_season
+        ),
+        effective_watch_order(item),
     )
     current_order = int(item.last_watched_order or 0)
     if detected_order <= current_order:
