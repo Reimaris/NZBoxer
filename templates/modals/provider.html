@@ -2,6 +2,19 @@
 {% set cfg = provider.config if provider else {} %}
 {% set pcat = (provider.category.value if provider.category.value is defined else provider.category) if provider else ('watchlist' if new_type else '') %}
 {% set ptype = provider.type if provider else new_type %}
+{% set indexer_badge_classes = {
+    'blue': 'bg-blue-500/20 text-blue-400',
+    'emerald': 'bg-emerald-500/20 text-emerald-400',
+    'orange': 'bg-orange-500/20 text-orange-400',
+    'rose': 'bg-rose-500/20 text-rose-400',
+    'cyan': 'bg-cyan-500/20 text-cyan-400',
+    'violet': 'bg-violet-500/20 text-violet-400',
+    'amber': 'bg-amber-500/20 text-amber-400',
+    'lime': 'bg-lime-500/20 text-lime-400',
+    'teal': 'bg-teal-500/20 text-teal-400',
+    'fuchsia': 'bg-fuchsia-500/20 text-fuchsia-400',
+    'zinc': 'bg-zinc-500/20 text-zinc-400'
+} %}
 <div class="nzb-modal-backdrop fixed inset-0 bg-black bg-opacity-70 z-[100] flex items-center justify-center p-4 animate-fade-in" id="provider-modal-overlay">
     <div class="nzb-modal-dialog nzb-modal-dialog-lg bg-[#1e1e24] border border-[#3f3f46] rounded-xl shadow-2xl w-full max-w-3xl overflow-hidden flex flex-col max-h-[90vh]"
          x-data="{
@@ -10,6 +23,8 @@
              providerType: '{{ ptype }}',
              providerCategory: '{{ pcat }}',
              autoName: '',
+             indexerTypes: {{ indexer_presets|map(attribute='type')|list|tojson }},
+             indexerKeyUrl: '',
              selectProvider(type, category, defaultName) {
                  this.providerType = type;
                  this.providerCategory = category;
@@ -19,6 +34,12 @@
                      this.autoName = defaultName;
                  }
                  this.step = 2;
+             },
+             selectIndexer(type, name, apiUrl, keyUrl) {
+                 this.selectProvider(type, 'indexer', name);
+                 this.indexerKeyUrl = keyUrl;
+                 const urlInput = document.getElementById('indexer-api-url-input');
+                 if (urlInput && !this.isEdit) { urlInput.value = apiUrl; }
              }
          }">
 
@@ -161,16 +182,17 @@
                 <div class="space-y-3">
                     <h3 class="text-xs font-bold text-blue-400 uppercase tracking-wider">Indexer Providers</h3>
                     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        <button type="button" @click="selectProvider('treasure_maps', 'indexer', 'Newznab Indexer')" class="bg-[#111115] hover:bg-[#2a2a32] border border-[#3f3f46] hover:border-blue-400 rounded-xl p-4 text-left transition-all group flex flex-col justify-between">
+                        {% for preset in indexer_presets %}
+                        <button type="button" id="indexer-card-{{ preset.type }}" @click="selectIndexer({{ preset.type|tojson|forceescape }}, {{ preset.name|tojson|forceescape }}, {{ preset.api_url|tojson|forceescape }}, {{ preset.key_url|tojson|forceescape }})" class="bg-[#111115] hover:bg-[#2a2a32] border border-[#3f3f46] hover:border-blue-400 rounded-xl p-4 text-left transition-all group flex flex-col justify-between">
                             <div class="flex items-center gap-3 mb-2">
-                                <div class="w-10 h-10 rounded-lg bg-blue-500/20 text-blue-400 flex items-center justify-center font-bold text-xs">NZB</div>
+                                <div data-badge="{{ preset.badge }}" class="w-10 h-10 rounded-lg {{ indexer_badge_classes[preset.color] }} flex items-center justify-center font-bold text-xs">{{ preset.badge }}</div>
                                 <div>
-                                    <div class="font-bold text-white group-hover:text-blue-400 transition-colors">Newznab Indexer</div>
-                                    <div class="text-xs text-[#a1a1aa]">Usenet Indexer (Newznab API)</div>
+                                    <div class="font-bold text-white group-hover:text-blue-400 transition-colors">{{ preset.name }}</div>
+                                    <div class="text-xs text-[#a1a1aa]">{{ 'Any Newznab-compatible indexer' if preset.type == 'newznab' else 'Usenet Indexer (Newznab API)' }}</div>
                                 </div>
                             </div>
-                            <p class="text-xs text-[#71717a] mt-1">Compatible with any Newznab-standard Usenet indexer (NZBGeek, NzbPlanet, DrunkenSlug, SceneNZBs, TreasureMaps, etc.) evaluated in priority order.</p>
                         </button>
+                        {% endfor %}
                     </div>
                 </div>
             </div>
@@ -257,11 +279,12 @@
                     </fieldset>
 
                     <!-- NEWZNAB INDEXER CONFIGURATION -->
-                    <fieldset :disabled="providerType !== 'treasure_maps'" x-show="providerType === 'treasure_maps'" class="border-0 p-0 m-0 space-y-6">
+                    <fieldset :disabled="!indexerTypes.includes(providerType)" x-show="indexerTypes.includes(providerType)" class="border-0 p-0 m-0 space-y-6">
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                             <div class="flex flex-col">
                                 <label class="h-6 text-[#d1d5db] font-medium mb-1 flex items-center justify-between">
                                     <span>Indexer API Key <span class="text-red-500 ml-1">*</span></span>
+                                    <a id="indexer-key-link" :href="indexerKeyUrl" x-show="indexerKeyUrl && providerType !== 'newznab'" x-cloak target="_blank" rel="noopener noreferrer" class="text-xs text-blue-400 hover:underline">Get API Key ↗</a>
                                 </label>
                                 <input type="password" name="api_key" value="{{ provider.api_key if provider and provider.api_key else '' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors font-mono" placeholder="Your Indexer API Key">
                             </div>
@@ -273,8 +296,22 @@
                             </div>
                             <div class="flex flex-col col-span-1 md:col-span-2">
                                 <label class="h-6 text-[#d1d5db] font-medium mb-1 flex items-center">Indexer Endpoint / API Base URL <span class="text-red-500 ml-1">*</span></label>
-                                <input type="text" name="api_url" value="{{ provider.api_url if provider and provider.api_url else '' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors font-mono" placeholder="https://api.your-indexer.com/api">
+                                <input type="text" id="indexer-api-url-input" name="api_url" value="{{ provider.api_url if provider and provider.api_url else '' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors font-mono" placeholder="https://api.your-indexer.com/api">
                             </div>
+                            <details id="indexer-category-overrides" class="col-span-1 md:col-span-2 bg-[#111115] border border-[#3f3f46] rounded-lg p-3"{% if indexer_cfg and (indexer_cfg.custom_movie_categories or indexer_cfg.custom_tv_categories) %} open{% endif %}>
+                                <summary class="cursor-pointer text-sm font-medium text-[#d1d5db]">Category Overrides</summary>
+                                <p class="text-xs text-[#71717a] mt-2">Comma-separated numeric Newznab category IDs. Leave blank to use the defaults.</p>
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-3">
+                                    <div class="flex flex-col">
+                                        <label class="text-[#d1d5db] text-sm mb-1">Movie Categories</label>
+                                        <input type="text" name="custom_movie_categories" value="{{ indexer_cfg.custom_movie_categories or '' if indexer_cfg else '' }}" class="w-full h-11 bg-[#1e1e24] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors font-mono" placeholder="2000,2040,2045,2050,2060">
+                                    </div>
+                                    <div class="flex flex-col">
+                                        <label class="text-[#d1d5db] text-sm mb-1">TV Categories</label>
+                                        <input type="text" name="custom_tv_categories" value="{{ indexer_cfg.custom_tv_categories or '' if indexer_cfg else '' }}" class="w-full h-11 bg-[#1e1e24] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors font-mono" placeholder="5000,5030,5040,5045">
+                                    </div>
+                                </div>
+                            </details>
                         </div>
                     </fieldset>
 
