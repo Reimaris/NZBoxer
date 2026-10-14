@@ -1123,6 +1123,7 @@ async def init_db(database_url: str) -> None:
                 # m57: generalize TorBox tracking columns (ADR-131); m59 then
                 # renames/merges the legacy torbox_* columns away (ADR-134).
                 for col, ddl in (
+                    ("downloader_hash", "VARCHAR(64)"),
                     (
                         "downloader_type",
                         "VARCHAR(50) NOT NULL DEFAULT 'torbox'",
