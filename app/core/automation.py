@@ -2319,7 +2319,7 @@ async def refresh_due_future_tv_seasons(
         s.media_item_id: s.media_item for s in seasons if s.media_item is not None
     }
     logger.debug(
-        "[SYNC] [6/7] Evaluating %d TV show(s) with TBA/FUTURE seasons for TMDB updates...",
+        "[SYNC] [MAINT] [2/4] Evaluating %d TV show(s) with TBA/FUTURE seasons for TMDB updates...",
         len(distinct_shows),
     )
     if stats is not None:
@@ -2342,7 +2342,7 @@ async def refresh_due_future_tv_seasons(
 
         item_idx = show_idx_map.get(item.id, 1) if item.id is not None else 1
         logger.debug(
-            "[SYNC] [6/7] (%d/%d) Checking TMDB season updates for '%s'...",
+            "[SYNC] [MAINT] [2/4] (%d/%d) Checking TMDB season updates for '%s'...",
             item_idx,
             total_shows,
             item.title,

@@ -362,7 +362,8 @@ async def prune_inactive_media_items(session: AsyncSession) -> int:
         .all()
     )
     logger.debug(
-        "[SYNC] [7/7] Evaluating %d sourced local items for pruning...", len(items)
+        "[SYNC] [MAINT] [4/4] Evaluating %d sourced local items for pruning...",
+        len(items),
     )
     pruned = 0
     for item in items:
@@ -380,7 +381,7 @@ async def prune_inactive_media_items(session: AsyncSession) -> int:
         await session.delete(item)
         pruned += 1
         logger.debug(
-            "[SYNC] [7/7] Pruned '%s' (no longer in active watchlists, 0 active downloads).",
+            "[SYNC] [MAINT] [4/4] Pruned '%s' (no longer in active watchlists, 0 active downloads).",
             title,
         )
         logger.info(

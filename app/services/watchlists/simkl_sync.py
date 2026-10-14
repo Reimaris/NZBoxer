@@ -128,7 +128,7 @@ async def _sync_items(
         else ("shows" if media_type == MediaType.SHOW else "anime")
     )
     logger.debug(
-        "[SYNC] [2/7] Ingesting %d %s from Simkl provider '%s'...",
+        "[SYNC] [2/5] Ingesting %d %s from Simkl provider '%s'...",
         len(simkl_items),
         category_label,
         provider_name,
@@ -613,7 +613,7 @@ async def _sync_items(
             matched_season=None,
         )
         logger.debug(
-            "[SYNC] [2/7] (%d/%d) Processed %s '%s' (%s) -> Status: %s",
+            "[SYNC] [2/5] (%d/%d) Processed %s '%s' (%s) -> Status: %s",
             item_idx,
             total_simkl_items,
             item.media_type.value
@@ -630,7 +630,7 @@ async def enrich_active_shows_episode_air_dates(
     session: AsyncSession,
     now: datetime | None = None,
     *,
-    log_prefix: str = "[SYNC] [4/7]",
+    log_prefix: str = "[SYNC] [3/5]",
     stats: AirDateRefreshStats | None = None,
 ) -> int:
     """Update episode air dates for upcoming TV shows and anime from Simkl.
