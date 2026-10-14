@@ -146,6 +146,12 @@ templates.env.globals["app_version"] = APP_VERSION
 from app.services.provider_service import ActiveDownloaderName  # noqa: E402
 
 templates.env.globals["downloader_name"] = ActiveDownloaderName()
+from app.services.indexer_catalog import (  # noqa: E402
+    get_preset,
+    is_indexer_type,
+)
+
+templates.env.globals["indexer_preset"] = get_preset
 
 
 async def run_orchestrator_tick(now: datetime | None = None) -> None:
@@ -1487,6 +1493,7 @@ async def provider_modal(
     from sqlalchemy import select
 
     from app.db.models import NotificationChannel, Provider
+    from app.services.indexer_catalog import INDEXER_PRESETS
 
     async with async_session_factory() as session:
         provider = None
@@ -1508,6 +1515,8 @@ async def provider_modal(
             "notifications": notifications,
             "new_type": new_type if provider is None else "",
             "mal_redirect_uri": str(request.base_url).rstrip("/") + _MAL_CALLBACK_PATH,
+            "indexer_presets": INDEXER_PRESETS,
+            "indexer_cfg": provider.indexer_config if provider else {},
         },
     )
 
@@ -1626,9 +1635,18 @@ async def save_provider(
     sync_movies: bool | None = Form(None),
     sync_series: bool | None = Form(None),
     sync_anime: bool | None = Form(None),
+    custom_movie_categories: str = Form(""),
+    custom_tv_categories: str = Form(""),
 ):
     from app.db.models import Provider, ProviderCategory
     from app.services import provider_service, simkl
+    from app.services.indexer_catalog import (
+        DEFAULT_MOVIE_CATEGORIES,
+        DEFAULT_TV_CATEGORIES,
+        get_preset,
+        is_indexer_type,
+        normalize_category_csv,
+    )
 
     # Determine standard category from provider type if not explicitly supplied
     resolved_category = category
@@ -1642,11 +1660,32 @@ async def save_provider(
             "torbox": ProviderCategory.DOWNLOADER.value,
             "sabnzbd": ProviderCategory.DOWNLOADER.value,
             "premiumize": ProviderCategory.DOWNLOADER.value,
-            "treasure_maps": ProviderCategory.INDEXER.value,
         }
         resolved_category = type_cat_map.get(
             provider_type.lower(), ProviderCategory.WATCHLIST.value
         )
+        if is_indexer_type(provider_type):
+            resolved_category = ProviderCategory.INDEXER.value
+
+    indexer_categories: dict[str, str | None] = {}
+    if is_indexer_type(provider_type):
+        try:
+            indexer_categories = {
+                "custom_movie_categories": normalize_category_csv(
+                    custom_movie_categories, DEFAULT_MOVIE_CATEGORIES
+                ),
+                "custom_tv_categories": normalize_category_csv(
+                    custom_tv_categories, DEFAULT_TV_CATEGORIES
+                ),
+            }
+        except ValueError:
+            return HTMLResponse(
+                content=(
+                    '<p class="text-sm text-red-400">Invalid category list: use '
+                    "comma-separated numeric IDs (e.g. 2000,2040).</p>"
+                ),
+                status_code=400,
+            )
 
     from app.core.automation import normalize_sync_interval_minutes
 
@@ -1704,6 +1743,9 @@ async def save_provider(
         provider.client_id = client_id.strip()
         provider.api_key = api_key
         provider.api_url = api_url
+        if is_indexer_type(provider_type) and not api_url.strip():
+            preset = get_preset(provider_type)
+            provider.api_url = preset.api_url if preset else api_url
         provider.priority = priority
         provider.is_active = is_active
 
@@ -1776,6 +1818,19 @@ async def save_provider(
             provider.config_json = json.dumps(raw_cfg)
         elif provider_type.lower() == "sabnzbd":
             provider.config_json = json.dumps(await _sab_categories_from_form(request))
+        elif is_indexer_type(provider_type):
+            try:
+                idx_cfg = json.loads(provider.config_json or "{}")
+            except ValueError:
+                idx_cfg = {}
+            if not isinstance(idx_cfg, dict):
+                idx_cfg = {}
+            for key, value in indexer_categories.items():
+                if value is None:
+                    idx_cfg.pop(key, None)
+                else:
+                    idx_cfg[key] = value
+            provider.config_json = json.dumps(idx_cfg)
 
         await session.flush()  # get ID
 
@@ -3112,7 +3167,7 @@ async def run_system_check(request: Request):
     active_indexers = [
         p
         for p in active_providers
-        if p.category == "indexer" or p.type in ("treasure_maps", "newznab")
+        if p.category == "indexer" or is_indexer_type(p.type)
     ]
     active_downloaders = [
         p
@@ -3453,7 +3508,8 @@ async def run_system_check(request: Request):
         key = (p.api_key or "").strip()
         url = (p.api_url or "").strip()
         if not url:
-            url = "https://treasure-maps.com/api" if p.type == "treasure_maps" else ""
+            preset = get_preset(p.type)
+            url = preset.api_url if preset else ""
         if not url:
             return {
                 "name": p.name or "Usenet Indexer",

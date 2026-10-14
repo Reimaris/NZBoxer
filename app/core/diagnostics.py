@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Provider
+from app.services.indexer_catalog import INDEXER_PRESETS
 from app.version import APP_VERSION
 
 GITHUB_REPO_URL: str = "https://github.com/Reimaris/NZBoxer"
@@ -25,7 +26,7 @@ PROVIDER_TYPE_LABELS: dict[str, str] = {
     "tmdb": "TMDB",
     "anilist": "AniList",
     "torbox": "TorBox",
-    "treasure_maps": "Newznab",
+    **{p.type: p.name for p in INDEXER_PRESETS},
     "newznab": "Newznab",
 }
 
