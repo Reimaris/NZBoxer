@@ -384,14 +384,14 @@
                         <!-- Simplified Watchlist Sync Settings -->
                         <div class="border border-[#3f3f46] rounded-xl bg-[#111115] p-5 space-y-4">
                             <h3 class="text-xs font-bold text-[#a1a1aa] uppercase tracking-wider">Watchlist Sync Options</h3>
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 items-center">
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
                                 <div>
                                     <label class="text-xs text-[#d1d5db] block font-semibold mb-1">Sync Interval (Minutes)</label>
                                     <input type="number" name="sync_interval_minutes" min="5" max="1440"
                                            value="{{ cfg.get('sync_interval_minutes', 60) }}"
                                            class="w-full h-10 bg-[#1e1e24] border border-[#3f3f46] rounded-lg px-3 text-white font-mono text-sm">
                                 </div>
-                                <div class="flex flex-wrap items-center gap-4 pt-4">
+                                <div class="flex flex-col items-start gap-3 pt-4">
                                     <label class="inline-flex items-center gap-2 text-sm text-white cursor-pointer">
                                         <span class="relative inline-flex shrink-0">
 <input type="checkbox" name="sync_movies" value="true" {% if cfg.get('sync_movies', True) %}checked{% endif %} class="sr-only peer">
