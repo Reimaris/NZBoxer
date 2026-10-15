@@ -391,7 +391,7 @@
                                            value="{{ cfg.get('sync_interval_minutes', 60) }}"
                                            class="w-full h-10 bg-[#1e1e24] border border-[#3f3f46] rounded-lg px-3 text-white font-mono text-sm">
                                 </div>
-                                <div class="flex flex-col items-start gap-3 pt-4">
+                                <div class="flex flex-col items-start gap-3 md:pl-20">
                                     <label class="inline-flex items-center gap-2 text-sm text-white cursor-pointer">
                                         <span class="relative inline-flex shrink-0">
 <input type="checkbox" name="sync_movies" value="true" {% if cfg.get('sync_movies', True) %}checked{% endif %} class="sr-only peer">
