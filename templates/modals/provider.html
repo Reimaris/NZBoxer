@@ -393,15 +393,24 @@
                                 </div>
                                 <div class="flex flex-wrap items-center gap-4 pt-4">
                                     <label class="inline-flex items-center gap-2 text-sm text-white cursor-pointer">
-                                        <input type="checkbox" name="sync_movies" value="true" {% if cfg.get('sync_movies', True) %}checked{% endif %} class="w-4 h-4 accent-[#d40060]">
+                                        <span class="relative inline-flex shrink-0">
+<input type="checkbox" name="sync_movies" value="true" {% if cfg.get('sync_movies', True) %}checked{% endif %} class="sr-only peer">
+<div class="w-9 h-5 bg-[#3f3f46] peer-focus:outline-none peer-focus-visible:ring-2 peer-focus-visible:ring-[#d40060] rounded-full peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#d40060]"></div>
+</span>
                                         <span>Sync Movies</span>
                                     </label>
                                     <label class="inline-flex items-center gap-2 text-sm text-white cursor-pointer">
-                                        <input type="checkbox" name="sync_series" value="true" {% if cfg.get('sync_series', True) %}checked{% endif %} class="w-4 h-4 accent-[#d40060]">
+                                        <span class="relative inline-flex shrink-0">
+<input type="checkbox" name="sync_series" value="true" {% if cfg.get('sync_series', True) %}checked{% endif %} class="sr-only peer">
+<div class="w-9 h-5 bg-[#3f3f46] peer-focus:outline-none peer-focus-visible:ring-2 peer-focus-visible:ring-[#d40060] rounded-full peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#d40060]"></div>
+</span>
                                         <span>Sync Series</span>
                                     </label>
                                     <label class="inline-flex items-center gap-2 text-sm text-white cursor-pointer">
-                                        <input type="checkbox" name="sync_anime" value="true" {% if cfg.get('sync_anime', True) %}checked{% endif %} class="w-4 h-4 accent-[#d40060]">
+                                        <span class="relative inline-flex shrink-0">
+<input type="checkbox" name="sync_anime" value="true" {% if cfg.get('sync_anime', True) %}checked{% endif %} class="sr-only peer">
+<div class="w-9 h-5 bg-[#3f3f46] peer-focus:outline-none peer-focus-visible:ring-2 peer-focus-visible:ring-[#d40060] rounded-full peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#d40060]"></div>
+</span>
                                         <span>Sync Anime</span>
                                     </label>
                                 </div>

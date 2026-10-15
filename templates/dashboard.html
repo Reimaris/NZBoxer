@@ -862,6 +862,22 @@ document.addEventListener('alpine:init', () => {
                         <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
                     </button>
                 </div>
+                {% if item.media_type.value != 'movie' and not item.is_anime_movie %}
+                <div class="flex justify-end items-center mt-2">
+                    <label class="inline-flex items-center gap-2 cursor-pointer text-xs text-white"
+                           title="Automatically search and push newly aired episodes to your downloader as soon as they air according to release schedules">
+                        <span class="relative inline-flex shrink-0">
+                            <input type="checkbox"
+                                   hx-post="/api/items/{{ item.id }}/toggle-auto-push"
+                                   hx-swap="none"
+                                   {% if item.auto_push_episodes %}checked{% endif %}
+                                   class="sr-only peer">
+                            <div class="w-9 h-5 bg-[#3f3f46] peer-focus:outline-none peer-focus-visible:ring-2 peer-focus-visible:ring-[#d40060] rounded-full peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#d40060]"></div>
+                        </span>
+                        <span class="font-semibold">Auto-Push</span>
+                    </label>
+                </div>
+                {% endif %}
             </td>
         </tr>
         {% endmacro %}

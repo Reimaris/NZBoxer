@@ -603,3 +603,20 @@ async def ingest_simkl_payloads(
         await run_library_maintenance(session)
     await session.commit()
     return result
+
+
+async def seed_setup_ready(session: AsyncSession) -> None:
+    """Seed TMDB key, indexer, downloader and watchlist so the dashboard renders its item tables."""
+    session.add(
+        Provider(
+            name="tmdb",
+            type="tmdb",
+            category="metadata",
+            api_key="test-key",
+            is_active=True,
+        )
+    )
+    await make_indexer_provider(session)
+    await make_downloader_provider(session)
+    await make_watchlist_provider(session, "simkl", client_id="cid", access_token="tok")
+    await session.flush()

@@ -381,7 +381,8 @@
                         <p class="text-xs text-[#71717a] mt-0.5">Post formatted embed cards with posters and release specs into your Discord server.</p>
                     </div>
                     <label class="inline-flex items-center gap-2 cursor-pointer text-xs text-white">
-                        <input type="checkbox"
+                        <span class="relative inline-flex shrink-0">
+<input type="checkbox"
                                name="discord_enabled"
                                value="true"
                                {% if db_settings and db_settings.discord_enabled %}checked{% endif %}
@@ -389,7 +390,9 @@
                                hx-trigger="change"
                                hx-vals='js:{"discord_enabled": event.target.checked ? "true" : "false"}'
                                hx-swap="none"
-                               class="w-4 h-4 accent-[#d40060]">
+                               class="sr-only peer">
+<div class="w-11 h-6 bg-[#3f3f46] peer-focus:outline-none peer-focus-visible:ring-2 peer-focus-visible:ring-[#d40060] rounded-full peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#d40060]"></div>
+</span>
                         <span class="font-semibold">Enable Discord Notifications</span>
                     </label>
                 </div>
@@ -419,7 +422,8 @@
                 <h3 class="text-xs font-bold text-[#a1a1aa] uppercase tracking-wider">Notification Event Triggers</h3>
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <label class="flex items-center gap-2.5 p-3 rounded-lg bg-[#111115] border border-[#3f3f46] cursor-pointer hover:border-zinc-500 transition-colors">
-                        <input type="checkbox"
+                        <span class="relative inline-flex shrink-0">
+<input type="checkbox"
                                name="notify_on_push_initiated"
                                value="true"
                                {% if db_settings and db_settings.notify_on_push_initiated %}checked{% endif %}
@@ -427,11 +431,14 @@
                                hx-trigger="change"
                                hx-vals='js:{"notify_on_push_initiated": event.target.checked ? "true" : "false"}'
                                hx-swap="none"
-                               class="w-4 h-4 accent-[#d40060]">
+                               class="sr-only peer">
+<div class="w-9 h-5 bg-[#3f3f46] peer-focus:outline-none peer-focus-visible:ring-2 peer-focus-visible:ring-[#d40060] rounded-full peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#d40060]"></div>
+</span>
                         <span class="text-xs text-white font-medium">Push Initiated</span>
                     </label>
                     <label class="flex items-center gap-2.5 p-3 rounded-lg bg-[#111115] border border-[#3f3f46] cursor-pointer hover:border-zinc-500 transition-colors">
-                        <input type="checkbox"
+                        <span class="relative inline-flex shrink-0">
+<input type="checkbox"
                                name="notify_on_completed"
                                value="true"
                                {% if not db_settings or db_settings.notify_on_completed %}checked{% endif %}
@@ -439,11 +446,14 @@
                                hx-trigger="change"
                                hx-vals='js:{"notify_on_completed": event.target.checked ? "true" : "false"}'
                                hx-swap="none"
-                               class="w-4 h-4 accent-[#d40060]">
+                               class="sr-only peer">
+<div class="w-9 h-5 bg-[#3f3f46] peer-focus:outline-none peer-focus-visible:ring-2 peer-focus-visible:ring-[#d40060] rounded-full peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#d40060]"></div>
+</span>
                         <span class="text-xs text-white font-medium">Download Completed (Ready in Downloader)</span>
                     </label>
                     <label class="flex items-center gap-2.5 p-3 rounded-lg bg-[#111115] border border-[#3f3f46] cursor-pointer hover:border-zinc-500 transition-colors">
-                        <input type="checkbox"
+                        <span class="relative inline-flex shrink-0">
+<input type="checkbox"
                                name="notify_on_failure"
                                value="true"
                                {% if not db_settings or db_settings.notify_on_failure %}checked{% endif %}
@@ -451,11 +461,14 @@
                                hx-trigger="change"
                                hx-vals='js:{"notify_on_failure": event.target.checked ? "true" : "false"}'
                                hx-swap="none"
-                               class="w-4 h-4 accent-[#d40060]">
+                               class="sr-only peer">
+<div class="w-9 h-5 bg-[#3f3f46] peer-focus:outline-none peer-focus-visible:ring-2 peer-focus-visible:ring-[#d40060] rounded-full peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#d40060]"></div>
+</span>
                         <span class="text-xs text-white font-medium">Push Failed / Auto-Replaced</span>
                     </label>
                     <label class="flex items-center gap-2.5 p-3 rounded-lg bg-[#111115] border border-[#3f3f46] cursor-pointer hover:border-zinc-500 transition-colors">
-                        <input type="checkbox"
+                        <span class="relative inline-flex shrink-0">
+<input type="checkbox"
                                name="notify_on_auto_advance"
                                value="true"
                                {% if not db_settings or db_settings.notify_on_auto_advance %}checked{% endif %}
@@ -463,11 +476,14 @@
                                hx-trigger="change"
                                hx-vals='js:{"notify_on_auto_advance": event.target.checked ? "true" : "false"}'
                                hx-swap="none"
-                               class="w-4 h-4 accent-[#d40060]">
+                               class="sr-only peer">
+<div class="w-9 h-5 bg-[#3f3f46] peer-focus:outline-none peer-focus-visible:ring-2 peer-focus-visible:ring-[#d40060] rounded-full peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#d40060]"></div>
+</span>
                         <span class="text-xs text-white font-medium">Auto-Advance Season Triggered</span>
                     </label>
                     <label class="flex items-center gap-2.5 p-3 rounded-lg bg-[#111115] border border-[#3f3f46] cursor-pointer hover:border-zinc-500 transition-colors">
-                        <input type="checkbox"
+                        <span class="relative inline-flex shrink-0">
+<input type="checkbox"
                                name="notify_on_errors"
                                value="true"
                                {% if not db_settings or db_settings.notify_on_errors %}checked{% endif %}
@@ -475,11 +491,14 @@
                                hx-trigger="change"
                                hx-vals='js:{"notify_on_errors": event.target.checked ? "true" : "false"}'
                                hx-swap="none"
-                               class="w-4 h-4 accent-[#d40060]">
+                               class="sr-only peer">
+<div class="w-9 h-5 bg-[#3f3f46] peer-focus:outline-none peer-focus-visible:ring-2 peer-focus-visible:ring-[#d40060] rounded-full peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#d40060]"></div>
+</span>
                         <span class="text-xs text-white font-medium">Errors &amp; Rate-Limit Alerts</span>
                     </label>
                     <label class="flex items-center gap-2.5 p-3 rounded-lg bg-[#111115] border border-[#3f3f46] cursor-pointer hover:border-zinc-500 transition-colors">
-                        <input type="checkbox"
+                        <span class="relative inline-flex shrink-0">
+<input type="checkbox"
                                name="notify_on_dry_run"
                                value="true"
                                {% if not db_settings or db_settings.notify_on_dry_run %}checked{% endif %}
@@ -487,7 +506,9 @@
                                hx-trigger="change"
                                hx-vals='js:{"notify_on_dry_run": event.target.checked ? "true" : "false"}'
                                hx-swap="none"
-                               class="w-4 h-4 accent-[#d40060]">
+                               class="sr-only peer">
+<div class="w-9 h-5 bg-[#3f3f46] peer-focus:outline-none peer-focus-visible:ring-2 peer-focus-visible:ring-[#d40060] rounded-full peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#d40060]"></div>
+</span>
                         <span class="text-xs text-white font-medium">Dry-Run Simulation Alerts (Batch Summary)</span>
                     </label>
                 </div>
@@ -635,7 +656,8 @@
                         <p class="text-[#71717a] text-xs mt-1.5 leading-relaxed">Only finished entries are removed. "Never" disables age-based clearing.</p>
                     </div>
                     <label class="flex items-start gap-3.5 p-4 rounded-xl bg-[#111115] border border-[#3f3f46] cursor-pointer hover:border-zinc-500 transition-colors">
-                        <input type="checkbox"
+                        <span class="relative inline-flex shrink-0 mt-0.5">
+<input type="checkbox"
                                name="history_autoclear_pruned"
                                value="true"
                                {% if db_settings and db_settings.history_autoclear_pruned %}checked{% endif %}
@@ -643,7 +665,9 @@
                                hx-trigger="change"
                                hx-vals='js:{"history_autoclear_pruned": event.target.checked ? "true" : "false"}'
                                hx-swap="none"
-                               class="w-4 h-4 mt-0.5 accent-[#d40060] shrink-0">
+                               class="sr-only peer">
+<div class="w-11 h-6 bg-[#3f3f46] peer-focus:outline-none peer-focus-visible:ring-2 peer-focus-visible:ring-[#d40060] rounded-full peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#d40060]"></div>
+</span>
                         <div class="min-w-0">
                             <span class="text-xs text-white font-bold block">Auto-clear Pruned from Watchlist</span>
                             <p class="text-[#71717a] text-xs mt-1 leading-relaxed">
@@ -664,7 +688,8 @@
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <!-- Debug Mode Toggle Card -->
                     <label class="flex items-start gap-3.5 p-4 rounded-xl bg-[#111115] border border-[#3f3f46] cursor-pointer hover:border-zinc-500 transition-colors">
-                        <input type="checkbox"
+                        <span class="relative inline-flex shrink-0 mt-0.5">
+<input type="checkbox"
                                name="debug_mode"
                                value="true"
                                {% if db_settings and db_settings.debug_mode %}checked{% endif %}
@@ -672,7 +697,9 @@
                                hx-trigger="change"
                                hx-vals='js:{"debug_mode": event.target.checked ? "true" : "false"}'
                                hx-swap="none"
-                               class="w-4 h-4 mt-0.5 accent-[#d40060] shrink-0">
+                               class="sr-only peer">
+<div class="w-11 h-6 bg-[#3f3f46] peer-focus:outline-none peer-focus-visible:ring-2 peer-focus-visible:ring-[#d40060] rounded-full peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#d40060]"></div>
+</span>
                         <div class="min-w-0">
                             <span class="text-xs text-white font-bold block">Debug Mode (Verbose Application Tracing)</span>
                             <p class="text-[#71717a] text-xs mt-1 leading-relaxed">
@@ -683,7 +710,8 @@
 
                     <!-- Dry-Run Sandbox Toggle Card -->
                     <label class="flex items-start gap-3.5 p-4 rounded-xl bg-[#111115] border border-[#3f3f46] cursor-pointer hover:border-zinc-500 transition-colors">
-                        <input type="checkbox"
+                        <span class="relative inline-flex shrink-0 mt-0.5">
+<input type="checkbox"
                                name="dry_run"
                                value="true"
                                {% if db_settings and db_settings.dry_run %}checked{% endif %}
@@ -691,7 +719,9 @@
                                hx-trigger="change"
                                hx-vals='js:{"dry_run": event.target.checked ? "true" : "false"}'
                                hx-swap="none"
-                               class="w-4 h-4 mt-0.5 accent-amber-500 shrink-0">
+                               class="sr-only peer">
+<div class="w-11 h-6 bg-[#3f3f46] peer-focus:outline-none peer-focus-visible:ring-2 peer-focus-visible:ring-[#d40060] rounded-full peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-500"></div>
+</span>
                         <div class="min-w-0">
                             <span class="text-xs text-white font-bold block">Dry-Run Mode (Simulation Sandbox)</span>
                             <p class="text-[#71717a] text-xs mt-1 leading-relaxed">

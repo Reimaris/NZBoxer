@@ -393,20 +393,12 @@
                             <span class="font-semibold">Prefer Season Pack</span>
                         </label>
                         <label class="inline-flex items-center gap-2 cursor-pointer text-xs text-white">
-                            <input type="checkbox" x-model="autoAdvanceSeasons" class="accent-[#d40060]">
+                            <span class="relative inline-flex shrink-0">
+<input type="checkbox" x-model="autoAdvanceSeasons" class="sr-only peer">
+<div class="w-9 h-5 bg-[#3f3f46] peer-focus:outline-none peer-focus-visible:ring-2 peer-focus-visible:ring-[#d40060] rounded-full peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#d40060]"></div>
+</span>
                             <span class="font-semibold">Auto-Advance Seasons</span>
                         </label>
-                        {% if item.media_type.value != 'movie' %}
-                        <label class="inline-flex items-center gap-2 cursor-pointer text-xs text-white"
-                               title="Automatically push newly aired episodes of this series">
-                            <input type="checkbox"
-                                   hx-post="/api/items/{{ item.id }}/toggle-auto-push"
-                                   hx-swap="none"
-                                   {% if auto_push_episodes %}checked{% endif %}
-                                   class="accent-[#d40060]">
-                            <span class="font-semibold">Auto-Push New Episodes</span>
-                        </label>
-                        {% endif %}
                     </div>
                 </div>
 

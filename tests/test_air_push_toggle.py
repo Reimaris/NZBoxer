@@ -4,8 +4,7 @@ import re
 
 import pytest
 
-from app.db.models import MediaType
-from tests.conftest import make_movie, make_series
+from tests.conftest import make_movie, make_series, seed_setup_ready
 
 pytestmark = pytest.mark.anyio
 
@@ -38,23 +37,50 @@ async def test_toggle_movie_400(async_client, db_session):
     assert resp.status_code == 400
 
 
+TOOLTIP = (
+    "Automatically search and push newly aired episodes to your downloader "
+    "as soon as they air according to release schedules"
+)
+
+
 @pytest.mark.parametrize("enabled", [False, True])
-async def test_modal_shows_toggle_for_series(async_client, db_session, enabled):
+async def test_dashboard_shows_auto_push_switch_for_series(
+    async_client, db_session, enabled
+):
     item, _, _ = await make_series(db_session, auto_push_episodes=enabled)
+    await seed_setup_ready(db_session)
     await db_session.commit()
-    resp = await async_client.get(f"/api/items/{item.id}/push-modal")
+    resp = await async_client.get("/")
     assert resp.status_code == 200
-    assert "Auto-Push New Episodes" in resp.text
     match = TOGGLE_RE.search(resp.text)
     assert match
     assert f"/api/items/{item.id}/toggle-auto-push" in match.group(0)
+    assert "sr-only peer" in match.group(0)
     assert ("checked" in match.group(0).split()) is enabled
+    assert TOOLTIP in resp.text
+    assert "Auto-Push</span>" in resp.text
 
 
-async def test_modal_omits_toggle_for_movie(async_client, db_session):
-    movie = await make_movie(db_session)
+async def test_push_modal_no_longer_has_auto_push(async_client, db_session):
+    item, _, _ = await make_series(db_session)
     await db_session.commit()
-    assert movie.media_type == MediaType.MOVIE
-    resp = await async_client.get(f"/api/items/{movie.id}/push-modal")
+    resp = await async_client.get(f"/api/items/{item.id}/push-modal")
     assert resp.status_code == 200
     assert "toggle-auto-push" not in resp.text
+    assert "Auto-Push New Episodes" not in resp.text
+
+
+@pytest.mark.parametrize("anime_movie", [False, True])
+async def test_dashboard_omits_auto_push_for_movies(
+    async_client, db_session, anime_movie
+):
+    if anime_movie:
+        movie = await make_movie(db_session, is_anime_movie=True, simkl_id=10002)
+    else:
+        movie = await make_movie(db_session)
+    await seed_setup_ready(db_session)
+    await db_session.commit()
+    resp = await async_client.get("/")
+    assert resp.status_code == 200
+    assert movie.title in resp.text
+    assert f"/api/items/{movie.id}/toggle-auto-push" not in resp.text
