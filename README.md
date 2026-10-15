@@ -15,7 +15,8 @@
 </p>
 
 <p align="center">
-  <img src="screenshots/dashboard.png" alt="NZBoxer dashboard" width="900" />
+  <img src="screenshots/dashboard.png" alt="NZBoxer dashboard with watchlist categories, per-title Auto-Push switches and season progress" width="900" /><br />
+  <sub><b>Dashboard:</b> watchlist categories, season and movie progress, and a per-title Auto-Push switch</sub>
 </p>
 
 ---
@@ -49,21 +50,21 @@ It keeps your **Movies**, **TV Series** and **Anime** in sync with your watchlis
     <td width="50%"><img src="screenshots/anime-franchise.png" alt="Anime franchise push modal" /><br /><sub><b>Anime franchises:</b> pick seasons, movies or single episodes</sub></td>
   </tr>
   <tr>
-    <td><img src="screenshots/active-pushes.png" alt="Live transfer monitor" /><br /><sub><b>Live transfer monitor</b> (shown in dry-run mode)</sub></td>
+    <td><img src="screenshots/active-pushes.png" alt="Live transfer monitor" /><br /><sub><b>Live transfer monitor</b> with the dry-run banner (no NZBs are sent)</sub></td>
     <td><img src="screenshots/providers.png" alt="Connected providers" /><br /><sub><b>Connected providers:</b> watchlists, metadata, downloaders, indexers</sub></td>
   </tr>
 </table>
 
 <p align="center">
   <img src="screenshots/ad-hoc-search.png" alt="Ad-hoc search" width="800" /><br />
-  <sub><b>Ad-hoc search:</b> find releases for any title without adding it to a watchlist</sub>
+  <sub><b>Ad-hoc search:</b> filters, scored releases and one-click Auto-Push Best for any title outside your watchlist</sub>
 </p>
 
 <p align="center">
   <img src="screenshots/mobile-dashboard.png" alt="Mobile dashboard" width="300" />
   &nbsp;&nbsp;
   <img src="screenshots/mobile-push-modal.png" alt="Mobile push modal" width="300" /><br />
-  <sub><b>Mobile-friendly:</b> the full UI works on your phone</sub>
+  <sub><b>Mobile-friendly:</b> watchlist search and the push modal work on your phone</sub>
 </p>
 
 ---
