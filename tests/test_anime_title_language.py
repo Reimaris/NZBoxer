@@ -51,7 +51,7 @@ from app.core.anime_titles import (  # noqa: E402
     resolve_display_title,
     search_names,
 )
-from app.db.models import MediaType  # noqa: E402
+from app.db.models import MediaStatus, MediaType  # noqa: E402
 from tests.conftest import make_movie, make_series  # noqa: E402
 
 NODE_AOT = {
@@ -384,3 +384,79 @@ async def test_backfill_skips_live_action_and_empty(
     assert await run_anime_title_backfill(session_factory, fetch=fetch) == (
         BackfillStats()
     )
+
+
+# --- m65-07: display in Card 3 and push modal -------------------------------
+
+
+async def _seed_titled(db_session, language: str, media_type=MediaType.ANIME):
+    from app.db.models import SystemSettings
+    from tests.conftest import seed_ready_setup
+
+    await seed_ready_setup(db_session)
+    settings_row = await db_session.get(SystemSettings, 1)
+    if settings_row is None:
+        settings_row = SystemSettings(id=1)
+        db_session.add(settings_row)
+    settings_row.anime_title_language = language
+    item, seasons, _ = await make_series(
+        db_session,
+        seasons=1,
+        media_type=media_type,
+        status=MediaStatus.SEARCHING,
+        title="Shingeki no Kyojin",
+        title_english="Attack on Titan",
+        title_romaji="Shingeki no Kyojin",
+        title_native="進撃の巨人",
+    )
+    seasons[0].title = "Season One"
+    seasons[0].title_english = "AoT Season One"
+    await db_session.commit()
+    return item
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("language", "expected"),
+    [
+        ("english", "Attack on Titan"),
+        ("native", "進撃の巨人"),
+        ("romaji", "Shingeki no Kyojin"),
+    ],
+)
+async def test_dashboard_and_modal_use_selected_language(
+    async_client, db_session, language, expected
+):
+    item = await _seed_titled(db_session, language)
+    dash = (await async_client.get("/")).text
+    assert f"Open Unified Push Modal for {expected}" in dash
+
+    modal = (await async_client.get(f"/api/items/{item.id}/push-modal")).text
+    assert f">{expected}</h2>" in modal
+
+    data = (
+        await async_client.get(
+            f"/api/items/{item.id}/push-modal",
+            headers={"accept": "application/json"},
+        )
+    ).json()
+    assert data["item"]["display_title"] == expected
+    assert data["item"]["title"] == "Shingeki no Kyojin"
+    # Season only has an English variant: every chain falls back to it.
+    assert data["entries"][0]["display_title"] == "AoT Season One"
+
+
+@pytest.mark.anyio
+async def test_live_action_show_ignores_variants(async_client, db_session):
+    item = await _seed_titled(db_session, "native", media_type=MediaType.SHOW)
+    dash = (await async_client.get("/")).text
+    assert "Open Unified Push Modal for Shingeki no Kyojin" in dash
+    assert "進撃の巨人" not in dash
+    data = (
+        await async_client.get(
+            f"/api/items/{item.id}/push-modal",
+            headers={"accept": "application/json"},
+        )
+    ).json()
+    assert data["item"]["display_title"] == "Shingeki no Kyojin"
+    assert data["entries"][0]["display_title"] == "Season One"

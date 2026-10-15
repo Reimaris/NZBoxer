@@ -694,7 +694,7 @@ document.addEventListener('alpine:init', () => {
                                     hx-target="#modal-container"
                                     hx-swap="innerHTML"
                                     class="font-bold text-white hover:text-[#d40060] transition-colors text-left">
-                                {{ item.title }}
+                                {{ anime_title_for(item, anime_title_language) }}
                             </button>
                             {% if item.year %}
                             <span class="text-xs text-[#a1a1aa]">({{ item.year }})</span>
@@ -713,7 +713,7 @@ document.addEventListener('alpine:init', () => {
                                 {% if item.media_type.value == 'movie' and item.is_anime_movie %}ANIME MOVIE{% elif item.media_type.value == 'movie' %}MOVIE{% elif item.media_type.value == 'show' %}SERIES{% elif item.media_type.value == 'anime' %}ANIME{% endif %}
                             </span>
                         </div>
-                        {% if item.alt_title and item.alt_title | lower != item.title | lower %}
+                        {% if item.alt_title and item.alt_title | lower != anime_title_for(item, anime_title_language) | lower %}
                         <div class="text-[11px] text-slate-400 italic mt-0.5">{{ item.alt_title }}</div>
                         {% endif %}
                         <div class="flex flex-wrap gap-1.5 mt-1.5 text-[10px] font-bold">
@@ -848,7 +848,7 @@ document.addEventListener('alpine:init', () => {
                             hx-get="/api/items/{{ item.id }}/push-modal"
                             hx-target="#modal-container"
                             hx-swap="innerHTML"
-                            title="Open Unified Push Modal for {{ item.title }}"
+                            title="Open Unified Push Modal for {{ anime_title_for(item, anime_title_language) }}"
                             class="bg-[#d40060] hover:bg-[#a3004a] text-white text-xs font-semibold px-3 py-1.5 rounded-md transition-colors flex items-center gap-1.5 shadow-sm shadow-pink-950/30">
                         <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
                         <span>Search / Push</span>

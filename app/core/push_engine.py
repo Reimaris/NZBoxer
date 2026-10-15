@@ -28,6 +28,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.config import settings
+from app.core.anime_titles import (
+    anime_season_title_for,
+    anime_title_for,
+    normalize_anime_title_language,
+)
 from app.core.fake_detector import (
     extract_nzb_password,
     is_indexer_metadata_fake,
@@ -3259,6 +3264,32 @@ async def execute_manual_grab(
     return resp
 
 
+class TitledEntry:
+    """Read-only view of a ``Season`` carrying a resolved ``display_title`` string.
+
+    Needed because ``Season.display_title`` is a method; templates and JSON want a string.
+    """
+
+    def __init__(self, season: Season, display_title: str) -> None:
+        self._season = season
+        self.display_title = display_title
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._season, name)
+
+
+async def get_anime_title_language(session: AsyncSession) -> str:
+    """Configured anime title language (romaji when unset)."""
+    from app.db.models import SystemSettings
+
+    raw = (
+        await session.execute(
+            select(SystemSettings.anime_title_language).where(SystemSettings.id == 1)
+        )
+    ).scalar_one_or_none()
+    return normalize_anime_title_language(raw)
+
+
 async def get_push_modal_context(
     session: AsyncSession, item_id: int
 ) -> dict[str, Any] | None:
@@ -3274,7 +3305,11 @@ async def get_push_modal_context(
 
     presets = await list_presets(session)
     effective_cfg = await resolve_effective_search_config(session, item)
-    entries = sorted(item.seasons, key=lambda s: (s.watch_order, s.season_number))
+    language = await get_anime_title_language(session)
+    entries = [
+        TitledEntry(s, anime_season_title_for(item, s, language))
+        for s in sorted(item.seasons, key=lambda s: (s.watch_order, s.season_number))
+    ]
 
     is_movie_type = item.media_type == MediaType.MOVIE
     default_min_gb = 1.5 if is_movie_type else 0.2
@@ -3315,6 +3350,8 @@ async def get_push_modal_context(
 
     return {
         "item": item,
+        "anime_title_language": language,
+        "display_title": anime_title_for(item, language),
         "entries": entries,
         "presets": presets,
         "presets_data": presets_data,

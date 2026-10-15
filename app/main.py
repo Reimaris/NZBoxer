@@ -591,6 +591,9 @@ async def dashboard(request: Request, background_tasks: BackgroundTasks):
             "presets_payload": presets_payload,
             "defaults": defaults,
             "setup": setup,
+            "anime_title_language": normalize_anime_title_language(
+                db_settings.anime_title_language if db_settings else None
+            ),
             "show_onboarding": (db_settings is None)
             or (not db_settings.onboarding_completed),
         },
@@ -4469,6 +4472,7 @@ async def api_get_push_modal(item_id: int, request: Request) -> Response:
                 "item": {
                     "id": item.id,
                     "title": item.title,
+                    "display_title": ctx["display_title"],
                     "year": item.year,
                     "media_type": str(item.media_type),
                     "preset_id": item.preset_id,
@@ -4483,6 +4487,7 @@ async def api_get_push_modal(item_id: int, request: Request) -> Response:
                         "type_number": s.type_number,
                         "entry_type": s.entry_type,
                         "title": s.title,
+                        "display_title": s.display_title,
                         "status": str(s.status),
                         "episodes": [
                             {
