@@ -9,6 +9,7 @@ and API endpoints for HTMX interactions.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import html
 import json
 import logging
@@ -41,7 +42,12 @@ from app.core.anime_titles import (
     normalize_anime_title_language,
 )
 from app.core.time_utils import format_local_datetime
-from app.db.database import async_session_factory, close_db, init_db
+from app.db.database import (
+    async_session_factory,
+    close_db,
+    get_session_factory,
+    init_db,
+)
 from app.version import APP_VERSION
 
 # Configure logging
@@ -284,10 +290,27 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         "APScheduler started with quarter-hour cron trigger and 20s auto-wake transfer poller."
     )
 
+    # Anime title variant backfill runs off the startup path; failures never propagate.
+    async def _run_title_backfill() -> None:
+        from app.services.anime_title_backfill import run_anime_title_backfill
+
+        try:
+            await run_anime_title_backfill(get_session_factory())
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("[BACKFILL] anime title backfill crashed")
+
+    backfill_task = asyncio.create_task(_run_title_backfill())
+
     # Yield control to the FastAPI application
     yield
 
     # 3. Shutdown gracefully
+    if not backfill_task.done():
+        backfill_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await backfill_task
     scheduler.shutdown(wait=False)
     logger.info("APScheduler shut down.")
     await close_db()

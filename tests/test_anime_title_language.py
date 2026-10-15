@@ -280,3 +280,107 @@ async def test_enrich_anime_metadata_persists_title_variants(db_session):
     assert s4.title_romaji == "Shingeki no Kyojin: The Final Season"
     assert s4.title_native == "進撃の巨人 The Final Season"
     assert s4.display_title("english") == "Attack on Titan: The Final Season"
+
+
+# --- m65-06: startup backfill ----------------------------------------------
+
+
+@pytest.fixture
+def backfill_sleeps(monkeypatch):
+    sleeps: list[float] = []
+
+    async def fake_sleep(delay):
+        sleeps.append(delay)
+
+    monkeypatch.setattr("app.services.anime_title_backfill.asyncio.sleep", fake_sleep)
+    return sleeps
+
+
+@pytest.mark.anyio
+async def test_backfill_populates_item_and_season(
+    db_session, session_factory, backfill_sleeps
+):
+    from sqlalchemy import select
+
+    from app.db.models import MediaItem, Season
+    from app.services.anime_title_backfill import run_anime_title_backfill
+
+    item, seasons, _ = await make_series(
+        db_session, seasons=1, media_type=MediaType.ANIME, anilist_id=16498
+    )
+    seasons[0].anilist_id = 110277
+    await db_session.commit()
+
+    calls: list[list[int]] = []
+
+    async def fetch(ids):
+        calls.append(ids)
+        return {16498: NODE_AOT, 110277: NODE_AOT_S4}
+
+    stats = await run_anime_title_backfill(session_factory, fetch=fetch)
+    assert (stats.items_updated, stats.seasons_updated) == (1, 1)
+    assert stats.ids_missing == 0 and stats.chunks_failed == 0
+    assert len(calls) == 1 and backfill_sleeps == []
+
+    async with session_factory() as s:
+        got = (await s.execute(select(MediaItem))).scalar_one()
+        assert got.title_romaji == "Shingeki no Kyojin"
+        season = (await s.execute(select(Season))).scalar_one()
+        assert season.title_native == "進撃の巨人 The Final Season"
+
+    # Idempotent: everything populated -> no further fetch.
+    stats = await run_anime_title_backfill(session_factory, fetch=fetch)
+    assert len(calls) == 1
+    assert (stats.items_updated, stats.seasons_updated) == (0, 0)
+
+
+@pytest.mark.anyio
+async def test_backfill_chunks_sleeps_and_isolates_failures(
+    db_session, session_factory, backfill_sleeps
+):
+    from app.services.anime_title_backfill import run_anime_title_backfill
+
+    for aid in range(1, 121):
+        await make_series(
+            db_session,
+            seasons=0,
+            media_type=MediaType.ANIME,
+            title=f"A{aid}",
+            anilist_id=aid,
+            simkl_id=50000 + aid,
+        )
+    await db_session.commit()
+
+    calls: list[list[int]] = []
+
+    async def fetch(ids):
+        calls.append(ids)
+        if len(calls) == 2:
+            raise RuntimeError("boom <secret>")
+        return {i: {"id": i, "title": {"romaji": f"R{i}"}} for i in ids}
+
+    stats = await run_anime_title_backfill(session_factory, fetch=fetch)
+    assert [len(c) for c in calls] == [50, 50, 20]
+    assert backfill_sleeps == [2.0, 2.0]
+    assert stats.chunks_failed == 1
+    assert stats.items_updated == 70
+
+
+@pytest.mark.anyio
+async def test_backfill_skips_live_action_and_empty(
+    db_session, session_factory, backfill_sleeps
+):
+    from app.services.anime_title_backfill import (
+        BackfillStats,
+        run_anime_title_backfill,
+    )
+
+    await make_movie(db_session, anilist_id=999)
+    await db_session.commit()
+
+    async def fetch(ids):  # pragma: no cover - must not be called
+        raise AssertionError("no request expected")
+
+    assert await run_anime_title_backfill(session_factory, fetch=fetch) == (
+        BackfillStats()
+    )
