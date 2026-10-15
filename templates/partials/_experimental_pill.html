@@ -1,5 +1,5 @@
 {% macro experimental_pill(provider_type, stacked=False) -%}
 {%- if is_experimental(provider_type) -%}
-<span class="{{ 'flex w-fit mb-1' if stacked else 'inline-flex' }} items-center px-2 py-0.5 rounded-full text-[10px] font-bold tracking-wide uppercase bg-orange-500/15 text-orange-400 border border-orange-500/30" title="Not tested by the maintainer against the live service. Please report problems.">Experimental</span>
+<span class="{{ 'flex w-fit mt-2' if stacked else 'inline-flex' }} items-center px-2 py-0.5 rounded-full text-[10px] font-bold tracking-wide uppercase bg-orange-500/15 text-orange-400 border border-orange-500/30" title="Not tested by the maintainer against the live service. Please report problems.">Experimental</span>
 {%- endif -%}
 {%- endmacro %}
