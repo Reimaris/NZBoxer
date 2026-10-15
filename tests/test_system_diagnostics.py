@@ -86,6 +86,8 @@ async def test_system_check_run_configured_only_filtering_and_vital_role_warning
     assert "SQLite Database" in html or "Database" in html
     assert "Persistent Storage" in html or "Storage" in html
     assert "AniList API" in html or "AniList" in html
+    assert "Core Infrastructure" in html
+    assert "Metadata Provider" not in html
 
     # Unconfigured integrations must NOT appear
     assert "TheMovieDB" not in html

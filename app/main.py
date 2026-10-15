@@ -3448,7 +3448,7 @@ async def run_system_check(request: Request):
                 msg = "GraphQL API reachable" if ok else f"HTTP {r.status_code}"
                 return {
                     "name": "AniList API",
-                    "category": "Metadata Provider",
+                    "category": "Core Infrastructure",
                     "ok": ok,
                     "msg": msg,
                     "latency_ms": latency,
@@ -3457,7 +3457,7 @@ async def run_system_check(request: Request):
             latency = int((time.perf_counter() - start) * 1000)
             return {
                 "name": "AniList API",
-                "category": "Metadata Provider",
+                "category": "Core Infrastructure",
                 "ok": False,
                 "msg": str(e),
                 "latency_ms": latency,

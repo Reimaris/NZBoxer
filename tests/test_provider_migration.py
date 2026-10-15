@@ -70,3 +70,43 @@ async def test_existing_providers_category_backfill(
         assert p_dict["anilist"].category == ProviderCategory.WATCHLIST.value
 
     await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_retire_anilist_metadata_migration_is_scoped_and_idempotent(
+    db_session: AsyncSession,
+) -> None:
+    from app.db.database import _migrate_retire_anilist_metadata
+
+    db_session.add_all(
+        [
+            Provider(category="metadata", type="anilist", name="AniList"),
+            Provider(category="metadata", type="AniList", name="AniList Upper"),
+            Provider(
+                category="watchlist",
+                type="anilist",
+                name="AniList WL",
+                username="test-user",
+            ),
+            Provider(
+                category="metadata", type="tmdb", name="TheMovieDB", api_key="test-key"
+            ),
+        ]
+    )
+    await db_session.commit()
+
+    for _ in range(2):
+        await _migrate_retire_anilist_metadata(await db_session.connection())
+        await db_session.commit()
+
+    db_session.expire_all()
+    names = {p.name for p in (await db_session.execute(select(Provider))).scalars()}
+    assert names == {"AniList WL", "TheMovieDB"}
+
+
+@pytest.mark.asyncio
+async def test_provider_modal_has_no_anilist_metadata_card(async_client) -> None:
+    html = (await async_client.get("/settings/provider/new")).text
+    assert "selectProvider('anilist', 'metadata'" not in html
+    assert "selectProvider('anilist', 'watchlist'" in html
+    assert "selectProvider('tmdb', 'metadata'" in html

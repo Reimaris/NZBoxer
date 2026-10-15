@@ -68,7 +68,7 @@
                 </div>
                 <div class="min-w-0">
                     <h2 class="text-base font-bold text-white leading-tight">Connected Providers</h2>
-                    <p class="text-xs text-[#a1a1aa] truncate mt-0.5">Manage Watchlists (Simkl, AniList, Plex, MAL), Metadata (TMDB, AniList), Downloaders (TorBox, SABnzbd, Premiumize), and Indexers.</p> <!-- provider-specific code (allowlisted) -->
+                    <p class="text-xs text-[#a1a1aa] truncate mt-0.5">Manage Watchlists (Simkl, AniList, Plex, MAL), Metadata (TMDB), Downloaders (TorBox, SABnzbd, Premiumize), and Indexers.</p> <!-- provider-specific code (allowlisted) -->
                 </div>
             </div>
             <div class="flex items-center gap-3 shrink-0">
@@ -162,7 +162,6 @@
                                 {% elif cat == 'downloader' %}TB
                                 {% elif cat == 'indexer' %}<span class="text-xs" data-badge="{{ idx_preset.badge if idx_preset else 'NZB' }}">{{ idx_preset.badge if idx_preset else 'NZB' }}</span>
                                 {% elif provider.type == 'tmdb' %}T
-                                {% elif provider.type == 'anilist' %}A
                                 {% else %}{{ provider.name[:1]|upper }}{% endif %}
                             </div>
 

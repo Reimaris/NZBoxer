@@ -166,6 +166,18 @@ async def _migrate_indexer_type(conn: AsyncConnection) -> None:
     )
 
 
+async def _migrate_retire_anilist_metadata(conn: AsyncConnection) -> None:
+    """m67 (ADR-146): drop dummy AniList metadata provider rows (idempotent)."""
+    from sqlalchemy import text as sa_text
+
+    await conn.execute(
+        sa_text(
+            "DELETE FROM providers "
+            "WHERE category = 'metadata' AND LOWER(type) = 'anilist'"
+        )
+    )
+
+
 async def _migrate_watchlist_neutral_columns(conn: AsyncConnection) -> None:
     """m59 (spec §2.2): legacy ``*_simkl*`` media_items columns -> watchlist-neutral."""
     from sqlalchemy import text as sa_text
@@ -1142,6 +1154,7 @@ async def init_db(database_url: str) -> None:
                 await _migrate_downloader_columns(await session.connection())
                 await _migrate_watchlist_neutral_columns(await session.connection())
                 await _migrate_indexer_type(await session.connection())
+                await _migrate_retire_anilist_metadata(await session.connection())
                 await session.execute(
                     sa_text(
                         "CREATE INDEX IF NOT EXISTS ix_download_history_downloader_transfer_id "

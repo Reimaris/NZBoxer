@@ -131,16 +131,6 @@
                             </div>
                             <p class="text-xs text-[#71717a] mt-1">Movie and TV series metadata, season/episode air dates, and poster artwork (v3 API key required).</p>
                         </button>
-                        <button type="button" @click="selectProvider('anilist', 'metadata', 'AniList')" class="bg-[#111115] hover:bg-[#2a2a32] border border-[#3f3f46] hover:border-amber-400 rounded-xl p-4 text-left transition-all group flex flex-col justify-between">
-                            <div class="flex items-center gap-3 mb-2">
-                                <div class="w-10 h-10 rounded-lg bg-indigo-500/20 text-indigo-400 flex items-center justify-center font-bold text-lg">A</div>
-                                <div>
-                                    <div class="flex items-center gap-2 flex-wrap"><div class="font-bold text-white group-hover:text-amber-400 transition-colors">AniList</div>{{ experimental_pill('anilist') }}</div>
-                                    <div class="text-xs text-[#a1a1aa]">Anime Metadata</div>
-                                </div>
-                            </div>
-                            <p class="text-xs text-[#71717a] mt-1">Public GraphQL anime metadata, chronological sequel chains, and episode air dates. Works automatically without credentials.</p>
-                        </button>
                     </div>
                 </div>
 
@@ -417,23 +407,6 @@
                             </div>
                         </div>
                     </fieldset> <!-- provider-specific code (allowlisted): end -->
-
-                    <!-- ANILIST CONFIGURATION -->
-                    <fieldset :disabled="!(providerType === 'anilist' && providerCategory === 'metadata')" x-show="providerType === 'anilist' && providerCategory === 'metadata'" class="border-0 p-0 m-0 space-y-6">
-                        <div class="bg-[#111115] border border-[#3f3f46] rounded-xl p-4 text-xs text-[#a1a1aa] leading-relaxed">
-                            AniList uses the public GraphQL API for anime metadata, chronological sequel chains, and episode air dates — <strong class="text-white">no API key or credentials are required</strong>. Username and Access Token below are completely optional.
-                        </div>
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            <div class="flex flex-col">
-                                <label class="h-6 text-[#d1d5db] font-medium mb-1 flex items-center">AniList Username (Optional)</label>
-                                <input type="text" name="simkl_username" value="{{ provider.username if provider else '' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors" placeholder="AniList username">
-                            </div>
-                            <div class="flex flex-col">
-                                <label class="h-6 text-[#d1d5db] font-medium mb-1 flex items-center">Access Token (Optional)</label>
-                                <input type="password" name="access_token" value="{{ provider.access_token if provider and pcat == 'metadata' and provider.access_token else '' }}" class="w-full h-11 bg-[#111115] border border-[#3f3f46] focus:border-[#d40060] rounded-lg px-3.5 text-white focus:outline-none transition-colors font-mono" placeholder="Optional token">
-                            </div>
-                        </div>
-                    </fieldset>
 
                     <!-- ANILIST WATCHLIST CONFIGURATION -->
                     <fieldset :disabled="!(providerType === 'anilist' && providerCategory === 'watchlist')" x-show="providerType === 'anilist' && providerCategory === 'watchlist'" class="border-0 p-0 m-0 space-y-6">

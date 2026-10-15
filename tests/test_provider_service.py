@@ -125,3 +125,7 @@ async def test_dynamic_key_resolvers(db_session: AsyncSession) -> None:
 
     resolved_tmdb_key = await tmdb.resolve_api_key(session=db_session)
     assert resolved_tmdb_key == "dynamic_tmdb_key"
+
+
+def test_metadata_types_pinned_to_tmdb() -> None:
+    assert provider_service._METADATA_TYPES == frozenset({"tmdb"})
