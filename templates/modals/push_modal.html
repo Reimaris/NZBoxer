@@ -264,19 +264,20 @@
      @keydown.escape.window="closeModal()"
      @click.self="closeModal()">
 
-    <div class="nzb-modal-dialog bg-[#1e1e24] border-0 sm:border border-[#3f3f46] rounded-none sm:rounded-xl shadow-2xl w-full max-w-5xl h-[100dvh] sm:h-auto sm:max-h-[90vh] flex flex-col overflow-hidden text-[#d1d5db]"
+    <div class="nzb-modal-dialog bg-[#1e1e24] border-0 sm:border border-[#3f3f46] rounded-none sm:rounded-xl shadow-2xl w-full max-w-5xl h-[100dvh] sm:h-auto sm:max-h-[90vh] flex flex-col overflow-hidden text-[#d1d5db] relative"
          style="max-width: 64rem;">
+        <!-- Close (top-right corner of dialog) -->
+        <button type="button"
+                style="position:absolute;top:0.5rem;right:0.5rem;z-index:20;"
+                class="text-[#a1a1aa] hover:text-white p-1.5 rounded-lg hover:bg-[#3f3f46]/60 transition"
+                @click="closeModal()"
+                title="Close Modal">
+            <svg width="20" height="20" class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+        </button>
         <!-- 1. Sticky Item Header & Metadata Controls -->
         <div class="p-3 sm:p-5 bg-[#2a2a32] border-b border-[#3f3f46] flex flex-row gap-3 sm:gap-4 items-start relative shrink-0">
-            <button type="button"
-                    class="absolute top-3 right-3 sm:top-4 sm:right-4 text-[#a1a1aa] hover:text-white p-1.5 rounded-lg hover:bg-[#3f3f46]/60 transition"
-                    @click="closeModal()"
-                    title="Close Modal">
-                <svg width="20" height="20" class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-                </svg>
-            </button>
-
             <!-- Poster -->
             <div class="w-12 h-16 sm:w-20 sm:h-28 rounded-lg sm:rounded-xl overflow-hidden bg-[#111115] shrink-0 border border-[#3f3f46] shadow-md">
                 {% if item.poster_url %}
@@ -423,7 +424,7 @@
                     {% for entry in entries %}
                     <div class="border border-[#3f3f46] rounded-lg bg-[#1e1e24] p-2.5 sm:p-3">
                         <div class="flex flex-wrap sm:flex-nowrap items-center justify-between gap-2">
-                            <label class="flex items-center gap-2.5 cursor-pointer flex-1 min-w-0">
+                            <label class="flex items-center gap-2.5 cursor-pointer flex-1 min-w-full sm:min-w-0">
                                 <input type="checkbox"
                                        :value="{{ entry.id }}"
                                        x-model.number="selectedSeasons"
@@ -433,12 +434,12 @@
                                 {% else %}
                                 <span class="px-2 py-0.5 text-[10px] font-bold uppercase rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30">SEASON</span>
                                 {% endif %}
-                                <span class="text-xs font-semibold text-white truncate">
+                                <span class="text-xs font-semibold text-white break-words sm:truncate min-w-0">
                                     #{{ entry.watch_order }} — {{ entry.display_title or ('Season ' ~ entry.season_number) }}
                                 </span>
                             </label>
 
-                            <div class="flex items-center gap-2 shrink-0">
+                            <div class="flex flex-wrap items-center gap-2 sm:shrink-0">
                                 {% if entry.status.value in ('completed', 'downloaded', 'downloading', 'rate_limited', 'future', 'failed') %}
                                 <span class="px-2.5 py-0.5 text-[10px] font-bold uppercase rounded-full {% if entry.status.value in ('completed', 'downloaded') %}bg-emerald-500/20 text-emerald-400 border border-emerald-500/30{% elif entry.status.value == 'downloading' %}bg-cyan-500/20 text-cyan-300 border border-cyan-500/30{% elif entry.status.value == 'rate_limited' %}bg-amber-500/20 text-amber-300 border border-amber-500/30{% elif entry.status.value == 'failed' %}bg-red-500/20 text-red-400 border border-red-500/30{% elif entry.status.value == 'future' %}bg-blue-500/20 text-blue-300 border border-blue-500/30{% endif %}">
                                     {{ 'PAUSED' if entry.status.value == 'rate_limited' else ('DOWNLOADED' if entry.status.value in ('completed', 'downloaded') else entry.status.value|upper) }}
@@ -532,11 +533,11 @@
             <!-- 3. Search Preset Selector & Inline Preset Save -->
             <div class="bg-[#111115] border border-[#3f3f46] rounded-xl p-3 sm:p-4 space-y-3 sm:space-y-4">
                 <div class="flex flex-wrap items-center justify-between gap-3">
-                    <div class="flex items-center gap-3 flex-1 min-w-[240px]">
+                    <div class="flex flex-wrap sm:flex-nowrap items-center gap-2 sm:gap-3 flex-1 min-w-0 sm:min-w-[240px]">
                         <label class="text-xs font-bold uppercase tracking-wider text-[#a1a1aa] shrink-0">Search Preset:</label>
                         <select x-model="selectedPresetId"
                                 @change="applyPreset(selectedPresetId)"
-                                class="flex-1 bg-[#1e1e24] border border-[#3f3f46] rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:border-[#d40060]">
+                                class="flex-1 min-w-0 w-full sm:w-auto bg-[#1e1e24] border border-[#3f3f46] rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:border-[#d40060]">
                             {% for preset in presets %}
                             <option value="{{ preset.id }}">{{ preset.name }}{% if preset.is_default %} ★{% endif %}</option>
                             {% endfor %}
@@ -546,7 +547,7 @@
 
                     <button type="button"
                             @click="showSavePresetForm = !showSavePresetForm"
-                            class="text-xs font-semibold text-[#d40060] hover:text-pink-400 px-3 py-1.5 rounded-lg bg-[#d40060]/10 border border-[#d40060]/30 transition">
+                            class="text-xs font-semibold text-[#d40060] hover:text-pink-400 px-3 py-1.5 rounded-lg bg-[#d40060]/10 border border-[#d40060]/30 transition shrink-0">
                         Save current config as Preset...
                     </button>
                 </div>
