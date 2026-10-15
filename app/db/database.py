@@ -230,6 +230,35 @@ async def _migrate_watchlist_neutral_columns(conn: AsyncConnection) -> None:
         )
 
 
+async def _migrate_anime_title_columns(conn: AsyncConnection) -> None:
+    """m65 (spec §2.4): per-language anime title columns + title language setting."""
+    from sqlalchemy import text as sa_text
+
+    wanted = {
+        "system_settings": [
+            ("anime_title_language", "VARCHAR(20) NOT NULL DEFAULT 'romaji'")
+        ],
+        "media_items": [
+            (f"title_{lang}", "VARCHAR(500)")
+            for lang in ("english", "romaji", "native")
+        ],
+        "seasons": [
+            (f"title_{lang}", "VARCHAR(512)")
+            for lang in ("english", "romaji", "native")
+        ],
+    }
+    for table, columns in wanted.items():
+        rows = await conn.execute(sa_text(f'PRAGMA table_info("{table}")'))
+        existing = {r[1] for r in rows}
+        if not existing:
+            continue
+        for col, ddl in columns:
+            if col not in existing:
+                await conn.execute(
+                    sa_text(f"ALTER TABLE {table} ADD COLUMN {col} {ddl}")
+                )
+
+
 def _backup_db_before_m59(db_path: Path) -> None:
     """Copy the SQLite file to ``<name>.pre-m59.bak`` once (skipped if present)."""
     if str(db_path) == ":memory:" or not db_path.is_file():
@@ -1155,6 +1184,7 @@ async def init_db(database_url: str) -> None:
                 await _migrate_watchlist_neutral_columns(await session.connection())
                 await _migrate_indexer_type(await session.connection())
                 await _migrate_retire_anilist_metadata(await session.connection())
+                await _migrate_anime_title_columns(await session.connection())
                 await session.execute(
                     sa_text(
                         "CREATE INDEX IF NOT EXISTS ix_download_history_downloader_transfer_id "

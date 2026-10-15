@@ -126,6 +126,11 @@ class SystemSettings(Base):
         Integer, default=60, server_default="60", nullable=False
     )
 
+    # Anime title language (m65): romaji | english | native
+    anime_title_language: Mapped[str] = mapped_column(
+        String(20), default="romaji", server_default="romaji", nullable=False
+    )
+
     # Air-date auto-push & episode upgrades (m45)
     air_delay_hours: Mapped[int] = mapped_column(
         Integer, default=2, server_default="2", nullable=False
@@ -580,6 +585,9 @@ class MediaItem(Base):
     # --- Metadata ---
     title: Mapped[str] = mapped_column(String(500), nullable=False)
     alt_title: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    title_english: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    title_romaji: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    title_native: Mapped[str | None] = mapped_column(String(500), nullable=True)
     year: Mapped[int | None] = mapped_column(Integer, nullable=True)
     media_type: Mapped[MediaType] = mapped_column(
         Enum(MediaType, name="media_type_enum"), nullable=False
@@ -1010,6 +1018,9 @@ class Season(Base):
     anilist_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     mal_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     title: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    title_english: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    title_romaji: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    title_native: Mapped[str | None] = mapped_column(String(512), nullable=True)
     monitored: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     status: Mapped[SeasonStatus] = mapped_column(
         Enum(SeasonStatus, name="season_status_enum"),
