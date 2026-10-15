@@ -78,45 +78,45 @@
                             <div class="flex items-center gap-3 mb-2">
                                 <div class="w-10 h-10 rounded-lg bg-[#d40060]/15 text-[#d40060] flex items-center justify-center font-bold text-lg">S</div>
                                 <div>
-                                    <div class="font-bold text-white group-hover:text-[#d40060] transition-colors">Simkl</div> <!-- provider-specific code (allowlisted) -->
+                                    <div class="font-bold text-white group-hover:text-[#d40060] transition-colors">Simkl</div>
+                                    {{ experimental_pill('simkl', stacked=True) }} <!-- provider-specific code (allowlisted) -->
                                     <div class="text-xs text-[#a1a1aa]">Watchlist Integration</div>
                                 </div>
                             </div>
                             <p class="text-xs text-[#71717a] mt-1">Sync movies, TV shows, and anime watchlists via OAuth 2.0 Device Flow (AUTH V2) with auto-refreshing tokens and watch-progress season expansion.</p>
-                            {{ experimental_pill('simkl', stacked=True) }}
                         </button>
                         <button type="button" @click="selectProvider('anilist', 'watchlist', 'AniList')" class="bg-[#111115] hover:bg-[#2a2a32] border border-[#3f3f46] hover:border-[#d40060] rounded-xl p-4 text-left transition-all group flex flex-col justify-between">
                             <div class="flex items-center gap-3 mb-2">
                                 <div class="w-10 h-10 rounded-lg bg-[#d40060]/15 text-[#d40060] flex items-center justify-center font-bold text-lg">A</div>
                                 <div>
                                     <div class="font-bold text-white group-hover:text-[#d40060] transition-colors">AniList</div>
+                                    {{ experimental_pill('anilist', stacked=True) }}
                                     <div class="text-xs text-[#a1a1aa]">Watchlist Integration</div>
                                 </div>
                             </div>
                             <p class="text-xs text-[#71717a] mt-1">Sync your AniList anime list using your public username (access token only needed for private profiles).</p>
-                            {{ experimental_pill('anilist', stacked=True) }}
                         </button>
                         <button type="button" @click="selectProvider('plex', 'watchlist', 'Plex')" class="bg-[#111115] hover:bg-[#2a2a32] border border-[#3f3f46] hover:border-[#d40060] rounded-xl p-4 text-left transition-all group flex flex-col justify-between">
                             <div class="flex items-center gap-3 mb-2">
                                 <div class="w-10 h-10 rounded-lg bg-[#d40060]/15 text-[#d40060] flex items-center justify-center font-bold text-lg">P</div>
                                 <div>
                                     <div class="font-bold text-white group-hover:text-[#d40060] transition-colors">Plex</div>
+                                    {{ experimental_pill('plex', stacked=True) }}
                                     <div class="text-xs text-[#a1a1aa]">Watchlist Integration</div>
                                 </div>
                             </div>
                             <p class="text-xs text-[#71717a] mt-1">Sync your Plex Discover watchlist via PIN login or a manual token.</p>
-                            {{ experimental_pill('plex', stacked=True) }}
                         </button>
                         <button type="button" @click="selectProvider('mal', 'watchlist', 'MyAnimeList')" class="bg-[#111115] hover:bg-[#2a2a32] border border-[#3f3f46] hover:border-[#d40060] rounded-xl p-4 text-left transition-all group flex flex-col justify-between">
                             <div class="flex items-center gap-3 mb-2">
                                 <div class="w-10 h-10 rounded-lg bg-[#d40060]/15 text-[#d40060] flex items-center justify-center font-bold text-lg">M</div>
                                 <div>
                                     <div class="font-bold text-white group-hover:text-[#d40060] transition-colors">MyAnimeList</div>
+                                    {{ experimental_pill('mal', stacked=True) }}
                                     <div class="text-xs text-[#a1a1aa]">Watchlist Integration</div>
                                 </div>
                             </div>
                             <p class="text-xs text-[#71717a] mt-1">Sync your MyAnimeList anime list via OAuth 2.0 PKCE with your own MAL API client ID.</p>
-                            {{ experimental_pill('mal', stacked=True) }}
                         </button>
                     </div>
                 </div>
@@ -130,11 +130,11 @@
                                 <div class="w-10 h-10 rounded-lg bg-amber-500/20 text-amber-400 flex items-center justify-center font-bold text-lg">T</div>
                                 <div>
                                     <div class="font-bold text-white group-hover:text-amber-400 transition-colors">TMDB</div>
+                                    {{ experimental_pill('tmdb', stacked=True) }}
                                     <div class="text-xs text-[#a1a1aa]">The Movie Database</div>
                                 </div>
                             </div>
                             <p class="text-xs text-[#71717a] mt-1">Movie and TV series metadata, season/episode air dates, and poster artwork (v3 API key required).</p>
-                            {{ experimental_pill('tmdb', stacked=True) }}
                         </button>
                     </div>
                 </div>
@@ -147,34 +147,34 @@
                             <div class="flex items-center gap-3 mb-2">
                                 <div class="w-10 h-10 rounded-lg bg-purple-500/20 text-purple-400 flex items-center justify-center font-bold text-lg">TB</div>
                                 <div>
-                                    <div class="font-bold text-white group-hover:text-purple-400 transition-colors">TorBox</div> <!-- provider-specific code (allowlisted) -->
+                                    <div class="font-bold text-white group-hover:text-purple-400 transition-colors">TorBox</div>
+                                    {{ experimental_pill('torbox', stacked=True) }} <!-- provider-specific code (allowlisted) -->
                                     <div class="text-xs text-[#a1a1aa]">Debrid &amp; Usenet Client</div>
                                 </div>
                             </div>
                             <p class="text-xs text-[#71717a] mt-1">Cloud Usenet downloader for multipart NZB uploads, active transfer polling, and Layer 3 video verification.</p>
-                            {{ experimental_pill('torbox', stacked=True) }}
                         </button>
                         <button type="button" @click="selectProvider('sabnzbd', 'downloader', 'SABnzbd')" class="bg-[#111115] hover:bg-[#2a2a32] border border-[#3f3f46] hover:border-purple-400 rounded-xl p-4 text-left transition-all group flex flex-col justify-between">
                             <div class="flex items-center gap-3 mb-2">
                                 <div class="w-10 h-10 rounded-lg bg-green-500/20 text-green-400 flex items-center justify-center font-bold text-lg">SB</div>
                                 <div>
                                     <div class="font-bold text-white group-hover:text-purple-400 transition-colors">SABnzbd</div>
+                                    {{ experimental_pill('sabnzbd', stacked=True) }}
                                     <div class="text-xs text-[#a1a1aa]">Self-hosted Usenet Client</div>
                                 </div>
                             </div>
                             <p class="text-xs text-[#71717a] mt-1">Local or LAN SABnzbd instance with per-media categories and queue polling.</p>
-                            {{ experimental_pill('sabnzbd', stacked=True) }}
                         </button>
                         <button type="button" @click="selectProvider('premiumize', 'downloader', 'Premiumize')" class="bg-[#111115] hover:bg-[#2a2a32] border border-[#3f3f46] hover:border-purple-400 rounded-xl p-4 text-left transition-all group flex flex-col justify-between">
                             <div class="flex items-center gap-3 mb-2">
                                 <div class="w-10 h-10 rounded-lg bg-blue-500/20 text-blue-400 flex items-center justify-center font-bold text-lg">PM</div>
                                 <div>
                                     <div class="font-bold text-white group-hover:text-purple-400 transition-colors">Premiumize</div>
+                                    {{ experimental_pill('premiumize', stacked=True) }}
                                     <div class="text-xs text-[#a1a1aa]">Cloud Debrid Service</div>
                                 </div>
                             </div>
                             <p class="text-xs text-[#71717a] mt-1">Premiumize cloud downloader with fair-use rate limit handling.</p>
-                            {{ experimental_pill('premiumize', stacked=True) }}
                         </button>
                     </div>
                 </div>
@@ -189,10 +189,10 @@
                                 <div data-badge="{{ preset.badge }}" class="w-10 h-10 rounded-lg {{ indexer_badge_classes[preset.color] }} flex items-center justify-center font-bold text-xs">{{ preset.badge }}</div>
                                 <div>
                                     <div class="font-bold text-white group-hover:text-blue-400 transition-colors">{{ preset.name }}</div>
+                                    {{ experimental_pill(preset.type, stacked=True) }}
                                     <div class="text-xs text-[#a1a1aa]">{{ 'Any Newznab-compatible indexer' if preset.type == 'newznab' else 'Usenet Indexer (Newznab API)' }}</div>
                                 </div>
                             </div>
-                            {{ experimental_pill(preset.type, stacked=True) }}
                         </button>
                         {% endfor %}
                     </div>
