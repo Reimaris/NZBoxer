@@ -35,7 +35,11 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from app.config import reload_settings_from_db, settings
-from app.core.anime_titles import anime_season_title_for, anime_title_for
+from app.core.anime_titles import (
+    anime_season_title_for,
+    anime_title_for,
+    normalize_anime_title_language,
+)
 from app.core.time_utils import format_local_datetime
 from app.db.database import async_session_factory, close_db, init_db
 from app.version import APP_VERSION
@@ -1498,6 +1502,11 @@ async def save_global_settings(request: Request):
                     db_settings.download_timeout_minutes = 60
             except (ValueError, TypeError):
                 db_settings.download_timeout_minutes = 60
+
+        if "anime_title_language" in payload:
+            db_settings.anime_title_language = normalize_anime_title_language(
+                payload["anime_title_language"]
+            )
 
         for field, allowed, default in (
             ("air_delay_hours", (0, 1, 2, 4, 6, 12), 2),

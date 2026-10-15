@@ -195,3 +195,27 @@ async def test_push_modal_movie_entry_has_no_episode_accordion(
     assert "Episodes (1)" in html
     assert f"expandedSeasons[{movie.id}]" not in html
     assert html.count("Episodes (1)") == 1
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("posted", "stored"),
+    [("english", "english"), ("native", "native"), ("bogus", "romaji")],
+)
+async def test_settings_auto_save_anime_title_language(
+    async_client, db_session, posted, stored
+):
+    from app.db.models import SystemSettings
+
+    resp = await async_client.post(
+        "/settings/auto-save", data={"anime_title_language": posted}
+    )
+    assert resp.status_code < 400
+    db_session.expire_all()
+    row = await db_session.get(SystemSettings, 1)
+    assert row is not None
+    assert row.anime_title_language == stored
+
+    html = (await async_client.get("/settings")).text
+    assert 'name="anime_title_language"' in html
+    assert f'value="{stored}" selected' in html
