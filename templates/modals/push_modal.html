@@ -464,7 +464,7 @@
                                     Delete from {{ downloader_name }}
                                 </button>
                                 {% endif %}
-                                {% if entry.episodes %}
+                                {% if entry.episodes and entry.entry_type != 'movie' %}
                                 <button type="button"
                                         @click="expandedSeasons[{{ entry.id }}] = !expandedSeasons[{{ entry.id }}]"
                                         class="text-xs text-[#d40060] hover:text-pink-400 font-semibold px-2.5 py-0.5 rounded-full bg-[#111115] border border-[#3f3f46]">
@@ -474,7 +474,7 @@
                             </div>
                         </div>
 
-                        {% if entry.episodes %}
+                        {% if entry.episodes and entry.entry_type != 'movie' %}
                         <div x-show="expandedSeasons[{{ entry.id }}]" x-cloak class="mt-3 pt-3 border-t border-[#3f3f46] grid grid-cols-2 sm:grid-cols-3 gap-2">
                             {% for ep in entry.episodes %}
                             <div class="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg bg-[#111115] border border-[#3f3f46] text-xs hover:border-[#d40060] transition">

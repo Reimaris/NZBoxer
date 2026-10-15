@@ -167,3 +167,31 @@ def test_jinja_globals_registered():
 
     assert templates.env.globals["anime_title_for"] is anime_title_for
     assert templates.env.globals["anime_season_title_for"] is anime_season_title_for
+
+
+@pytest.mark.anyio
+async def test_push_modal_movie_entry_has_no_episode_accordion(
+    db_session, async_client, default_search_preset
+):
+    item, seasons, _ = await make_series(
+        db_session,
+        seasons=[
+            {"season_number": 1, "entry_type": "season", "title": "Arc"},
+            {"season_number": 2, "entry_type": "movie", "title": "Film"},
+        ],
+        episodes_per_season=1,
+        media_type=MediaType.ANIME,
+    )
+    await db_session.commit()
+    season, movie = seasons
+
+    html = (
+        await async_client.get(
+            f"/api/items/{item.id}/push-modal", headers={"Accept": "text/html"}
+        )
+    ).text
+
+    assert f"expandedSeasons[{season.id}]" in html
+    assert "Episodes (1)" in html
+    assert f"expandedSeasons[{movie.id}]" not in html
+    assert html.count("Episodes (1)") == 1
