@@ -49,7 +49,7 @@ async def test_settings_field_is_switch_and_keeps_autosave(settings_html, field)
     track = _track_after(settings_html, tag)
     expected = (
         "peer-checked:bg-amber-500"
-        if field == "dry_run"
+        if field in ("dry_run", "debug_mode")
         else "peer-checked:bg-[#d40060]"
     )
     assert expected in track
