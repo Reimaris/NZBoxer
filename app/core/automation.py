@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core import air_dates as air_date_engine
+from app.core.anime_titles import apply_title_variants
 from app.core.logging_config import log_prefix, log_process_end, log_process_start
 from app.core.phase_stats import (
     AirDateRefreshStats,
@@ -1266,6 +1267,8 @@ async def enrich_anime_metadata(session: AsyncSession, item: MediaItem) -> Media
         titles = root_node.get("title", {})
         item.title = titles.get("english") or titles.get("romaji") or item.title
 
+    apply_title_variants(item, root_node)
+
     root_air_date = _parse_anilist_start_date(root_node.get("startDate"), now)
     if item.release_date is None and root_air_date is not None:
         item.release_date = root_air_date
@@ -1340,6 +1343,7 @@ async def enrich_anime_metadata(session: AsyncSession, item: MediaItem) -> Media
                 if is_season_future
                 else SeasonStatus.SEARCHING,
             )
+            apply_title_variants(season_obj, anilist_node)
             session.add(season_obj)
             await session.flush()
             created_or_updated_seasons.append(season_obj)
@@ -1369,6 +1373,7 @@ async def enrich_anime_metadata(session: AsyncSession, item: MediaItem) -> Media
                 existing_season.mal_id = int(node_mal_id)
             if resolved_title and not existing_season.title:
                 existing_season.title = resolved_title
+            apply_title_variants(existing_season, anilist_node)
             if (
                 node_id == original_anilist_id
                 and original_simkl_id
@@ -1494,6 +1499,7 @@ async def refresh_due_future_anime_seasons(session: AsyncSession) -> int:
             if not aid or int(aid) not in batch_details:
                 continue
             node = batch_details[int(aid)]
+            apply_title_variants(s, node)
             if node.get("idMal") is not None and not s.mal_id:
                 s.mal_id = int(node["idMal"])
             start_date = node.get("startDate")
@@ -1871,6 +1877,7 @@ async def reset_anime_metadata(session: AsyncSession, item_id: int) -> MediaItem
                 item.title = titles["english"]
             elif titles.get("romaji"):
                 item.title = titles["romaji"]
+        apply_title_variants(item, root_node)
     else:
         single_details = await anilist.get_anime_season_details(item.anilist_id)
         if single_details:
@@ -1881,6 +1888,7 @@ async def reset_anime_metadata(session: AsyncSession, item_id: int) -> MediaItem
                 item.title = titles["english"]
             elif titles.get("romaji"):
                 item.title = titles["romaji"]
+            apply_title_variants(item, single_details)
         else:
             logger.warning(
                 "reset_anime_metadata: No AniList data returned for ID %d.",
@@ -1966,6 +1974,7 @@ async def reset_anime_metadata(session: AsyncSession, item_id: int) -> MediaItem
                 if is_season_future
                 else SeasonStatus.SEARCHING,
             )
+            apply_title_variants(season_obj, node)
             session.add(season_obj)
             await session.flush()
             existing_seasons_map[s_num] = season_obj
@@ -1980,6 +1989,7 @@ async def reset_anime_metadata(session: AsyncSession, item_id: int) -> MediaItem
                 or season_title.get("native")
                 or season_obj.title
             )
+            apply_title_variants(season_obj, node)
             season_obj.episode_count = ep_count or season_obj.episode_count
             season_obj.air_date = s_air_date or season_obj.air_date
             season_obj.anilist_id = node.get("id") or season_obj.anilist_id
@@ -2162,6 +2172,7 @@ async def _refresh_future_movie_release_dates(
                     [int(movie.anilist_id)]
                 )
                 node = batch.get(int(movie.anilist_id)) or {}
+                apply_title_variants(movie, node)
                 release_date = _parse_anilist_start_date(node.get("startDate"), now)
             else:
                 continue

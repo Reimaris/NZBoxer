@@ -118,3 +118,10 @@ def find_matched_child(
         ):
             return {"label": str(child.get("label") or ""), "title": title}
     return None
+
+
+def apply_title_variants(target: MediaItem | Season, node: Mapping[str, Any]) -> None:
+    """Write AniList title variants onto ``target``; blank values never overwrite."""
+    for column, value in extract_title_variants(node).items():
+        if value:
+            setattr(target, column, value)

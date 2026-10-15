@@ -219,3 +219,64 @@ async def test_settings_auto_save_anime_title_language(
     html = (await async_client.get("/settings")).text
     assert 'name="anime_title_language"' in html
     assert f'value="{stored}" selected' in html
+
+
+NODE_AOT_S4 = {
+    "id": 110277,
+    "title": {
+        "romaji": "Shingeki no Kyojin: The Final Season",
+        "english": "Attack on Titan: The Final Season",
+        "native": "進撃の巨人 The Final Season",
+    },
+}
+
+
+@pytest.mark.anyio
+async def test_enrich_anime_metadata_persists_title_variants(db_session):
+    from unittest.mock import AsyncMock, patch
+
+    from sqlalchemy import select
+    from sqlalchemy.orm import selectinload
+
+    from app.core.automation import enrich_anime_metadata
+    from app.db.models import MediaItem
+
+    item, _, _ = await make_series(
+        db_session,
+        seasons=0,
+        media_type=MediaType.ANIME,
+        title="Attack on Titan",
+        anilist_id=16498,
+        title_native="既存",
+    )
+    await db_session.flush()
+    hierarchy = [
+        {**NODE_AOT, "format": "TV", "episodes": 1, "entry_type": "season"},
+        {**NODE_AOT_S4, "format": "TV", "episodes": 1, "entry_type": "season"},
+    ]
+    root = {**NODE_AOT, "title": {**NODE_AOT["title"], "native": None}}
+    payload = {"root": root, "hierarchy": hierarchy}
+    with patch(
+        "app.services.anilist.get_anime_root_and_hierarchy",
+        new=AsyncMock(return_value=payload),
+    ):
+        await enrich_anime_metadata(db_session, item)
+
+    loaded = (
+        await db_session.execute(
+            select(MediaItem)
+            .where(MediaItem.id == item.id)
+            .options(selectinload(MediaItem.seasons))
+        )
+    ).scalar_one()
+    # Blank AniList value never overwrites an existing variant; title untouched.
+    assert (loaded.title_english, loaded.title_romaji) == (
+        "Attack on Titan",
+        "Shingeki no Kyojin",
+    )
+    assert loaded.title_native == "既存"
+    assert loaded.title == "Attack on Titan"
+    s4 = next(s for s in loaded.seasons if s.anilist_id == 110277)
+    assert s4.title_romaji == "Shingeki no Kyojin: The Final Season"
+    assert s4.title_native == "進撃の巨人 The Final Season"
+    assert s4.display_title("english") == "Attack on Titan: The Final Season"
