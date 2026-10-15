@@ -223,7 +223,7 @@ async def test_refresh_due_future_tv_seasons(db_session, monkeypatch):
             },
             {
                 "episode_number": 3,
-                "air_date": "2026-10-15",
+                "air_date": "2099-01-01",
                 "name": "Ep 3",
             },
         ],

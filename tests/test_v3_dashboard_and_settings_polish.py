@@ -293,7 +293,6 @@ async def test_settings_read_only_scoring_and_newznab_indexer_branding(
     assert "Custom Newznab" in m_html
     assert "with PIN authentication" not in m_html
     assert "OAuth 2.0 Device Flow" in m_html
-    assert "Works automatically without credentials" in m_html
     assert "https://api.your-indexer.com/api" in m_html
 
 

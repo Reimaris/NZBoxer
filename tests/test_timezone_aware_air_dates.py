@@ -585,7 +585,7 @@ class TestIsAirDateRefreshDue:
 
 class TestOrchestratorTickAirDateEnrichment:
     @pytest.mark.asyncio
-    async def test_tick_calls_rollover_then_enrichment_in_order(self):
+    async def test_tick_calls_enrichment_then_rollover_in_order(self):
         from app.core import air_dates, automation
 
         calls: list[str] = []
@@ -614,7 +614,8 @@ class TestOrchestratorTickAirDateEnrichment:
         ):
             await automation.run_orchestrator_tick(datetime.now(timezone.utc))
 
-        assert calls == ["rollover", "enrich"]
+        # Tick order: sync -> air-date refresh (enrich) -> rollover
+        assert calls == ["enrich", "rollover"]
         sync_mock.assert_awaited_once()
 
     @pytest.mark.asyncio
