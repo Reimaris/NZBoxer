@@ -690,3 +690,21 @@ async def test_card5_synthetic_row_rendering(async_client, db_session: AsyncSess
     # Ensure TorBox-specific action buttons are NOT rendered for dry-run row
     assert f'hx-post="/api/pushes/{rec.id}/cancel"' not in html
     assert f'hx-post="/api/pushes/{rec.id}/delete-transfer"' not in html
+
+
+@pytest.mark.parametrize("is_dry_run", [False, True])
+def test_discord_embed_footer_uses_app_version(is_dry_run: bool):
+    """Discord embed footer shows the running app version, not a hardcoded one."""
+    from app.services.discord import build_discord_embed
+    from app.version import APP_VERSION
+
+    embed = build_discord_embed(
+        event_type="push_initiated",
+        media_title="Inception",
+        media_year=2010,
+        target_label="Movie",
+        release_name="Inception.2010.1080p.BluRay.x264",
+        resolution="1080p",
+        is_dry_run=is_dry_run,
+    )
+    assert embed["footer"]["text"].startswith(f"NZBoxer v{APP_VERSION}")

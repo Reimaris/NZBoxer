@@ -24,6 +24,7 @@ from sqlalchemy import select
 from app.config import DEFAULT_USER_AGENT, settings
 from app.services import telegram
 from app.services.downloaders.base import DOWNLOADER_DISPLAY_NAMES
+from app.version import APP_VERSION
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -206,7 +207,9 @@ def build_discord_embed(
         "color": color,
         "fields": fields,
         "footer": {
-            "text": "NZBoxer v3.0 (Dry-Run Sandbox)" if is_dry_run else "NZBoxer v3.0"
+            "text": f"NZBoxer v{APP_VERSION} (Dry-Run Sandbox)"
+            if is_dry_run
+            else f"NZBoxer v{APP_VERSION}"
         },
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
