@@ -1586,7 +1586,7 @@ document.addEventListener('alpine:init', () => {
                 </form>
             </div>
             <div class="flex-1 min-w-0">
-                <div id="search-loading" class="htmx-indicator flex flex-col items-center justify-center py-12">
+                <div id="search-loading" class="htmx-indicator hidden [&.htmx-request]:flex flex-col items-center justify-center py-12">
                     <p class="text-[#a1a1aa] font-medium animate-pulse">Querying indexers and evaluating releases...</p>
                 </div>
                 <div id="search-results" class="flex flex-col gap-3">
