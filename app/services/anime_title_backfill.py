@@ -11,6 +11,7 @@ from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.anime_titles import apply_title_variants
+from app.core.job_lock import library_job_lock
 from app.core.logging_config import log_process_end, log_process_start
 from app.db.models import MediaItem, MediaType, Season
 from app.services import anilist
@@ -98,29 +99,30 @@ async def run_anime_title_backfill(
         for index, chunk in enumerate(chunks):
             if index:
                 await asyncio.sleep(chunk_delay)
-            try:
-                nodes = await fetch(chunk)
-            except Exception as exc:
-                stats.chunks_failed += 1
-                logger.warning(
-                    "[BACKFILL] anime titles chunk failed (%d ids): %s",
-                    len(chunk),
-                    anilist._sanitize_error_message(exc),
-                )
-                continue
-            chunk_ids = set(chunk)
-            stats.ids_missing += sum(1 for aid in chunk if aid not in nodes)
-            for row in items:
-                node = nodes.get(int(row.anilist_id or 0))
-                if row.anilist_id in chunk_ids and node:
-                    apply_title_variants(row, node)
-                    stats.items_updated += 1
-            for season in seasons:
-                node = nodes.get(int(season.anilist_id or 0))
-                if season.anilist_id in chunk_ids and node:
-                    apply_title_variants(season, node)
-                    stats.seasons_updated += 1
-            await session.commit()
+            async with library_job_lock:
+                try:
+                    nodes = await fetch(chunk)
+                except Exception as exc:
+                    stats.chunks_failed += 1
+                    logger.warning(
+                        "[BACKFILL] anime titles chunk failed (%d ids): %s",
+                        len(chunk),
+                        anilist._sanitize_error_message(exc),
+                    )
+                    continue
+                chunk_ids = set(chunk)
+                stats.ids_missing += sum(1 for aid in chunk if aid not in nodes)
+                for row in items:
+                    node = nodes.get(int(row.anilist_id or 0))
+                    if row.anilist_id in chunk_ids and node:
+                        apply_title_variants(row, node)
+                        stats.items_updated += 1
+                for season in seasons:
+                    node = nodes.get(int(season.anilist_id or 0))
+                    if season.anilist_id in chunk_ids and node:
+                        apply_title_variants(season, node)
+                        stats.seasons_updated += 1
+                await session.commit()
 
     logger.info(
         "[BACKFILL] anime titles: items=%d seasons=%d missing=%d failed_chunks=%d",

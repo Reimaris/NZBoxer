@@ -578,3 +578,32 @@ async def test_search_payload_and_rendered_children(async_client, db_session):
     assert franchise["children"][0]["title"] == "Attack on Titan: The Final Season"
     assert "shingeki no kyojin: the final season" in franchise["children"][0]["names"]
     assert payload["shingeki no kyojin"]["children"][0]["label"] == "Season 1"
+
+
+@pytest.mark.anyio
+async def test_backfill_waits_for_running_orchestrator_tick(
+    db_session, session_factory, backfill_sleeps
+):
+    import asyncio
+
+    from app.core.job_lock import library_job_lock
+    from app.services.anime_title_backfill import run_anime_title_backfill
+
+    await make_series(
+        db_session, seasons=0, media_type=MediaType.ANIME, anilist_id=16498
+    )
+    await db_session.commit()
+    calls: list[list[int]] = []
+
+    async def fetch(ids):
+        calls.append(ids)
+        return {16498: NODE_AOT}
+
+    async with library_job_lock:  # a tick is running
+        task = asyncio.create_task(
+            run_anime_title_backfill(session_factory, fetch=fetch)
+        )
+        await asyncio.sleep(0.05)
+        assert calls == [] and not task.done()
+    stats = await asyncio.wait_for(task, 5)
+    assert calls == [[16498]] and stats.items_updated == 1

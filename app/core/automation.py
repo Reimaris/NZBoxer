@@ -20,6 +20,7 @@ from sqlalchemy.orm import selectinload
 
 from app.core import air_dates as air_date_engine
 from app.core.anime_titles import apply_title_variants
+from app.core.job_lock import library_job_lock
 from app.core.logging_config import log_prefix, log_process_end, log_process_start
 from app.core.phase_stats import (
     AirDateRefreshStats,
@@ -373,6 +374,12 @@ async def run_periodic_watchlist_sync_if_due(now: datetime | None = None) -> boo
 
 
 async def run_orchestrator_tick(now: datetime | None = None) -> None:
+    """Run one orchestrator tick, serialized against the anime title backfill."""
+    async with library_job_lock:
+        await _run_orchestrator_tick(now)
+
+
+async def _run_orchestrator_tick(now: datetime | None = None) -> None:
     """Execute the 15-minute orchestrator: watchlist sync (if due), air date refresh, air date
     rollover, history autoclear and (at xx:00) the air-date push and upgrade pass, in that order."""
     if await setup_blocks("orchestrator"):
