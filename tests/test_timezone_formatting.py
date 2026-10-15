@@ -102,7 +102,7 @@ async def test_run_orchestrator_tick_logs_local_datetime(
 
     log_messages = [r.getMessage() for r in records]
     assert any(
-        "[ORCHESTRATOR] Tick start at 2026-10-10 12:15:00" in msg
+        "===== [START] Orchestrator Tick 2026-10-10 12:15:00 =====" in msg
         for msg in log_messages
     )
 

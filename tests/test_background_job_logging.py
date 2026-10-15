@@ -132,20 +132,19 @@ async def test_idle_tick_info_lines(caplog, monkeypatch):
         for r in caplog.records
         if r.levelno == logging.INFO and r.getMessage() in all_msgs
     ]
-    assert msgs[0].startswith("[ORCHESTRATOR] Tick start at ")
-    assert msgs[1:6] == [
+    assert msgs == [
         f"{SYNC_PREFIX} no active watchlist provider with credentials",
         "[ORCHESTRATOR] [2/5] Broadcast air date refresh: 0 refreshed (0 frozen, 0 paced)",
         "[ORCHESTRATOR] [3/5] Air date rollover: 0 due episodes/seasons rolled over to searching",
         "[ORCHESTRATOR] [4/5] History autoclear: 0 entries cleared (pruned=0, aged=0)",
         "[ORCHESTRATOR] [5/5] Air-date push & upgrade: skipped (runs at :00 only)",
     ]
-    assert msgs[-1].startswith("[ORCHESTRATOR] Tick complete (took ")
     banners = [
         r.getMessage() for r in caplog.records if r.getMessage().startswith("=====")
     ]
     assert banners[0].startswith("===== [START] Orchestrator Tick 20")
     assert banners[-1].startswith("===== [END] Orchestrator Tick 20")
+    assert " (took " in banners[-1]
 
 
 async def test_tick_reports_rollover_count(db_session, caplog, monkeypatch):
@@ -434,3 +433,21 @@ async def test_sync_phase_1_disabled_categories_filtered(
         entries=entries,
     )
     assert msgs[0] == "[SYNC] [1/3] Simkl: fetched 3 entries (1 in enabled categories)"
+
+
+async def test_sync_lines_inside_tick_carry_orchestrator_step_prefix(
+    db_session, caplog, monkeypatch
+):
+    db_session.add(_provider(last=None))
+    await db_session.commit()
+
+    async def fake_sync(banner=True):
+        automation.logger.info("[SYNC] [1/3] Fake: fetched 1 entries")
+
+    monkeypatch.setattr(automation, "sync_all_providers", fake_sync)
+    with caplog.at_level(logging.INFO, logger="app.core.automation"):
+        await automation.run_orchestrator_tick(_utc(10, 20))
+        automation.logger.info("[SYNC] outside tick")
+    msgs = [r.getMessage() for r in caplog.records]
+    assert "[ORCHESTRATOR] [1/5] [SYNC] [1/3] Fake: fetched 1 entries" in msgs
+    assert "[SYNC] outside tick" in msgs

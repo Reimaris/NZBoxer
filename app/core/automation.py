@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core import air_dates as air_date_engine
-from app.core.logging_config import log_process_end, log_process_start
+from app.core.logging_config import log_prefix, log_process_end, log_process_start
 from app.core.phase_stats import (
     AirDateRefreshStats,
     TbaDiscoveryStats,
@@ -384,7 +384,6 @@ async def run_orchestrator_tick(now: datetime | None = None) -> None:
 
     tick_label = format_local_datetime(now, "%Y-%m-%d %H:%M:%S")
     log_process_start(logger, "Orchestrator Tick", tick_label)
-    logger.info("[ORCHESTRATOR] Tick start at %s", tick_label)
 
     # 1. Periodic watchlist sync (due once its interval elapsed since the last stamp)
     tag = "[ORCHESTRATOR] [1/5] Periodic watchlist sync:"
@@ -415,7 +414,11 @@ async def run_orchestrator_tick(now: datetime | None = None) -> None:
                 logger.info("%s due but a sync is already running; skipping", tag)
             else:
                 logger.info("%s due -> triggering provider sync", tag)
-                await sync_all_providers(banner=False)
+                token = log_prefix.set("[ORCHESTRATOR] [1/5] ")
+                try:
+                    await sync_all_providers(banner=False)
+                finally:
+                    log_prefix.reset(token)
         elif status.state == "not_due":
             logger.info(
                 "%s not due (%dm elapsed, interval %dm; %dm remaining)",
@@ -501,7 +504,6 @@ async def run_orchestrator_tick(now: datetime | None = None) -> None:
         )
 
     took = time.monotonic() - start
-    logger.info("[ORCHESTRATOR] Tick complete (took %dms)", int(took * 1000))
     log_process_end(logger, "Orchestrator Tick", tick_label, took)
 
 
@@ -770,6 +772,7 @@ async def _run_provider_sync(
     import json
 
     results: list[dict[str, Any]] = []
+    started = time.monotonic()
     if banner:
         log_process_start(logger, "Provider Sync Engine")
     from app.db.models import Provider
@@ -846,7 +849,9 @@ async def _run_provider_sync(
             await session.rollback()
         finally:
             if banner:
-                log_process_end(logger, "Provider Sync Engine")
+                log_process_end(
+                    logger, "Provider Sync Engine", took_s=time.monotonic() - started
+                )
     return results
 
 
