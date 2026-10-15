@@ -523,3 +523,53 @@ async def test_history_and_active_use_language_with_orphan_fallback(db_session):
     rows = {r["history_id"]: r for r in await get_active_pushes(db_session)}
     assert rows[active.id]["display_title"] == "Attack on Titan"
     assert rows[active.id]["title_and_target"].startswith("Attack on Titan")
+
+
+# --- m65-09: multi-name search payload and badge data -----------------------
+
+
+@pytest.mark.anyio
+async def test_search_payload_and_rendered_children(async_client, db_session):
+    import json
+    import re
+
+    await _seed_titled(db_session, "english")
+    await make_series(
+        db_session,
+        seasons=[
+            {
+                "season_number": 4,
+                "type_number": 4,
+                "title": "Final",
+                "title_english": "Attack on Titan: The Final Season",
+                "title_romaji": "Shingeki no Kyojin: The Final Season",
+            },
+            {
+                "season_number": 5,
+                "type_number": 1,
+                "entry_type": "movie",
+                "title": "Movie",
+                "title_english": "AoT Movie",
+            },
+        ],
+        media_type=MediaType.ANIME,
+        status=MediaStatus.SEARCHING,
+        title="Franchise",
+        simkl_id=4242,
+    )
+    await db_session.commit()
+    html = (await async_client.get("/")).text
+
+    assert "data-search-children" in html
+    assert "Matched: <span x-text=" in html
+    m = re.search(r'id="video-items-payload"[^>]*>\s*(\[.*?\])\s*</script>', html, re.S)
+    assert m is not None
+    payload = {p["title"]: p for p in json.loads(m.group(1))}
+    parent = payload["shingeki no kyojin"]
+    assert set(parent["names"].split(" ")) >= {"shingeki", "no", "kyojin", "進撃の巨人"}
+    assert "attack on titan" in parent["names"]
+    franchise = payload["franchise"]
+    assert [c["label"] for c in franchise["children"]] == ["Season 4", "Movie 1"]
+    assert franchise["children"][0]["title"] == "Attack on Titan: The Final Season"
+    assert "shingeki no kyojin: the final season" in franchise["children"][0]["names"]
+    assert payload["shingeki no kyojin"]["children"][0]["label"] == "Season 1"

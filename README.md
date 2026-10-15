@@ -31,6 +31,7 @@ It keeps your **Movies**, **TV Series** and **Anime** in sync with your watchlis
 ## Key Features
 
 - **Multi-Provider Watchlists:** Sync Simkl, AniList, Plex and MyAnimeList simultaneously, with cross-provider deduplication and furthest-progress tracking.
+- **Anime Title Language:** Choose romaji, English or native titles in Settings; dashboard search matches every language, including the seasons and movies inside a franchise.
 - **Smart On-Demand Acquisition:** 1-click auto-push, a preset-governed season pack matrix, opt-in air-date auto-pushes, and time-bounded episode upgrades.
 - **3-Layer Security & Fake Detection:** Layer 1 filters indexer metadata, Layer 2 inspects the NZB XML in memory before dispatch, and Layer 3 verifies the downloader's filelist, with an unpack grace period for archives.
 - **Live Transfer Monitoring & Auto-Recovery:** Real-time speed and ETA via an Alpine poller, a stalled-transfer watchdog, and automated candidate replacement.

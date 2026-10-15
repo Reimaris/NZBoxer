@@ -19,7 +19,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import (
@@ -39,7 +39,9 @@ from app.config import reload_settings_from_db, settings
 from app.core.anime_titles import (
     anime_season_title_for,
     anime_title_for,
+    is_anime_scope,
     normalize_anime_title_language,
+    search_names,
 )
 from app.core.time_utils import format_local_datetime
 from app.db.database import (
@@ -49,6 +51,9 @@ from app.db.database import (
     init_db,
 )
 from app.version import APP_VERSION
+
+if TYPE_CHECKING:
+    from app.db.models import MediaItem
 
 # Configure logging
 config_dir = Path("/app/config")
@@ -459,6 +464,25 @@ async def dashboard(request: Request, background_tasks: BackgroundTasks):
         ready_to_push_items = [i for i in items if i.status_tier == "ready_to_push"]
         upcoming_items = [i for i in items if i.status_tier == "upcoming"]
 
+        from app.core.push_engine import get_anime_title_language
+
+        title_language = await get_anime_title_language(session)
+        search_index: dict[int, dict[str, Any]] = {
+            item.id: {
+                "names": search_names(
+                    item.title,
+                    item.alt_title,
+                    *(
+                        (item.title_english, item.title_romaji, item.title_native)
+                        if is_anime_scope(item)
+                        else ()
+                    ),
+                ),
+                "children": _search_children(item, title_language),
+            }
+            for item in items
+        }
+
         items_payload = [
             {
                 "category": "anime"
@@ -471,6 +495,8 @@ async def dashboard(request: Request, background_tasks: BackgroundTasks):
                 "title": (i.title or "").lower(),
                 "alt_title": (i.alt_title or "").lower(),
                 "ids": f"{i.tvdb_id or ''} {i.tmdb_id or ''} {i.imdb_id or ''} {i.simkl_id or ''} {i.anilist_id or ''}".lower(),
+                "names": search_index[i.id]["names"],
+                "children": search_index[i.id]["children"],
             }
             for i in items
         ]
@@ -567,6 +593,7 @@ async def dashboard(request: Request, background_tasks: BackgroundTasks):
         context={
             "items": items,
             "items_payload": items_payload,
+            "search_index": search_index,
             "in_progress_items": in_progress_items,
             "ready_to_push_items": ready_to_push_items,
             "upcoming_items": upcoming_items,
@@ -598,6 +625,26 @@ async def dashboard(request: Request, background_tasks: BackgroundTasks):
             or (not db_settings.onboarding_completed),
         },
     )
+
+
+def _search_children(item: MediaItem, language: str) -> list[dict[str, str]]:
+    """Searchable consolidated children (seasons/movies) of an anime item."""
+    if not is_anime_scope(item):
+        return []
+    children: list[dict[str, str]] = []
+    for s in sorted(item.seasons, key=lambda s: (s.watch_order, s.season_number)):
+        names = search_names(s.title, s.title_english, s.title_romaji, s.title_native)
+        if not names:
+            continue
+        kind = "Movie" if s.entry_type == "movie" else "Season"
+        children.append(
+            {
+                "label": f"{kind} {s.type_number}",
+                "title": anime_season_title_for(item, s, language),
+                "names": names,
+            }
+        )
+    return children
 
 
 def _hit_query_string(hit: dict[str, Any]) -> str:

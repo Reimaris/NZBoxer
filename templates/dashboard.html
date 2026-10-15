@@ -201,12 +201,30 @@ function initVideoDashboard() {
         setTab(newTab) {
             this.setCard(newTab);
         },
+        rowMatches(el) {
+            const q = (this.search || '').trim().toLowerCase();
+            if (!q) return true;
+            if ((el.dataset.searchNames || '').includes(q)) return true;
+            if ((el.dataset.searchIds || '').includes(q)) return true;
+            return this.rowChildren(el).some(c => (c.names || '').includes(q));
+        },
+        rowChildren(el) {
+            try { return JSON.parse(el.dataset.searchChildren || '[]'); } catch (e) { return []; }
+        },
+        matchedChild(el, shown) {
+            const q = (this.search || '').trim().toLowerCase();
+            if (!q || (el.dataset.searchNames || '').includes(q)) return null;
+            const shownLc = (shown || '').trim().toLowerCase();
+            const hit = this.rowChildren(el).find(c =>
+                (c.names || '').includes(q) && (c.title || '').trim().toLowerCase() !== shownLc);
+            return hit ? { label: hit.label, title: hit.title } : null;
+        },
         hasVisibleRows(tier) {
             const q = (this.search || '').trim().toLowerCase();
             return this.items.some(i =>
                 i.category === this.tab &&
                 i.status_tier === tier &&
-                (!q || i.title.includes(q) || i.alt_title.includes(q) || i.ids.includes(q))
+                (!q || i.title.includes(q) || i.alt_title.includes(q) || i.ids.includes(q) || (i.names || '').includes(q) || (i.children || []).some(c => (c.names || '').includes(q)))
             );
         },
         getTabCount(category) {
@@ -216,7 +234,9 @@ function initVideoDashboard() {
                 i.category === category && (
                     i.title.includes(q) ||
                     i.alt_title.includes(q) ||
-                    i.ids.includes(q)
+                    i.ids.includes(q) ||
+                    (i.names || '').includes(q) ||
+                    (i.children || []).some(c => (c.names || '').includes(q))
                 )
             ).length;
         },
@@ -674,7 +694,10 @@ document.addEventListener('alpine:init', () => {
             data-release-date="{{ eff_date.strftime('%Y-%m-%d') if eff_date else '' }}"
             data-status-rank="{% if item.status.value == 'failed' or item.status.value == 'manual_grab' %}1{% elif item.status.value == 'downloading' or item.status.value == 'rate_limited' %}2{% elif item.status.value == 'searching' or item.status.value == 'pending' %}3{% elif item.status.value == 'future' %}4{% elif item.status.value == 'downloaded' %}5{% elif item.status.value == 'completed' %}6{% else %}7{% endif %}"
             data-last-checked="{{ item.updated_at | local_datetime('%Y-%m-%d %H:%M:%S') if item.updated_at else '' }}"
-            x-show="tab === '{{ display_category }}' && ('{{ item.title|replace('\'', '\\\'') }}'.toLowerCase().includes(search.toLowerCase()) || ('{{ item.alt_title|replace('\'', '\\\'') if item.alt_title else '' }}'.toLowerCase().includes(search.toLowerCase())) || '{{ item.tvdb_id or '' }}'.includes(search) || '{{ item.tmdb_id or '' }}'.includes(search) || '{{ item.imdb_id or '' }}'.includes(search) || '{{ item.simkl_id or '' }}'.includes(search) || '{{ item.anilist_id or '' }}'.includes(search))"
+            data-search-names="{{ search_index[item.id].names }}"
+            data-search-ids="{{ ((item.tvdb_id or '') ~ ' ' ~ (item.tmdb_id or '') ~ ' ' ~ (item.imdb_id or '') ~ ' ' ~ (item.simkl_id or '') ~ ' ' ~ (item.anilist_id or '')) | lower }}"
+            data-search-children="{{ search_index[item.id].children | tojson | forceescape }}"
+            x-show="tab === '{{ display_category }}' && rowMatches($el)"
             style="display: none;">
 
             <!-- Col 1: Poster Thumbnail, Title, Mobile Category/Profile Badges, External Links & Mobile Metadata Row -->
@@ -715,6 +738,14 @@ document.addEventListener('alpine:init', () => {
                         </div>
                         {% if item.alt_title and item.alt_title | lower != anime_title_for(item, anime_title_language) | lower %}
                         <div class="text-[11px] text-slate-400 italic mt-0.5">{{ item.alt_title }}</div>
+                        {% endif %}
+                        {% if search_index[item.id].children %}
+                        <div x-data="{ m: null }"
+                             x-effect="m = matchedChild($el.closest('tr'), {{ anime_title_for(item, anime_title_language) | tojson | forceescape }})"
+                             x-show="m" style="display: none;"
+                             class="text-[11px] text-gray-400 mt-0.5">
+                            Matched: <span x-text="m && m.title"></span> (<span x-text="m && m.label"></span>)
+                        </div>
                         {% endif %}
                         <div class="flex flex-wrap gap-1.5 mt-1.5 text-[10px] font-bold">
                             {% if item.simkl_id %}
