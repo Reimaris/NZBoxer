@@ -1099,7 +1099,7 @@ document.addEventListener('alpine:init', () => {
                         data-release="{{ (h.nzb_title or '') | lower }}"
                         data-pushed-at="{{ h.pushed_at_str or '' }}"
                         data-status="{{ (h.downloader_status or '') | lower }}"
-                        x-show="historySearch.trim() === '' || '{{ (h.media_title or '')|replace('\'', '\\\'') }}'.toLowerCase().includes(historySearch.toLowerCase()) || '{{ (h.alt_title or '')|replace('\'', '\\\'') }}'.toLowerCase().includes(historySearch.toLowerCase()) || '{{ (h.nzb_title or '')|replace('\'', '\\\'') }}'.toLowerCase().includes(historySearch.toLowerCase()) || '{{ (h.target_label or '')|replace('\'', '\\\'') }}'.toLowerCase().includes(historySearch.toLowerCase()) || '{{ (h.type_label or '') | lower }}'.includes(historySearch.toLowerCase()) || '{{ (h.downloader_status or '') | lower }}'.includes(historySearch.toLowerCase())">
+                        x-show="historySearch.trim() === '' || '{{ (h.media_title or '')|replace('\'', '\\\'') }}'.toLowerCase().includes(historySearch.toLowerCase()) || '{{ (h.display_title or '')|replace('\'', '\\\'') }}'.toLowerCase().includes(historySearch.toLowerCase()) || '{{ (h.alt_title or '')|replace('\'', '\\\'') }}'.toLowerCase().includes(historySearch.toLowerCase()) || '{{ (h.nzb_title or '')|replace('\'', '\\\'') }}'.toLowerCase().includes(historySearch.toLowerCase()) || '{{ (h.target_label or '')|replace('\'', '\\\'') }}'.toLowerCase().includes(historySearch.toLowerCase()) || '{{ (h.type_label or '') | lower }}'.includes(historySearch.toLowerCase()) || '{{ (h.downloader_status or '') | lower }}'.includes(historySearch.toLowerCase())">
                         <!-- Desktop Selection Checkbox Col -->
                         <td x-show="isSelectingHistory" class="hidden md:table-cell md:px-3 md:py-3.5 text-center w-10">
                             <input type="checkbox"
@@ -1132,10 +1132,10 @@ document.addEventListener('alpine:init', () => {
                                                 hx-target="#modal-container"
                                                 hx-swap="innerHTML"
                                                 class="font-bold text-white hover:text-[#d40060] transition-colors text-left">
-                                            {{ h.media_title }}
+                                            {{ h.display_title or h.media_title }}
                                         </button>
                                         {% else %}
-                                        <span class="font-bold text-gray-200">{{ h.media_title }}</span>
+                                        <span class="font-bold text-gray-200">{{ h.display_title or h.media_title }}</span>
                                         {% endif %}
                                         {% if h.media_year %}
                                         <span class="text-xs text-[#a1a1aa]">({{ h.media_year }})</span>
@@ -1156,7 +1156,7 @@ document.addEventListener('alpine:init', () => {
                                         <span class="px-1.5 py-0.5 text-[10px] font-semibold rounded bg-zinc-500/15 text-zinc-400 border border-zinc-500/30">Pruned from watchlist</span>
                                         {% endif %}
                                     </div>
-                                    {% if h.alt_title and h.alt_title | lower != h.media_title | lower %}
+                                    {% if h.alt_title and h.alt_title | lower != (h.display_title or h.media_title) | lower %}
                                     <div class="text-[11px] text-slate-400 italic mt-0.5">{{ h.alt_title }}</div>
                                     {% endif %}
                                     <div class="flex flex-wrap gap-1.5 mt-2 text-[10px] font-bold">

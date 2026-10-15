@@ -1,5 +1,7 @@
 """m65: anime title language columns and idempotent migration."""
 
+from datetime import datetime, timezone
+
 import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
@@ -460,3 +462,64 @@ async def test_live_action_show_ignores_variants(async_client, db_session):
     ).json()
     assert data["item"]["display_title"] == "Shingeki no Kyojin"
     assert data["entries"][0]["display_title"] == "Season One"
+
+
+# --- m65-08: push history and active pushes ---------------------------------
+
+
+@pytest.mark.anyio
+async def test_history_and_active_use_language_with_orphan_fallback(db_session):
+    from app.core.transfer_poller import get_active_pushes, get_push_history_ledger
+    from app.db.models import SystemSettings
+    from tests.conftest import make_history
+
+    settings_row = await db_session.get(SystemSettings, 1)
+    if settings_row is None:
+        settings_row = SystemSettings(id=1)
+        db_session.add(settings_row)
+    settings_row.anime_title_language = "english"
+    item, _, _ = await make_series(
+        db_session,
+        seasons=0,
+        media_type=MediaType.ANIME,
+        title="Shingeki no Kyojin",
+        title_english="Attack on Titan",
+    )
+    show, _, _ = await make_series(
+        db_session,
+        seasons=0,
+        media_type=MediaType.SHOW,
+        title="Plain Show",
+        title_english="Ignored",
+        simkl_id=777,
+    )
+    done = await make_history(db_session, item=item, is_dismissed=True)
+    orphan = await make_history(
+        db_session,
+        media_item_id=None,
+        media_title="Orphan Title",
+        is_dismissed=True,
+    )
+    live = await make_history(
+        db_session, item=show, is_dismissed=True, media_title="Plain Show"
+    )
+    await db_session.commit()
+
+    by_id = {r["id"]: r for r in await get_push_history_ledger(db_session)}
+    assert by_id[done.id]["display_title"] == "Attack on Titan"
+    assert by_id[done.id]["media_title"] == "Shingeki no Kyojin"
+    assert by_id[orphan.id]["display_title"] == "Orphan Title"
+    assert by_id[live.id]["display_title"] == "Plain Show"
+
+    active = await make_history(
+        db_session,
+        item=item,
+        is_dismissed=False,
+        status_detail="downloading",
+        dispatched_at=datetime.now(timezone.utc),
+    )
+    item.status = MediaStatus.DOWNLOADING
+    await db_session.commit()
+    rows = {r["history_id"]: r for r in await get_active_pushes(db_session)}
+    assert rows[active.id]["display_title"] == "Attack on Titan"
+    assert rows[active.id]["title_and_target"].startswith("Attack on Titan")

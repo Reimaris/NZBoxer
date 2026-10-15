@@ -33,6 +33,7 @@ from typing import TYPE_CHECKING, Any, cast
 from sqlalchemy import CursorResult, delete, exists, func, select
 from sqlalchemy.orm import selectinload
 
+from app.core.anime_titles import anime_title_for
 from app.core.failure_logger import log_failure
 from app.core.fake_detector import is_transfer_filelist_fake
 from app.core.parser import build_release_feature_pills
@@ -1724,6 +1725,12 @@ def _row_downloader_type(h: DownloadHistory) -> str:
     return dtype if dtype in DOWNLOADER_DISPLAY_NAMES else "torbox"
 
 
+async def _anime_title_language(session: AsyncSession) -> str:
+    from app.core.push_engine import get_anime_title_language
+
+    return await get_anime_title_language(session)
+
+
 async def get_active_pushes(session: AsyncSession) -> list[dict[str, Any]]:
     """Return flat list of active transfers (`DOWNLOADING`), recently completed transfers within 5m (`Ready on <downloader>`), and unacknowledged failed pushes within 5m (`FAILED` & `is_dismissed == False`)."""
     stmt = (
@@ -1737,6 +1744,7 @@ async def get_active_pushes(session: AsyncSession) -> list[dict[str, Any]]:
         .order_by(DownloadHistory.dispatched_at.desc(), DownloadHistory.id.desc())
     )
     rows = (await session.execute(stmt)).scalars().all()
+    language = await _anime_title_language(session)
 
     now_utc = datetime.now(timezone.utc)
     from app.core.rate_limit_queue import (
@@ -1822,13 +1830,14 @@ async def get_active_pushes(session: AsyncSession) -> list[dict[str, Any]]:
         target_label = discord.format_target_label(
             item=item, season=season, episode=episode
         )
+        display_title = anime_title_for(item, language)
         title_and_target = (
-            f"{item.title} ({item.year})"
+            f"{display_title} ({item.year})"
             if target_label == "Movie" and item.year
             else (
-                item.title
+                display_title
                 if target_label == "Movie"
-                else f"{item.title} — {target_label}"
+                else f"{display_title} — {target_label}"
             )
         )
 
@@ -1890,6 +1899,7 @@ async def get_active_pushes(session: AsyncSession) -> list[dict[str, Any]]:
                 "season_id": h.season_id,
                 "episode_id": h.episode_id,
                 "media_title": item.title,
+                "display_title": display_title,
                 "target_label": target_label,
                 "title_and_target": title_and_target,
                 "release_name": h.nzb_title,
@@ -1932,6 +1942,7 @@ async def get_active_pushes(session: AsyncSession) -> list[dict[str, Any]]:
                 "season_id": rec.season_id,
                 "episode_id": rec.episode_id,
                 "media_title": rec.media_title,
+                "display_title": rec.media_title,
                 "target_label": rec.target_badge,
                 "title_and_target": title_and_target,
                 "release_name": rec.release_title,
@@ -3176,6 +3187,7 @@ async def get_push_history_ledger(session: AsyncSession) -> list[dict[str, Any]]
         )
     )
     rows = (await session.execute(stmt)).scalars().all()
+    language = await _anime_title_language(session)
     ledger: list[dict[str, Any]] = []
 
     for h in rows:
@@ -3186,6 +3198,7 @@ async def get_push_history_ledger(session: AsyncSession) -> list[dict[str, Any]]
         # Title & Target
         if item is not None:
             media_title = item.title
+            display_title = anime_title_for(item, language)
             media_year = item.year
             alt_title = item.alt_title
             poster_url = item.poster_url or h.poster_url
@@ -3218,6 +3231,7 @@ async def get_push_history_ledger(session: AsyncSession) -> list[dict[str, Any]]
             is_detached = False
         else:
             media_title = h.media_title or h.nzb_title
+            display_title = media_title
             media_year = h.media_year
             alt_title = None
             poster_url = h.poster_url
@@ -3325,6 +3339,7 @@ async def get_push_history_ledger(session: AsyncSession) -> list[dict[str, Any]]
                 "season_id": h.season_id,
                 "episode_id": h.episode_id,
                 "media_title": media_title,
+                "display_title": display_title,
                 "media_year": media_year,
                 "alt_title": alt_title,
                 "poster_url": poster_url,
