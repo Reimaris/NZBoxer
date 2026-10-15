@@ -370,7 +370,7 @@ async def test_backfill_chunks_sleeps_and_isolates_failures(
 
 @pytest.mark.anyio
 async def test_backfill_skips_live_action_and_empty(
-    db_session, session_factory, backfill_sleeps
+    db_session, session_factory, backfill_sleeps, caplog
 ):
     from app.services.anime_title_backfill import (
         BackfillStats,
@@ -383,9 +383,14 @@ async def test_backfill_skips_live_action_and_empty(
     async def fetch(ids):  # pragma: no cover - must not be called
         raise AssertionError("no request expected")
 
-    assert await run_anime_title_backfill(session_factory, fetch=fetch) == (
-        BackfillStats()
-    )
+    with caplog.at_level("INFO"):
+        assert await run_anime_title_backfill(session_factory, fetch=fetch) == (
+            BackfillStats()
+        )
+    log = caplog.text
+    assert "[START] Anime Title Backfill" in log
+    assert "[BACKFILL] anime titles: nothing to fill" in log
+    assert "[END] Anime Title Backfill" in log
 
 
 # --- m65-07: display in Card 3 and push modal -------------------------------

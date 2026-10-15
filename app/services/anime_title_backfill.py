@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
@@ -10,6 +11,7 @@ from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.anime_titles import apply_title_variants
+from app.core.logging_config import log_process_end, log_process_start
 from app.db.models import MediaItem, MediaType, Season
 from app.services import anilist
 
@@ -79,11 +81,17 @@ async def run_anime_title_backfill(
 ) -> BackfillStats:
     """Fill missing title variants via AniList ``id_in`` batches; failures are isolated."""
     stats = BackfillStats()
+    started = time.monotonic()
+    log_process_start(logger, "Anime Title Backfill")
     async with session_factory() as session:
         items, seasons = await _load_candidates(session)
         rows: list[MediaItem | Season] = [*items, *seasons]
         ids = sorted({int(r.anilist_id) for r in rows if r.anilist_id is not None})
         if not ids:
+            logger.info("[BACKFILL] anime titles: nothing to fill")
+            log_process_end(
+                logger, "Anime Title Backfill", took_s=time.monotonic() - started
+            )
             return stats
 
         chunks = [ids[i : i + chunk_size] for i in range(0, len(ids), chunk_size)]
@@ -121,4 +129,5 @@ async def run_anime_title_backfill(
         stats.ids_missing,
         stats.chunks_failed,
     )
+    log_process_end(logger, "Anime Title Backfill", took_s=time.monotonic() - started)
     return stats

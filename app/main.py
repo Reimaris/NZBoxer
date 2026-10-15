@@ -297,9 +297,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     # Anime title variant backfill runs off the startup path; failures never propagate.
     async def _run_title_backfill() -> None:
+        from app.core.prerequisites import setup_blocks
         from app.services.anime_title_backfill import run_anime_title_backfill
 
         try:
+            if await setup_blocks("anime title backfill"):
+                return
             await run_anime_title_backfill(get_session_factory())
         except asyncio.CancelledError:
             raise
