@@ -104,7 +104,7 @@ from app.core import automation  # noqa: E402
 from app.db.models import EpisodeStatus  # noqa: E402
 from tests.conftest import make_series  # noqa: E402
 
-SYNC_PREFIX = "[ORCHESTRATOR] [3/3] Periodic watchlist sync:"
+SYNC_PREFIX = "[ORCHESTRATOR] [1/5] Periodic watchlist sync:"
 
 
 def _orch_messages(caplog) -> list[str]:
@@ -133,12 +133,19 @@ async def test_idle_tick_info_lines(caplog, monkeypatch):
         if r.levelno == logging.INFO and r.getMessage() in all_msgs
     ]
     assert msgs[0].startswith("[ORCHESTRATOR] Tick start at ")
-    assert msgs[1:3] == [
-        "[ORCHESTRATOR] [1/3] Air date rollover: 0 due episodes/seasons rolled over to searching",
-        "[ORCHESTRATOR] [2/3] Broadcast air date refresh: 0 refreshed (0 frozen, 0 paced)",
+    assert msgs[1:6] == [
+        f"{SYNC_PREFIX} no active watchlist provider with credentials",
+        "[ORCHESTRATOR] [2/5] Broadcast air date refresh: 0 refreshed (0 frozen, 0 paced)",
+        "[ORCHESTRATOR] [3/5] Air date rollover: 0 due episodes/seasons rolled over to searching",
+        "[ORCHESTRATOR] [4/5] History autoclear: 0 entries cleared (pruned=0, aged=0)",
+        "[ORCHESTRATOR] [5/5] Air-date push & upgrade: skipped (runs at :00 only)",
     ]
-    assert msgs[3] == f"{SYNC_PREFIX} no active watchlist provider with credentials"
     assert msgs[-1].startswith("[ORCHESTRATOR] Tick complete (took ")
+    banners = [
+        r.getMessage() for r in caplog.records if r.getMessage().startswith("=====")
+    ]
+    assert banners[0].startswith("===== [START] Orchestrator Tick 20")
+    assert banners[-1].startswith("===== [END] Orchestrator Tick 20")
 
 
 async def test_tick_reports_rollover_count(db_session, caplog, monkeypatch):
@@ -160,7 +167,7 @@ async def test_tick_reports_rollover_count(db_session, caplog, monkeypatch):
     await _tick(caplog, monkeypatch, _utc(10, 20))
     # N = episodes_rolled_over + seasons_rolled_over (the FUTURE season rolls too)
     assert (
-        "[ORCHESTRATOR] [1/3] Air date rollover: 2 due episodes/seasons rolled over to searching"
+        "[ORCHESTRATOR] [3/5] Air date rollover: 2 due episodes/seasons rolled over to searching"
         in _orch_messages(caplog)
     )
 

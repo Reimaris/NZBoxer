@@ -14,7 +14,7 @@ import pytest
 from httpx import AsyncClient
 
 from app.core.automation import (
-    is_watchlist_sync_due_on_load,
+    is_provider_periodic_sync_due,
     sync_all_providers,
 )
 from app.db.database import async_session_factory
@@ -454,7 +454,6 @@ async def test_simkl_sync_failure_persists_cooldown_and_rolls_back_partial_items
         session.add(prov)
         await session.commit()
         prov_id = prov.id
-        assert is_watchlist_sync_due_on_load(prov) is True
 
     # Movies fetch succeeds, then Shows fetch fails with SimklError (e.g. 412)
     async def fake_watchlist_movies_ok_shows_fail(
@@ -491,14 +490,14 @@ async def test_simkl_sync_failure_persists_cooldown_and_rolls_back_partial_items
         items = (await session.execute(select(MediaItem))).scalars().all()
         assert len(items) == 0
 
-        # 2. Provider last_synced_at must have been persisted so 15m cooldown is active
+        # 2. Provider last_synced_at must have been persisted so the periodic interval is anchored to it
         updated_prov = await session.get(Provider, prov_id)
         assert updated_prov is not None
         assert updated_prov.watchlist_config.get("last_synced_at") is not None
         now = datetime.now(timezone.utc)
-        assert is_watchlist_sync_due_on_load(updated_prov, now=now) is False
+        assert is_provider_periodic_sync_due(updated_prov, now=now) is False
         assert (
-            is_watchlist_sync_due_on_load(updated_prov, now=now + timedelta(minutes=16))
+            is_provider_periodic_sync_due(updated_prov, now=now + timedelta(minutes=61))
             is True
         )
 

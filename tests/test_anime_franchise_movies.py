@@ -548,10 +548,7 @@ async def test_selective_simkl_sync_and_15m_cooldown_and_periodic_interval(
     triggers non-blockingly on dashboard load only when >15 minutes have elapsed, and evaluates
     periodic interval eligibility.
     """
-    from app.core.automation import (
-        is_watchlist_periodic_sync_due,
-        is_watchlist_sync_due_on_load,
-    )
+    from app.core.automation import is_watchlist_periodic_sync_due
 
     provider = Provider(
         name="Simkl Selective",
@@ -573,8 +570,7 @@ async def test_selective_simkl_sync_and_15m_cooldown_and_periodic_interval(
     db_session.add(provider)
     await db_session.commit()
 
-    # Initially last_synced_at is None -> both on-load and periodic sync are due
-    assert is_watchlist_sync_due_on_load(provider) is True
+    # Initially last_synced_at is None -> periodic sync is due
     assert is_watchlist_periodic_sync_due(provider) is True
 
     called_categories: list[str] = []
@@ -597,14 +593,12 @@ async def test_selective_simkl_sync_and_15m_cooldown_and_periodic_interval(
     last_synced_str = provider.watchlist_config.get("last_synced_at")
     assert last_synced_str is not None
 
-    # Immediately after sync (< 15 minutes): neither on-load nor 60m periodic sync is due
+    # Immediately after sync: the 60m periodic sync is not due
     now = datetime.now(timezone.utc)
-    assert is_watchlist_sync_due_on_load(provider, now=now) is False
     assert is_watchlist_periodic_sync_due(provider, now=now) is False
 
-    # 16 minutes later: 15m on-load cooldown has elapsed, but 60m periodic interval has not
+    # 16 minutes later: the 60m periodic interval has not elapsed
     after_16m = now + timedelta(minutes=16)
-    assert is_watchlist_sync_due_on_load(provider, now=after_16m) is True
     assert is_watchlist_periodic_sync_due(provider, now=after_16m) is False
 
     # 61 minutes later: 60m periodic interval is due
@@ -619,12 +613,12 @@ async def test_selective_simkl_sync_and_15m_cooldown_and_periodic_interval(
 
 
 @pytest.mark.anyio
-async def test_dashboard_page_load_triggers_background_sync_after_15m_and_navbar_button(
+async def test_dashboard_page_load_does_not_sync_and_renders_navbar_button(
     db_session: AsyncSession,
     async_client: AsyncClient,
 ) -> None:
-    """Verify GET / triggers background Simkl sync when >15m have elapsed since last_synced_at,
-    skips it when within the 15m cooldown, and renders the 'Sync Watchlist' navbar button.
+    """Verify GET / never starts a sync (only the orchestrator tick or the manual button do)
+    and still renders the 'Sync Watchlist' navbar button.
     """
     twenty_mins_ago = (datetime.now(timezone.utc) - timedelta(minutes=20)).isoformat()
     provider = Provider(
@@ -651,19 +645,7 @@ async def test_dashboard_page_load_triggers_background_sync_after_15m_and_navbar
         resp = await async_client.get("/")
         assert resp.status_code == 200
         assert "Sync Watchlist" in resp.text
-        assert mock_sync.await_count == 1
-
-        # Update last_synced_at to 2 minutes ago -> should NOT trigger sync on dashboard load
-        cfg = provider.watchlist_config
-        cfg["last_synced_at"] = (
-            datetime.now(timezone.utc) - timedelta(minutes=2)
-        ).isoformat()
-        provider.config_json = cfg
-        await db_session.commit()
-
-        resp2 = await async_client.get("/")
-        assert resp2.status_code == 200
-        assert mock_sync.await_count == 1
+        assert mock_sync.await_count == 0
 
 
 @pytest.mark.anyio

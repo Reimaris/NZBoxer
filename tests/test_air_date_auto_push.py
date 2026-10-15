@@ -233,7 +233,7 @@ from app.core.phase_stats import WatchlistPeriodicSyncStatus  # noqa: E402
 def _tick_mocks(push):
     order: list[str] = []
 
-    async def sync():
+    async def sync(banner=True):
         order.append("sync")
 
     async def _push(now=None):

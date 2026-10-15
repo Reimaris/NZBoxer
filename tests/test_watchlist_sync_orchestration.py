@@ -291,20 +291,6 @@ async def test_failed_sync_stamps_last_synced_and_backs_off(
     assert automation.is_provider_periodic_sync_due(provider, now + timedelta(days=2))
 
 
-@pytest.mark.parametrize(("age_minutes", "expected"), [(20, True), (5, False)])
-async def test_dashboard_sync_trigger_covers_connected_plex(
-    db_session, age_minutes, expected
-):
-    last = (NOW - timedelta(minutes=age_minutes)).isoformat()
-    await _provider(
-        db_session, "plex", 1, config_json=json.dumps({"last_synced_at": last})
-    )
-    assert (
-        await automation.should_trigger_dashboard_watchlist_sync(db_session, now=NOW)
-        is expected
-    )
-
-
 async def test_evaluate_periodic_sync_due_for_mal_past_interval(db_session):
     mal = await _provider(
         db_session,
@@ -332,10 +318,6 @@ async def test_inactive_or_unauthenticated_providers_are_not_sync_eligible(
     assert (
         automation.evaluate_periodic_watchlist_sync([unauth, inactive], NOW).state
         == "no_provider"
-    )
-    assert (
-        await automation.should_trigger_dashboard_watchlist_sync(db_session, now=NOW)
-        is False
     )
 
 
@@ -378,3 +360,28 @@ async def test_plex_sync_series_off_skips_shows_but_ingests_movies(
     }
     assert titles == {603}
     assert plex.id
+
+
+@pytest.mark.parametrize(
+    ("tick", "expect_sync"),
+    [((11, 0), False), ((11, 15), True)],
+)
+async def test_sync_stamped_at_1004_runs_on_first_tick_after_interval(
+    db_session, monkeypatch, tick, expect_sync
+):
+    """A sync stamped at 10:04 with a 60m interval is due at 11:04, so the 11:15 tick runs it."""
+    last = datetime(2026, 10, 15, 10, 4, tzinfo=timezone.utc)
+    await _provider(
+        db_session,
+        "plex",
+        1,
+        config_json=json.dumps(
+            {"sync_interval_minutes": 60, "last_synced_at": last.isoformat()}
+        ),
+    )
+    sync = AsyncMock(return_value=0)
+    monkeypatch.setattr(automation, "sync_all_providers", sync)
+    await automation.run_orchestrator_tick(
+        datetime(2026, 10, 15, *tick, tzinfo=timezone.utc)
+    )
+    assert bool(sync.await_count) is expect_sync

@@ -275,28 +275,6 @@ def _parse_iso_utc(ts_str: str | None) -> datetime | None:
         return None
 
 
-def is_watchlist_sync_due_on_load(
-    provider: Provider,
-    now: datetime | None = None,
-    cooldown_minutes: int = 15,
-) -> bool:
-    """Return True if a watchlist provider is sync-eligible and >15m have elapsed since last_synced_at."""
-    if not provider.sync_eligible:
-        return False
-    cfg = provider.watchlist_config
-
-    last_synced = _parse_iso_utc(cfg.get("last_synced_at"))
-    if last_synced is None:
-        return True
-
-    if now is None:
-        now = datetime.now(timezone.utc)
-    elif now.tzinfo is None:
-        now = now.replace(tzinfo=timezone.utc)
-
-    return (now - last_synced) > timedelta(minutes=cooldown_minutes)
-
-
 def normalize_sync_interval_minutes(value: object) -> int:
     """Normalize a periodic-sync interval: 0 = disabled, else clamped to 5..1440 (default 60)."""
     if value is None or isinstance(value, bool):
@@ -372,22 +350,6 @@ def is_watchlist_periodic_sync_due(
     return is_provider_periodic_sync_due(provider, now)
 
 
-async def should_trigger_dashboard_watchlist_sync(
-    session: AsyncSession,
-    now: datetime | None = None,
-    cooldown_minutes: int = 15,
-) -> bool:
-    """Check if any active watchlist provider is due for an automatic page-load sync (>15m cooldown)."""
-    if _sync_lock.locked():
-        return False
-    stmt = select(Provider).where(Provider.category == "watchlist")
-    providers = (await session.execute(stmt)).scalars().all()
-    return any(
-        is_watchlist_sync_due_on_load(p, now=now, cooldown_minutes=cooldown_minutes)
-        for p in providers
-    )
-
-
 class _SyncSkipped(Exception):
     """Raised inside the orchestrator tick when the watchlist sync step is guarded off."""
 
@@ -410,8 +372,8 @@ async def run_periodic_watchlist_sync_if_due(now: datetime | None = None) -> boo
 
 
 async def run_orchestrator_tick(now: datetime | None = None) -> None:
-    """Execute 15-minute background orchestrator tasks: episode air date rollover, periodic watchlist sync,
-    and (at xx:00) the air-date push and upgrade pass."""
+    """Execute the 15-minute orchestrator: watchlist sync (if due), air date refresh, air date
+    rollover, history autoclear and (at xx:00) the air-date push and upgrade pass, in that order."""
     if await setup_blocks("orchestrator"):
         return
     start = time.monotonic()
@@ -420,65 +382,15 @@ async def run_orchestrator_tick(now: datetime | None = None) -> None:
     elif now.tzinfo is None:
         now = now.replace(tzinfo=timezone.utc)
 
-    logger.info(
-        "[ORCHESTRATOR] Tick start at %s",
-        format_local_datetime(now, "%Y-%m-%d %H:%M:%S"),
-    )
+    tick_label = format_local_datetime(now, "%Y-%m-%d %H:%M:%S")
+    log_process_start(logger, "Orchestrator Tick", tick_label)
+    logger.info("[ORCHESTRATOR] Tick start at %s", tick_label)
 
-    # 1. Roll over any FUTURE episodes and seasons that have reached their air date,
-    #    then run the paced upstream air date enrichment (m49 pacing policy)
-    async with async_session_factory() as session:
-        try:
-            rolled = await rollover_due_future_episodes_and_seasons(session, now=now)
-            logger.info(
-                "[ORCHESTRATOR] [1/3] Air date rollover: %d due episodes/seasons rolled over to searching",
-                rolled["episodes_rolled_over"] + rolled["seasons_rolled_over"],
-            )
-        except Exception as e:  # noqa: BLE001
-            logger.error("Error during scheduled air date rollover: %s", e)
-            logger.info(
-                "[ORCHESTRATOR] [1/3] Air date rollover: failed (see error above)"
-            )
-        refresh_stats = AirDateRefreshStats()
-        try:
-            await air_date_engine.enrich_active_shows_episode_air_dates(
-                session,
-                now=now,
-                log_prefix="[ORCHESTRATOR] [2/3]",
-                stats=refresh_stats,
-            )
-            logger.info(
-                "[ORCHESTRATOR] [2/3] Broadcast air date refresh: %d refreshed (%d frozen, %d paced)",
-                refresh_stats.episodes_updated,
-                refresh_stats.skipped_frozen,
-                refresh_stats.skipped_paced,
-            )
-        except Exception as e:  # noqa: BLE001
-            logger.error("Error during scheduled air date enrichment: %s", e)
-            logger.info(
-                "[ORCHESTRATOR] [2/3] Broadcast air date refresh: failed (see error above)"
-            )
-
-    # 1b. Purge stale Push History Ledger rows (m51, ADR-125) on every tick
-    try:
-        from app.core.transfer_poller import autoclear_history_ledger
-
-        async with async_session_factory() as session:
-            result = await autoclear_history_ledger(session, now=now)
-        if result["total"] > 0:
-            logger.info(
-                "🧹 [HISTORY] Autoclear purged %d entr%s (pruned=%d, aged=%d)",
-                result["total"],
-                "y" if result["total"] == 1 else "ies",
-                result["pruned_count"],
-                result["aged_count"],
-            )
-    except Exception as e:  # noqa: BLE001
-        logger.error("Error during history autoclear: %s", e)
-
-    # 2. Check and run periodic watchlist sync if due
+    # 1. Periodic watchlist sync (due once its interval elapsed since the last stamp)
+    tag = "[ORCHESTRATOR] [1/5] Periodic watchlist sync:"
     try:
         if await setup_blocks("periodic watchlist sync", watchlist=True):
+            logger.info("%s skipped (setup incomplete)", tag)
             raise _SyncSkipped
         async with async_session_factory() as session:
             providers = (
@@ -496,16 +408,14 @@ async def run_orchestrator_tick(now: datetime | None = None) -> None:
                 for p in providers
                 if p.type != "simkl"
             )
-        tag = "[ORCHESTRATOR] [3/3] Periodic watchlist sync:"
         if status.state != "due" and other_due:
-            tag = "[ORCHESTRATOR] [3/3] Periodic watchlist sync:"
             status = WatchlistPeriodicSyncStatus("due", 0, None, 0)
         if status.state == "due":
             if _sync_lock.locked():
                 logger.info("%s due but a sync is already running; skipping", tag)
             else:
                 logger.info("%s due -> triggering provider sync", tag)
-                await sync_all_providers()
+                await sync_all_providers(banner=False)
         elif status.state == "not_due":
             logger.info(
                 "%s not due (%dm elapsed, interval %dm; %dm remaining)",
@@ -522,23 +432,77 @@ async def run_orchestrator_tick(now: datetime | None = None) -> None:
         pass
     except Exception as e:  # noqa: BLE001
         logger.error("Error during periodic watchlist sync: %s", e)
-        logger.info(
-            "[ORCHESTRATOR] [3/3] Periodic watchlist sync: failed (see error above)"
-        )
+        logger.info("%s failed (see error above)", tag)
 
-    # 3. At every full hour, run the air-date push and upgrade pass after the sync
+    async with async_session_factory() as session:
+        # 2. Paced upstream air date enrichment (m49 pacing policy)
+        refresh_stats = AirDateRefreshStats()
+        try:
+            await air_date_engine.enrich_active_shows_episode_air_dates(
+                session,
+                now=now,
+                log_prefix="[ORCHESTRATOR] [2/5]",
+                stats=refresh_stats,
+            )
+            logger.info(
+                "[ORCHESTRATOR] [2/5] Broadcast air date refresh: %d refreshed (%d frozen, %d paced)",
+                refresh_stats.episodes_updated,
+                refresh_stats.skipped_frozen,
+                refresh_stats.skipped_paced,
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.error("Error during scheduled air date enrichment: %s", e)
+            logger.info(
+                "[ORCHESTRATOR] [2/5] Broadcast air date refresh: failed (see error above)"
+            )
+
+        # 3. Roll over FUTURE episodes and seasons that have reached their air date
+        try:
+            rolled = await rollover_due_future_episodes_and_seasons(session, now=now)
+            logger.info(
+                "[ORCHESTRATOR] [3/5] Air date rollover: %d due episodes/seasons rolled over to searching",
+                rolled["episodes_rolled_over"] + rolled["seasons_rolled_over"],
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.error("Error during scheduled air date rollover: %s", e)
+            logger.info(
+                "[ORCHESTRATOR] [3/5] Air date rollover: failed (see error above)"
+            )
+
+    # 4. Purge stale Push History Ledger rows (m51, ADR-125)
+    try:
+        from app.core.transfer_poller import autoclear_history_ledger
+
+        async with async_session_factory() as session:
+            result = await autoclear_history_ledger(session, now=now)
+        logger.info(
+            "[ORCHESTRATOR] [4/5] History autoclear: %d entr%s cleared (pruned=%d, aged=%d)",
+            result["total"],
+            "y" if result["total"] == 1 else "ies",
+            result["pruned_count"],
+            result["aged_count"],
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.error("Error during history autoclear: %s", e)
+        logger.info("[ORCHESTRATOR] [4/5] History autoclear: failed (see error above)")
+
+    # 5. At every full hour, run the air-date push and upgrade pass after the rollover
     if now.minute == 0:
+        logger.info("[ORCHESTRATOR] [5/5] Air-date push & upgrade: running")
         try:
             from app.core.air_push_engine import run_air_date_push_and_upgrade_tick
 
             await run_air_date_push_and_upgrade_tick(now)
         except Exception as e:  # noqa: BLE001
             logger.error("Error during air-date push and upgrade tick: %s", e)
+    else:
+        logger.info(
+            "[ORCHESTRATOR] [5/5] Air-date push & upgrade: skipped (runs at :00 only)"
+        )
 
-    logger.info(
-        "[ORCHESTRATOR] Tick complete (took %dms)",
-        int((time.monotonic() - start) * 1000),
-    )
+    took = time.monotonic() - start
+    logger.info("[ORCHESTRATOR] Tick complete (took %dms)", int(took * 1000))
+    log_process_end(logger, "Orchestrator Tick", tick_label, took)
 
 
 async def deduplicate_media_items(session: AsyncSession) -> int:
@@ -800,12 +764,14 @@ async def _sync_adapter_provider(
 
 async def _run_provider_sync(
     only_provider_id: int | None = None,
+    banner: bool = True,
 ) -> list[dict[str, Any]]:
     """Sync active watchlist providers sequentially; caller must hold ``_sync_lock``."""
     import json
 
     results: list[dict[str, Any]] = []
-    log_process_start(logger, "Provider Sync Engine")
+    if banner:
+        log_process_start(logger, "Provider Sync Engine")
     from app.db.models import Provider
 
     async with async_session_factory() as session:
@@ -879,14 +845,18 @@ async def _run_provider_sync(
             logger.error("Provider sync failed: %s", e)
             await session.rollback()
         finally:
-            log_process_end(logger, "Provider Sync Engine")
+            if banner:
+                log_process_end(logger, "Provider Sync Engine")
     return results
 
 
-async def sync_all_providers() -> int:
-    """Sync every active watchlist provider sequentially; returns the provider error count."""
+async def sync_all_providers(banner: bool = True) -> int:
+    """Sync every active watchlist provider sequentially; returns the provider error count.
+
+    ``banner=False`` suppresses the START/END lines when the caller (orchestrator tick) logs its own.
+    """
     async with _sync_lock:
-        results = await _run_provider_sync()
+        results = await _run_provider_sync(banner=banner)
     return sum(1 for r in results if r["status"] == "error")
 
 

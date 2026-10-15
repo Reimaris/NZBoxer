@@ -230,6 +230,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         CronTrigger(minute="0,15,30,45"),
         id="orchestrator_job",
         replace_existing=True,
+        misfire_grace_time=60,
+        coalesce=True,
     )
     scheduler.add_job(
         run_transfer_poller_tick,
@@ -380,8 +382,6 @@ async def dashboard(request: Request, background_tasks: BackgroundTasks):
         classify_v3_status_tier,
         consolidate_standalone_anime_sequels,
         deduplicate_media_items,
-        should_trigger_dashboard_watchlist_sync,
-        sync_all_providers,
     )
     from app.core.prerequisites import get_setup_status
     from app.core.transfer_poller import (
@@ -399,9 +399,6 @@ async def dashboard(request: Request, background_tasks: BackgroundTasks):
     )
 
     async with async_session_factory() as session:
-        if await should_trigger_dashboard_watchlist_sync(session):
-            background_tasks.add_task(sync_all_providers)
-
         # Auto-consolidate any legacy standalone sequels and deduplicate items before rendering
         await consolidate_standalone_anime_sequels(session)
         if await deduplicate_media_items(session) > 0:

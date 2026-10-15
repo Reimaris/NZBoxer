@@ -133,8 +133,9 @@ def test_logging_process_start_end():
         log_process_start(logger, "Test Engine")
         log_process_end(logger, "Test Engine")
         logged_text = "\n".join(r.getMessage() for r in records)
-        assert "[PROCESS START] Test Engine -" in logged_text
-        assert "[PROCESS END] Test Engine -" in logged_text
+        assert "===== [START] Test Engine " in logged_text
+        assert "===== [END] Test Engine " in logged_text
+        assert all("\n" not in r.getMessage() for r in records)
     finally:
         logger.removeHandler(handler)
 

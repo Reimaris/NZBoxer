@@ -844,11 +844,7 @@ async def test_deduplicate_media_items_and_concurrent_sync_lock(
     """Verify deduplicate_media_items merges duplicate rows and _sync_lock prevents concurrent sync duplicates."""
     import asyncio
 
-    from app.core.automation import (
-        _sync_lock,
-        deduplicate_media_items,
-        should_trigger_dashboard_watchlist_sync,
-    )
+    from app.core.automation import deduplicate_media_items
 
     _, maker = snapshot_db
 
@@ -931,10 +927,6 @@ async def test_deduplicate_media_items_and_concurrent_sync_lock(
             )
         ).scalar_one()
         assert rehomed_hist.media_item_id == canonical.id
-
-        # While _sync_lock is held, should_trigger_dashboard_watchlist_sync returns False
-        async with _sync_lock:
-            assert await should_trigger_dashboard_watchlist_sync(session) is False
 
     # Now test two concurrent sync_all_providers() invocations on a fresh movie
     async def mock_watchlist(media_type: str, client_id=None, access_token=None):
