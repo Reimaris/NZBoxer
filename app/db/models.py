@@ -804,6 +804,18 @@ class MediaItem(Base):
 
         return pills
 
+    def display_title(self, language: str = "romaji") -> str:
+        """Title in the requested anime language (falls back along the chain to ``title``)."""
+        from app.core.anime_titles import resolve_display_title
+
+        return resolve_display_title(
+            language,
+            english=self.title_english,
+            romaji=self.title_romaji,
+            native=self.title_native,
+            title=self.title,
+        )
+
     @property
     def effective_release_date(self) -> datetime | None:
         """Return release_date, or the earliest non-special Season.air_date when release_date is None."""
@@ -1021,6 +1033,19 @@ class Season(Base):
     title_english: Mapped[str | None] = mapped_column(String(512), nullable=True)
     title_romaji: Mapped[str | None] = mapped_column(String(512), nullable=True)
     title_native: Mapped[str | None] = mapped_column(String(512), nullable=True)
+
+    def display_title(self, language: str = "romaji") -> str:
+        """Title in the requested anime language; '' when nothing is set."""
+        from app.core.anime_titles import resolve_display_title
+
+        return resolve_display_title(
+            language,
+            english=self.title_english,
+            romaji=self.title_romaji,
+            native=self.title_native,
+            title=self.title,
+        )
+
     monitored: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     status: Mapped[SeasonStatus] = mapped_column(
         Enum(SeasonStatus, name="season_status_enum"),

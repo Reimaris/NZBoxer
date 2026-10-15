@@ -38,3 +38,132 @@ async def test_migration_adds_columns_idempotently():
         ).scalar_one()
         assert value == "romaji"
     await engine.dispose()
+
+
+# --- m65-02: title resolution helpers -------------------------------------
+
+from app.core.anime_titles import (  # noqa: E402
+    anime_season_title_for,
+    anime_title_for,
+    extract_title_variants,
+    find_matched_child,
+    normalize_anime_title_language,
+    resolve_display_title,
+    search_names,
+)
+from app.db.models import MediaType  # noqa: E402
+from tests.conftest import make_movie, make_series  # noqa: E402
+
+NODE_AOT = {
+    "id": 16498,
+    "title": {
+        "romaji": "Shingeki no Kyojin",
+        "english": "Attack on Titan",
+        "native": "進撃の巨人",
+    },
+}
+NODE_ENGLISH_MISSING = {
+    "id": 1,
+    "title": {"romaji": "Foo no Bar", "english": None, "native": "フー"},
+}
+FULL = {"english": "EN", "romaji": "RO", "native": "NA"}
+
+
+@pytest.mark.parametrize(
+    ("language", "variants", "expected"),
+    [
+        ("english", FULL, "EN"),
+        ("romaji", FULL, "RO"),
+        ("native", FULL, "NA"),
+        ("english", {**FULL, "english": None}, "RO"),
+        ("english", {"english": " ", "romaji": None, "native": "NA"}, "NA"),
+        ("romaji", {**FULL, "romaji": None}, "EN"),
+        ("romaji", {"english": None, "romaji": "", "native": "NA"}, "NA"),
+        ("native", {**FULL, "native": None}, "RO"),
+        ("native", {"english": "EN", "romaji": None, "native": None}, "EN"),
+        ("english", {"english": None, "romaji": None, "native": None}, "T"),
+        ("romaji", {"english": None, "romaji": None, "native": None}, "T"),
+        ("native", {"english": None, "romaji": None, "native": None}, "T"),
+        ("klingon", {**FULL, "romaji": None}, "EN"),
+    ],
+)
+def test_resolve_display_title(language, variants, expected):
+    assert resolve_display_title(language, title="T", **variants) == expected
+
+
+def test_resolve_display_title_all_blank():
+    blank = {"english": None, "romaji": None, "native": None}
+    assert resolve_display_title("romaji", title=None, **blank) == ""
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("ENGLISH ", "english"),
+        ("native", "native"),
+        ("klingon", "romaji"),
+        (None, "romaji"),
+    ],
+)
+def test_normalize_language(value, expected):
+    assert normalize_anime_title_language(value) == expected
+
+
+def test_extract_title_variants():
+    assert extract_title_variants(NODE_ENGLISH_MISSING) == {
+        "title_english": None,
+        "title_romaji": "Foo no Bar",
+        "title_native": "フー",
+    }
+    assert extract_title_variants({"id": 2})["title_native"] is None
+
+
+def test_search_names_dedupes_and_lowercases():
+    assert search_names("Foo", None, " foo ", "Bar", "") == "foo bar"
+
+
+def test_find_matched_child():
+    children = [
+        {"label": "Season 4", "names": "final season", "title": "Final Season"},
+        {"label": "Movie 1", "names": "movie", "title": "Attack on Titan"},
+    ]
+    hit = find_matched_child(children, "attack on titan", "final", "Attack on Titan")
+    assert hit == {"label": "Season 4", "title": "Final Season"}
+    assert find_matched_child(children, "attack on titan", "attack", "AoT") is None
+    assert find_matched_child(children, "x", "movie", "attack on titan") is None
+    assert find_matched_child(children, "x", "  ", "t") is None
+
+
+@pytest.mark.anyio
+async def test_model_and_scope_helpers(db_session):
+    item, seasons, _ = await make_series(
+        db_session,
+        seasons=1,
+        media_type=MediaType.ANIME,
+        title="Attack on Titan",
+        title_english="Attack on Titan",
+        title_romaji="Shingeki no Kyojin",
+        title_native="進撃の巨人",
+    )
+    assert anime_title_for(item, "native") == "進撃の巨人"
+    assert anime_title_for(item, "bogus") == "Shingeki no Kyojin"
+    season = seasons[0]
+    season.title = None
+    assert season.display_title("english") == ""
+    assert anime_season_title_for(item, season, "english") == "Season 1"
+    season.title_english = "Final"
+    assert anime_season_title_for(item, season, "english") == "Final"
+
+    show = await make_movie(db_session, title="Plain", title_romaji="Variant")
+    assert anime_title_for(show, "romaji") == "Plain"
+    movie = await make_movie(
+        db_session, title="M", title_romaji="Variant", is_anime_movie=True
+    )
+    assert anime_title_for(movie, "romaji") == "Variant"
+
+
+def test_jinja_globals_registered():
+    from app.main import templates
+
+    assert templates.env.globals["anime_title_for"] is anime_title_for
+    assert templates.env.globals["anime_season_title_for"] is anime_season_title_for

@@ -35,6 +35,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from app.config import reload_settings_from_db, settings
+from app.core.anime_titles import anime_season_title_for, anime_title_for
 from app.core.time_utils import format_local_datetime
 from app.db.database import async_session_factory, close_db, init_db
 from app.version import APP_VERSION
@@ -186,6 +187,8 @@ from app.core.diagnostics import GITHUB_BUG_REPORT_URL  # noqa: E402
 from app.core.experimental import experimental_types, is_experimental  # noqa: E402
 
 templates.env.globals["is_experimental"] = is_experimental
+templates.env.globals["anime_title_for"] = anime_title_for
+templates.env.globals["anime_season_title_for"] = anime_season_title_for
 templates.env.globals["bug_report_url"] = GITHUB_BUG_REPORT_URL
 
 
