@@ -524,7 +524,10 @@ async def test_mobile_responsive_dashboard_navbar_and_push_modal(
     assert "grid grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-4 mb-5 sm:mb-8" in html
     assert "md:translate-y-2 ring-2" in html
     assert "px-2.5 py-2 sm:px-3.5 sm:py-2.5" in html
-    assert "text-[11px] sm:text-sm font-bold tracking-wider uppercase truncate" in html
+    assert (
+        "text-[11px] sm:text-sm font-bold tracking-wider uppercase leading-tight break-words sm:truncate"
+        in html
+    )
     assert "hidden md:grid grid-cols-3" in html
     assert "hidden md:grid grid-cols-2" in html
     assert "hidden md:flex flex-col" in html
