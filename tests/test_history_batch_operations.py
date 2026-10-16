@@ -465,3 +465,27 @@ async def test_dashboard_history_empty_ledger_has_no_filter_empty_row(
     html = (await async_client.get("/?tab=history")).text
     assert "No push history entries recorded yet." in html
     assert 'data-empty-history-row="true"' not in html
+
+
+@pytest.mark.asyncio
+async def test_dashboard_selection_bar_has_simulated_quick_select(
+    async_client: AsyncClient, db_session: AsyncSession
+):
+    movie = await make_movie(db_session, title="QS Sim", status=MediaStatus.COMPLETED)
+    await make_history(
+        db_session,
+        item=movie,
+        downloader_transfer_id="tb-qs-sim",
+        nzb_guid="guid-qs-sim",
+        status_detail="completed",
+        is_dry_run=True,
+    )
+    await db_session.commit()
+
+    html = (await async_client.get("/?tab=history")).text
+
+    assert "'simulated']" in html
+    btn = html[html.index("selectHistoryByStatus('simulated')") :][:700]
+    assert "Simulated (1)" in btn
+    assert "opacity-50" not in btn
+    assert "data-filter-key" in html[html.index("selectHistoryByStatus(key)") :][:500]

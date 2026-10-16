@@ -349,7 +349,7 @@ function initVideoDashboard() {
                 this.selectedHistoryIds.splice(idx, 1);
             }
         },
-        historyStatusKeys: ['failed', 'canceled', 'replaced', 'deleted', 'ready'],
+        historyStatusKeys: ['failed', 'canceled', 'replaced', 'deleted', 'ready', 'simulated'],
         historyFilterKeys: ['failed', 'canceled', 'replaced', 'deleted', 'ready', 'simulated'],
         historyStatusFilter: '',
         toggleHistoryStatusFilter(key) {
@@ -370,8 +370,9 @@ function initVideoDashboard() {
         exitHistorySelection() { this.isSelectingHistory = false; this.selectedHistoryIds = []; },
         selectHistoryByStatus(key) {
             if (!this.historyStatusKeys.includes(key)) return;
+            const attr = key === 'simulated' ? 'data-filter-key' : 'data-status';
             const ids = Array.from(document.querySelectorAll(
-                `#dashboard-history-table-body tr[data-sortable='true'][data-status='${key}']`
+                `#dashboard-history-table-body tr[data-sortable='true'][${attr}='${key}']`
             )).map(r => parseInt(r.getAttribute('data-history-id'), 10)).filter(Number.isFinite);
             this.selectedHistoryIds = Array.from(new Set([...this.selectedHistoryIds, ...ids]));
         },
@@ -1174,9 +1175,10 @@ document.addEventListener('alpine:init', () => {
                     ('canceled', 'Canceled', 'bg-orange-500/15 text-orange-400 border border-orange-500/30 hover:bg-orange-500/25'),
                     ('replaced', 'Replaced', 'bg-amber-500/15 text-amber-400 border border-amber-500/30 hover:bg-amber-500/25'),
                     ('deleted', 'Deleted', 'bg-zinc-500/15 text-zinc-400 border border-zinc-500/30 hover:bg-zinc-500/25'),
-                    ('ready', 'Ready', 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/25')
+                    ('ready', 'Ready', 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/25'),
+                    ('simulated', 'Simulated', 'bg-amber-500/20 text-amber-300 border border-amber-500/40 hover:bg-amber-500/30')
                     ] %}
-                    {% set n = (history_status_counts or {}).get(key, 0) %}
+                    {% set n = ((history_filter_counts if key == 'simulated' else history_status_counts) or {}).get(key, 0) %}
                     <button type="button"
                             @click="selectHistoryByStatus('{{ key }}')"
                             class="px-3 py-1.5 min-h-[36px] rounded-md text-xs font-semibold transition-colors whitespace-nowrap {{ classes }}{% if n == 0 %} opacity-50 cursor-not-allowed pointer-events-none{% endif %}"
