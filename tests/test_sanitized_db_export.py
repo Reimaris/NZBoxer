@@ -49,6 +49,10 @@ SECRETS = [
             '{"auth":{"keep":1}}',
         ),
         ('{"password":"p"}', "{}"),
+        (
+            '{"access_token":"fake-access","client_id":"fake-cid","sync_movies":true}',
+            '{"sync_movies":true}',
+        ),
     ],
 )
 def test_sanitize_config_json(raw, expected):

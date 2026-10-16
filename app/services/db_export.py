@@ -16,6 +16,8 @@ from app.core.log_redaction import redact_text
 SENSITIVE_CONFIG_KEYS: frozenset[str] = frozenset(
     {
         "refresh_token",
+        "access_token",
+        "client_id",
         "api_key",
         "token",
         "password",
