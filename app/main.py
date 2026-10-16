@@ -32,7 +32,12 @@ from fastapi import (
     Request,
     Response,
 )
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import (
+    FileResponse,
+    HTMLResponse,
+    JSONResponse,
+    RedirectResponse,
+)
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -2861,6 +2866,44 @@ async def system_check_modal(request: Request):
     return templates.TemplateResponse(
         request=request, name="modals/system_check.html", context={}
     )
+
+
+@app.get("/system/export-sanitized-db")
+async def export_sanitized_db() -> Response:
+    """Download a credential-free snapshot of the database (m71, ADR-154)."""
+    import os
+    import tempfile
+
+    from starlette.background import BackgroundTask
+
+    from app.db.database import get_engine
+    from app.services.db_export import (
+        create_sanitized_snapshot,
+        sanitized_export_filename,
+    )
+
+    fd, path = tempfile.mkstemp(prefix="nzboxer_sanitized_", suffix=".db")
+    os.close(fd)
+    Path(path).unlink()
+    try:
+        await create_sanitized_snapshot(get_engine(), path)
+    except Exception:
+        logger.exception("Sanitized database export failed")
+        Path(path).unlink(missing_ok=True)
+        return JSONResponse(
+            status_code=500, content={"detail": "Sanitized export failed"}
+        )
+    return FileResponse(
+        path,
+        media_type="application/vnd.sqlite3",
+        filename=sanitized_export_filename(),
+        headers={"Cache-Control": "no-store"},
+        background=BackgroundTask(_unlink_quietly, path),
+    )
+
+
+def _unlink_quietly(path: str) -> None:
+    Path(path).unlink(missing_ok=True)
 
 
 @app.get("/feedback/modal", response_class=HTMLResponse)

@@ -51,6 +51,11 @@
             </div>
 
             <p x-show="activeTab === 'bug'" class="text-xs text-[#a1a1aa]">Copy the diagnostics table, open the bug form and paste it into the <em>Environment Diagnostics</em> field. Remove any secrets from logs.</p>
+            <div x-show="activeTab === 'bug'" class="text-xs text-[#a1a1aa] space-y-1">
+                <p>Optional: If requested by maintainers, export a sanitized database to attach to your issue.
+                    <a href="/system/export-sanitized-db" download id="feedback-export-sanitized-db" class="text-white underline">Export Sanitized DB</a></p>
+                <p>Review before sharing: server URLs and your library are included; keys, tokens and webhooks are removed.</p>
+            </div>
             <p x-show="activeTab === 'feature'" x-cloak class="text-xs text-[#a1a1aa]">Describe the problem you want solved. Diagnostics are optional for feature requests.</p>
             <p x-show="activeTab === 'question'" x-cloak class="text-xs text-[#a1a1aa]">Check the README first. Diagnostics are optional but help us answer faster.</p>
 

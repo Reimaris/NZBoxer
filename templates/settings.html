@@ -757,7 +757,7 @@
                     <h3 class="text-sm font-bold text-white">System Diagnostics &amp; Health</h3>
                     <p class="text-xs text-[#a1a1aa] mt-0.5">Test real-time connectivity and response latency across all active downloaders, indexers, and third-party services.</p>
                 </div>
-                <div class="flex items-center gap-3 shrink-0">
+                <div class="flex flex-wrap items-center gap-3 shrink-0">
                     <button type="button"
                             hx-get="/system/check/modal"
                             hx-target="#modal-container"
@@ -765,6 +765,12 @@
                         <svg class="w-4 h-4 shrink-0 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
                         Run Health Check
                     </button>
+                    <a id="export-sanitized-db-btn" href="/system/export-sanitized-db" download
+                       title="Download a copy of your database with API keys, tokens and webhooks removed"
+                       class="bg-[#1e1e24] hover:bg-[#2a2a32] border border-[#3f3f46] text-white px-4 py-2 rounded-lg text-xs font-bold transition-colors flex items-center gap-2">
+                        <svg class="w-4 h-4 shrink-0 text-sky-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                        Export Sanitized DB
+                    </a>
                     <button type="button"
                             hx-get="/onboarding/modal"
                             hx-target="#modal-container"

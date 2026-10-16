@@ -184,6 +184,7 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000
 - **Database:** SQLite in WAL mode (stored persistently in `./config/nzboxer.db`)
 - **Release Verification & Scoring:** GuessIt + custom 3-layer fake detection pipeline, archive unpack grace monitor, and weighted release scoring engine
 - **Frontend:** Jinja2, HTMX, Alpine.js, TailwindCSS (mobile-optimized card and deck layouts)
+- **Export Sanitized DB:** Settings → System Diagnostics & Health (and the Bug Report tab of the feedback launcher) downloads a copy of your database with API keys, tokens, bot credentials and webhooks removed, for attaching to bug reports when maintainers ask. Your library and server URLs stay in the file, so review it before sharing.
 - **Feedback Helper:** *Report a Bug* / *Request a Feature* / *Ask a Question* buttons on the Settings page open a launcher with privacy-safe diagnostics (version, Python, OS, deployment, active provider types; no keys, URLs or names). NZBoxer never contacts GitHub itself. Security issues go through GitHub Private Vulnerability Reporting.
 
 ---
