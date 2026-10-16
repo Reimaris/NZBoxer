@@ -64,6 +64,9 @@ class AdHocSearchResult:
     fallback_results: list[dict[str, Any]]
     mismatched_results: list[dict[str, Any]]
     error_message: str | None = None
+    outage: dict[str, str] | None = (
+        None  # {"provider_name", "label"} when all indexers are down
+    )
 
 
 def is_match(filter_val: str, parsed_val: str | None, orig_title: str = "") -> bool:
@@ -154,7 +157,7 @@ async def _fetch_raw_releases(
     tvdb_id: int | None,
     season: int | None,
     episode: int | None,
-) -> tuple[list[dict[str, Any]], str | None]:
+) -> tuple[list[dict[str, Any]], str | None, dict[str, str] | None]:
     """Run one Newznab search per distinct title and merge by guid/title."""
     from app.db.database import async_session_factory
 
@@ -234,10 +237,20 @@ async def _fetch_raw_releases(
         else:
             merged.extend(outcome)
     if errors and len(errors) == len(outcomes):
-        return [], str(errors[0])
+        first = errors[0]
+        outage = None
+        if all(isinstance(e, newznab_client.IndexerOutageError) for e in errors):
+            assert isinstance(first, newznab_client.IndexerOutageError)
+            outage = {
+                "provider_name": newznab_client.indexer_display_name(first.indexer_url)
+                if first.indexer_url
+                else "Indexer",
+                "label": first.verdict.label if first.verdict else str(first),
+            }
+        return [], str(first), outage
     for err in errors:
         logger.warning("Partial ad-hoc search failure ignored: %s", err)
-    return merged, None
+    return merged, None, None
 
 
 async def search_and_score_releases(
@@ -273,7 +286,7 @@ async def search_and_score_releases(
     elif scope == "season":
         episode = None
 
-    raw_results, error_message = await _fetch_raw_releases(
+    raw_results, error_message, outage = await _fetch_raw_releases(
         kind=kind,
         titles=titles,
         imdb_id=imdb_id,
@@ -283,7 +296,7 @@ async def search_and_score_releases(
         episode=episode,
     )
     if error_message:
-        return AdHocSearchResult([], [], [], error_message)
+        return AdHocSearchResult([], [], [], error_message, outage)
 
     primary_results: list[dict[str, Any]] = []
     fallback_results: list[dict[str, Any]] = []

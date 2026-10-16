@@ -16,7 +16,15 @@
         </div>
     </div>
 
-    {% if error_message %}
+    {% if search_outage %}
+    <div data-search-outage="true" class="p-3 border border-red-600/50 bg-red-950/40 rounded-lg text-sm text-red-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <span>Indexer outage: {{ search_outage.provider_name }} returned {{ search_outage.label }}.</span>
+        <button type="button"
+                hx-post="/api/search/manual/releases" hx-target="#{{ drawer_id }}" hx-swap="innerHTML"
+                hx-include="#manual-search-form" hx-vals='{{ retry_vals | tojson }}'
+                class="shrink-0 px-3 py-1.5 bg-red-800 hover:bg-red-700 text-white rounded-md text-xs font-semibold">Retry Search</button>
+    </div>
+    {% elif error_message %}
     <div class="p-3 border border-red-500/30 bg-red-500/10 rounded-lg text-sm text-red-400">{{ error_message }}</div>
     {% elif not (primary_results or fallback_results or mismatched_results) %}
     <div class="p-4 text-center border border-[#3f3f46] bg-[#2a2a32] rounded-lg text-[#a1a1aa] text-sm">

@@ -20,6 +20,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+from contextvars import ContextVar
 from datetime import datetime, timezone
 from typing import Any
 
@@ -681,6 +682,21 @@ def _serialize_candidate(cand: dict[str, Any]) -> dict[str, Any]:
     return {k: v for k, v in cand.items() if k not in ("parsed", "score_res")}
 
 
+_search_outages: ContextVar[dict[str, tuple[str, str]] | None] = ContextVar(
+    "search_outages", default=None
+)
+
+
+def _note_search_outage(indexer_name: str, exc: BaseException) -> None:
+    """Remember an indexer outage hit during a manual search (for the Retry Search warning)."""
+    failures = _search_outages.get()
+    if failures is not None and isinstance(exc, newznab_client.IndexerOutageError):
+        failures[indexer_name] = (
+            indexer_name,
+            exc.verdict.label if exc.verdict else "an error",
+        )
+
+
 async def _query_movie_across_indexers(
     session: AsyncSession,
     item: MediaItem,
@@ -725,6 +741,7 @@ async def _query_movie_across_indexers(
                     r["_indexer_key"] = idx.api_key
                 all_results.extend(res)
             except Exception as exc:
+                _note_search_outage(idx.name, exc)
                 logger.warning("Indexer '%s' movie search error: %s", idx.name, exc)
     else:
         cat_id = DEFAULT_MOVIE_CATEGORIES
@@ -804,6 +821,7 @@ async def _query_show_across_indexers(
                     r["_indexer_key"] = idx.api_key
                 all_results.extend(res)
             except Exception as exc:
+                _note_search_outage(idx.name, exc)
                 logger.warning("Indexer '%s' show search error: %s", idx.name, exc)
     else:
         cat_id = ANIME_CATEGORY_FALLBACK if kind == "anime" else DEFAULT_TV_CATEGORIES
@@ -3011,6 +3029,8 @@ async def execute_manual_search(
 ) -> dict[str, Any]:
     """Execute Search & Pick Manually (`push_mode = 'manual'`) for the Unified Push Modal."""
     payload = payload or {}
+    outage_failures: dict[str, tuple[str, str]] = {}
+    _search_outages.set(outage_failures)
     stmt = (
         select(MediaItem)
         .where(MediaItem.id == item_id)
@@ -3220,7 +3240,19 @@ async def execute_manual_search(
             )
 
     await session.commit()
+    search_outage: dict[str, str] | None = None
+    if outage_failures and not (
+        pack_primary
+        or pack_fallback
+        or pack_mismatched
+        or any(a["releases"] for a in episode_accordions)
+    ):
+        active_names = {i.name for i in await get_active_indexers(session)}
+        if active_names and active_names <= set(outage_failures):
+            name, label = outage_failures[sorted(active_names)[0]]
+            search_outage = {"provider_name": name, "label": label}
     return {
+        "search_outage": search_outage,
         "item_id": item.id,
         "pack_or_movie_releases": {
             "primary": pack_primary,

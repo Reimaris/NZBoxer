@@ -154,7 +154,7 @@ async def test_adhoc_failover_and_all_outage(monkeypatch):
         season=None,
         episode=None,
     )
-    merged, err = await adhoc_search._fetch_raw_releases(**args)
+    merged, err, _outage = await adhoc_search._fetch_raw_releases(**args)
     assert [r["guid"] for r in merged] == ["g1"] and err is None
 
     async def active_down(_session):
@@ -163,5 +163,5 @@ async def test_adhoc_failover_and_all_outage(monkeypatch):
     monkeypatch.setattr(
         adhoc_search.provider_service, "get_active_indexers", active_down
     )
-    merged, err = await adhoc_search._fetch_raw_releases(**args)
+    merged, err, _outage = await adhoc_search._fetch_raw_releases(**args)
     assert merged == [] and err == "HTTP 503"

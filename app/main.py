@@ -1053,6 +1053,7 @@ async def manual_search_releases(
     primary: list[dict[str, Any]] = []
     fallback: list[dict[str, Any]] = []
     mismatched: list[dict[str, Any]] = []
+    search_outage: dict[str, str] | None = None
     if error is None:
         titles = list(
             dict.fromkeys(
@@ -1083,6 +1084,7 @@ async def manual_search_releases(
             limit=limit,
         )
         error = result.error_message
+        search_outage = result.outage
         primary = result.primary_results
         fallback = result.fallback_results
         mismatched = result.mismatched_results
@@ -1097,6 +1099,22 @@ async def manual_search_releases(
             "fallback_results": fallback,
             "mismatched_results": mismatched,
             "error_message": error,
+            "search_outage": search_outage,
+            "retry_vals": {
+                "scope": scope,
+                "kind": kind,
+                "title": title,
+                "alt_titles": alt_titles,
+                "year": year,
+                "imdb_id": imdb_id,
+                "tmdb_id": tmdb_id,
+                "tvdb_id": tvdb_id,
+                "anilist_id": anilist_id,
+                "poster_url": poster_url,
+                "season": season_n if season_n is not None else "",
+                "episode": episode_n if episode_n is not None else "",
+                "drawer_id": drawer_id,
+            },
             "hit": hit,
             "season_number": season_n,
             "episode_number": episode_n,

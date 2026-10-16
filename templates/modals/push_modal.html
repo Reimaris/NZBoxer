@@ -34,6 +34,7 @@
         statusMessage: "",
         statusError: "",
         manualResultsLoaded: false,
+        searchOutage: null,
         hasPushedInSession: false,
         packReleases: { primary: [], fallback: [], mismatched: [], releases: [] },
         episodeAccordions: [],
@@ -177,6 +178,7 @@
             this.isLoadingManual = true;
             this.statusMessage = "";
             this.statusError = "";
+            this.searchOutage = null;
             try {
                 const resp = await fetch("/api/items/{{ item.id }}/push/manual-search", {
                     method: "POST",
@@ -184,7 +186,9 @@
                     body: JSON.stringify(this.buildPayload())
                 });
                 const data = await resp.json();
-                if (resp.ok) {
+                if (resp.ok && data.search_outage) {
+                    this.searchOutage = data.search_outage;
+                } else if (resp.ok) {
                     this.packReleases = data.pack_or_movie_releases || { primary: [], fallback: [], mismatched: [], releases: [] };
                     this.episodeAccordions = data.episode_accordions || [];
                     this.manualResultsLoaded = true;
@@ -736,6 +740,10 @@
 
             <!-- Status / Feedback Banner -->
             <div x-show="statusMessage" x-cloak class="p-3 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-xs text-emerald-300 font-medium" x-text="statusMessage"></div>
+            <div x-show="searchOutage" x-cloak data-search-outage="true" class="p-3 rounded-xl bg-red-950/40 border border-red-600/50 text-xs text-red-200 font-medium flex items-center justify-between gap-3">
+                <span>Indexer outage: <span x-text="searchOutage && searchOutage.provider_name"></span> returned <span x-text="searchOutage && searchOutage.label"></span>.</span>
+                <button type="button" @click="runManualSearch()" class="shrink-0 px-3 py-1.5 bg-red-800 hover:bg-red-700 text-white rounded-md text-xs font-semibold">Retry Search</button>
+            </div>
             <div x-show="statusError" x-cloak class="p-3 rounded-xl bg-red-500/15 border border-red-500/30 text-xs text-red-300 font-medium" x-text="statusError"></div>
 
             <!-- Two-Mode Manual Picker Results -->

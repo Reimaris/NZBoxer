@@ -39,6 +39,7 @@ It keeps your **Movies**, **TV Series** and **Anime** in sync with your watchlis
 - **Live Transfer Monitoring & Auto-Recovery:** Real-time speed and ETA via an Alpine poller, a stalled-transfer watchdog, and automated candidate replacement.
 - **Ad-Hoc Multi-Tier Search:** Search any title, IMDb ID, or TMDB/AniList ID and grab releases without adding anything to a watchlist.
 - **Release Scoring & Presets:** Scoring by codec, source, HDR and bitrate density, plus a primary/fallback language hierarchy, all tunable through reusable search presets.
+- **Service Outage Resilience:** When an indexer or downloader returns a server error, times out or serves an HTML error page, affected pushes pause automatically and retry after 10, 20, then 30 minutes (up to 5 attempts) before failing. A red dashboard banner shows the outage with a Resume Queue button, manual searches offer Retry Search, and optional outage alerts can be enabled in Settings.
 - **Global Dry-Run Sandbox:** Simulate entire push pipelines with zero remote mutations.
 
 ---

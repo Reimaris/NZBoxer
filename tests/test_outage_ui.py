@@ -4,6 +4,7 @@ from sqlalchemy import text as sa_text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.main import app
+from app.services.outage_classifier import OutageVerdict
 
 client = TestClient(app)
 
@@ -103,3 +104,73 @@ async def test_card5_shows_outage_badge(db_session: AsyncSession, nzbgeek_outage
     html = client.get("/").text
     assert "Paused — Indexer Outage (resumes " in html
     assert "Paused: NZBgeek server error (HTTP 503)" in html
+
+
+def _search_form(**over):
+    data = {"scope": "item", "kind": "movie", "title": "Test Movie", "tmdb_id": "1"}
+    data.update(over)
+    return data
+
+
+def _mock_indexers(monkeypatch, behaviours: dict[str, bool]):
+    """``behaviours`` maps indexer host -> True when it is down (503)."""
+    from app.core import adhoc_search
+    from app.db.models import Provider
+    from app.services.indexers import newznab
+
+    provs = [
+        Provider(name=h, api_url=f"https://{h}/api", api_key="k") for h in behaviours
+    ]
+
+    async def active(_session):
+        return provs
+
+    async def search_movie(**kw):
+        if behaviours[kw["api_url"].split("//")[1].split("/")[0]]:
+            raise newznab.IndexerOutageError(
+                "boom", kw["api_url"], OutageVerdict("outage", "HTTP 503")
+            )
+        return []
+
+    monkeypatch.setattr(adhoc_search.provider_service, "get_active_indexers", active)
+    monkeypatch.setattr(adhoc_search.newznab_client, "search_movie", search_movie)
+
+
+def test_manual_search_all_indexers_down_shows_retry(monkeypatch):
+    _mock_indexers(monkeypatch, {"a.example.com": True, "b.example.com": True})
+    html = client.post("/api/search/manual/releases", data=_search_form()).text
+    assert "Retry Search" in html
+    assert "Indexer outage: a.example.com returned HTTP 503." in html
+    assert "No items found" not in html
+
+
+def test_manual_search_with_healthy_indexer_has_no_retry(monkeypatch):
+    _mock_indexers(monkeypatch, {"a.example.com": True, "b.example.com": False})
+    html = client.post("/api/search/manual/releases", data=_search_form()).text
+    assert "Retry Search" not in html
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("down,expected", [(True, "HTTP 503"), (False, None)])
+async def test_push_modal_search_reports_outage(
+    db_session: AsyncSession, monkeypatch, down, expected
+):
+    from app.core.push_engine import execute_manual_search
+    from app.services.indexers import newznab
+    from tests.conftest import make_indexer_provider, make_movie
+
+    item = await make_movie(db_session)
+    await make_indexer_provider(db_session, api_url="https://a.example.com/api")
+    await db_session.commit()
+
+    async def search_movie(**kw):
+        if down:
+            raise newznab.IndexerOutageError(
+                "boom", kw["api_url"], OutageVerdict("outage", "HTTP 503")
+            )
+        return []
+
+    monkeypatch.setattr(newznab, "search_movie", search_movie)
+    result = await execute_manual_search(db_session, item.id, {})
+    got = result["search_outage"]
+    assert (got["label"] if got else None) == expected
