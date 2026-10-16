@@ -118,7 +118,7 @@ async def test_fetch_entries_maps_progress_status_and_kind() -> None:
 @pytest.mark.parametrize(
     ("raw_status", "expected"),
     [
-        ("hold", "watching"),
+        ("hold", "on_hold"),
         ("dropped", "dropped"),
         ("WATCHING", "watching"),
         (None, "plantowatch"),

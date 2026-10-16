@@ -101,3 +101,35 @@ async def test_absent_on_hold_source_completed_and_present_one_pruned_protected(
     await db_session.commit()
     ids = set((await db_session.execute(select(MediaItem.id))).scalars().all())
     assert ids == {held.id}
+
+
+async def test_simkl_get_watchlist_requests_all_five_statuses(monkeypatch):
+    import httpx
+
+    from app.services.watchlists import simkl
+
+    requested: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requested.append(request.url.path.rsplit("/", 1)[-1])
+        return httpx.Response(200, json={"shows": []})
+
+    real = httpx.AsyncClient
+    monkeypatch.setattr(
+        simkl.httpx,
+        "AsyncClient",
+        lambda **kw: real(transport=httpx.MockTransport(handler), **kw),
+    )
+    monkeypatch.setattr(simkl._limiter, "wait", lambda: _noop())
+    await simkl.get_watchlist("shows", "test-id", "test-token")
+    assert requested == ["plantowatch", "watching", "hold", "completed", "dropped"]
+
+
+async def _noop() -> None:
+    return None
+
+
+def test_simkl_hold_row_maps_to_on_hold():
+    from app.services.watchlists.simkl_adapter import _simkl_list_status
+
+    assert _simkl_list_status("hold") == "on_hold"

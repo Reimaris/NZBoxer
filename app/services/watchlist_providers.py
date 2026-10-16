@@ -47,7 +47,7 @@ _ANILIST_STATUS_MAP: dict[str, ListStatus] = {
     "PLANNING": "plantowatch",
     "CURRENT": "watching",
     "REPEATING": "watching",
-    "PAUSED": "watching",
+    "PAUSED": "on_hold",
     "COMPLETED": "completed",
     "DROPPED": "dropped",
 }
@@ -131,7 +131,7 @@ class PlexWatchlistAdapter:
 _MAL_STATUS_MAP: dict[str, ListStatus] = {
     "plan_to_watch": "plantowatch",
     "watching": "watching",
-    "on_hold": "watching",
+    "on_hold": "on_hold",
     "completed": "completed",
     "dropped": "dropped",
 }

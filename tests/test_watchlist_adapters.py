@@ -82,7 +82,7 @@ async def test_anilist_entry_maps_to_watchlist_entry(monkeypatch):
     [
         ("CURRENT", "watching"),
         ("REPEATING", "watching"),
-        ("PAUSED", "watching"),
+        ("PAUSED", "on_hold"),
         ("COMPLETED", "completed"),
     ],
 )
@@ -108,7 +108,7 @@ async def test_anilist_progress_maps_to_watched_episodes(
     [
         ("PLANNING", "TV", "plantowatch", "anime"),
         ("REPEATING", "TV", "watching", "anime"),
-        ("PAUSED", "TV", "watching", "anime"),
+        ("PAUSED", "TV", "on_hold", "anime"),
         ("COMPLETED", "MOVIE", "completed", "anime_movie"),
         ("DROPPED", "OVA", "dropped", "anime"),
     ],
@@ -358,7 +358,7 @@ def test_mal_pkce_pair_and_authorize_url():
     ("status", "kind", "expected", "watched"),
     [
         ("plan_to_watch", "tv", "plantowatch", 0),
-        ("on_hold", "tv", "watching", 3),
+        ("on_hold", "tv", "on_hold", 3),
         ("completed", "movie", "completed", 1),
         ("dropped", "tv", "dropped", 2),
     ],

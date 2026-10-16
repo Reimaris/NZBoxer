@@ -19,10 +19,10 @@ _KIND_BY_KEY = {"movie": "movie", "show": "show", "anime": "anime"}
 
 
 def _simkl_list_status(raw: Any) -> ListStatus:
-    """Map a Simkl list status to ``ListStatus`` (``hold`` counts as ``watching``)."""
+    """Map a Simkl list status to ``ListStatus`` (``hold`` becomes ``on_hold``)."""
     status = str(raw or "plantowatch").lower()
     if status == "hold":
-        return "watching"
+        return "on_hold"
     if status in ("plantowatch", "watching", "completed", "dropped"):
         return status  # type: ignore[return-value]
     return "plantowatch"

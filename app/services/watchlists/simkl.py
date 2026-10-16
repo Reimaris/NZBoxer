@@ -423,7 +423,7 @@ async def ensure_valid_simkl_token(
 async def get_watchlist(
     media_type: str, client_id: str, access_token: str
 ) -> list[dict[str, Any]]:
-    """Fetch the 'plantowatch' and 'watching' list for movies, shows, or anime.
+    """Fetch all five status lists (plantowatch, watching, hold, completed, dropped) for movies, shows, or anime.
 
     Args:
         media_type: 'movies', 'shows', or 'anime'.
@@ -441,7 +441,7 @@ async def get_watchlist(
     headers = _build_headers(client_id, access_token)
     headers["Content-Type"] = "application/json"
 
-    statuses = ["plantowatch", "watching"]
+    statuses = ["plantowatch", "watching", "hold", "completed", "dropped"]
     all_items: list[dict[str, Any]] = []
 
     async with httpx.AsyncClient(timeout=10.0) as client:
