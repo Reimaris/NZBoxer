@@ -330,7 +330,7 @@ async def test_sync_all_providers_future_rollover_integration(db_session, monkey
     from app.services import tmdb
     from app.services.watchlists import simkl
 
-    now = datetime(2026, 10, 11, 12, 0, 0, tzinfo=timezone.utc)
+    now = datetime.now(timezone.utc)
     past_date_str = (now - timedelta(days=2)).strftime("%Y-%m-%d")
     future_date_str = (now + timedelta(days=5)).strftime("%Y-%m-%d")
 
