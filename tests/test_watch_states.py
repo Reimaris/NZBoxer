@@ -408,3 +408,27 @@ def test_playback_list_status(offset, duration, views, continue_watching, expect
     from app.services.watchlist_providers import playback_list_status
 
     assert playback_list_status(offset, duration, views, continue_watching) == expected
+
+
+# --- On Hold dashboard section (m69-07) ---
+
+
+async def test_dashboard_renders_on_hold_section(db_session, async_client):
+    from tests.conftest import seed_setup_ready
+
+    await seed_setup_ready(db_session)
+    provider = await make_watchlist_provider(db_session, "simkl", name="hold-src")
+    item = await make_movie(db_session, provider_id=provider.id, title="Held Movie")
+    await make_source(db_session, item, provider, "on_hold", "h")
+    await db_session.commit()
+
+    html = (await async_client.get("/")).text
+    assert "Held Movie" in html
+    body = html.split('id="video-table-body-on-hold"', 1)[1].split("</tbody>", 1)[0]
+    assert "Held Movie" in body
+    assert "On hold" in body
+    assert "No on-hold or awaiting-season items in this category" in body
+    upcoming = html.split('id="video-table-body-upcoming"', 1)[1].split("</tbody>", 1)[
+        0
+    ]
+    assert "Held Movie" not in upcoming

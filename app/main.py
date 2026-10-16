@@ -467,6 +467,7 @@ async def dashboard(request: Request, background_tasks: BackgroundTasks):
         in_progress_items = [i for i in items if i.status_tier == "in_progress"]
         ready_to_push_items = [i for i in items if i.status_tier == "ready_to_push"]
         upcoming_items = [i for i in items if i.status_tier == "upcoming"]
+        on_hold_items = [i for i in items if i.status_tier == "on_hold"]
 
         from app.core.push_engine import get_anime_title_language
 
@@ -529,6 +530,7 @@ async def dashboard(request: Request, background_tasks: BackgroundTasks):
                     1 for i in cat_items if i.status_tier == "ready_to_push"
                 ),
                 "upcoming": sum(1 for i in cat_items if i.status_tier == "upcoming"),
+                "on_hold": sum(1 for i in cat_items if i.status_tier == "on_hold"),
                 "wanted": sum(
                     1 for i in cat_items if i.status in ("searching", "pending")
                 ),
@@ -601,6 +603,7 @@ async def dashboard(request: Request, background_tasks: BackgroundTasks):
             "in_progress_items": in_progress_items,
             "ready_to_push_items": ready_to_push_items,
             "upcoming_items": upcoming_items,
+            "on_hold_items": on_hold_items,
             "movie_items": movie_items,
             "series_items": series_items,
             "anime_items": anime_items,

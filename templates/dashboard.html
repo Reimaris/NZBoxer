@@ -102,6 +102,7 @@ function initVideoDashboard() {
                         'video-table-body-in-progress',
                         'video-table-body-ready-to-push',
                         'video-table-body-upcoming',
+                        'video-table-body-on-hold',
                         'dashboard-history-table-body',
                         'history-toolbar-actions',
                         'deck-card-count-movie',
@@ -253,7 +254,8 @@ function initVideoDashboard() {
             const bodyIds = [
                 'video-table-body-in-progress',
                 'video-table-body-ready-to-push',
-                'video-table-body-upcoming'
+                'video-table-body-upcoming',
+                'video-table-body-on-hold'
             ];
             bodyIds.forEach(id => {
                 const tbody = document.getElementById(id);
@@ -447,6 +449,10 @@ document.addEventListener('alpine:init', () => {
                     <div class="text-[10px] text-[#a1a1aa] uppercase font-semibold">Future</div>
                     <div class="text-base font-bold text-blue-400">{{ movie_stats.upcoming }}</div>
                 </div>
+                <div>
+                    <div class="text-[10px] text-[#a1a1aa] uppercase font-semibold">Hold</div>
+                    <div class="text-base font-bold text-gray-400">{{ movie_stats.on_hold }}</div>
+                </div>
             </div>
         </div>
 
@@ -475,6 +481,10 @@ document.addEventListener('alpine:init', () => {
                     <div class="text-[10px] text-[#a1a1aa] uppercase font-semibold">Future</div>
                     <div class="text-base font-bold text-blue-400">{{ series_stats.upcoming }}</div>
                 </div>
+                <div>
+                    <div class="text-[10px] text-[#a1a1aa] uppercase font-semibold">Hold</div>
+                    <div class="text-base font-bold text-gray-400">{{ series_stats.on_hold }}</div>
+                </div>
             </div>
         </div>
 
@@ -502,6 +512,10 @@ document.addEventListener('alpine:init', () => {
                 <div>
                     <div class="text-[10px] text-[#a1a1aa] uppercase font-semibold">Future</div>
                     <div class="text-base font-bold text-blue-400">{{ anime_stats.upcoming }}</div>
+                </div>
+                <div>
+                    <div class="text-[10px] text-[#a1a1aa] uppercase font-semibold">Hold</div>
+                    <div class="text-base font-bold text-gray-400">{{ anime_stats.on_hold }}</div>
                 </div>
             </div>
         </div>
@@ -785,8 +799,10 @@ document.addEventListener('alpine:init', () => {
 
                     <!-- Right: Season Progress & Active Status Badges -->
                     <div class="flex items-center gap-1.5 flex-wrap">
-                        {% if item.status_tier == 'upcoming' or item.status.value == 'future' or item.is_tba %}
+                        {% if item.status_tier != 'on_hold' and (item.status_tier == 'upcoming' or item.status.value == 'future' or item.is_tba) %}
                             <span class="bg-blue-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider shadow-sm">FUTURE</span>
+                        {% elif item.status_tier == 'on_hold' %}
+                            <span class="bg-gray-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider shadow-sm">{{ 'On hold' if item.is_list_on_hold else 'Awaiting next season' }}</span>
                         {% else %}
                             {% if item.status.value == 'downloading' %}
                                 <span class="bg-cyan-600 animate-pulse text-white text-[10px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider shadow-sm">DOWNLOADING</span>
@@ -837,12 +853,14 @@ document.addEventListener('alpine:init', () => {
             </td>
 
             <!-- Desktop-Only Col 4: Status & Progress (Omitted entirely if searching with zero pills) -->
-            {% set has_status_content = (item.status_tier == 'upcoming' or item.status.value == 'future' or item.is_tba or item.status.value in ['downloading', 'rate_limited', 'failed', 'downloaded', 'completed'] or (item.progress_pills and item.progress_pills|length > 0) or item.is_fallback or (item.failure_logs and item.failure_logs|length > 0)) %}
+            {% set has_status_content = (item.status_tier in ['upcoming', 'on_hold'] or item.status.value == 'future' or item.is_tba or item.status.value in ['downloading', 'rate_limited', 'failed', 'downloaded', 'completed'] or (item.progress_pills and item.progress_pills|length > 0) or item.is_fallback or (item.failure_logs and item.failure_logs|length > 0)) %}
             <td class="hidden md:table-cell md:px-6 md:py-4 md:w-px md:whitespace-nowrap">
                 {% if has_status_content %}
                 <div class="flex flex-col items-start gap-1">
-                    {% if item.status_tier == 'upcoming' or item.status.value == 'future' or item.is_tba %}
+                    {% if item.status_tier != 'on_hold' and (item.status_tier == 'upcoming' or item.status.value == 'future' or item.is_tba) %}
                         <span class="bg-blue-600 text-white text-[11px] font-bold px-2 py-0.5 rounded uppercase tracking-wider shadow-sm">FUTURE</span>
+                    {% elif item.status_tier == 'on_hold' %}
+                        <span class="bg-gray-600 text-white text-[11px] font-bold px-2 py-0.5 rounded uppercase tracking-wider shadow-sm">{{ 'On hold' if item.is_list_on_hold else 'Awaiting next season' }}</span>
                     {% else %}
                         {% if item.status.value == 'downloading' %}
                             <span class="bg-cyan-600 animate-pulse text-white text-[11px] font-bold px-2 py-0.5 rounded uppercase tracking-wider shadow-sm">DOWNLOADING</span>
@@ -986,6 +1004,32 @@ document.addEventListener('alpine:init', () => {
                             <tr class="block md:table-row w-full" data-empty-row="true" x-show="!hasVisibleRows('upcoming')" style="display: none;">
                                 <td colspan="5" class="block md:table-cell px-6 py-6 text-center text-[#a1a1aa] w-full">
                                     <p class="text-sm font-medium text-gray-400">No upcoming or TBA items in this category</p>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Section 4: On Hold & Awaiting Seasons -->
+            <div class="space-y-3">
+                <div class="flex items-center justify-between px-1">
+                    <div class="flex items-center gap-2">
+                        <span class="inline-flex rounded-full h-2.5 w-2.5 bg-gray-500"></span>
+                        <h3 class="text-sm font-bold text-white uppercase tracking-wider">On Hold &amp; Awaiting Seasons</h3>
+                        <span class="text-xs text-[#a1a1aa]">(Paused lists &amp; unreleased seasons)</span>
+                    </div>
+                </div>
+                <div class="border border-[#3f3f46] rounded-lg overflow-x-hidden md:overflow-x-auto bg-[#1e1e24]/40 min-h-[120px]">
+                    <table class="block md:table w-full text-left border-collapse table-fixed md:table-auto">
+                        {{ render_v3_table_header() }}
+                        <tbody id="video-table-body-on-hold" class="block md:table-row-group divide-y divide-[#3f3f46] text-sm w-full">
+                            {% for item in items if item.status_tier == 'on_hold' %}
+                                {{ render_v3_item_row(item) }}
+                            {% endfor %}
+                            <tr class="block md:table-row w-full" data-empty-row="true" x-show="!hasVisibleRows('on_hold')" style="display: none;">
+                                <td colspan="5" class="block md:table-cell px-6 py-6 text-center text-[#a1a1aa] w-full">
+                                    <p class="text-sm font-medium text-gray-400">No on-hold or awaiting-season items in this category</p>
                                 </td>
                             </tr>
                         </tbody>
