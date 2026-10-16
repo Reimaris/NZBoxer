@@ -1,0 +1,22 @@
+{# Feature pills + limitation callouts from the provider capability registry (m70, ADR-153).
+   show_limitations: False (none), "first" (first only) or True (all). #}
+{% macro capability_pills(provider_type, show_limitations=False) -%}
+{%- set cap = get_capability(provider_type) -%}
+{%- if cap -%}
+<div class="mt-2 flex flex-wrap gap-1" data-testid="capability-pills">
+    {%- for m in cap.media_coverage %}
+    <span class="px-1.5 py-0.5 rounded bg-[#2a2a32] border border-[#3f3f46] text-[10px] text-[#a1a1aa]">{{ m }}</span>
+    {%- endfor %}
+    {%- if cap.supports_watch_progress %}<span class="px-1.5 py-0.5 rounded bg-green-500/10 border border-green-500/30 text-[10px] text-green-400">Watch progress</span>{% endif %}
+    {%- if cap.supports_exact_air_dates %}<span class="px-1.5 py-0.5 rounded bg-green-500/10 border border-green-500/30 text-[10px] text-green-400">Exact air dates</span>{% endif %}
+    {%- if cap.downloader_kind == 'cloud' %}<span class="px-1.5 py-0.5 rounded bg-purple-500/10 border border-purple-500/30 text-[10px] text-purple-400">Cloud</span>{% endif %}
+    {%- if cap.downloader_kind == 'local' %}<span class="px-1.5 py-0.5 rounded bg-purple-500/10 border border-purple-500/30 text-[10px] text-purple-400">Local</span>{% endif %}
+    {%- if cap.supports_unpack_verification %}<span class="px-1.5 py-0.5 rounded bg-green-500/10 border border-green-500/30 text-[10px] text-green-400">Unpack check</span>{% endif %}
+</div>
+{%- if show_limitations and cap.limitations %}
+{%- for note in (cap.limitations[:1] if show_limitations == 'first' else cap.limitations) %}
+<p class="text-[11px] text-amber-400 mt-1">{{ note }}</p>
+{%- endfor %}
+{%- endif %}
+{%- endif -%}
+{%- endmacro %}

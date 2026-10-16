@@ -201,10 +201,14 @@ templates.env.globals["indexer_preset"] = get_preset
 
 from app.core.diagnostics import GITHUB_BUG_REPORT_URL  # noqa: E402
 from app.core.experimental import experimental_types, is_experimental  # noqa: E402
-from app.services.provider_capabilities import get_capability  # noqa: E402
+from app.services.provider_capabilities import (  # noqa: E402
+    capabilities_by_category,
+    get_capability,
+)
 
 templates.env.globals["is_experimental"] = is_experimental
 templates.env.globals["get_capability"] = get_capability
+templates.env.globals["capabilities_by_category"] = capabilities_by_category
 templates.env.globals["anime_title_for"] = anime_title_for
 templates.env.globals["anime_season_title_for"] = anime_season_title_for
 templates.env.globals["bug_report_url"] = GITHUB_BUG_REPORT_URL

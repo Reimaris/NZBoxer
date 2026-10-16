@@ -87,6 +87,28 @@ It keeps your **Movies**, **TV Series** and **Anime** in sync with your watchlis
 | **Indexers** | 10 Curated Presets | API Key / URL | ✅ TreasureMaps<br>🧪 Other 9 | DrunkenSlug, NZBGeek, NzbPlanet, AltHUB, NinjaCentral, etc. |
 |  | Custom Newznab | API Key / URL | 🧪 Experimental | Any Newznab-compatible indexer with custom category mappings |
 
+### Provider Capabilities
+
+Open **Settings → Capabilities Matrix** in the app for the same comparison. Season **Auto-Advance** needs a linked watchlist source that reports watch progress (Simkl, AniList or MyAnimeList); for Plex-, Jellyseerr- or Overseerr-only titles the toggle is disabled.
+
+| Provider | Category | Media | Watch progress | Exact air dates | Notes |
+|---|---|---|---|---|---|
+| Simkl | Watchlist | Movies, series, anime | ✓ | ✓ (TV) | |
+| AniList | Watchlist | Anime | ✓ | ✓ (anime) | |
+| MyAnimeList | Watchlist | Anime | ✓ | ✗ | Uses AniList/TMDB dates |
+| Plex | Watchlist | Movies, series | ✗ | ✗ | No season auto-advance; uses TMDB dates |
+| Jellyseerr | Watchlist | Movies, series | ✗ | ✗ | No season auto-advance; uses TMDB dates |
+| Overseerr | Watchlist | Movies, series | ✗ | ✗ | No season auto-advance; uses TMDB dates |
+| TMDB | Metadata | Movies, series | ✗ | ✗ | AniList provides anime air dates |
+
+| Downloader | Kind | Unpack verification | Remote delete | Category mapping |
+|---|---|---|---|---|
+| TorBox | Cloud | ✓ | ✓ | ✗ |
+| Premiumize | Cloud | ✗ (reported by Premiumize) | ✓ | ✗ |
+| SABnzbd | Local | ✓ | ✓ | ✓ |
+
+All indexers (presets and custom Newznab) cover movies, series and anime and support custom categories.
+
 > **🧪 Experimental** means the maintainer has not tested that integration against the live service. It is implemented and covered by automated tests, but may have rough edges. These providers carry an *Experimental* pill in Settings, so please [report any problems](https://github.com/Reimaris/NZBoxer/issues).
 
 > MyAnimeList requires its redirect URI, `<your NZBoxer base URL>/settings/provider/mal/auth/callback` (shown in the provider dialog), to be registered in your MAL API app. SABnzbd must be reachable from the NZBoxer container via its LAN IP or `host.docker.internal`, not `localhost`. Only one downloader is active at a time.

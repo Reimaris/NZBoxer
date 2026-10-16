@@ -1,4 +1,5 @@
 {% from "partials/_experimental_pill.html" import experimental_pill %}
+{% from "partials/_capability_pills.html" import capability_pills %}
 <!-- Provider Modal (v3.0.0) -->
 {% set cfg = provider.watchlist_config if provider else {} %}
 {% set pcat = (provider.category.value if provider.category.value is defined else provider.category) if provider else ('watchlist' if new_type else '') %}
@@ -84,6 +85,7 @@
                                 </div>
                             </div>
                             <p class="text-xs text-[#71717a] mt-1">Sync movies, TV shows, and anime watchlists via OAuth 2.0 Device Flow (AUTH V2) with auto-refreshing tokens and watch-progress season expansion.</p>
+                            {{ capability_pills('simkl') }}
                         </button>
                         <button type="button" @click="selectProvider('anilist', 'watchlist', 'AniList')" class="bg-[#111115] hover:bg-[#2a2a32] border border-[#3f3f46] hover:border-[#d40060] rounded-xl p-4 text-left transition-all group flex flex-col justify-between">
                             <div class="flex items-center gap-3 mb-2">
@@ -95,6 +97,7 @@
                                 </div>
                             </div>
                             <p class="text-xs text-[#71717a] mt-1">Sync your AniList anime list using your public username (access token only needed for private profiles).</p>
+                            {{ capability_pills('anilist') }}
                         </button>
                         <button type="button" @click="selectProvider('plex', 'watchlist', 'Plex')" class="bg-[#111115] hover:bg-[#2a2a32] border border-[#3f3f46] hover:border-[#d40060] rounded-xl p-4 text-left transition-all group flex flex-col justify-between">
                             <div class="flex items-center gap-3 mb-2">
@@ -106,6 +109,7 @@
                                 </div>
                             </div>
                             <p class="text-xs text-[#71717a] mt-1">Sync your Plex Discover watchlist via PIN login or a manual token.</p>
+                            {{ capability_pills('plex', show_limitations='first') }}
                         </button>
                         <button type="button" @click="selectProvider('mal', 'watchlist', 'MyAnimeList')" class="bg-[#111115] hover:bg-[#2a2a32] border border-[#3f3f46] hover:border-[#d40060] rounded-xl p-4 text-left transition-all group flex flex-col justify-between">
                             <div class="flex items-center gap-3 mb-2">
@@ -117,6 +121,7 @@
                                 </div>
                             </div>
                             <p class="text-xs text-[#71717a] mt-1">Sync your MyAnimeList anime list via OAuth 2.0 PKCE with your own MAL API client ID.</p>
+                            {{ capability_pills('mal') }}
                         </button>
                         <button type="button" @click="selectProvider('jellyseerr', 'watchlist', 'Jellyseerr')" class="bg-[#111115] hover:bg-[#2a2a32] border border-[#3f3f46] hover:border-[#d40060] rounded-xl p-4 text-left transition-all group flex flex-col justify-between">
                             <div class="flex items-center gap-3 mb-2">
@@ -128,6 +133,7 @@
                                 </div>
                             </div>
                             <p class="text-xs text-[#71717a] mt-1">Import approved requests from your Jellyseerr server and report back when media is available.</p>
+                            {{ capability_pills('jellyseerr') }}
                         </button>
                         <button type="button" @click="selectProvider('overseerr', 'watchlist', 'Overseerr')" class="bg-[#111115] hover:bg-[#2a2a32] border border-[#3f3f46] hover:border-[#d40060] rounded-xl p-4 text-left transition-all group flex flex-col justify-between">
                             <div class="flex items-center gap-3 mb-2">
@@ -139,6 +145,7 @@
                                 </div>
                             </div>
                             <p class="text-xs text-[#71717a] mt-1">Import approved requests from your Overseerr server and report back when media is available.</p>
+                            {{ capability_pills('overseerr') }}
                         </button>
                     </div>
                 </div>
@@ -157,6 +164,7 @@
                                 </div>
                             </div>
                             <p class="text-xs text-[#71717a] mt-1">Movie and TV series metadata, season/episode air dates, and poster artwork (v3 API key required).</p>
+                            {{ capability_pills('tmdb') }}
                         </button>
                     </div>
                 </div>
@@ -175,6 +183,7 @@
                                 </div>
                             </div>
                             <p class="text-xs text-[#71717a] mt-1">Cloud Usenet downloader for multipart NZB uploads, active transfer polling, and Layer 3 video verification.</p>
+                            {{ capability_pills('torbox') }}
                         </button>
                         <button type="button" @click="selectProvider('sabnzbd', 'downloader', 'SABnzbd')" class="bg-[#111115] hover:bg-[#2a2a32] border border-[#3f3f46] hover:border-purple-400 rounded-xl p-4 text-left transition-all group flex flex-col justify-between">
                             <div class="flex items-center gap-3 mb-2">
@@ -186,6 +195,7 @@
                                 </div>
                             </div>
                             <p class="text-xs text-[#71717a] mt-1">Local or LAN SABnzbd instance with per-media categories and queue polling.</p>
+                            {{ capability_pills('sabnzbd') }}
                         </button>
                         <button type="button" @click="selectProvider('premiumize', 'downloader', 'Premiumize')" class="bg-[#111115] hover:bg-[#2a2a32] border border-[#3f3f46] hover:border-purple-400 rounded-xl p-4 text-left transition-all group flex flex-col justify-between">
                             <div class="flex items-center gap-3 mb-2">
@@ -197,6 +207,7 @@
                                 </div>
                             </div>
                             <p class="text-xs text-[#71717a] mt-1">Premiumize cloud downloader with fair-use rate limit handling.</p>
+                            {{ capability_pills('premiumize') }}
                         </button>
                     </div>
                 </div>
@@ -223,6 +234,9 @@
 
             <!-- STEP 2: DYNAMIC CONFIGURATION VIEW -->
             <div x-show="step === 2" class="animate-fade-in">
+                {% for _cat, _caps in capabilities_by_category().items() %}{% for _cap in _caps %}
+                <div x-show="providerType === '{{ _cap.provider_type }}'" x-cloak class="mb-4">{{ capability_pills(_cap.provider_type, show_limitations=True) }}</div>
+                {% endfor %}{% endfor %}
                 <form id="provider-form" hx-post="/settings/provider{% if provider %}/{{ provider.id }}{% endif %}" hx-target="#provider-form-status" hx-swap="innerHTML" hx-on::before-swap="if (event.detail.xhr.status === 422) { event.detail.shouldSwap = true; event.detail.isError = false; }" class="space-y-6">
                     <input type="hidden" name="provider_type" :value="providerType" value="{{ ptype }}">
                     <input type="hidden" name="category" :value="providerCategory" value="{{ pcat }}">

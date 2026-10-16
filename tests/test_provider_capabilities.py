@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
+from pathlib import Path
 
 import pytest
 from markupsafe import escape
@@ -309,3 +310,19 @@ async def test_settings_page_has_matrix_button_and_card_link(db_session, async_c
     assert resp.status_code == 200
     assert "Capabilities Matrix" in resp.text
     assert "/settings/capabilities?focus=plex" in resp.text
+
+
+# --- provider modal pills & README gate -------------------------------------
+
+
+async def test_provider_modal_shows_plex_limitation(async_client):
+    resp = await async_client.get("/settings/provider/new")
+    assert resp.status_code == 200
+    assert CAPABILITIES["plex"].limitations[0] in resp.text
+    assert "Watch progress" in resp.text
+
+
+@pytest.mark.parametrize("slug", sorted(set(WATCHLIST_TYPES) | set(DOWNLOADER_TYPES)))
+def test_readme_lists_every_provider(slug: str) -> None:
+    readme = (Path(__file__).resolve().parent.parent / "README.md").read_text()
+    assert CAPABILITIES[slug].display_name in readme
