@@ -493,3 +493,25 @@ async def test_dashboard_selection_bar_has_simulated_quick_select(
     assert "Simulated (1)" in btn
     assert "opacity-50" not in btn
     assert "data-filter-key" in html[html.index("selectHistoryByStatus(key)") :][:500]
+
+
+@pytest.mark.asyncio
+async def test_dashboard_selection_quick_selects_exclude_dry_run_from_ready(
+    async_client: AsyncClient, db_session: AsyncSession
+):
+    movie = await make_movie(db_session, title="QS Excl", status=MediaStatus.COMPLETED)
+    for i, dry in enumerate([False, True]):
+        await make_history(
+            db_session,
+            item=movie,
+            downloader_transfer_id=f"tb-excl-{i}",
+            nzb_guid=f"guid-excl-{i}",
+            status_detail="completed",
+            is_dry_run=dry,
+        )
+    await db_session.commit()
+
+    html = (await async_client.get("/?tab=history")).text
+
+    assert "Ready (1)" in html[html.index("selectHistoryByStatus('ready')") :][:450]
+    assert "[data-status='${key}']" not in html
