@@ -143,6 +143,20 @@ def register_indexer_names(indexers: Any) -> None:
             _indexer_names[_normalize_indexer_key(p.api_url)] = p.name
 
 
+def indexer_display_name(indexer_url: str) -> str:
+    """Provider display name for an indexer URL, else its host key."""
+    key = _normalize_indexer_key(indexer_url)
+    return _indexer_names.get(key, key)
+
+
+def indexer_key_for_name(name: str) -> str:
+    """Inverse of ``indexer_display_name``: cooldown key for a display name."""
+    for key, display in _indexer_names.items():
+        if display == name:
+            return key
+    return name
+
+
 def get_all_indexer_cooldowns() -> dict[str, float]:
     """Display name (provider name, else host key) -> remaining seconds (> 0 only)."""
     result: dict[str, float] = {}

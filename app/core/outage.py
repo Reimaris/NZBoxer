@@ -15,6 +15,7 @@ from typing import Any, Literal
 
 from sqlalchemy import ColumnElement, or_
 
+from app.services.downloaders.base import DOWNLOADER_DISPLAY_NAMES
 from app.services.downloaders.factory import downloader_classes
 from app.services.indexers import newznab
 
@@ -106,6 +107,22 @@ def record_outage(
         kind, provider_name, label, attempt, time.monotonic() + seconds
     )
     return seconds
+
+
+def record_outage_from_marker(marker: OutageMarker, attempt: int) -> int:
+    """Resolve the provider key from the marker's display name and ``record_outage``."""
+    if marker.kind == "indexer":
+        key = newznab.indexer_key_for_name(marker.name)
+    else:
+        key = next(
+            (
+                t
+                for t, display in DOWNLOADER_DISPLAY_NAMES.items()
+                if display == marker.name
+            ),
+            marker.name,
+        )
+    return record_outage(marker.kind, key, marker.name, marker.label, attempt)
 
 
 def active_outages() -> list[ActiveOutage]:

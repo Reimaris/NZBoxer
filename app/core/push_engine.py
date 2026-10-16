@@ -33,10 +33,20 @@ from app.core.anime_titles import (
     anime_title_for,
     normalize_anime_title_language,
 )
+from app.core.failure_logger import log_failure
 from app.core.fake_detector import (
     extract_nzb_password,
     is_indexer_metadata_fake,
     is_nzb_content_fake,
+)
+from app.core.outage import (
+    MAX_OUTAGE_RETRIES,
+    OutageMarker,
+    make_outage_marker,
+    parse_outage_marker,
+    paused_detail,
+    record_outage_from_marker,
+    terminal_detail,
 )
 from app.core.parser import build_release_feature_pills, parse_release_name
 from app.core.rate_limit_queue import (
@@ -1033,6 +1043,27 @@ async def _dispatch_candidate_list_to_downloader(
                         f"Indexer rate limit exceeded ({exc.indexer_url}): {exc}"
                     )
                 return None
+            except newznab_client.IndexerOutageError as exc:
+                logger.warning("Indexer outage fetching '%s': %s", title, exc)
+                if error_out is not None:
+                    error_out.append(
+                        make_outage_marker(
+                            "indexer",
+                            newznab_client.indexer_display_name(
+                                exc.indexer_url or cand.get("indexer_url") or ""
+                            ),
+                            exc.verdict.label if exc.verdict else "outage",
+                        )
+                    )
+                return None
+            except newznab_client.IndexerAuthError as exc:
+                logger.warning("Indexer auth error fetching '%s': %s", title, exc)
+                if error_out is not None:
+                    error_out.append(
+                        "failed: indexer authentication error "
+                        f"({exc.verdict.label if exc.verdict else 'rejected'})"
+                    )
+                return None
             except Exception as exc:
                 logger.warning("Failed fetching NZB bytes for '%s': %s", title, exc)
                 continue
@@ -1112,6 +1143,35 @@ async def _dispatch_candidate_list_to_downloader(
             logger.warning("Downloader dispatch halted for '%s': %s", title, err_str)
             if error_out is not None:
                 error_out.append(err_str)
+            return None
+        if upload.is_outage:
+            logger.warning(
+                "%s outage during dispatch of '%s': %s",
+                client.display_name,
+                title,
+                upload.detail,
+            )
+            if error_out is not None:
+                error_out.append(
+                    make_outage_marker(
+                        "downloader",
+                        client.display_name,
+                        upload.outage_label or "outage",
+                    )
+                )
+            return None
+        if upload.is_auth_error:
+            logger.warning(
+                "%s authentication error for '%s': %s",
+                client.display_name,
+                title,
+                upload.detail,
+            )
+            if error_out is not None:
+                error_out.append(
+                    "failed: downloader authentication error "
+                    f"({(upload.detail or 'credentials rejected').strip()[:80]})"
+                )
             return None
         if not upload.success or not (upload.transfer_id or upload.raw.get("hash")):
             logger.warning(
@@ -1366,6 +1426,19 @@ def _failure_reason_from_partitioned(partitioned: dict[str, Any] | None) -> str:
     return "failed: downloader upload failed — all candidates exhausted"
 
 
+def _is_queueable_error(msg: str | None) -> bool:
+    """429 rate limits and outage markers both queue the target (ADR-159)."""
+    return is_rate_limit_error(msg) or _marker_of(msg) is not None
+
+
+def _marker_of(msg: str | None) -> OutageMarker | None:
+    """Parse an outage marker, tolerating ``failed: `` prefixes added by callers."""
+    text = msg or ""
+    while text.startswith("failed: "):
+        text = text[len("failed: ") :]
+    return parse_outage_marker(text)
+
+
 async def _record_auto_push_failure(
     session: AsyncSession,
     *,
@@ -1382,7 +1455,14 @@ async def _record_auto_push_failure(
     If ``reason`` describes a downloader rate limit, the target is instead queued as a
     ``RATE_LIMITED`` (paused) push that resumes automatically after the cooldown (ADR-094).
     """
-    if rate_limited is None:
+    while reason.startswith("failed: failed: "):
+        reason = reason[len("failed: ") :]
+    marker = _marker_of(reason)
+    attempts = 0
+    terminal_outage = False
+    if marker is not None:
+        rate_limited = True
+    elif rate_limited is None:
         rate_limited = is_rate_limit_error(reason)
     target_season_id = (
         season.id if season is not None else (episode.season_id if episode else None)
@@ -1400,9 +1480,17 @@ async def _record_auto_push_failure(
         DownloadHistory.downloader_transfer_id.is_(None),
         DownloadHistory.is_dismissed.is_(False),
     )
-    for prior_row in (await session.execute(prior_stmt)).scalars().all():
+    prior_rows = (await session.execute(prior_stmt)).scalars().all()
+    prior_attempts = max((r.outage_attempts or 0 for r in prior_rows), default=0)
+    for prior_row in prior_rows:
         prior_row.is_dismissed = True
         prior_row.notification_sent = True
+    if marker is not None:
+        attempts = prior_attempts + 1
+        if attempts > MAX_OUTAGE_RETRIES:
+            terminal_outage = True
+            rate_limited = False
+            reason = terminal_detail(marker.kind)
 
     if episode is not None and season is not None:
         eff_s = int(season.type_number or season.season_number)
@@ -1465,7 +1553,14 @@ async def _record_auto_push_failure(
         grabbed_language=candidate.get("matched_language")
         if (rate_limited and candidate)
         else None,
-        status_detail=RATE_LIMITED_DETAIL if rate_limited else reason,
+        status_detail=(
+            paused_detail(marker.kind, marker.label)
+            if marker is not None and rate_limited
+            else RATE_LIMITED_DETAIL
+            if rate_limited
+            else reason
+        ),
+        outage_attempts=attempts,
         push_mode=push_mode,
         is_dismissed=False,
         notification_sent=True,
@@ -1504,10 +1599,22 @@ async def _record_auto_push_failure(
         item.status = MediaStatus.FAILED
         item.last_error = reason
 
+    if "authentication error" in reason:
+        log_failure(
+            session,
+            episode or season or item,
+            "auth_error",
+            reason.removeprefix("failed: "),
+        )
+    elif terminal_outage:
+        log_failure(session, episode or season or item, "outage", reason)
+
     await session.flush()
     from app.core.transfer_poller import _recalculate_parent_status
 
     await _recalculate_parent_status(session, item)
+    if rate_limited and marker is not None:
+        record_outage_from_marker(marker, attempts)
     if rate_limited:
         from app.services.indexers import newznab as newznab_client
 
@@ -1642,7 +1749,7 @@ async def _push_single_season_or_movie_entry(
                 if tb_errors
                 else _failure_reason_from_partitioned(partitioned)
             )
-            is_rl = is_rate_limit_error(err_msg)
+            is_rl = _is_queueable_error(err_msg)
             await _record_auto_push_failure(
                 session,
                 item=item,
@@ -1744,7 +1851,7 @@ async def _push_single_season_or_movie_entry(
         if pack_tb_errors and not settings.dry_run:
             if reset_fail_count:
                 err_msg = pack_tb_errors[-1]
-                is_rl = is_rate_limit_error(err_msg)
+                is_rl = _is_queueable_error(err_msg)
                 await _record_auto_push_failure(
                     session,
                     item=item,
@@ -1823,7 +1930,7 @@ async def _push_single_season_or_movie_entry(
             if pack_tb_errors and not settings.dry_run:
                 if reset_fail_count:
                     err_msg = pack_tb_errors[-1]
-                    is_rl = is_rate_limit_error(err_msg)
+                    is_rl = _is_queueable_error(err_msg)
                     await _record_auto_push_failure(
                         session,
                         item=item,
@@ -1905,7 +2012,7 @@ async def _push_single_season_or_movie_entry(
                 if pack_tb_errors and not settings.dry_run:
                     if reset_fail_count:
                         err_msg = pack_tb_errors[-1]
-                        is_rl = is_rate_limit_error(err_msg)
+                        is_rl = _is_queueable_error(err_msg)
                         await _record_auto_push_failure(
                             session,
                             item=item,
@@ -2005,7 +2112,7 @@ async def _push_single_season_or_movie_entry(
                 if pack_tb_errors and not settings.dry_run:
                     if reset_fail_count:
                         err_msg = pack_tb_errors[-1]
-                        is_rl = is_rate_limit_error(err_msg)
+                        is_rl = _is_queueable_error(err_msg)
                         await _record_auto_push_failure(
                             session,
                             item=item,
@@ -2044,7 +2151,7 @@ async def _push_single_season_or_movie_entry(
                     elif ep_tb_errors and not settings.dry_run:
                         if reset_fail_count:
                             err_msg = ep_tb_errors[-1]
-                            is_rl = is_rate_limit_error(err_msg)
+                            is_rl = _is_queueable_error(err_msg)
                             await _record_auto_push_failure(
                                 session,
                                 item=item,
@@ -2137,7 +2244,7 @@ async def _push_single_season_or_movie_entry(
         elif ep_tb_errors and not settings.dry_run:
             if reset_fail_count:
                 err_msg = ep_tb_errors[-1]
-                is_rl = is_rate_limit_error(err_msg)
+                is_rl = _is_queueable_error(err_msg)
                 await _record_auto_push_failure(
                     session,
                     item=item,
@@ -3209,7 +3316,7 @@ async def execute_manual_grab(
             if manual_tb_errors
             else "Release failed fake verification or downloader dispatch"
         )
-        if is_rate_limit_error(err_msg):
+        if _is_queueable_error(err_msg):
             queued_hist = await _record_auto_push_failure(
                 session,
                 item=item,
