@@ -436,7 +436,7 @@ document.addEventListener('alpine:init', () => {
                 </div>
                 <span class="text-xs font-bold text-white bg-black/35 px-2 py-0.5 rounded-md border border-white/10 shrink-0">{{ movie_stats.total }}</span>
             </div>
-            <div class="hidden md:grid grid-cols-3 divide-x divide-[#3f3f46] bg-[#1e1e24] flex-1 text-center py-2.5">
+            <div class="hidden md:grid grid-cols-4 divide-x divide-[#3f3f46] bg-[#1e1e24] flex-1 text-center py-2.5 [&>div]:min-w-0">
                 <div>
                     <div class="text-[10px] text-[#a1a1aa] uppercase font-semibold">Active</div>
                     <div class="text-base font-bold text-amber-400">{{ movie_stats.in_progress }}</div>
@@ -468,7 +468,7 @@ document.addEventListener('alpine:init', () => {
                 </div>
                 <span class="text-xs font-bold text-white bg-black/35 px-2 py-0.5 rounded-md border border-white/10 shrink-0">{{ series_stats.total }}</span>
             </div>
-            <div class="hidden md:grid grid-cols-3 divide-x divide-[#3f3f46] bg-[#1e1e24] flex-1 text-center py-2.5">
+            <div class="hidden md:grid grid-cols-4 divide-x divide-[#3f3f46] bg-[#1e1e24] flex-1 text-center py-2.5 [&>div]:min-w-0">
                 <div>
                     <div class="text-[10px] text-[#a1a1aa] uppercase font-semibold">Active</div>
                     <div class="text-base font-bold text-amber-400">{{ series_stats.in_progress }}</div>
@@ -500,7 +500,7 @@ document.addEventListener('alpine:init', () => {
                 </div>
                 <span class="text-xs font-bold text-white bg-black/35 px-2 py-0.5 rounded-md border border-white/10 shrink-0">{{ anime_stats.total }}</span>
             </div>
-            <div class="hidden md:grid grid-cols-3 divide-x divide-[#3f3f46] bg-[#1e1e24] flex-1 text-center py-2.5">
+            <div class="hidden md:grid grid-cols-4 divide-x divide-[#3f3f46] bg-[#1e1e24] flex-1 text-center py-2.5 [&>div]:min-w-0">
                 <div>
                     <div class="text-[10px] text-[#a1a1aa] uppercase font-semibold">Active</div>
                     <div class="text-base font-bold text-amber-400">{{ anime_stats.in_progress }}</div>
