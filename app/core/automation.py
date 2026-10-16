@@ -2081,13 +2081,91 @@ async def reset_anime_metadata(session: AsyncSession, item_id: int) -> MediaItem
     return item
 
 
+def _loaded_seasons(item: MediaItem) -> list[Season]:
+    from sqlalchemy import inspect as sa_inspect
+
+    if "seasons" in sa_inspect(item).unloaded:
+        return []
+    return list(item.seasons or [])
+
+
+def latest_released_order(item: MediaItem) -> int:
+    """Highest ``watch_order`` among released, non-ignored regular seasons (0 if none)."""
+    orders = [
+        int(s.watch_order or 0)
+        for s in _loaded_seasons(item)
+        if s.season_number > 0
+        and s.status not in (SeasonStatus.IGNORED, SeasonStatus.FUTURE)
+        and s.air_date is not None
+        and not is_future_or_tba(s.air_date)
+    ]
+    return max(orders, default=0)
+
+
+def has_future_seasons(item: MediaItem) -> bool:
+    """True when any regular season is unreleased, undated or marked FUTURE."""
+    return any(
+        s.season_number > 0
+        and (
+            s.air_date is None
+            or s.status == SeasonStatus.FUTURE
+            or is_future_or_tba(s.air_date)
+        )
+        for s in _loaded_seasons(item)
+    )
+
+
+def is_awaiting_seasons(item: MediaItem) -> bool:
+    """True for a series whose user has watched every released season while more are pending."""
+    from app.core.push_engine import effective_watch_order
+
+    if item.media_type not in (MediaType.SHOW, MediaType.ANIME):
+        return False
+    if not has_future_seasons(item):
+        return False
+    lro = latest_released_order(item)
+    return lro > 0 and effective_watch_order(item) >= lro
+
+
+def is_on_hold(item: MediaItem) -> bool:
+    """True when the list status is on hold or the series is awaiting future seasons."""
+    from sqlalchemy import inspect as sa_inspect
+
+    if "watchlist_sources" in sa_inspect(item).unloaded:
+        return is_awaiting_seasons(item)
+    return item.is_list_on_hold or is_awaiting_seasons(item)
+
+
+def _has_active_transfer(item: MediaItem) -> bool:
+    from sqlalchemy import inspect as sa_inspect
+
+    active_item = (MediaStatus.DOWNLOADING, MediaStatus.RATE_LIMITED)
+    active_season = (SeasonStatus.DOWNLOADING, SeasonStatus.RATE_LIMITED)
+    active_ep = (EpisodeStatus.DOWNLOADING, EpisodeStatus.RATE_LIMITED)
+    if item.status in active_item:
+        return True
+    for s in _loaded_seasons(item):
+        if s.status in active_season:
+            return True
+        if "episodes" not in sa_inspect(s).unloaded:
+            if any(ep.status in active_ep for ep in s.episodes or []):
+                return True
+    return False
+
+
 def classify_v3_status_tier(item: MediaItem) -> str:
-    """Classify an active MediaItem into one of the 3 v3.0.0 dashboard horizontal sections:
+    """Classify an active MediaItem into one of the dashboard horizontal sections:
     - 'in_progress'   (Section 1: Active / In Progress & Downloaded Watchlist Items)
+    - 'on_hold'       (On Hold: list status on hold, or awaiting future seasons)
     - 'ready_to_push' (Section 2: Ready to Push / Wanted & Unpushed)
     - 'upcoming'      (Section 3: Upcoming / Future & TBA)
     """
     from sqlalchemy import inspect as sa_inspect
+
+    if _has_active_transfer(item):
+        return "in_progress"
+    if is_on_hold(item):
+        return "on_hold"
 
     if item.status in (
         MediaStatus.DOWNLOADING,

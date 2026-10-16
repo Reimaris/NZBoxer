@@ -2,24 +2,32 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from itertools import combinations
 
 import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
+from app.core.automation import (
+    classify_v3_status_tier,
+    has_future_seasons,
+    is_awaiting_seasons,
+    latest_released_order,
+)
 from app.db.models import (
     ACTIVE_LIST_STATUSES,
     INACTIVE_LIST_STATUSES,
     LIST_STATUS_PRECEDENCE,
     MediaItem,
+    Season,
     best_list_status,
 )
 from app.services.watchlist_ingest import (
     mark_absent_sources_completed,
     prune_inactive_media_items,
 )
-from tests.conftest import make_movie, make_source, make_watchlist_provider
+from tests.conftest import make_movie, make_series, make_source, make_watchlist_provider
 
 ORDER = ("watching", "on_hold", "plantowatch", "completed", "dropped")
 
@@ -194,3 +202,98 @@ async def test_consolidated_ids_never_regress_active_status(
     await ingest_entries(db_session, provider, [_entry("new-id", incoming)])
     src = (await db_session.execute(select(MediaItemWatchlistSource))).scalar_one()
     assert src.list_status == expected
+
+
+# --- On-hold tier classification (m69-04) ---
+
+_PAST = datetime(2020, 1, 1, tzinfo=timezone.utc)
+
+
+async def _awaiting_series(session, *, s2: dict | None = None, watched: int = 1):
+    from app.db.models import SeasonStatus
+
+    provider = await make_watchlist_provider(session, "simkl")
+    s2_cfg = {
+        "season_number": 2,
+        "watch_order": 2,
+        "air_date": None,
+        "status": SeasonStatus.FUTURE,
+    }
+    s2_cfg.update(s2 or {})
+    item, _, _ = await make_series(
+        session,
+        seasons=[
+            {"season_number": 1, "watch_order": 1, "air_date": _PAST},
+            s2_cfg,
+        ],
+        provider_id=provider.id,
+    )
+    await make_source(session, item, provider, "watching", "s", watched)
+    await session.commit()
+    return await _load_full(session, item.id)
+
+
+async def _load_full(session, item_id) -> MediaItem:
+    return (
+        await session.execute(
+            select(MediaItem)
+            .where(MediaItem.id == item_id)
+            .options(
+                selectinload(MediaItem.watchlist_sources),
+                selectinload(MediaItem.seasons).selectinload(Season.episodes),
+            )
+            .execution_options(populate_existing=True)
+        )
+    ).scalar_one()
+
+
+async def test_fully_watched_with_future_season_is_on_hold(db_session):
+    item = await _awaiting_series(db_session)
+    assert latest_released_order(item) == 1
+    assert has_future_seasons(item)
+    assert is_awaiting_seasons(item)
+    assert classify_v3_status_tier(item) == "on_hold"
+
+
+async def test_released_second_season_is_not_on_hold(db_session):
+    from app.db.models import SeasonStatus
+
+    item = await _awaiting_series(
+        db_session, s2={"air_date": _PAST, "status": SeasonStatus.SEARCHING}
+    )
+    assert not has_future_seasons(item)
+    assert classify_v3_status_tier(item) != "on_hold"
+
+
+async def test_unwatched_released_season_is_not_awaiting(db_session):
+    item = await _awaiting_series(db_session, watched=0)
+    assert not is_awaiting_seasons(item)
+    assert classify_v3_status_tier(item) != "on_hold"
+
+
+async def test_active_download_beats_on_hold(db_session):
+    from app.db.models import SeasonStatus
+
+    item = await _awaiting_series(db_session)
+    item.seasons[0].status = SeasonStatus.DOWNLOADING
+    assert classify_v3_status_tier(item) == "in_progress"
+
+
+async def test_list_on_hold_source_classifies_on_hold(db_session):
+    provider = await make_watchlist_provider(db_session, "simkl")
+    item = await make_movie(db_session, provider_id=provider.id)
+    await make_source(db_session, item, provider, "on_hold", "h")
+    await db_session.commit()
+    item = await _load_full(db_session, item.id)
+    assert not is_awaiting_seasons(item)
+    assert classify_v3_status_tier(item) == "on_hold"
+
+
+async def test_watching_beats_on_hold_source(db_session):
+    item = await _awaiting_series(db_session, watched=0)
+    other = await make_watchlist_provider(db_session, "simkl", name="other")
+    await make_source(db_session, item, other, "on_hold", "o")
+    await db_session.commit()
+    item = await _load_full(db_session, item.id)
+    assert item.effective_list_status == "watching"
+    assert classify_v3_status_tier(item) != "on_hold"
