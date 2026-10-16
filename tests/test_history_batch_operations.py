@@ -485,7 +485,7 @@ async def test_dashboard_selection_bar_has_simulated_quick_select(
     html = (await async_client.get("/?tab=history")).text
 
     assert "'simulated']" in html
-    btn = html[html.index("selectHistoryByStatus('simulated')") :][:700]
+    btn = html[html.index("selectHistoryByStatus('simulated')") :][:450]
     assert "Simulated (1)" in btn
     assert "opacity-50" not in btn
     assert "data-filter-key" in html[html.index("selectHistoryByStatus(key)") :][:500]
