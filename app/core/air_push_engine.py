@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.config import settings
-from app.core.automation import is_date_only_air_date
+from app.core.automation import is_date_only_air_date, is_on_hold
 from app.core.parser import parse_release_name
 from app.core.phase_stats import AirPushStats
 from app.core.prerequisites import setup_blocks
@@ -156,6 +156,7 @@ async def run_initial_air_push(
         .where(MediaItem.auto_push_episodes.is_(True))
         .options(
             selectinload(MediaItem.provider),
+            selectinload(MediaItem.watchlist_sources),
             selectinload(MediaItem.seasons).selectinload(Season.episodes),
         )
     )
@@ -164,6 +165,8 @@ async def run_initial_air_push(
     # Snapshot work up front: execute_auto_push commits, which expires loaded ORM rows.
     work: list[tuple[int, str, list[int]]] = []
     for item in items:
+        if is_on_hold(item):
+            continue
         due_ids = [
             ep.id
             for season in item.seasons

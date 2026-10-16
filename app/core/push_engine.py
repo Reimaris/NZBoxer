@@ -2517,6 +2517,11 @@ async def evaluate_watch_progress_and_advance(
     if not getattr(item, "auto_advance_seasons", False):
         return []
 
+    from app.core.automation import classify_v3_status_tier
+
+    if classify_v3_status_tier(item) == "on_hold":
+        return []
+
     return await advance_season_buffer(
         session=session,
         item=item,

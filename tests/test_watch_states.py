@@ -297,3 +297,90 @@ async def test_watching_beats_on_hold_source(db_session):
     item = await _load_full(db_session, item.id)
     assert item.effective_list_status == "watching"
     assert classify_v3_status_tier(item) != "on_hold"
+
+
+# --- Freeze automation & prune protection (m69-05) ---
+
+
+async def _hold_series(session, *, s2_released: bool = False, status="watching"):
+    from app.db.models import SeasonStatus
+
+    item = await _awaiting_series(
+        session,
+        s2={"air_date": _PAST, "status": SeasonStatus.SEARCHING}
+        if s2_released
+        else None,
+    )
+    item.auto_advance_seasons = True
+    item.watchlist_sources[0].list_status = status
+    await session.commit()
+    return await _load_full(session, item.id)
+
+
+@pytest.mark.parametrize(
+    ("status", "s2_released", "called"),
+    [
+        ("on_hold", True, False),  # list on hold
+        ("watching", False, False),  # awaiting future season
+        ("watching", True, True),  # nothing holds it
+    ],
+)
+async def test_auto_advance_frozen_only_while_on_hold(
+    db_session, status, s2_released, called
+):
+    from unittest.mock import AsyncMock, patch
+
+    from app.core.push_engine import evaluate_watch_progress_and_advance
+
+    item = await _hold_series(db_session, s2_released=s2_released, status=status)
+    with patch(
+        "app.core.push_engine.advance_season_buffer", new=AsyncMock(return_value=[])
+    ) as adv:
+        await evaluate_watch_progress_and_advance(db_session, item, {"status": "x"})
+    assert item.last_watched_order == 1  # progress is still recorded
+    assert (adv.await_count == 1) is called
+
+
+async def test_air_push_skips_on_hold(db_session, monkeypatch):
+    from unittest.mock import AsyncMock, patch
+
+    from app.config import settings
+    from app.core.air_push_engine import run_initial_air_push
+
+    monkeypatch.setattr(settings, "air_delay_hours", 2)
+    monkeypatch.setattr(settings, "upgrade_window_hours", 48)
+    monkeypatch.setattr(settings, "sh_max_retries", 3)
+    air = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    provider = await make_watchlist_provider(db_session, "simkl")
+    held, _, eps = await make_series(
+        db_session,
+        episodes_per_season=1,
+        simkl_id=1,
+        provider_id=provider.id,
+        auto_push_episodes=True,
+    )
+    eps[0].air_date = air
+    await make_source(db_session, held, provider, "on_hold", "h")
+    await db_session.commit()
+    with patch(
+        "app.core.air_push_engine.execute_auto_push",
+        new=AsyncMock(return_value={"dispatched_count": 1}),
+    ) as m:
+        assert await run_initial_air_push(db_session, air.replace(hour=5)) == 0
+    m.assert_not_awaited()
+
+
+async def test_awaiting_item_survives_prune_then_is_pruned(db_session):
+    from app.db.models import SeasonStatus
+    from app.services.watchlist_ingest import prune_inactive_media_items
+
+    item = await _hold_series(db_session, status="completed")
+    assert await prune_inactive_media_items(db_session) == 0
+    await db_session.commit()
+    assert (await db_session.execute(select(MediaItem.id))).first() is not None
+
+    item = await _load_full(db_session, item.id)
+    item.seasons[1].air_date = _PAST
+    item.seasons[1].status = SeasonStatus.SEARCHING
+    await db_session.commit()
+    assert await prune_inactive_media_items(db_session) == 1

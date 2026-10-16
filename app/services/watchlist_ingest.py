@@ -643,7 +643,10 @@ async def prune_inactive_media_items(session: AsyncSession) -> int:
     Items without any source row are never pruned. Items with an active transfer
     (DOWNLOADING / RATE_LIMITED) are deferred to a later sync.
     """
-    from app.core.automation import _item_has_active_downloading_entity
+    from app.core.automation import (
+        _item_has_active_downloading_entity,
+        is_awaiting_seasons,
+    )
     from app.core.push_engine import detach_item_download_history
     from app.db.models import Season as SeasonModel
 
@@ -670,6 +673,8 @@ async def prune_inactive_media_items(session: AsyncSession) -> int:
     pruned = 0
     for item in items:
         if any(s.list_status in ACTIVE_LIST_STATUSES for s in item.watchlist_sources):
+            continue
+        if is_awaiting_seasons(item):
             continue
         if _item_has_active_downloading_entity(item):
             logger.info(
