@@ -553,3 +553,45 @@ async def test_alert_titles_name_source_and_over_alert_after_clear(
     await rate_limit_episode.on_resume(1)
     assert sent[1][0] == "▶️ NZBgeek rate limit over — queue resumed"
     rate_limit_episode.reset()
+
+
+async def test_paused_outage_row_is_queued_counted_resumed_and_flagged(db_session):
+    item = await make_movie(db_session)
+    torbox.set_cooldown(0.0)
+    db_session.add(
+        DownloadHistory(
+            media_item_id=item.id,
+            nzb_title="Test.Movie.2024.1080p.BluRay.x264-GRP",
+            status_detail="paused: indexer outage (HTTP 503)",
+            outage_attempts=2,
+        )
+    )
+    await db_session.commit()
+
+    assert await count_rate_limited_pushes(db_session) == 1
+
+    pushes = await get_active_pushes(db_session)
+    assert len(pushes) == 1
+    assert pushes[0]["is_rate_limited"] is True
+    assert pushes[0]["is_failed"] is False
+    assert pushes[0]["is_outage"] is True
+    assert pushes[0]["outage_kind"] == "indexer"
+    assert pushes[0]["outage_label"] == "HTTP 503"
+    assert pushes[0]["outage_attempts"] == 2
+
+    send = AsyncMock(return_value={"id": "tb-outage", "hash": "h-outage"})
+    p1, p2, p3 = _patches(send)
+    with p1, p2, p3:
+        assert await resume_rate_limited_pushes() == 1
+    send.assert_awaited_once()
+
+
+async def test_plain_rate_limited_row_is_not_outage(db_session):
+    item = await make_movie(db_session)
+    torbox.set_cooldown(600.0)
+    with _patches()[0], _patches()[1], _patches()[2]:
+        await execute_auto_push(db_session, item.id, {})
+    push = (await get_active_pushes(db_session))[0]
+    assert push["is_outage"] is False
+    assert push["outage_kind"] is None
+    assert push["outage_label"] is None

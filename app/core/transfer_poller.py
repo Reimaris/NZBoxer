@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -36,6 +37,7 @@ from sqlalchemy.orm import selectinload
 from app.core.anime_titles import anime_title_for
 from app.core.failure_logger import log_failure
 from app.core.fake_detector import is_transfer_filelist_fake
+from app.core.outage import is_queued_detail
 from app.core.parser import build_release_feature_pills
 from app.core.prerequisites import setup_blocks
 from app.core.rate_limit_queue import (
@@ -727,6 +729,9 @@ async def _fetch_adapter_transfers(
     return client, {t.transfer_id: _transfer_to_item(t) for t in transfers}
 
 
+_OUTAGE_DETAIL_RE = re.compile(r"^paused: (indexer|downloader) outage \((.+)\)$")
+
+
 def _is_history_terminal(status_detail: str | None) -> bool:
     detail = (status_detail or "").strip().lower()
     return detail in (
@@ -769,7 +774,7 @@ def _sync_season_status_from_episodes(season: Season | None) -> None:
     has_rate_limited_pack = any(
         not h.is_dismissed
         and h.episode_id is None
-        and (h.status_detail or "").strip().lower() == "rate_limited"
+        and is_queued_detail(h.status_detail)
         for h in hist_list
     )
 
@@ -1778,7 +1783,7 @@ async def get_active_pushes(session: AsyncSession) -> list[dict[str, Any]]:
 
         detail_lower = (h.status_detail or "").lower()
         is_rate_limited = (
-            detail_lower == "rate_limited"
+            is_queued_detail(h.status_detail)
             or "rate limit" in detail_lower
             or "429" in detail_lower
         )
@@ -1791,6 +1796,7 @@ async def get_active_pushes(session: AsyncSession) -> list[dict[str, Any]]:
                 if failed_dt_raw.tzinfo is None
                 else failed_dt_raw
             )
+        outage_match = _OUTAGE_DETAIL_RE.match(h.status_detail or "")
         is_failed = (
             not is_rate_limited
             and (entity_status == "failed" or detail_lower.startswith("failed"))
@@ -1923,6 +1929,10 @@ async def get_active_pushes(session: AsyncSession) -> list[dict[str, Any]]:
                 "is_upgrade": bool(h.is_upgrade),
                 "is_failed": is_failed,
                 "is_rate_limited": is_rate_limited,
+                "is_outage": outage_match is not None,
+                "outage_kind": outage_match.group(1) if outage_match else None,
+                "outage_label": outage_match.group(2) if outage_match else None,
+                "outage_attempts": int(h.outage_attempts or 0),
                 "is_completed": is_recently_completed,
                 "completed_at": (
                     completed_at_utc.isoformat()
@@ -1965,6 +1975,10 @@ async def get_active_pushes(session: AsyncSession) -> list[dict[str, Any]]:
                 "is_upgrade": bool(rec.is_upgrade),
                 "is_failed": False,
                 "is_rate_limited": False,
+                "is_outage": False,
+                "outage_kind": None,
+                "outage_label": None,
+                "outage_attempts": 0,
                 "is_completed": False,
                 "is_dry_run": True,
                 "completed_at": None,
@@ -2039,7 +2053,7 @@ async def dismiss_all_active_pushes(session: AsyncSession) -> int:
 
     for h in rows:
         detail_lower = (h.status_detail or "").strip().lower()
-        is_rate_limited = detail_lower == "rate_limited"
+        is_rate_limited = is_queued_detail(h.status_detail)
 
         if h.episode is not None:
             entity_status = h.episode.status.value
@@ -2207,7 +2221,7 @@ async def abort_all_active_transfers(session: AsyncSession) -> dict[str, Any]:
 
         for h in rows:
             detail_lower = (h.status_detail or "").strip().lower()
-            is_rate_limited = detail_lower == "rate_limited"
+            is_rate_limited = is_queued_detail(h.status_detail)
             is_active_downloading = not _is_history_terminal(
                 h.status_detail
             ) and detail_lower not in (
@@ -2446,7 +2460,7 @@ async def abort_item_transfer(
     reverted_episode_ids: set[int] = set()
     for h in matching_histories:
         detail_lower = (h.status_detail or "").strip().lower()
-        is_rate_limited = detail_lower == "rate_limited"
+        is_rate_limited = is_queued_detail(h.status_detail)
         is_active_downloading = not _is_history_terminal(
             h.status_detail
         ) and detail_lower not in (
@@ -2662,10 +2676,7 @@ async def _recalculate_parent_status(
         return d.startswith("failed")
 
     def _is_hist_rate_limited(h: DownloadHistory) -> bool:
-        return (
-            not h.is_dismissed
-            and (h.status_detail or "").strip().lower() == "rate_limited"
-        )
+        return not h.is_dismissed and is_queued_detail(h.status_detail)
 
     if not seasons:
         has_rate_limited_movie = any(_is_hist_rate_limited(h) for h in item_histories)
@@ -3169,7 +3180,7 @@ async def blacklist_from_active_pushes(
         await manual_delete_transfer(session, history_id=history_id)
         return True
     if (
-        detail_lower.startswith("failed") or detail_lower == "rate_limited"
+        detail_lower.startswith("failed") or is_queued_detail(history.status_detail)
     ) and not history.downloader_transfer_id:
         return await dismiss_failed_push(session, history_id)
     return await cancel_active_push(session, history_id)

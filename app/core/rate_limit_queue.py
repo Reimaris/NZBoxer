@@ -23,7 +23,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from sqlalchemy import func, select
 
-from app.core.outage import active_outages, clear_outages
+from app.core.outage import active_outages, clear_outages, queued_detail_clause
 from app.core.prerequisites import setup_blocks
 from app.db.models import DownloadHistory, MediaItem
 from app.services.downloaders.base import DOWNLOADER_DISPLAY_NAMES
@@ -283,7 +283,7 @@ async def count_rate_limited_pushes(session: AsyncSession) -> int:
     return (
         await session.execute(
             select(func.count(DownloadHistory.id)).where(
-                DownloadHistory.status_detail == RATE_LIMITED_DETAIL,
+                queued_detail_clause(DownloadHistory.status_detail),
                 DownloadHistory.is_dismissed.is_(False),
             )
         )
@@ -311,7 +311,7 @@ async def resume_rate_limited_pushes() -> int:
                 await session.execute(
                     select(DownloadHistory)
                     .where(
-                        DownloadHistory.status_detail == RATE_LIMITED_DETAIL,
+                        queued_detail_clause(DownloadHistory.status_detail),
                         DownloadHistory.is_dismissed.is_(False),
                         DownloadHistory.media_item_id.is_not(None),
                     )
