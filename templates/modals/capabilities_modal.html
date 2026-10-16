@@ -1,0 +1,85 @@
+<!-- Provider Capabilities Matrix Modal (m70, ADR-153) -->
+{% macro mark(value) -%}
+{% if value %}<span class="text-green-400 font-bold" aria-label="Yes">✓</span>{% else %}<span class="text-zinc-500" aria-label="No">✗</span>{% endif %}
+{%- endmacro %}
+{% set tabs = [('watchlist', 'Watchlists'), ('downloader', 'Downloaders'), ('metadata', 'Metadata'), ('indexer', 'Indexers')] %}
+<div class="nzb-modal-backdrop fixed inset-0 bg-black/70 backdrop-blur-sm z-[100] flex items-center justify-center p-4 animate-fade-in"
+     x-data="{ tab: {{ (focus_category or 'watchlist') | tojson }} }"
+     x-init="$nextTick(() => { const el = $el.querySelector('[data-focused=true]'); if (el) el.scrollIntoView({ block: 'center' }); })">
+    <div class="nzb-modal-dialog bg-[#1e1e24] border border-[#3f3f46] rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+        <div class="bg-[#2a2a32] px-6 py-4 border-b border-[#3f3f46] flex justify-between items-center shrink-0">
+            <h2 class="text-lg font-bold text-white">Provider Capabilities</h2>
+            <button type="button" onclick="document.getElementById('modal-container').innerHTML = '';" class="p-1.5 text-[#a1a1aa] hover:text-white hover:bg-[#3f3f46]/50 rounded-lg transition-colors focus:outline-none" aria-label="Close">
+                <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+            </button>
+        </div>
+        <div class="flex gap-1 px-4 pt-3 border-b border-[#3f3f46] overflow-x-auto shrink-0">
+            {% for key, label in tabs %}
+            <button type="button" @click="tab = '{{ key }}'"
+                    :class="tab === '{{ key }}' ? 'text-white border-[#d40060]' : 'text-[#a1a1aa] border-transparent hover:text-white'"
+                    class="px-3 py-2 text-xs font-bold border-b-2 whitespace-nowrap transition-colors">{{ label }}</button>
+            {% endfor %}
+        </div>
+        <div class="p-4 overflow-y-auto">
+            {% for key, label in tabs %}
+            <div x-show="tab === '{{ key }}'" {% if not loop.first %}x-cloak{% endif %} class="overflow-x-auto">
+                <table class="w-full text-xs text-left text-gray-300">
+                    <thead class="text-[#a1a1aa] uppercase text-[11px]">
+                        <tr>
+                            <th class="py-2 pr-3">Provider</th>
+                            <th class="py-2 pr-3">Media</th>
+                            {% if key == 'watchlist' %}
+                            <th class="py-2 pr-3">Watch progress</th>
+                            <th class="py-2 pr-3">Exact air dates</th>
+                            {% elif key == 'downloader' %}
+                            <th class="py-2 pr-3">Kind</th>
+                            <th class="py-2 pr-3">Unpack verification</th>
+                            <th class="py-2 pr-3">Remote delete</th>
+                            <th class="py-2 pr-3">Category mapping</th>
+                            {% elif key == 'metadata' %}
+                            <th class="py-2 pr-3">Exact air dates</th>
+                            {% elif key == 'indexer' %}
+                            <th class="py-2 pr-3">Custom categories</th>
+                            {% endif %}
+                            <th class="py-2">Notes</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for cap in categories[key] %}
+                        <tr class="border-t border-[#2a2a32] align-top {% if cap.provider_type == focus %}ring-1 ring-[#d40060]{% endif %}"
+                            {% if cap.provider_type == focus %}data-focused="true"{% endif %}
+                            data-provider-type="{{ cap.provider_type }}">
+                            <td class="py-2 pr-3 font-semibold text-white whitespace-nowrap">
+                                {{ cap.display_name }}
+                                {% if cap.provider_type in configured_types %}
+                                <span class="ml-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-green-500/15 text-green-400 border border-green-500/30">Configured</span>
+                                {% endif %}
+                            </td>
+                            <td class="py-2 pr-3">
+                                {% for m in cap.media_coverage %}<span class="inline-block mr-1 px-1.5 py-0.5 rounded bg-[#2a2a32] border border-[#3f3f46] text-[10px]">{{ m }}</span>{% endfor %}
+                            </td>
+                            {% if key == 'watchlist' %}
+                            <td class="py-2 pr-3">{{ mark(cap.supports_watch_progress) }}</td>
+                            <td class="py-2 pr-3">{{ mark(cap.supports_exact_air_dates) }}</td>
+                            {% elif key == 'downloader' %}
+                            <td class="py-2 pr-3">{{ cap.downloader_kind|capitalize }}</td>
+                            <td class="py-2 pr-3">{{ mark(cap.supports_unpack_verification) }}</td>
+                            <td class="py-2 pr-3">{{ mark(cap.supports_remote_delete) }}</td>
+                            <td class="py-2 pr-3">{{ mark(cap.supports_category_mapping) }}</td>
+                            {% elif key == 'metadata' %}
+                            <td class="py-2 pr-3">{{ mark(cap.supports_exact_air_dates) }}</td>
+                            {% elif key == 'indexer' %}
+                            <td class="py-2 pr-3">{{ mark(cap.supports_custom_categories) }}</td>
+                            {% endif %}
+                            <td class="py-2 text-amber-400 text-[11px]">
+                                {% for note in cap.limitations %}<div>{{ note }}</div>{% endfor %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>

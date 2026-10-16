@@ -90,10 +90,15 @@
                     <h3 class="text-sm font-bold text-white">Active Integrations</h3>
                     <p class="text-xs text-[#a1a1aa] mt-0.5">Watchlists, Metadata clients, Downloader, and Newznab Indexers arranged in execution priority.</p>
                 </div>
-                <button hx-get="/settings/provider/new" hx-target="#modal-container" class="bg-[#d40060] hover:bg-[#a3004a] text-white px-4 py-2 rounded-lg text-xs font-bold transition-all shadow-lg shadow-[#d40060]/20 flex items-center gap-2">
-                    <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
-                    Add Provider
-                </button>
+                <div class="flex gap-2">
+                    <button hx-get="/settings/capabilities" hx-target="#modal-container" class="bg-[#2a2a32] hover:bg-[#3f3f46] border border-[#3f3f46] text-white px-4 py-2 rounded-lg text-xs font-bold transition-all">
+                        Capabilities Matrix
+                    </button>
+                    <button hx-get="/settings/provider/new" hx-target="#modal-container" class="bg-[#d40060] hover:bg-[#a3004a] text-white px-4 py-2 rounded-lg text-xs font-bold transition-all shadow-lg shadow-[#d40060]/20 flex items-center gap-2">
+                        <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+                        Add Provider
+                    </button>
+                </div>
             </div>
 
             <!-- Unified Responsive Flow Grid -->
@@ -127,6 +132,7 @@
                             </div>
 
                             <div class="flex items-center gap-1.5 shrink-0">
+                                <button type="button" hx-get="/settings/capabilities?focus={{ provider.type }}" hx-target="#modal-container" class="px-2 py-1 bg-[#2a2a32] hover:bg-[#3f3f46] border border-[#3f3f46] rounded-md text-[11px] font-semibold text-[#a1a1aa] hover:text-white transition-colors" title="Show provider capabilities">Capabilities</button>
                                 <button type="button" hx-get="/settings/provider/{{ provider.id }}/edit" hx-target="#modal-container" class="p-1.5 bg-[#2a2a32] hover:bg-[#3f3f46] border border-[#3f3f46] rounded-md text-[#a1a1aa] hover:text-white transition-colors" title="Edit provider">
                                     <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
                                 </button>

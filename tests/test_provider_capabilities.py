@@ -267,3 +267,45 @@ async def test_push_modal_no_warning_for_simkl_item(db_session, async_client):
     assert resp.status_code == 200
     assert "auto-advance-warning" not in resp.text
     assert 'x-model="autoAdvanceSeasons" class="sr-only peer" disabled' not in resp.text
+
+
+# --- capabilities matrix modal & settings -----------------------------------
+
+
+async def test_capabilities_modal_renders_tabs(async_client):
+    resp = await async_client.get("/settings/capabilities")
+    assert resp.status_code == 200
+    for label in ("Watchlists", "Downloaders", "Metadata", "Indexers"):
+        assert label in resp.text
+    assert 'data-focused="true"' not in resp.text
+
+
+async def test_capabilities_modal_focus_marks_row_and_tab(async_client):
+    resp = await async_client.get("/settings/capabilities?focus=PLEX")
+    assert resp.status_code == 200
+    assert 'data-focused="true"' in resp.text
+    assert resp.text.count('data-focused="true"') == 1
+    resp = await async_client.get("/settings/capabilities?focus=torbox")
+    assert 'tab: "downloader"' in resp.text
+
+
+async def test_capabilities_modal_bogus_focus_and_configured_pill(
+    db_session, async_client
+):
+    resp = await async_client.get("/settings/capabilities?focus=<bogus>")
+    assert resp.status_code == 200
+    assert 'data-focused="true"' not in resp.text
+    assert "Configured" not in resp.text
+    await make_watchlist_provider(db_session, "plex", name="Plex")
+    await db_session.commit()
+    resp = await async_client.get("/settings/capabilities")
+    assert "Configured" in resp.text
+
+
+async def test_settings_page_has_matrix_button_and_card_link(db_session, async_client):
+    await make_watchlist_provider(db_session, "plex", name="Plex")
+    await db_session.commit()
+    resp = await async_client.get("/settings")
+    assert resp.status_code == 200
+    assert "Capabilities Matrix" in resp.text
+    assert "/settings/capabilities?focus=plex" in resp.text
