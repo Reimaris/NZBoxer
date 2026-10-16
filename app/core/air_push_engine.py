@@ -16,6 +16,7 @@ from sqlalchemy.orm import selectinload
 
 from app.config import settings
 from app.core.automation import is_date_only_air_date, is_on_hold
+from app.core.outage import has_active_outage
 from app.core.parser import parse_release_name
 from app.core.phase_stats import AirPushStats
 from app.core.prerequisites import setup_blocks
@@ -383,6 +384,9 @@ async def run_episode_upgrades(
 async def run_air_date_push_and_upgrade_tick(now_utc: datetime | None = None) -> None:
     """Hourly job: initial air pushes, then upgrades; each step's failure is isolated."""
     if await setup_blocks("air-date push"):
+        return
+    if has_active_outage():
+        logger.info("[AIR-PUSH] Skipped: outage active")
         return
     now = now_utc or datetime.now(timezone.utc)
     async with async_session_factory() as session:

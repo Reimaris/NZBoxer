@@ -42,6 +42,7 @@ from app.core.fake_detector import (
 from app.core.outage import (
     MAX_OUTAGE_RETRIES,
     OutageMarker,
+    has_active_outage,
     make_outage_marker,
     parse_outage_marker,
     paused_detail,
@@ -2657,6 +2658,11 @@ async def evaluate_watch_progress_and_advance(
     )
     current_order = int(item.last_watched_order or 0)
     if detected_order <= current_order:
+        return []
+
+    if has_active_outage():
+        # Leave last_watched_order untouched so the next sync re-triggers the advance.
+        logger.info("[AUTO-ADVANCE] Skipped for '%s': outage active", item.title)
         return []
 
     item.last_watched_order = detected_order
