@@ -31,7 +31,7 @@ It keeps your **Movies**, **TV Series** and **Anime** in sync with your watchlis
 
 ## Key Features
 
-- **Multi-Provider Watchlists:** Sync Simkl, AniList, Plex and MyAnimeList simultaneously, with cross-provider deduplication and furthest-progress tracking.
+- **Multi-Provider Watchlists:** Sync Simkl, AniList, Plex, MyAnimeList, Jellyseerr and Overseerr simultaneously, with cross-provider deduplication and furthest-progress tracking.
 - **Anime Title Language:** Choose romaji, English or native titles in Settings; dashboard search matches every language, including the seasons and movies inside a franchise.
 - **Smart On-Demand Acquisition:** 1-click auto-push, a preset-governed season pack matrix, opt-in air-date auto-pushes, and time-bounded episode upgrades.
 - **3-Layer Security & Fake Detection:** Layer 1 filters indexer metadata, Layer 2 inspects the NZB XML in memory before dispatch, and Layer 3 verifies the downloader's filelist, with an unpack grace period for archives.
@@ -77,6 +77,7 @@ It keeps your **Movies**, **TV Series** and **Anime** in sync with your watchlis
 |  | AniList | Username / Personal Token | 🧪 Experimental | Anime & Anime Movies; franchise consolidation & airing schedules |
 |  | Plex | PIN Flow or Auth Token | 🧪 Experimental | Movies, Series, Anime watchlist sync |
 |  | MyAnimeList | OAuth 2.0 PKCE | 🧪 Experimental | Anime watchlist sync with watch progress |
+|  | Jellyseerr / Overseerr | Server URL + API Key | 🧪 Experimental | Approved requests (movies, series, per-season); tells the server when media is available |
 | **Metadata** | TMDB | API Key | ✅ Tested | Release dates, artwork, and TV episode air dates |
 |  | AniList | Public GraphQL (No Key) | 🧪 Experimental | Anime chronological hierarchy, OVA/movie bridges & airing times |
 | **Downloaders** | TorBox | Cloud Usenet (API Key) | ✅ Tested | Multipart NZB upload, cloud unpacking, active transfer telemetry |

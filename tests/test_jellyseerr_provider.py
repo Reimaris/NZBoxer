@@ -565,3 +565,88 @@ async def test_requested_seasons_noop_for_none_and_movies(db_session) -> None:  
     item.media_type = MediaType.MOVIE
     await _apply_requested_seasons(db_session, item, _req({1}))
     assert set((await _statuses(db_session, item)).values()) == {SeasonStatus.SEARCHING}
+
+
+# ---- m68-06: settings UI & save handler ------------------------------------
+
+from app.db.models import Provider as _Provider  # noqa: E402
+
+
+async def _save(client, **data):  # type: ignore[no-untyped-def]
+    base = {"name": "Seerr", "provider_type": "jellyseerr", "is_active": "true"}
+    return await client.post("/settings/provider", data={**base, **data})
+
+
+async def _only_provider(session):  # type: ignore[no-untyped-def]
+    session.expire_all()
+    return (await session.execute(_select(_Provider))).scalar_one()
+
+
+async def test_new_provider_modal_has_both_tiles_and_fieldset(async_client) -> None:  # type: ignore[no-untyped-def]
+    html = (await async_client.get("/settings/provider/new")).text
+    assert "selectProvider('jellyseerr', 'watchlist', 'Jellyseerr')" in html
+    assert "selectProvider('overseerr', 'watchlist', 'Overseerr')" in html
+    assert "['jellyseerr', 'overseerr'].includes(providerType)" in html
+    assert 'name="server_url"' in html and 'placeholder="http://localhost:5055"' in html
+
+
+@pytest.mark.parametrize(
+    ("data", "message"),
+    [
+        ({"server_url": "", "api_key": KEY}, "Server URL is required"),
+        ({"server_url": "ftp://x", "api_key": KEY}, "must start with http"),
+        ({"server_url": "http://seerr.local:5055"}, "API key is required."),
+    ],
+)
+async def test_save_validation_errors(async_client, db_session, data, message) -> None:  # type: ignore[no-untyped-def]
+    resp = await _save(async_client, **data)
+    assert resp.status_code == 422
+    assert message in resp.text
+    assert (await db_session.execute(_select(_Provider))).first() is None
+
+
+async def test_save_normalizes_url_stores_config_and_keeps_key(
+    async_client, db_session
+) -> None:  # type: ignore[no-untyped-def]
+    resp = await _save(
+        async_client,
+        server_url="http://seerr.local:5055/",
+        api_key=KEY,
+        notify_available="true",
+        sync_movies="true",
+    )
+    assert resp.status_code == 200
+    p = await _only_provider(db_session)
+    cfg = json.loads(p.config_json)
+    assert cfg["server_url"] == "http://seerr.local:5055"
+    assert cfg["api_key"] == KEY
+    assert (cfg["notify_available"], cfg["sync_admin_watchlist"]) == (True, False)
+    assert p.api_key in ("", None)
+
+    # Edit with a blank key keeps the stored one and preserves runtime fields.
+    cfg["last_error"] = "boom"
+    p.config_json = json.dumps(cfg)
+    await db_session.commit()
+    resp = await async_client.post(
+        f"/settings/provider/{p.id}",
+        data={
+            "name": "Seerr",
+            "provider_type": "jellyseerr",
+            "server_url": "http://seerr.local:5055",
+            "api_key": "",
+            "sync_admin_watchlist": "true",
+        },
+    )
+    assert resp.status_code == 200
+    cfg2 = json.loads((await _only_provider(db_session)).config_json)
+    assert cfg2["api_key"] == KEY and cfg2["last_error"] == "boom"
+    assert (cfg2["sync_admin_watchlist"], cfg2["notify_available"]) == (True, False)
+
+
+async def test_edit_modal_never_renders_api_key(async_client, db_session) -> None:  # type: ignore[no-untyped-def]
+    await _save(async_client, server_url="http://seerr.local:5055", api_key=KEY)
+    p = await _only_provider(db_session)
+    html = (await async_client.get(f"/settings/provider/{p.id}/edit")).text
+    assert KEY not in html
+    assert 'value="http://seerr.local:5055"' in html
+    assert 'placeholder="set"' in html

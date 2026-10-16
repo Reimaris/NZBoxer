@@ -13,6 +13,7 @@ import contextlib
 import html
 import json
 import logging
+import re
 import uuid
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
@@ -1759,6 +1760,13 @@ async def _sab_categories_from_form(request: Request) -> dict[str, str]:
     }
 
 
+def _seerr_form_error(message: str) -> HTMLResponse:
+    return HTMLResponse(
+        content=f'<p class="text-sm text-red-400">{html.escape(message)}</p>',
+        status_code=422,
+    )
+
+
 def _reload_response(flash: str = "") -> HTMLResponse:
     alert = f"alert({json.dumps(flash)});" if flash else ""
     return HTMLResponse(content=f"<script>{alert}window.location.reload();</script>")
@@ -2005,6 +2013,26 @@ async def save_provider(
             raw_cfg["sync_interval_minutes"] = normalize_sync_interval_minutes(
                 sync_interval_minutes
             )
+            if provider_type.lower() in ("jellyseerr", "overseerr"):
+                form = await request.form()
+                server_url = str(form.get("server_url") or "").strip().rstrip("/")
+                if not re.fullmatch(r"https?://\S+", server_url, re.IGNORECASE):
+                    return _seerr_form_error(
+                        "Server URL is required and must start with http:// or https://."
+                    )
+                # A blank key on edit keeps the stored one; it is never echoed into forms.
+                new_key = api_key.strip() or str(raw_cfg.get("api_key") or "").strip()
+                if not new_key:
+                    return _seerr_form_error("API key is required.")
+                raw_cfg.update(
+                    server_url=server_url,
+                    api_key=new_key,
+                    sync_admin_watchlist=form.get("sync_admin_watchlist") is not None,
+                    notify_available=form.get("notify_available") is not None,
+                    sync_movies=bool(sync_movies),
+                    sync_series=bool(sync_series),
+                )
+                provider.api_key = ""
             provider.config_json = json.dumps(raw_cfg)
         elif provider_type.lower() == "sabnzbd":
             provider.config_json = json.dumps(await _sab_categories_from_form(request))
