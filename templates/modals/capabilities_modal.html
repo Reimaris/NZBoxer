@@ -46,10 +46,10 @@
                     </thead>
                     <tbody>
                         {% for cap in categories[key] %}
-                        <tr class="border-t border-[#2a2a32] align-top {% if cap.provider_type == focus %}ring-1 ring-[#d40060]{% endif %}"
+                        <tr class="border-t border-[#2a2a32] align-top {% if cap.provider_type == focus %}bg-[#d40060]/15{% endif %}"
                             {% if cap.provider_type == focus %}data-focused="true"{% endif %}
                             data-provider-type="{{ cap.provider_type }}">
-                            <td class="py-2 pr-3 font-semibold text-white whitespace-nowrap">
+                            <td class="py-2 pr-3 pl-2 font-semibold text-white whitespace-nowrap {% if cap.provider_type == focus %}border-l-4 border-[#d40060]{% endif %}">
                                 {{ cap.display_name }}
                                 {% if cap.provider_type in configured_types %}
                                 <span class="ml-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-green-500/15 text-green-400 border border-green-500/30">Configured</span>
