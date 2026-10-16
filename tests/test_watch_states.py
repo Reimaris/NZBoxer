@@ -384,3 +384,27 @@ async def test_awaiting_item_survives_prune_then_is_pruned(db_session):
     item.seasons[1].status = SeasonStatus.SEARCHING
     await db_session.commit()
     assert await prune_inactive_media_items(db_session) == 1
+
+
+# --- Local playback state mapping (m69-06) ---
+
+
+@pytest.mark.parametrize(
+    ("offset", "duration", "views", "continue_watching", "expected"),
+    [
+        (0, 100_000, 0, False, "plantowatch"),
+        (1, 100_000, 0, False, "watching"),
+        (94_999, 100_000, 0, False, "watching"),
+        (95_000, 100_000, 0, False, "completed"),
+        (100_000, 100_000, 1, False, "completed"),
+        (0, 100_000, 1, False, "completed"),
+        (0, 100_000, 1, True, "completed"),
+        (0, 100_000, 0, True, "watching"),
+        (0, 0, 0, False, "plantowatch"),
+        (5, 0, 0, False, "watching"),
+    ],
+)
+def test_playback_list_status(offset, duration, views, continue_watching, expected):
+    from app.services.watchlist_providers import playback_list_status
+
+    assert playback_list_status(offset, duration, views, continue_watching) == expected

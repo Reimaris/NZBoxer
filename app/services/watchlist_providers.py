@@ -223,3 +223,27 @@ def get_adapter(provider_type: str) -> WatchlistAdapter:
             raise KeyError(provider_type) from exc
         _ADAPTERS[key] = module.ADAPTER
     return _ADAPTERS[key]
+
+
+_PLAYBACK_COMPLETED_RATIO = 0.95
+
+
+def playback_list_status(
+    view_offset_ms: int,
+    duration_ms: int,
+    view_count: int,
+    in_continue_watching: bool,
+) -> ListStatus:
+    """Map media-server playback data (Plex/Jellyfin) to a watch state.
+
+    Fully watched (a finished play with the resume point reset, or >= 95% played)
+    is ``completed``; any resume point or Continue Watching entry is ``watching``;
+    everything else is ``plantowatch``.
+    """
+    if view_count > 0 and view_offset_ms == 0:
+        return "completed"
+    if duration_ms > 0 and view_offset_ms >= _PLAYBACK_COMPLETED_RATIO * duration_ms:
+        return "completed"
+    if view_offset_ms > 0 or in_continue_watching:
+        return "watching"
+    return "plantowatch"
