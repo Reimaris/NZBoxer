@@ -13,7 +13,7 @@
         audioQualityMode: {{ (effective_config.audio_quality_mode or "best") | tojson }},
         allowSeasonPacks: {{ (true if effective_config.allow_season_packs else false) | tojson }},
         preferSeasonPacks: {{ (true if (effective_config.allow_season_packs and effective_config.prefer_season_packs) else false) | tojson }},
-        autoAdvanceSeasons: {{ (true if effective_config.auto_advance_seasons else false) | tojson }},
+        autoAdvanceSeasons: {{ (true if (can_auto_advance and effective_config.auto_advance_seasons) else false) | tojson }},
         resolutions: {{ (effective_config.custom_config.get("resolutions") or []) | tojson }},
         sources: {{ (effective_config.custom_config.get("sources") or []) | tojson }},
         videoCodecs: {{ (effective_config.custom_config.get("video_codecs") or []) | tojson }},
@@ -393,13 +393,16 @@
                                    class="accent-[#d40060] disabled:opacity-50">
                             <span class="font-semibold">Prefer Season Pack</span>
                         </label>
-                        <label class="inline-flex items-center gap-2 cursor-pointer text-xs text-white">
+                        <label class="inline-flex items-center gap-2 text-xs text-white {% if can_auto_advance %}cursor-pointer{% else %}opacity-50 cursor-not-allowed{% endif %}">
                             <span class="relative inline-flex shrink-0">
-<input type="checkbox" x-model="autoAdvanceSeasons" class="sr-only peer">
-<div class="w-9 h-5 bg-[#3f3f46] peer-focus:outline-none peer-focus-visible:ring-2 peer-focus-visible:ring-[#d40060] rounded-full peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#d40060]"></div>
+<input type="checkbox" x-model="autoAdvanceSeasons" class="sr-only peer"{% if not can_auto_advance %} disabled x-init="autoAdvanceSeasons = false"{% endif %}>
+<div class="{% if not can_auto_advance %}opacity-50 {% endif %}w-9 h-5 bg-[#3f3f46] peer-focus:outline-none peer-focus-visible:ring-2 peer-focus-visible:ring-[#d40060] rounded-full peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#d40060]"></div>
 </span>
                             <span class="font-semibold">Auto-Advance Seasons</span>
                         </label>
+                        {% if not can_auto_advance %}
+                        <p data-testid="auto-advance-warning" class="text-[11px] text-amber-400 mt-1">{{ auto_advance_unavailable_message }}</p>
+                        {% endif %}
                     </div>
                 </div>
 

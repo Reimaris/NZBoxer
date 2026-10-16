@@ -5,6 +5,7 @@ from __future__ import annotations
 import dataclasses
 
 import pytest
+from markupsafe import escape
 
 from app.core.push_engine import (
     persist_sticky_preferences,
@@ -13,6 +14,7 @@ from app.core.push_engine import (
 from app.services.downloaders.base import DOWNLOADER_TYPES
 from app.services.indexers.catalog import INDEXER_PRESETS
 from app.services.provider_capabilities import (
+    AUTO_ADVANCE_UNAVAILABLE_MESSAGE,
     CAPABILITIES,
     CATEGORY_ORDER,
     can_auto_advance,
@@ -22,7 +24,7 @@ from app.services.provider_capabilities import (
 )
 from app.services.provider_service import provider_category_for_type
 from app.services.watchlists import WATCHLIST_TYPES
-from tests.conftest import make_movie, make_source, make_watchlist_provider
+from tests.conftest import make_movie, make_series, make_source, make_watchlist_provider
 
 ALL_SLUGS = (
     set(WATCHLIST_TYPES)
@@ -239,3 +241,29 @@ async def test_ungated_item_honours_payload(db_session):
     )
     assert cfg["auto_advance_seasons"] is True
     assert cfg["can_auto_advance"] is True
+
+
+# --- push modal UI gating ---------------------------------------------------
+
+
+async def test_push_modal_warns_for_plex_only_item(db_session, async_client):
+    plex = await make_watchlist_provider(db_session, "plex", name="Plex")
+    item, _, _ = await make_series(db_session, provider_id=plex.id)
+    await make_source(db_session, item, plex, remote_id="plex-1")
+    await db_session.commit()
+    resp = await async_client.get(f"/api/items/{item.id}/push-modal")
+    assert resp.status_code == 200
+    assert 'data-testid="auto-advance-warning"' in resp.text
+    assert str(escape(AUTO_ADVANCE_UNAVAILABLE_MESSAGE)) in resp.text
+    assert 'x-model="autoAdvanceSeasons" class="sr-only peer" disabled' in resp.text
+    assert "autoAdvanceSeasons: false" in resp.text
+
+
+async def test_push_modal_no_warning_for_simkl_item(db_session, async_client):
+    simkl = await make_watchlist_provider(db_session, "simkl", name="Simkl")
+    item, _, _ = await make_series(db_session, provider_id=simkl.id)
+    await db_session.commit()
+    resp = await async_client.get(f"/api/items/{item.id}/push-modal")
+    assert resp.status_code == 200
+    assert "auto-advance-warning" not in resp.text
+    assert 'x-model="autoAdvanceSeasons" class="sr-only peer" disabled' not in resp.text
