@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from sqlalchemy import func, select
 
+from app.core.outage import active_outages, clear_outages
 from app.core.prerequisites import setup_blocks
 from app.db.models import DownloadHistory, MediaItem
 from app.services.downloaders.base import DOWNLOADER_DISPLAY_NAMES
@@ -62,6 +63,8 @@ class RateLimitSource:
     kind: Literal["downloader", "indexer"]
     name: str
     remaining_seconds: float
+    reason: Literal["rate_limit", "outage"] = "rate_limit"
+    label: str = ""
 
 
 def _downloader_cooldowns() -> list[tuple[str, float]]:
@@ -89,13 +92,23 @@ def downloader_rate_limit_detail() -> str:
 
 def active_rate_limit_sources() -> list[RateLimitSource]:
     """Downloaders and indexers whose cooldown is currently active."""
+    outages = {(o.kind, o.provider_name): o for o in active_outages()}
+
+    def _source(
+        kind: Literal["downloader", "indexer"], name: str, rem: float
+    ) -> RateLimitSource:
+        outage = outages.get((kind, name))
+        if outage is None:
+            return RateLimitSource(kind, name, rem)
+        return RateLimitSource(kind, name, rem, "outage", outage.label)
+
     sources = [
-        RateLimitSource("downloader", name, rem)
+        _source("downloader", name, rem)
         for name, rem in _downloader_cooldowns()
         if rem > 0
     ]
     sources += [
-        RateLimitSource("indexer", name, rem)
+        _source("indexer", name, rem)
         for name, rem in newznab_client.get_all_indexer_cooldowns().items()
     ]
     return sources
@@ -123,6 +136,7 @@ def clear_all_rate_limit_cooldowns() -> None:
     for cls in downloader_classes().values():
         cls.clear_cooldown()
     newznab_client.clear_all_indexer_cooldowns()
+    clear_outages()
 
 
 class RateLimitQueueState:

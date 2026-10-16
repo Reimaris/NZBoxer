@@ -122,10 +122,14 @@ def reset_downloader_state():
     from app.core.rate_limit_queue import rate_limit_episode
     from app.services.indexers.newznab import clear_all_indexer_cooldowns
 
+    from app.core.outage import clear_outages
+
     clear_all_indexer_cooldowns()
+    clear_outages()
     rate_limit_episode.reset()
     yield
     clear_all_indexer_cooldowns()
+    clear_outages()
     torbox.set_cooldown(0.0)
     torbox.clear_usenet_cache()
     simkl._SIMKL_DEVICE_SESSIONS.clear()
