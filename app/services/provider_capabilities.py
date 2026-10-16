@@ -5,8 +5,17 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from types import MappingProxyType
+from typing import TYPE_CHECKING
 
+from sqlalchemy import select
+
+from app.db.models import MediaItemWatchlistSource, Provider
 from app.services.indexers.catalog import INDEXER_PRESETS
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    from app.db.models import MediaItem
 
 CATEGORY_ORDER: tuple[str, ...] = ("watchlist", "downloader", "metadata", "indexer")
 
@@ -173,3 +182,24 @@ def sources_support_auto_advance(provider_types: Iterable[str]) -> bool:
         if cap is not None and cap.supports_watch_progress:
             return True
     return False
+
+
+async def can_auto_advance(session: AsyncSession, item: MediaItem) -> bool:
+    """True iff a linked watchlist source or the origin provider reports watch progress."""
+    stmt = (
+        select(Provider.type)
+        .join(
+            MediaItemWatchlistSource,
+            MediaItemWatchlistSource.provider_id == Provider.id,
+        )
+        .where(MediaItemWatchlistSource.media_item_id == item.id)
+    )
+    types = set((await session.execute(stmt)).scalars().all())
+    if item.provider_id is not None:
+        origin = await session.execute(
+            select(Provider.type).where(Provider.id == item.provider_id)
+        )
+        origin_type = origin.scalar_one_or_none()
+        if origin_type:
+            types.add(origin_type)
+    return sources_support_auto_advance(types)

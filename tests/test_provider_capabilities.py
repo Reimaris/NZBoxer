@@ -6,17 +6,23 @@ import dataclasses
 
 import pytest
 
+from app.core.push_engine import (
+    persist_sticky_preferences,
+    resolve_effective_search_config,
+)
 from app.services.downloaders.base import DOWNLOADER_TYPES
 from app.services.indexers.catalog import INDEXER_PRESETS
 from app.services.provider_capabilities import (
     CAPABILITIES,
     CATEGORY_ORDER,
+    can_auto_advance,
     capabilities_by_category,
     get_capability,
     sources_support_auto_advance,
 )
 from app.services.provider_service import provider_category_for_type
 from app.services.watchlists import WATCHLIST_TYPES
+from tests.conftest import make_movie, make_source, make_watchlist_provider
 
 ALL_SLUGS = (
     set(WATCHLIST_TYPES)
@@ -184,3 +190,52 @@ def test_capabilities_by_category_order() -> None:
 )
 def test_sources_support_auto_advance(types: list[str], expected: bool) -> None:
     assert sources_support_auto_advance(types) is expected
+
+
+# --- can_auto_advance & dispatch gating -------------------------------------
+
+
+@pytest.fixture
+async def plex_item(db_session):
+    plex = await make_watchlist_provider(db_session, "plex", name="Plex")
+    item = await make_movie(db_session, provider_id=plex.id, auto_advance_seasons=True)
+    await make_source(db_session, item, plex, remote_id="plex-1")
+    return item
+
+
+async def test_can_auto_advance_plex_only_false_then_mal_true(db_session, plex_item):
+    assert await can_auto_advance(db_session, plex_item) is False
+    mal = await make_watchlist_provider(db_session, "mal", name="MyAnimeList")
+    await make_source(db_session, plex_item, mal, remote_id="mal-1")
+    assert await can_auto_advance(db_session, plex_item) is True
+
+
+async def test_can_auto_advance_simkl_origin_without_sources(db_session):
+    simkl = await make_watchlist_provider(db_session, "simkl", name="Simkl")
+    item = await make_movie(db_session, provider_id=simkl.id)
+    assert await can_auto_advance(db_session, item) is True
+
+
+async def test_gated_item_resolves_false_and_keeps_stored_preference(
+    db_session, plex_item
+):
+    payload = {"auto_advance_seasons": True}
+    cfg = await resolve_effective_search_config(db_session, plex_item, payload)
+    assert cfg["auto_advance_seasons"] is False
+    assert cfg["can_auto_advance"] is False
+
+    await persist_sticky_preferences(
+        db_session, plex_item, {"auto_advance_seasons": False}
+    )
+    await db_session.refresh(plex_item)
+    assert plex_item.auto_advance_seasons is True
+
+
+async def test_ungated_item_honours_payload(db_session):
+    simkl = await make_watchlist_provider(db_session, "simkl", name="Simkl")
+    item = await make_movie(db_session, provider_id=simkl.id)
+    cfg = await resolve_effective_search_config(
+        db_session, item, {"auto_advance_seasons": True}
+    )
+    assert cfg["auto_advance_seasons"] is True
+    assert cfg["can_auto_advance"] is True

@@ -85,6 +85,10 @@ from app.services.preset_service import (
     normalize_season_pack_flags,
     update_item_sticky_search_config,
 )
+from app.services.provider_capabilities import (
+    AUTO_ADVANCE_UNAVAILABLE_MESSAGE,
+    can_auto_advance,
+)
 from app.services.provider_service import get_active_indexers
 
 logger = logging.getLogger(__name__)
@@ -358,6 +362,10 @@ async def resolve_effective_search_config(
             else str(val).strip().lower() in ("1", "true", "yes", "on")
         )
 
+    advance_allowed = await can_auto_advance(session, item)
+    if not advance_allowed:
+        auto_advance_seasons = False
+
     return {
         "preset_id": preset.id if preset else preset_id,
         "primary_language": primary_language,
@@ -368,6 +376,7 @@ async def resolve_effective_search_config(
         "allow_season_packs": allow_season_packs,
         "prefer_season_packs": prefer_season_packs,
         "auto_advance_seasons": auto_advance_seasons,
+        "can_auto_advance": advance_allowed,
     }
 
 
@@ -392,6 +401,10 @@ async def persist_sticky_preferences(
     sticky_payload: dict[str, Any] = {
         k: payload[k] for k in sticky_keys if k in payload
     }
+    if "auto_advance_seasons" in sticky_payload and not await can_auto_advance(
+        session, item
+    ):
+        del sticky_payload["auto_advance_seasons"]
     if sticky_payload:
         await update_item_sticky_search_config(session, item.id, sticky_payload)
 
@@ -3373,4 +3386,6 @@ async def get_push_modal_context(
         "unpushed_season_ids": unpushed_season_ids,
         "default_selected_season_ids": default_selected_season_ids,
         "auto_push_episodes": bool(item.auto_push_episodes),
+        "can_auto_advance": bool(effective_cfg.get("can_auto_advance", True)),
+        "auto_advance_unavailable_message": AUTO_ADVANCE_UNAVAILABLE_MESSAGE,
     }
