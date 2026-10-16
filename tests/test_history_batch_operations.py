@@ -216,7 +216,7 @@ async def test_dashboard_renders_card_4_selection_mode_controls(
     html = resp.text
 
     # Selection mode toggle button
-    assert "Select Entries" in html
+    assert "Selection Mode" in html
     # Selection action bar controls
     assert "Delete Selected" in html
     assert "Clear All History" in html
@@ -384,8 +384,12 @@ async def test_dashboard_history_filter_bar_and_row_markup(
 
     html = (await async_client.get("/?tab=history")).text
 
-    assert html.index("toggleHistoryStatusFilter('failed')") < html.index(
-        'id="dashboard-history-table-body"'
+    # Filter bar lives in the Card 4 toolbar: after the search box, before the toggle button
+    assert (
+        html.index('placeholder="Search push history ledger..."')
+        < html.index("toggleHistoryStatusFilter('failed')")
+        < html.index('@click="enterHistorySelection()"')
+        < html.index('id="dashboard-history-table-body"')
     )
     bar = html[html.index("toggleHistoryStatusFilter('failed')") :]
     positions = [

@@ -1082,33 +1082,10 @@ document.addEventListener('alpine:init', () => {
     <!-- =================================================================== -->
     <!-- CARD 4 VIEW: HISTORY (5-COLUMN PUSH HISTORY LEDGER)                 -->
     <!-- =================================================================== -->
-    <!-- History status filter bar -->
-    <div x-show="activeCard === 'history' && !isSelectingHistory" style="display: none;"
-         class="flex flex-wrap items-center gap-2 mb-4"
-         x-effect="if (historyStatusFilter && ({{ history_filter_counts | tojson }})[historyStatusFilter] === 0) historyStatusFilter = ''">
-        {% set filter_pills = [
-            ('failed', 'Failed', 'bg-red-500/15 text-red-400 border border-red-500/30 hover:bg-red-500/25'),
-            ('canceled', 'Canceled', 'bg-orange-500/15 text-orange-400 border border-orange-500/30 hover:bg-orange-500/25'),
-            ('replaced', 'Replaced', 'bg-amber-500/15 text-amber-400 border border-amber-500/30 hover:bg-amber-500/25'),
-            ('deleted', 'Deleted', 'bg-zinc-500/15 text-zinc-400 border border-zinc-500/30 hover:bg-zinc-500/25'),
-            ('ready', 'Ready', 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/25'),
-        ] %}
-        {% if dry_run_history_count and dry_run_history_count > 0 %}
-        {% set filter_pills = filter_pills + [('simulated', 'Simulated', 'bg-amber-500/20 text-amber-300 border border-amber-500/40 hover:bg-amber-500/30')] %}
-        {% endif %}
-        {% for key, label, classes in filter_pills %}
-        {% set n = history_filter_counts[key] %}
-        <button type="button"
-                @click="toggleHistoryStatusFilter('{{ key }}')"
-                :class="historyStatusFilter === '{{ key }}' ? 'ring-2 ring-white/60' : ''"
-                class="px-3 py-1.5 rounded-md text-xs font-semibold transition-colors whitespace-nowrap {{ classes }}{% if n == 0 %} opacity-50 cursor-not-allowed pointer-events-none{% endif %}"
-                {% if n == 0 %}disabled aria-disabled="true"{% endif %}>{{ label }} ({{ n }})</button>
-        {% endfor %}
-    </div>
     <div x-show="activeCard === 'history'" style="display: none;"
          class="bg-[#24242b] border border-[#3f3f46] rounded-lg shadow overflow-hidden">
         <div class="p-4 border-b border-[#3f3f46] bg-[#1e1e24] flex flex-col gap-4">
-            <div x-show="!isSelectingHistory" class="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full">
+            <div x-show="!isSelectingHistory" class="grid grid-cols-1 md:grid-cols-[1fr_auto_1fr] items-stretch md:items-center gap-3 w-full">
                 <div class="relative w-full sm:w-80">
                     <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-[#a1a1aa]">
                         <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
@@ -1128,8 +1105,32 @@ document.addEventListener('alpine:init', () => {
                     </button>
                 </div>
 
-                <!-- Select Entries Toggle Button (when not in selection mode) -->
-                <div id="history-toolbar-actions" x-show="!isSelectingHistory" class="flex flex-wrap items-center gap-2">
+                <!-- History status filter bar (middle of toolbar, aligned with selection-mode quick-selects) -->
+                        <div id="history-filter-bar"
+                             class="flex flex-wrap items-center justify-start md:justify-center gap-2"
+                 x-effect="if (historyStatusFilter && ({{ history_filter_counts | tojson }})[historyStatusFilter] === 0) historyStatusFilter = ''">
+                {% set filter_pills = [
+                    ('failed', 'Failed', 'bg-red-500/15 text-red-400 border border-red-500/30 hover:bg-red-500/25'),
+                    ('canceled', 'Canceled', 'bg-orange-500/15 text-orange-400 border border-orange-500/30 hover:bg-orange-500/25'),
+                    ('replaced', 'Replaced', 'bg-amber-500/15 text-amber-400 border border-amber-500/30 hover:bg-amber-500/25'),
+                    ('deleted', 'Deleted', 'bg-zinc-500/15 text-zinc-400 border border-zinc-500/30 hover:bg-zinc-500/25'),
+                    ('ready', 'Ready', 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/25'),
+                ] %}
+                {% if dry_run_history_count and dry_run_history_count > 0 %}
+                {% set filter_pills = filter_pills + [('simulated', 'Simulated', 'bg-amber-500/20 text-amber-300 border border-amber-500/40 hover:bg-amber-500/30')] %}
+                {% endif %}
+                {% for key, label, classes in filter_pills %}
+                {% set n = history_filter_counts[key] %}
+                <button type="button"
+                        @click="toggleHistoryStatusFilter('{{ key }}')"
+                        :class="historyStatusFilter === '{{ key }}' ? 'ring-2 ring-white/60' : ''"
+                        class="px-3 py-1.5 rounded-md text-xs font-semibold transition-colors whitespace-nowrap {{ classes }}{% if n == 0 %} opacity-50 cursor-not-allowed pointer-events-none{% endif %}"
+                        {% if n == 0 %}disabled aria-disabled="true"{% endif %}>{{ label }} ({{ n }})</button>
+                {% endfor %}
+            </div>
+
+                <!-- Selection Mode Toggle Button (when not in selection mode) -->
+                <div id="history-toolbar-actions" x-show="!isSelectingHistory" class="flex flex-wrap items-center justify-start md:justify-end gap-2">
                     {% if dry_run_history_count and dry_run_history_count > 0 %}
                     <button type="button"
                             hx-post="/api/history/delete-dry-run"
@@ -1144,7 +1145,7 @@ document.addEventListener('alpine:init', () => {
                             @click="enterHistorySelection()"
                             class="bg-[#2a2a32] hover:bg-[#3f3f46] text-gray-200 border border-[#3f3f46] rounded-md px-3 py-2 text-sm flex items-center justify-center gap-1.5 transition-colors whitespace-nowrap">
                         <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"></path></svg>
-                        <span>Select Entries</span>
+                        <span>Selection Mode</span>
                     </button>
                 </div>
             </div>
@@ -1152,7 +1153,7 @@ document.addEventListener('alpine:init', () => {
             <!-- Selection Action Bar (when isSelectingHistory is active) -->
             <div x-show="isSelectingHistory"
                  x-cloak
-                 class="flex flex-wrap items-center justify-between gap-3 w-full">
+                 class="grid grid-cols-1 md:grid-cols-[1fr_auto_1fr] items-center gap-3 w-full">
                 <div class="flex flex-wrap items-center gap-2">
                     <span class="text-xs font-semibold text-gray-300 bg-[#2a2a32] border border-[#3f3f46] px-2.5 py-1.5 rounded-md whitespace-nowrap min-h-[36px] inline-flex items-center">
                         Selected: <span class="text-emerald-400 font-bold ml-1" x-text="selectedHistoryIds.length"></span>
@@ -1169,7 +1170,7 @@ document.addEventListener('alpine:init', () => {
                     </button>
                 </div>
 
-                <div class="flex flex-wrap items-center gap-2">
+                <div class="flex flex-wrap items-center justify-start md:justify-center gap-2">
                     {% for key, label, classes in [
                     ('failed', 'Failed', 'bg-red-500/15 text-red-400 border border-red-500/30 hover:bg-red-500/25'),
                     ('canceled', 'Canceled', 'bg-orange-500/15 text-orange-400 border border-orange-500/30 hover:bg-orange-500/25'),
@@ -1188,7 +1189,7 @@ document.addEventListener('alpine:init', () => {
                     {% endfor %}
                 </div>
 
-                <div class="flex flex-wrap items-center gap-2">
+                <div class="flex flex-wrap items-center justify-start md:justify-end gap-2">
                     <button type="button"
                             :disabled="selectedHistoryIds.length === 0"
                             :class="selectedHistoryIds.length === 0 ? 'opacity-50 cursor-not-allowed pointer-events-none' : ''"
