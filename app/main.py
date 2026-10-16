@@ -366,6 +366,30 @@ def count_history_by_status(ledger: Sequence[Mapping[str, Any]]) -> dict[str, in
     return counts
 
 
+HISTORY_FILTER_KEYS: tuple[str, ...] = (
+    "failed",
+    "canceled",
+    "replaced",
+    "deleted",
+    "ready",
+    "simulated",
+)
+
+
+def count_history_filter_buckets(ledger: Sequence[Mapping[str, Any]]) -> dict[str, int]:
+    """Count ledger rows per HISTORY_FILTER_KEYS bucket; dry-run rows count only under 'simulated'; unknown statuses ignored."""
+    counts = dict.fromkeys(HISTORY_FILTER_KEYS, 0)
+    for row in ledger:
+        key = (
+            "simulated"
+            if row.get("is_dry_run")
+            else (row.get("downloader_status") or "").lower()
+        )
+        if key in counts:
+            counts[key] += 1
+    return counts
+
+
 SETUP_LABELS: dict[str, str] = {
     "tmdb": "TMDB API key",
     "indexer": "Indexer",
@@ -647,6 +671,7 @@ async def dashboard(request: Request, background_tasks: BackgroundTasks):
             "history_total": len(push_history_ledger),
             "dry_run_history_count": dry_run_history_count,
             "history_status_counts": count_history_by_status(push_history_ledger),
+            "history_filter_counts": count_history_filter_buckets(push_history_ledger),
             "active_pushes": active_pushes,
             "active_pushes_count": len(active_pushes),
             "downloading_count": downloading_count,

@@ -8,7 +8,7 @@ from app.core.transfer_poller import (
     clear_history_ledger,
 )
 from app.db.models import DownloadHistory, MediaStatus
-from app.main import count_history_by_status
+from app.main import count_history_by_status, count_history_filter_buckets
 from tests.conftest import make_history, make_movie
 
 
@@ -341,3 +341,127 @@ async def test_dashboard_history_mobile_footer_layout(
     assert 'title="Disk full"' in footer
     assert "SIMULATED (DRY RUN)" in footer
     assert html.count(f'id="ledger-status-{ready.id}"') == 1
+
+
+def test_count_history_filter_buckets_dry_run_only_counts_as_simulated():
+    ledger = [
+        {"downloader_status": "FAILED", "is_dry_run": False},
+        {"downloader_status": "FAILED", "is_dry_run": False},
+        {"downloader_status": "READY", "is_dry_run": True},
+        {"downloader_status": "weird", "is_dry_run": False},
+    ]
+    assert count_history_filter_buckets(ledger) == {
+        "failed": 2,
+        "canceled": 0,
+        "replaced": 0,
+        "deleted": 0,
+        "ready": 0,
+        "simulated": 1,
+    }
+
+
+LONG_NZB = "Some.Very.Long.Movie.Name.2024.2160p.UHD.BluRay.REMUX.HDR10.HEVC.DTS-HD.MA.7.1-GROUP"
+GRAY_PILL = "bg-[#1e1e24] text-gray-300 border border-[#3f3f46]"
+
+
+@pytest.mark.asyncio
+async def test_dashboard_history_filter_bar_and_row_markup(
+    async_client: AsyncClient, db_session: AsyncSession
+):
+    movie = await make_movie(
+        db_session, title="Bar Movie", status=MediaStatus.COMPLETED
+    )
+    for i, detail in enumerate(["failed: Disk full", "completed"]):
+        await make_history(
+            db_session,
+            item=movie,
+            downloader_transfer_id=f"tb-bar-{i}",
+            nzb_guid=f"guid-bar-{i}",
+            nzb_title=LONG_NZB,
+            status_detail=detail,
+        )
+    await db_session.commit()
+
+    html = (await async_client.get("/?tab=history")).text
+
+    assert html.index("toggleHistoryStatusFilter('failed')") < html.index(
+        'id="dashboard-history-table-body"'
+    )
+    bar = html[html.index("toggleHistoryStatusFilter('failed')") :]
+    positions = [
+        bar.index(label)
+        for label in (
+            "Failed (1)",
+            "Canceled (0)",
+            "Replaced (0)",
+            "Deleted (0)",
+            "Ready (1)",
+        )
+    ]
+    assert positions == sorted(positions)
+    assert "toggleHistoryStatusFilter('simulated')" not in html
+    assert "toggleHistoryStatusFilter('')" not in html
+    assert "ring-2 ring-white/60" in html
+    assert (
+        "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/25"
+        in html
+    )
+    zero = html[html.index("toggleHistoryStatusFilter('canceled')") :][:600]
+    assert "opacity-50 cursor-not-allowed pointer-events-none" in zero
+    assert 'aria-disabled="true"' in zero
+    nonzero = html[html.index("toggleHistoryStatusFilter('failed')") :][:600]
+    assert "opacity-50" not in nonzero
+
+    assert 'data-filter-key="failed"' in html
+    assert "historyRowMatches($el)" in html
+    assert ".toLowerCase().includes(historySearch.toLowerCase())" not in html
+    assert 'data-empty-history-row="true"' in html
+    assert "No history entries matching this filter." in html
+    assert (
+        "enterHistorySelection() { this.historySearch = ''; this.historyStatusFilter = ''; "
+        in html
+    )
+
+    # Movie badge de-duplication and unwrapped filenames
+    assert html.count(">MOVIE</span>") == 2
+    assert GRAY_PILL not in html[html.index('id="dashboard-history-table-body"') :]
+    assert f'break-all" title="{LONG_NZB}"' in html
+    assert f'truncate" title="{LONG_NZB}"' not in html
+    assert "md:max-w-[380px]" not in html
+
+
+@pytest.mark.asyncio
+async def test_dashboard_history_simulated_pill_and_episodic_pill(
+    async_client: AsyncClient, db_session: AsyncSession
+):
+    movie = await make_movie(
+        db_session, title="Sim Movie", status=MediaStatus.COMPLETED
+    )
+    await make_history(
+        db_session,
+        item=movie,
+        downloader_transfer_id="tb-sim-1",
+        nzb_guid="guid-sim-1",
+        status_detail="completed",
+        is_dry_run=True,
+    )
+    await db_session.commit()
+
+    html = (await async_client.get("/?tab=history")).text
+
+    assert 'data-filter-key="simulated"' in html
+    assert html.index("toggleHistoryStatusFilter('ready')") < html.index(
+        "toggleHistoryStatusFilter('simulated')"
+    )
+    badge = html[html.index("border-blue-500/20 inline-flex") :][:900]
+    assert badge.index("<svg") < badge.index("MOVIE</span>")
+    assert GRAY_PILL not in html[html.index('id="dashboard-history-table-body"') :]
+
+
+@pytest.mark.asyncio
+async def test_dashboard_history_empty_ledger_has_no_filter_empty_row(
+    async_client: AsyncClient,
+):
+    html = (await async_client.get("/?tab=history")).text
+    assert "No push history entries recorded yet." in html
+    assert 'data-empty-history-row="true"' not in html

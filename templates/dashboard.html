@@ -350,7 +350,23 @@ function initVideoDashboard() {
             }
         },
         historyStatusKeys: ['failed', 'canceled', 'replaced', 'deleted', 'ready'],
-        enterHistorySelection() { this.historySearch = ''; this.isSelectingHistory = true; },
+        historyFilterKeys: ['failed', 'canceled', 'replaced', 'deleted', 'ready', 'simulated'],
+        historyStatusFilter: '',
+        toggleHistoryStatusFilter(key) {
+            if (!this.historyFilterKeys.includes(key)) return;
+            this.historyStatusFilter = this.historyStatusFilter === key ? '' : key;
+        },
+        historyRowMatches(row) {
+            const q = this.historySearch.trim().toLowerCase();
+            const textOk = q === '' || (row.getAttribute('data-search') || '').includes(q);
+            const statusOk = this.historyStatusFilter === '' || row.getAttribute('data-filter-key') === this.historyStatusFilter;
+            return textOk && statusOk;
+        },
+        hasVisibleHistoryRows() {
+            return Array.from(document.querySelectorAll("#dashboard-history-table-body tr[data-sortable='true']"))
+                .some(r => this.historyRowMatches(r));
+        },
+        enterHistorySelection() { this.historySearch = ''; this.historyStatusFilter = ''; this.isSelectingHistory = true; },
         exitHistorySelection() { this.isSelectingHistory = false; this.selectedHistoryIds = []; },
         selectHistoryByStatus(key) {
             if (!this.historyStatusKeys.includes(key)) return;
@@ -1065,6 +1081,29 @@ document.addEventListener('alpine:init', () => {
     <!-- =================================================================== -->
     <!-- CARD 4 VIEW: HISTORY (5-COLUMN PUSH HISTORY LEDGER)                 -->
     <!-- =================================================================== -->
+    <!-- History status filter bar -->
+    <div x-show="activeCard === 'history' && !isSelectingHistory" style="display: none;"
+         class="flex flex-wrap items-center gap-2 mb-4"
+         x-effect="if (historyStatusFilter && ({{ history_filter_counts | tojson }})[historyStatusFilter] === 0) historyStatusFilter = ''">
+        {% set filter_pills = [
+            ('failed', 'Failed', 'bg-red-500/15 text-red-400 border border-red-500/30 hover:bg-red-500/25'),
+            ('canceled', 'Canceled', 'bg-orange-500/15 text-orange-400 border border-orange-500/30 hover:bg-orange-500/25'),
+            ('replaced', 'Replaced', 'bg-amber-500/15 text-amber-400 border border-amber-500/30 hover:bg-amber-500/25'),
+            ('deleted', 'Deleted', 'bg-zinc-500/15 text-zinc-400 border border-zinc-500/30 hover:bg-zinc-500/25'),
+            ('ready', 'Ready', 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/25'),
+        ] %}
+        {% if dry_run_history_count and dry_run_history_count > 0 %}
+        {% set filter_pills = filter_pills + [('simulated', 'Simulated', 'bg-amber-500/20 text-amber-300 border border-amber-500/40 hover:bg-amber-500/30')] %}
+        {% endif %}
+        {% for key, label, classes in filter_pills %}
+        {% set n = history_filter_counts[key] %}
+        <button type="button"
+                @click="toggleHistoryStatusFilter('{{ key }}')"
+                :class="historyStatusFilter === '{{ key }}' ? 'ring-2 ring-white/60' : ''"
+                class="px-3 py-1.5 rounded-md text-xs font-semibold transition-colors whitespace-nowrap {{ classes }}{% if n == 0 %} opacity-50 cursor-not-allowed pointer-events-none{% endif %}"
+                {% if n == 0 %}disabled aria-disabled="true"{% endif %}>{{ label }} ({{ n }})</button>
+        {% endfor %}
+    </div>
     <div x-show="activeCard === 'history'" style="display: none;"
          class="bg-[#24242b] border border-[#3f3f46] rounded-lg shadow overflow-hidden">
         <div class="p-4 border-b border-[#3f3f46] bg-[#1e1e24] flex flex-col gap-4">
@@ -1213,7 +1252,9 @@ document.addEventListener('alpine:init', () => {
                         data-release="{{ (h.nzb_title or '') | lower }}"
                         data-pushed-at="{{ h.pushed_at_str or '' }}"
                         data-status="{{ (h.downloader_status or '') | lower }}"
-                        x-show="historySearch.trim() === '' || '{{ (h.media_title or '')|replace('\'', '\\\'') }}'.toLowerCase().includes(historySearch.toLowerCase()) || '{{ (h.display_title or '')|replace('\'', '\\\'') }}'.toLowerCase().includes(historySearch.toLowerCase()) || '{{ (h.alt_title or '')|replace('\'', '\\\'') }}'.toLowerCase().includes(historySearch.toLowerCase()) || '{{ (h.nzb_title or '')|replace('\'', '\\\'') }}'.toLowerCase().includes(historySearch.toLowerCase()) || '{{ (h.target_label or '')|replace('\'', '\\\'') }}'.toLowerCase().includes(historySearch.toLowerCase()) || '{{ (h.type_label or '') | lower }}'.includes(historySearch.toLowerCase()) || '{{ (h.downloader_status or '') | lower }}'.includes(historySearch.toLowerCase())">
+                        data-filter-key="{% if h.is_dry_run %}simulated{% else %}{{ (h.downloader_status or '') | lower }}{% endif %}"
+                        data-search="{{ [h.media_title, h.display_title, h.alt_title, h.nzb_title, h.target_label, h.type_label, h.downloader_status] | map('default', '', true) | join('\n') | lower }}"
+                        x-show="historyRowMatches($el)">
                         <!-- Desktop Selection Checkbox Col -->
                         <td x-show="isSelectingHistory" class="hidden md:table-cell md:px-3 md:py-3.5 text-center w-10">
                             <input type="checkbox"
@@ -1254,7 +1295,9 @@ document.addEventListener('alpine:init', () => {
                                         {% if h.media_year %}
                                         <span class="text-xs text-[#a1a1aa]">({{ h.media_year }})</span>
                                         {% endif %}
-                                        {% if h.target_label %}
+                                        {% set is_movie_type = h.type_label not in ('ANIME', 'SERIES') %}
+                                        {% set is_movie_dup = is_movie_type and (h.target_label or '') | lower == 'movie' %}
+                                        {% if h.target_label and not is_movie_dup %}
                                         <span class="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded bg-[#1e1e24] text-gray-300 border border-[#3f3f46] inline-flex items-center gap-1">{% if h.is_dry_run %}<svg class="w-3 h-3 shrink-0 text-amber-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"></path></svg>{% endif %}{{ h.target_label }}</span>
                                         {% endif %}
                                         {% if h.type_label == 'ANIME' %}
@@ -1262,7 +1305,7 @@ document.addEventListener('alpine:init', () => {
                                         {% elif h.type_label == 'SERIES' %}
                                         <span class="px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded bg-purple-500/10 text-purple-400 border border-purple-500/20">SERIES</span>
                                         {% else %}
-                                        <span class="px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded bg-blue-500/10 text-blue-400 border border-blue-500/20">MOVIE</span>
+                                        <span class="px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded bg-blue-500/10 text-blue-400 border border-blue-500/20 inline-flex items-center gap-1">{% if h.is_dry_run and is_movie_dup %}<svg class="w-3 h-3 shrink-0 text-amber-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"></path></svg>{% endif %}MOVIE</span>
                                         {% endif %}
                                         {% if h.is_detached and h.is_ad_hoc %}
                                         <span class="px-1.5 py-0.5 text-[10px] font-semibold rounded bg-indigo-500/15 text-indigo-300 border border-indigo-500/30">Ad-Hoc</span>
@@ -1292,7 +1335,7 @@ document.addEventListener('alpine:init', () => {
 
                             <!-- Mobile-Only Release Details, Pills & Status Row (< md) -->
                             <div class="md:hidden mt-3 space-y-2.5 w-full min-w-0 max-w-full overflow-hidden">
-                                <div class="text-xs font-mono text-gray-200 truncate max-w-full" title="{{ h.nzb_title }}">{{ h.nzb_title }}</div>
+                                <div class="text-xs font-mono text-gray-200 break-all max-w-full" title="{{ h.nzb_title }}">{{ h.nzb_title }}</div>
                                 {% set pills = h.feature_pills if h.feature_pills is defined else [] %}
                                 {% if pills %}
                                 <div class="flex flex-wrap items-center gap-1.5 w-full">
@@ -1304,8 +1347,8 @@ document.addEventListener('alpine:init', () => {
                             </div>
                         </td>
                         <!-- Desktop-Only Col 2: Release & Quality -->
-                        <td class="hidden md:table-cell md:px-4 md:py-3.5 md:min-w-[220px] md:max-w-[380px] min-w-0">
-                            <div class="text-xs font-mono text-gray-200 truncate" title="{{ h.nzb_title }}">{{ h.nzb_title }}</div>
+                        <td class="hidden md:table-cell md:px-4 md:py-3.5 md:min-w-[220px] min-w-0">
+                            <div class="text-xs font-mono text-gray-200 break-all" title="{{ h.nzb_title }}">{{ h.nzb_title }}</div>
                             {% set pills = h.feature_pills if h.feature_pills is defined else [] %}
                             <div class="flex flex-wrap items-center gap-1.5 mt-1.5">
                                 {% for pill in pills %}
@@ -1410,6 +1453,11 @@ document.addEventListener('alpine:init', () => {
                         <td :colspan="isSelectingHistory ? 6 : 5" class="block md:table-cell px-4 py-8 text-center text-sm text-[#a1a1aa] italic w-full">No push history entries recorded yet.</td>
                     </tr>
                     {% endfor %}
+                    {% if push_history_ledger %}
+                    <tr class="block md:table-row w-full" data-empty-history-row="true" x-show="!hasVisibleHistoryRows()" style="display: none;">
+                        <td :colspan="isSelectingHistory ? 6 : 5" class="block md:table-cell px-4 py-8 text-center text-sm text-[#a1a1aa] italic w-full">No history entries matching this filter.</td>
+                    </tr>
+                    {% endif %}
                 </tbody>
             </table>
         </div>
