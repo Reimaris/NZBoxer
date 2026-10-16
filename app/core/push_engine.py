@@ -2239,6 +2239,11 @@ async def advance_season_buffer(
             else:
                 break
         elif is_eligible:
+            if candidate_entry.status == SeasonStatus.IGNORED:
+                from app.services.watchlist_ingest import set_season_searchable
+
+                await set_season_searchable(session, candidate_entry)
+                await session.flush()
             hists = await _push_single_season_or_movie_entry(
                 session=session,
                 item=item,

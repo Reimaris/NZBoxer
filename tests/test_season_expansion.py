@@ -881,3 +881,32 @@ async def test_disabled_auto_advance_and_manual_grab_expansion(
     await db_session.refresh(s2)
     assert s1.status == SeasonStatus.DOWNLOADING
     assert s2.status == SeasonStatus.DOWNLOADING
+
+
+@pytest.mark.asyncio
+async def test_auto_advance_promotes_ignored_season_to_searching(
+    db_session: AsyncSession,
+) -> None:
+    """An IGNORED season (unrequested on Seerr) is promoted to SEARCHING when auto-advance reaches it."""
+    from tests.conftest import make_series
+
+    item, seasons, _ = await make_series(
+        db_session,
+        seasons=[
+            {"season_number": 1, "status": SeasonStatus.COMPLETED},
+            {"season_number": 2, "status": SeasonStatus.IGNORED},
+        ],
+        episodes_per_season=1,
+        episode_statuses=None,
+    )
+    seasons[1].air_date = datetime(2020, 1, 1, tzinfo=timezone.utc)
+    await db_session.commit()
+
+    with patch(
+        "app.core.push_engine._push_single_season_or_movie_entry",
+        new=AsyncMock(return_value=[]),
+    ):
+        await advance_season_buffer(db_session, item, base_watch_order=1)
+
+    await db_session.refresh(seasons[1])
+    assert seasons[1].status == SeasonStatus.SEARCHING

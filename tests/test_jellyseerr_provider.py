@@ -8,7 +8,7 @@ from sqlalchemy import text
 from app.core.experimental import is_experimental
 from app.core.log_redaction import install_model_listeners, redact_text
 from app.db.database import _migrate_availability_notified
-from app.db.models import Provider
+from app.db.models import Episode, MediaItemWatchlistSource, Provider
 from app.services.watchlist_providers import WatchlistEntry
 
 KEY = "test-key-0123456789abcdef"
@@ -218,7 +218,6 @@ from sqlalchemy import select  # noqa: E402
 from app.db.models import (  # noqa: E402
     DownloadHistory,
     MediaItem,
-    MediaItemWatchlistSource,
     MediaStatus,
 )
 from app.services import anilist, tmdb  # noqa: E402
@@ -455,3 +454,114 @@ async def test_departed_request_with_active_transfer_not_pruned(
     assert (
         await db_session.execute(select(MediaItem).where(MediaItem.tmdb_id == 603))
     ).scalar_one_or_none() is not None
+
+
+# ---- m68-04: partial-season request handling -------------------------------
+
+from sqlalchemy import select as _select  # noqa: E402
+
+from app.db.models import EpisodeStatus, MediaType, SeasonStatus  # noqa: E402
+from app.services.watchlist_ingest import _apply_requested_seasons  # noqa: E402
+from tests.conftest import (  # noqa: E402
+    make_series,
+    make_source,
+)
+
+
+def _req(seasons: set[int] | None) -> WatchlistEntry:
+    return WatchlistEntry(
+        remote_id="r1",
+        media_kind="show",
+        title="Show",
+        tvdb_id=1,
+        requested_seasons=None if seasons is None else frozenset(seasons),
+    )
+
+
+async def _statuses(session, item) -> dict[int, SeasonStatus]:  # type: ignore[no-untyped-def]
+    await session.refresh(item, ["seasons"])
+    return {s.season_number: s.status for s in item.seasons}
+
+
+async def _show(session, statuses=None):  # type: ignore[no-untyped-def]
+    item, seasons, eps = await make_series(
+        session,
+        seasons=[
+            {"season_number": n, "status": st}
+            for n, st in enumerate(
+                statuses or [SeasonStatus.SEARCHING] * 4
+            )  # index 0 = season 0
+        ],
+        episodes_per_season=2,
+    )
+    await session.refresh(item, ["seasons"])
+    return item, seasons
+
+
+async def test_requested_seasons_search_only_requested_then_expand(db_session) -> None:  # type: ignore[no-untyped-def]
+    item, _ = await _show(db_session)
+    await _apply_requested_seasons(db_session, item, _req({1}))
+    assert await _statuses(db_session, item) == {
+        0: SeasonStatus.SEARCHING,
+        1: SeasonStatus.SEARCHING,
+        2: SeasonStatus.IGNORED,
+        3: SeasonStatus.IGNORED,
+    }
+    eps = (await db_session.execute(_select(Episode))).scalars().all()
+    s2 = next(s for s in item.seasons if s.season_number == 2)
+    assert {e.status for e in eps if e.season_id == s2.id} == {EpisodeStatus.IGNORED}
+
+    await _apply_requested_seasons(db_session, item, _req({1, 2}))
+    await _apply_requested_seasons(db_session, item, _req({1, 2}))  # idempotent
+    st = await _statuses(db_session, item)
+    assert st[2] == SeasonStatus.SEARCHING and st[3] == SeasonStatus.IGNORED
+    eps = (await db_session.execute(_select(Episode))).scalars().all()
+    assert {e.status for e in eps if e.season_id == s2.id} == {EpisodeStatus.PENDING}
+
+
+async def test_requested_seasons_leaves_finished_and_history_seasons(
+    db_session,
+) -> None:  # type: ignore[no-untyped-def]
+    item, seasons = await _show(
+        db_session,
+        [
+            SeasonStatus.SEARCHING,
+            SeasonStatus.COMPLETED,
+            SeasonStatus.SEARCHING,
+            SeasonStatus.PENDING,
+        ],
+    )
+    await make_history(db_session, item=item, season=seasons[2])
+    await _apply_requested_seasons(db_session, item, _req(set()))
+    assert await _statuses(db_session, item) == {
+        0: SeasonStatus.SEARCHING,
+        1: SeasonStatus.COMPLETED,
+        2: SeasonStatus.SEARCHING,
+        3: SeasonStatus.IGNORED,
+    }
+
+
+async def test_requested_seasons_skipped_with_other_active_source(db_session) -> None:  # type: ignore[no-untyped-def]
+    item, _ = await _show(db_session)
+    plex = await make_watchlist_provider(db_session, "plex")
+    await make_source(db_session, item, plex, "plantowatch", "p1")
+    await _apply_requested_seasons(db_session, item, _req({1}))
+    assert set((await _statuses(db_session, item)).values()) == {SeasonStatus.SEARCHING}
+
+    # an inactive other source no longer blocks
+    plex_src = (
+        await db_session.execute(_select(MediaItemWatchlistSource))
+    ).scalar_one()
+    plex_src.list_status = "completed"
+    await db_session.flush()
+    await _apply_requested_seasons(db_session, item, _req({1}))
+    assert (await _statuses(db_session, item))[2] == SeasonStatus.IGNORED
+
+
+async def test_requested_seasons_noop_for_none_and_movies(db_session) -> None:  # type: ignore[no-untyped-def]
+    item, _ = await _show(db_session)
+    await _apply_requested_seasons(db_session, item, _req(None))
+    assert set((await _statuses(db_session, item)).values()) == {SeasonStatus.SEARCHING}
+    item.media_type = MediaType.MOVIE
+    await _apply_requested_seasons(db_session, item, _req({1}))
+    assert set((await _statuses(db_session, item)).values()) == {SeasonStatus.SEARCHING}

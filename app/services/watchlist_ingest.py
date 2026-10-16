@@ -11,12 +11,13 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.db.models import (
     ACTIVE_LIST_STATUSES,
+    DownloadHistory,
     Episode,
     EpisodeStatus,
     MediaItem,
@@ -401,6 +402,101 @@ async def _create_item(
     return item
 
 
+_SEERR_TYPES = ("jellyseerr", "overseerr")
+_REQUEST_UNREQUEST_FROM = (
+    SeasonStatus.SEARCHING,
+    SeasonStatus.PENDING,
+    SeasonStatus.FUTURE,
+)
+
+
+async def _apply_requested_seasons(
+    session: AsyncSession, item: MediaItem, entry: WatchlistEntry
+) -> None:
+    """Make only the seasons a Seerr request names searchable; the rest are ignored.
+
+    Requested ``IGNORED`` seasons become ``SEARCHING``; unrequested, untouched seasons
+    become ``IGNORED``. Season 0, in-flight/finished seasons and seasons with push
+    history are left alone, so repeated syncs are idempotent.
+    """
+    if entry.requested_seasons is None or item.media_type != MediaType.SHOW:
+        return
+    other_active = await session.scalar(
+        select(MediaItemWatchlistSource.id)
+        .join(Provider, Provider.id == MediaItemWatchlistSource.provider_id)
+        .where(
+            MediaItemWatchlistSource.media_item_id == item.id,
+            MediaItemWatchlistSource.list_status.in_(ACTIVE_LIST_STATUSES),
+            Provider.type.not_in(_SEERR_TYPES),
+        )
+        .limit(1)
+    )
+    if other_active is not None:
+        return
+
+    for season in item.seasons:
+        if season.season_number == 0:
+            continue
+        if season.season_number in entry.requested_seasons:
+            if season.status == SeasonStatus.IGNORED:
+                await set_season_searchable(session, season)
+        elif season.status in _REQUEST_UNREQUEST_FROM:
+            has_history = await session.scalar(
+                select(DownloadHistory.id)
+                .where(
+                    or_(
+                        DownloadHistory.season_id == season.id,
+                        # episode-level pushes may carry only the episode id
+                        DownloadHistory.episode_id.in_(
+                            select(Episode.id).where(Episode.season_id == season.id)
+                        ),
+                    )
+                )
+                .limit(1)
+            )
+            if has_history is None:
+                await _set_season_and_episodes(
+                    session,
+                    season,
+                    SeasonStatus.IGNORED,
+                    EpisodeStatus.IGNORED,
+                    {
+                        EpisodeStatus.PENDING,
+                        EpisodeStatus.SEARCHING,
+                        EpisodeStatus.FUTURE,
+                    },
+                )
+
+
+async def set_season_searchable(session: AsyncSession, season: Season) -> None:
+    """Promote an ``IGNORED`` season (and its ignored episodes) to searchable."""
+    await _set_season_and_episodes(
+        session,
+        season,
+        SeasonStatus.SEARCHING,
+        EpisodeStatus.PENDING,
+        {EpisodeStatus.IGNORED},
+    )
+
+
+async def _set_season_and_episodes(
+    session: AsyncSession,
+    season: Season,
+    season_status: SeasonStatus,
+    episode_status: EpisodeStatus,
+    episode_from: set[EpisodeStatus],
+) -> None:
+    season.status = season_status
+    episodes = (
+        (await session.execute(select(Episode).where(Episode.season_id == season.id)))
+        .scalars()
+        .all()
+    )
+    for ep in episodes:
+        if ep.status in episode_from:
+            ep.status = episode_status
+
+
 async def ingest_entries(
     session: AsyncSession, provider: Provider, entries: list[WatchlistEntry]
 ) -> IngestResult:
@@ -486,6 +582,9 @@ async def ingest_entries(
 
             await session.commit()
             item = await automation.enrich_anime_metadata(session, item)
+        if entry.requested_seasons is not None and item.media_type == MediaType.SHOW:
+            await session.refresh(item, ["seasons"])
+            await _apply_requested_seasons(session, item, entry)
         order = _entry_order(item, entry, matched) if has_progress else 0
         source = await _upsert_source(session, item, provider, entry, order, result)
 
