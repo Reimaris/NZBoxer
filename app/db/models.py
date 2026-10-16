@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import enum
 import json
+from collections.abc import Iterable
 from datetime import datetime, timezone
 from typing import Any
 
@@ -236,8 +237,22 @@ class ProviderCategory(str, enum.Enum):
     INDEXER = "indexer"
 
 
-ACTIVE_LIST_STATUSES: frozenset[str] = frozenset({"plantowatch", "watching"})
+ACTIVE_LIST_STATUSES: frozenset[str] = frozenset({"plantowatch", "watching", "on_hold"})
 INACTIVE_LIST_STATUSES: frozenset[str] = frozenset({"completed", "dropped"})
+# Best first: an item with several sources resolves to the highest-precedence status.
+LIST_STATUS_PRECEDENCE: tuple[str, ...] = (
+    "watching",
+    "on_hold",
+    "plantowatch",
+    "completed",
+    "dropped",
+)
+
+
+def best_list_status(statuses: Iterable[str]) -> str | None:
+    """Return the highest-precedence status present (unknown values ignored)."""
+    present = set(statuses)
+    return next((s for s in LIST_STATUS_PRECEDENCE if s in present), None)
 
 
 class Provider(Base):
@@ -571,6 +586,16 @@ class MediaItem(Base):
         return any(
             s.list_status in ACTIVE_LIST_STATUSES for s in self.watchlist_sources
         )
+
+    @property
+    def effective_list_status(self) -> str | None:
+        """Highest-precedence list status across all watchlist sources."""
+        return best_list_status(s.list_status for s in self.watchlist_sources)
+
+    @property
+    def is_list_on_hold(self) -> bool:
+        """True when the item's effective list status is ``on_hold``."""
+        return self.effective_list_status == "on_hold"
 
     @property
     def associated_franchise_ids(self) -> set[int]:

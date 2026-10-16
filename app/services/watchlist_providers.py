@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Literal, Protocol
 if TYPE_CHECKING:
     from app.db.models import Provider
 
-ListStatus = Literal["plantowatch", "watching", "completed", "dropped"]
+ListStatus = Literal["plantowatch", "watching", "on_hold", "completed", "dropped"]
 MediaKind = Literal["movie", "show", "anime", "anime_movie"]
 
 
