@@ -326,3 +326,13 @@ async def test_provider_modal_shows_plex_limitation(async_client):
 def test_readme_lists_every_provider(slug: str) -> None:
     readme = (Path(__file__).resolve().parent.parent / "README.md").read_text()
     assert CAPABILITIES[slug].display_name in readme
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("query", ["", "?focus=simkl"])
+async def test_capabilities_modal_alpine_state_is_valid_html(async_client, query):
+    """Double quotes from tojson must not terminate the x-data attribute."""
+    resp = await async_client.get(f"/settings/capabilities{query}")
+    assert resp.status_code == 200
+    assert "x-data='{ tab: " in resp.text
+    assert 'x-data="{ tab: "' not in resp.text

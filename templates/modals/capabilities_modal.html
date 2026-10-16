@@ -4,7 +4,7 @@
 {%- endmacro %}
 {% set tabs = [('watchlist', 'Watchlists'), ('downloader', 'Downloaders'), ('metadata', 'Metadata'), ('indexer', 'Indexers')] %}
 <div class="nzb-modal-backdrop fixed inset-0 bg-black/70 backdrop-blur-sm z-[100] flex items-center justify-center p-4 animate-fade-in"
-     x-data="{ tab: {{ (focus_category or 'watchlist') | tojson }} }"
+     x-data='{ tab: {{ (focus_category or "watchlist") | tojson }} }'
      x-init="$nextTick(() => { const el = $el.querySelector('[data-focused=true]'); if (el) el.scrollIntoView({ block: 'center' }); })">
     <div class="nzb-modal-dialog bg-[#1e1e24] border border-[#3f3f46] rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
         <div class="bg-[#2a2a32] px-6 py-4 border-b border-[#3f3f46] flex justify-between items-center shrink-0">
