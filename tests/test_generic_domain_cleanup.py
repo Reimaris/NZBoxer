@@ -625,6 +625,7 @@ _ADAPTER_FILES = {
     "app/services/downloaders/base.py",
     "app/services/watchlists/__init__.py",
     "app/services/provider_service.py",
+    "app/services/provider_capabilities.py",
 }
 _PROVIDER_UI_FILES = {
     "templates/modals/provider.html",
