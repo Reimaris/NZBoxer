@@ -8,6 +8,7 @@ from app.core.transfer_poller import (
     clear_history_ledger,
 )
 from app.db.models import DownloadHistory, MediaStatus
+from app.main import count_history_by_status
 from tests.conftest import make_history, make_movie
 
 
@@ -220,10 +221,123 @@ async def test_dashboard_renders_card_4_selection_mode_controls(
     assert "Delete Selected" in html
     assert "Clear All History" in html
     assert "Cancel" in html or "Done" in html
-    assert "toggleHistorySelectAll" in html
+    assert "selectAllHistory" in html
+    assert "deselectAllHistory" in html
     assert "toggleHistoryRowSelection" in html
     assert "batchDeleteHistory" in html
     assert "clearAllHistory" in html
     # Checkbox inputs
     assert 'x-model.number="selectedHistoryIds"' in html
     assert f'value="{hist.id}"' in html
+
+
+def test_count_history_by_status_counts_pinned_keys_and_ignores_unknown():
+    ledger = [
+        {"downloader_status": "FAILED"},
+        {"downloader_status": "FAILED"},
+        {"downloader_status": "READY"},
+        {"downloader_status": "weird"},
+        {"downloader_status": None},
+    ]
+    assert count_history_by_status(ledger) == {
+        "failed": 2,
+        "canceled": 0,
+        "replaced": 0,
+        "deleted": 0,
+        "ready": 1,
+    }
+
+
+@pytest.mark.asyncio
+async def test_dashboard_history_status_quick_selects(
+    async_client: AsyncClient, db_session: AsyncSession
+):
+    movie = await make_movie(db_session, title="QS Movie", status=MediaStatus.COMPLETED)
+    for i, detail in enumerate(
+        ["failed: Disk full", "failed: x", "completed", "replaced", "deleted"]
+    ):
+        await make_history(
+            db_session,
+            item=movie,
+            downloader_transfer_id=f"tb-qs-{i}",
+            nzb_guid=f"guid-qs-{i}",
+            status_detail=detail,
+        )
+    await db_session.commit()
+
+    html = (await async_client.get("/?tab=history")).text
+
+    labels = [
+        "Failed (2)",
+        "Canceled (0)",
+        "Replaced (1)",
+        "Deleted (1)",
+        "Ready (1)",
+    ]
+    positions = [html.index(label) for label in labels]
+    assert positions == sorted(positions)
+    for call in (
+        "selectHistoryByStatus('failed')",
+        "enterHistorySelection()",
+        "exitHistorySelection()",
+        "selectAllHistory()",
+        "deselectAllHistory()",
+    ):
+        assert call in html
+    assert "Selected: <span" in html
+    assert (
+        "bg-red-500/15 text-red-400 border border-red-500/30 hover:bg-red-500/25"
+        in html
+    )
+    assert "? 'Deselect All' : 'Select All'" not in html
+    assert "toggleHistorySelectAll" not in html
+
+    canceled_btn = html[html.index("selectHistoryByStatus('canceled')") :][:700]
+    assert "opacity-50 cursor-not-allowed pointer-events-none" in canceled_btn
+    failed_btn = html[html.index("selectHistoryByStatus('failed')") :][:700]
+    assert "opacity-50 cursor-not-allowed" not in failed_btn
+
+
+@pytest.mark.asyncio
+async def test_dashboard_history_mobile_footer_layout(
+    async_client: AsyncClient, db_session: AsyncSession
+):
+    movie = await make_movie(
+        db_session, title="Mobile Movie", status=MediaStatus.COMPLETED
+    )
+    ready = await make_history(
+        db_session,
+        item=movie,
+        downloader_transfer_id="tb-m-1",
+        nzb_guid="guid-m-1",
+        status_detail="completed",
+    )
+    await make_history(
+        db_session,
+        item=movie,
+        downloader_transfer_id="tb-m-2",
+        nzb_guid="guid-m-2",
+        status_detail="failed: Disk full",
+    )
+    await make_history(
+        db_session,
+        item=movie,
+        downloader_transfer_id="tb-m-3",
+        nzb_guid="guid-m-3",
+        status_detail="completed",
+        is_dry_run=True,
+    )
+    await db_session.commit()
+
+    html = (await async_client.get("/?tab=history")).text
+
+    assert "md:hidden mt-3 space-y-2.5" in html
+    assert "flex flex-wrap items-center gap-2 pt-0.5 text-xs" not in html
+    assert "border-t border-[#3f3f46]/40" in html
+    assert "text-gray-400 font-mono text-[11px] leading-tight" in html
+    assert "md:hidden flex flex-col" in html
+    footer = html[html.index("md:hidden flex flex-col") :]
+    assert "READY ON " in footer
+    assert 'title="Disk full"' in footer
+    assert "SIMULATED (DRY RUN)" in footer
+    assert html.count(f'id="ledger-status-{ready.id}"') == 1

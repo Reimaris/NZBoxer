@@ -563,7 +563,7 @@ async def test_mobile_responsive_dashboard_navbar_and_push_modal(
     )
     assert "hidden md:table-cell md:px-4 md:py-3.5 md:w-px md:whitespace-nowrap" in html
     assert (
-        "pt-2.5 md:pt-0 border-t border-[#3f3f46]/40 md:border-t-0 md:px-4 md:py-3.5 text-right md:w-px md:whitespace-nowrap w-full"
+        "border-t border-[#3f3f46]/40 mt-3 pt-2.5 md:mt-0 md:pt-0 md:border-t-0 md:px-4 md:py-3.5 text-right md:w-px md:whitespace-nowrap w-full"
         in html
     )
 

@@ -15,7 +15,7 @@ import json
 import logging
 import re
 import uuid
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Mapping, Sequence
 from contextlib import asynccontextmanager
 from datetime import datetime
 from logging.handlers import TimedRotatingFileHandler
@@ -347,6 +347,25 @@ app = FastAPI(
 # Mount static files
 app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
+HISTORY_STATUS_KEYS: tuple[str, ...] = (
+    "failed",
+    "canceled",
+    "replaced",
+    "deleted",
+    "ready",
+)
+
+
+def count_history_by_status(ledger: Sequence[Mapping[str, Any]]) -> dict[str, int]:
+    """Count ledger rows per pinned status key (lowercased downloader_status); unknown values ignored."""
+    counts = dict.fromkeys(HISTORY_STATUS_KEYS, 0)
+    for row in ledger:
+        key = (row.get("downloader_status") or "").lower()
+        if key in counts:
+            counts[key] += 1
+    return counts
+
+
 SETUP_LABELS: dict[str, str] = {
     "tmdb": "TMDB API key",
     "indexer": "Indexer",
@@ -627,6 +646,7 @@ async def dashboard(request: Request, background_tasks: BackgroundTasks):
             "push_history_ledger": push_history_ledger,
             "history_total": len(push_history_ledger),
             "dry_run_history_count": dry_run_history_count,
+            "history_status_counts": count_history_by_status(push_history_ledger),
             "active_pushes": active_pushes,
             "active_pushes_count": len(active_pushes),
             "downloading_count": downloading_count,

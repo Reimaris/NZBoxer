@@ -515,7 +515,7 @@ async def test_single_deck_navigation_unified_six_column_history_and_fluid_colum
             in html
         )
         assert (
-            "pt-2.5 md:pt-0 border-t border-[#3f3f46]/40 md:border-t-0 md:px-4 md:py-3.5"
+            "border-t border-[#3f3f46]/40 mt-3 pt-2.5 md:mt-0 md:pt-0 md:border-t-0 md:px-4 md:py-3.5"
             in html
         )
 
