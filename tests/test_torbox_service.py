@@ -169,7 +169,7 @@ async def test_torbox_retries_and_network_error():
 
     with patch("httpx.AsyncClient.post", side_effect=mock_post) as mock_post_method:
         with patch("asyncio.sleep") as mock_sleep:
-            with pytest.raises(torbox.DownloaderNetworkError):
+            with pytest.raises(torbox.DownloaderOutageError):
                 await torbox.send_nzb_file(
                     nzb_bytes=b"<nzb></nzb>",
                     filename="test.nzb",

@@ -17,7 +17,9 @@ from app.services.downloaders.base import (
     DownloaderTransfer,
     DownloaderUploadResult,
     TransferState,
+    outage_upload_result,
 )
+from app.services.outage_classifier import classify_exception, classify_http_status
 
 if TYPE_CHECKING:
     from app.db.models import Provider
@@ -172,11 +174,20 @@ class PremiumizeDownloader(BaseDownloader):
                 files={"file": (filename, nzb_bytes, "application/x-nzb")},
             )
         except DownloaderNetworkError as exc:
+            cause = exc.__cause__
+            verdict = classify_exception(cause) if cause is not None else None
+            if verdict is not None:
+                return outage_upload_result(verdict, str(exc))
             return DownloaderUploadResult(success=False, detail=str(exc))
         message = body.get("message")
         if status == 429 or _is_fair_use(message):
             set_cooldown(FAIR_USE_COOLDOWN_SECONDS)
             return _rate_limited()
+        status_verdict = classify_http_status(status)
+        if status_verdict is not None:
+            return outage_upload_result(
+                status_verdict, f"Premiumize {status_verdict.label}"
+            )
         if body.get("status") != "success" or not body.get("id"):
             return DownloaderUploadResult(
                 success=False,

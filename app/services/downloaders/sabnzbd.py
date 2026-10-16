@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlsplit
@@ -16,7 +17,9 @@ from app.services.downloaders.base import (
     DownloaderTransfer,
     DownloaderUploadResult,
     TransferState,
+    outage_upload_result,
 )
+from app.services.outage_classifier import classify_exception, classify_http_status
 
 if TYPE_CHECKING:
     from app.db.models import Provider
@@ -157,11 +160,22 @@ class SabnzbdDownloader(BaseDownloader):
                     data=data,
                     files={"name": (filename, nzb_bytes, "application/x-nzb")},
                 )
+            status_verdict = classify_http_status(resp.status_code)
+            if status_verdict is not None:
+                return outage_upload_result(
+                    status_verdict, f"SABnzbd {status_verdict.label}"
+                )
             body = resp.json()
         except httpx.HTTPError as exc:
-            return DownloaderUploadResult(
-                success=False, detail=f"SABnzbd unreachable: {type(exc).__name__}"
-            )
+            detail = f"SABnzbd unreachable: {type(exc).__name__}"
+            verdict = classify_exception(exc)
+            if verdict is not None:
+                return outage_upload_result(verdict, detail)
+            return DownloaderUploadResult(success=False, detail=detail)
+        except json.JSONDecodeError as exc:
+            verdict = classify_exception(exc)
+            assert verdict is not None
+            return outage_upload_result(verdict, "SABnzbd returned an invalid response")
         except ValueError:
             return DownloaderUploadResult(
                 success=False, detail="SABnzbd returned an invalid response"

@@ -21,15 +21,19 @@ from app.core.rate_limiter import (
 )
 from app.services.downloaders.base import (
     BaseDownloader,
+    DownloaderAuthError,
     DownloaderError,
     DownloaderFile,
+    DownloaderOutageError,
     DownloaderTransfer,
     DownloaderUploadResult,
     TransferState,
+    outage_upload_result,
 )
 from app.services.downloaders.base import (
     DownloaderNetworkError as BaseDownloaderNetworkError,
 )
+from app.services.outage_classifier import classify_exception
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -226,6 +230,11 @@ async def send_nzb_file(
             except httpx.HTTPError as e:
                 is_retriable = True
                 err_detail = str(e)
+                verdict = classify_exception(e)
+                if verdict is not None and verdict.kind == "auth":
+                    raise DownloaderAuthError(
+                        f"TorBox authentication failed ({verdict.label})", verdict
+                    ) from e
                 if isinstance(e, httpx.HTTPStatusError):
                     status = e.response.status_code
                     if status == 429:
@@ -283,6 +292,10 @@ async def send_nzb_file(
                         type(e).__name__,
                         err_msg,
                     )
+                    if verdict is not None:
+                        raise DownloaderOutageError(
+                            f"TorBox outage ({verdict.label}): {err_msg}", verdict
+                        ) from e
                     raise DownloaderNetworkError(
                         f"TorBox network error: {err_msg}"
                     ) from e
@@ -730,6 +743,8 @@ class TorBoxDownloader(BaseDownloader):
                 is_manual=is_manual,
                 password=password,
             )
+        except (DownloaderOutageError, DownloaderAuthError) as e:
+            return outage_upload_result(e.verdict, str(e))
         except DownloaderNetworkError as e:
             msg = str(e)
             if "cooldown" in msg.lower() or "rate limit" in msg.lower():

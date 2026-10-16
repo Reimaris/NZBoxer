@@ -7,6 +7,8 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+from app.services.outage_classifier import OutageVerdict
+
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -35,6 +37,9 @@ class DownloaderUploadResult:
     detail: str = ""  # human-readable error/status
     is_rate_limited: bool = False
     cooldown_seconds: int | None = None  # set when is_rate_limited
+    is_outage: bool = False  # transient upstream outage (ADR-158)
+    outage_label: str | None = None  # OutageVerdict.label when is_outage
+    is_auth_error: bool = False  # credential failure, never retried
     raw: dict[str, Any] = field(default_factory=dict)
 
 
@@ -65,6 +70,31 @@ class DownloaderError(Exception):
 
 class DownloaderNetworkError(DownloaderError):
     """Transport failure; the poller must NOT mark transfers failed."""
+
+
+class DownloaderOutageError(DownloaderError):
+    """Transient downloader outage (5xx, timeout, TLS); the push is queued."""
+
+    def __init__(self, message: str, verdict: OutageVerdict) -> None:
+        super().__init__(message)
+        self.verdict = verdict
+
+
+class DownloaderAuthError(DownloaderError):
+    """Downloader rejected the credentials (HTTP 401/403); fail fast."""
+
+    def __init__(self, message: str, verdict: OutageVerdict) -> None:
+        super().__init__(message)
+        self.verdict = verdict
+
+
+def outage_upload_result(verdict: OutageVerdict, detail: str) -> DownloaderUploadResult:
+    """Map an outage/auth verdict to a failed ``DownloaderUploadResult``."""
+    if verdict.kind == "auth":
+        return DownloaderUploadResult(success=False, detail=detail, is_auth_error=True)
+    return DownloaderUploadResult(
+        success=False, detail=detail, is_outage=True, outage_label=verdict.label
+    )
 
 
 class BaseDownloader(ABC):
