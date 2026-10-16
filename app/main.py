@@ -1157,13 +1157,25 @@ async def reset_anime_metadata_endpoint(request: Request, item_id: int):
     )
 
 
+def _outage_span(provider: str, label: str) -> HTMLResponse:
+    msg = html.escape(f"Service outage: {provider} returned {label}. Try again later.")
+    return HTMLResponse(
+        content=f'<span class="text-red-400 font-medium text-xs px-2 py-1.5 bg-red-500/10 border border-red-500/20 rounded-md" title="{msg}">{msg}</span>',
+        status_code=503,
+    )
+
+
 # legacy alias (m59)
 @app.post("/api/torbox/add", response_class=HTMLResponse)
 async def manual_push_to_downloader(magnet: str = Form(...)):
     """Push a search result directly to the active downloader."""
     import logging
 
-    from app.services.downloaders.base import DOWNLOADER_DISPLAY_NAMES, DownloaderError
+    from app.services.downloaders.base import (
+        DOWNLOADER_DISPLAY_NAMES,
+        DownloaderError,
+        DownloaderOutageError,
+    )
     from app.services.downloaders.factory import downloader_class
     from app.services.indexers import newznab as newznab_client
 
@@ -1175,6 +1187,10 @@ async def manual_push_to_downloader(magnet: str = Form(...)):
             try:
                 result = await downloader_class("torbox").send_magnet(
                     magnet, is_manual=True
+                )
+            except DownloaderOutageError as e:
+                return _outage_span(
+                    sent_to, e.verdict.label if e.verdict else "an error"
                 )
             except DownloaderError as e:
                 result = {"error": str(e)}
@@ -1197,13 +1213,24 @@ async def manual_push_to_downloader(magnet: str = Form(...)):
                         is_anime=False,
                     )
                 sent_to = client.display_name
+                if upload.is_outage:
+                    return _outage_span(sent_to, upload.outage_label or "an error")
                 result = (
                     {**upload.raw, "id": upload.transfer_id}
                     if upload.success
                     else {"error": upload.detail}
                 )
+            except newznab_client.IndexerOutageError as e:
+                return _outage_span(
+                    newznab_client.indexer_display_name(e.indexer_url),
+                    e.verdict.label if e.verdict else "an error",
+                )
             except newznab_client.IndexerError as e:
                 result = {"error": f"NZB Download Error: {e}"}
+            except DownloaderOutageError as e:
+                return _outage_span(
+                    sent_to, e.verdict.label if e.verdict else "an error"
+                )
             except DownloaderError as e:
                 result = {"error": str(e)}
 
@@ -1212,8 +1239,12 @@ async def manual_push_to_downloader(magnet: str = Form(...)):
                 content=f'<span class="text-emerald-400 font-medium text-xs px-2 py-1.5 bg-emerald-500/10 border border-emerald-500/20 rounded-md">Sent to {sent_to}!</span>'
             )
         else:
-            err_msg = (
-                result.get("error", "Failed to send") if result else "Failed to send"
+            err_msg = html.escape(
+                str(
+                    result.get("error", "Failed to send")
+                    if result
+                    else "Failed to send"
+                )
             )
             # Return 400 so the frontend can display the error without triggering a generic 500
             return HTMLResponse(

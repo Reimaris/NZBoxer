@@ -17,10 +17,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.core.fake_detector import extract_nzb_password
+from app.core.outage import (
+    active_outages,
+    has_active_outage,
+    paused_detail,
+    record_outage,
+)
 from app.core.parser import parse_release_name
 from app.core.rate_limit_queue import (
+    active_rate_limit_sources,
     downloader_rate_limit_detail,
     get_downloader_cooldown_remaining,
+    rate_limit_source_label,
 )
 from app.db.models import DownloadHistory, Provider
 from app.services import provider_service
@@ -467,6 +475,69 @@ def _target_label(season: int | None, episode: int | None) -> str | None:
     return None
 
 
+async def _queue_adhoc_outage(
+    session: AsyncSession,
+    *,
+    release_link: str,
+    nzb_title: str,
+    nzb_guid: str | None,
+    score: float | None,
+    size_bytes: int | None,
+    is_fallback: bool,
+    matched_language: str | None,
+    media_title: str | None,
+    media_year: int | None,
+    media_kind: str | None,
+    poster_url: str | None,
+    tmdb_id: int | None,
+    imdb_id: str | None,
+    anilist_id: int | None,
+    season: int | None,
+    episode: int | None,
+) -> AdHocPushOutcome:
+    """Record a ``paused:`` ad-hoc row while a provider outage is active (ADR-159)."""
+    outage = active_outages()[0]
+    parsed = parse_release_name(nzb_title)
+    session.add(
+        DownloadHistory(
+            media_item_id=None,
+            is_ad_hoc=True,
+            push_mode="manual",
+            media_title=media_title,
+            media_year=media_year,
+            media_type_label=media_kind,
+            target_label=_target_label(season, episode),
+            poster_url=poster_url,
+            tmdb_id=tmdb_id,
+            imdb_id=imdb_id,
+            anilist_id=anilist_id,
+            nzb_title=nzb_title,
+            nzb_guid=nzb_guid,
+            score=score,
+            size_bytes=size_bytes,
+            resolution=parsed.resolution if parsed else None,
+            video_codec=parsed.video_codec if parsed else None,
+            audio_codec=parsed.audio_codec if parsed else None,
+            source=parsed.source if parsed else None,
+            release_group=parsed.release_group if parsed else None,
+            is_fallback=is_fallback,
+            grabbed_language=matched_language or None,
+            status_detail=paused_detail(outage.kind, outage.label),
+            outage_attempts=outage.attempt,
+            is_dismissed=False,
+            notification_sent=True,
+            progress_pct=0.0,
+        )
+    )
+    await session.commit()
+    label = rate_limit_source_label(active_rate_limit_sources())
+    return AdHocPushOutcome(
+        True,
+        f"Push queued — will start automatically once {label} recovers.",
+        200,
+    )
+
+
 async def push_adhoc_release(
     session: AsyncSession,
     *,
@@ -511,6 +582,26 @@ async def push_adhoc_release(
                 False, "Release link host is not a configured indexer.", 400
             )
 
+    queue_kwargs = dict(
+        release_link=release_link,
+        nzb_title=nzb_title,
+        nzb_guid=nzb_guid,
+        score=score,
+        size_bytes=size_bytes,
+        is_fallback=is_fallback,
+        matched_language=matched_language,
+        media_title=media_title,
+        media_year=media_year,
+        media_kind=media_kind,
+        poster_url=poster_url,
+        tmdb_id=tmdb_id,
+        imdb_id=imdb_id,
+        anilist_id=anilist_id,
+        season=season,
+        episode=episode,
+    )
+    if has_active_outage():
+        return await _queue_adhoc_outage(session, **queue_kwargs)  # type: ignore[arg-type]
     if get_downloader_cooldown_remaining() > 0:
         return AdHocPushOutcome(False, downloader_rate_limit_detail(), 400)
 
@@ -558,11 +649,31 @@ async def push_adhoc_release(
                 )
                 downloader_type = client.provider_type
                 downloader_name = client.display_name
+                if upload.is_outage:
+                    record_outage(
+                        "downloader",
+                        client.provider_type,
+                        client.display_name,
+                        upload.outage_label or "outage",
+                        1,
+                    )
+                    return await _queue_adhoc_outage(session, **queue_kwargs)  # type: ignore[arg-type]
                 result = (
                     {**upload.raw, "id": upload.transfer_id}
                     if upload.success
                     else {"error": upload.detail}
                 )
+        except newznab_client.IndexerOutageError as exc:
+            record_outage(
+                "indexer",
+                exc.indexer_url or (indexer.api_url if indexer else "") or "",
+                newznab_client.indexer_display_name(
+                    exc.indexer_url or (indexer.api_url if indexer else "") or ""
+                ),
+                exc.verdict.label if exc.verdict else "outage",
+                1,
+            )
+            return await _queue_adhoc_outage(session, **queue_kwargs)  # type: ignore[arg-type]
         except newznab_client.IndexerError as exc:
             return AdHocPushOutcome(False, f"NZB Download Error: {exc}", 400)
         except DownloaderError as exc:

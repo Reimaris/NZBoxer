@@ -5,7 +5,8 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from sqlalchemy import select
 
-from app.core.outage import clear_outages
+from app.core.adhoc_search import push_adhoc_release
+from app.core.outage import clear_outages, has_active_outage, record_outage
 from app.core.push_engine import execute_auto_push
 from app.core.rate_limit_queue import resume_rate_limited_pushes
 from app.db.models import BlacklistedRelease, DownloadHistory, FailureLog, MediaStatus
@@ -13,7 +14,7 @@ from app.services.downloaders import torbox
 from app.services.downloaders.base import DownloaderUploadResult, outage_upload_result
 from app.services.indexers import newznab
 from app.services.outage_classifier import OutageVerdict
-from tests.conftest import VALID_NZB_BYTES, make_movie
+from tests.conftest import VALID_NZB_BYTES, make_indexer_provider, make_movie
 
 INDEXER_URL = "https://indexer.example.com/api"
 RESULT = [
@@ -243,3 +244,68 @@ async def test_terminal_outage_failure_alerts_via_failure_event(db_session, aler
     event.assert_awaited_once()
     assert event.await_args.kwargs["event_type"] == "failure"
     assert "5 attempts failed" in event.await_args.kwargs["status_reason"]
+
+
+@pytest.fixture
+def nzbgeek_outage():
+    newznab._indexer_names["indexer.example.com"] = "NZBgeek"
+    record_outage("indexer", "indexer.example.com", "NZBgeek", "HTTP 503", 1)
+    yield
+    newznab._indexer_names.pop("indexer.example.com", None)
+    clear_outages()
+
+
+async def test_adhoc_push_during_outage_queues_with_toast(db_session, nzbgeek_outage):
+    await make_indexer_provider(db_session, api_url=INDEXER_URL)
+    await db_session.commit()
+    outcome = await push_adhoc_release(
+        db_session,
+        release_link=f"{INDEXER_URL}?t=get&id=1",
+        nzb_title=RESULT[0]["title"],
+    )
+    assert outcome.ok
+    assert (
+        outcome.message
+        == "Push queued — will start automatically once NZBgeek recovers."
+    )
+    rows = (await db_session.execute(select(DownloadHistory))).scalars().all()
+    assert [r.status_detail for r in rows] == ["paused: indexer outage (HTTP 503)"]
+
+
+async def test_manual_push_outage_returns_503_and_auth_400(async_client):
+    outage_exc = newznab.IndexerOutageError(
+        "boom", INDEXER_URL, OutageVerdict("outage", "HTTP 503")
+    )
+    newznab._indexer_names["indexer.example.com"] = "NZBgeek"
+    try:
+        with patch(
+            "app.services.indexers.newznab.fetch_nzb_bytes",
+            new=AsyncMock(side_effect=outage_exc),
+        ):
+            res = await async_client.post(
+                "/api/torbox/add", data={"magnet": INDEXER_URL}
+            )
+        assert res.status_code == 503
+        assert "Service outage: NZBgeek returned HTTP 503" in res.text
+
+        auth_exc = newznab.IndexerAuthError(
+            "<bad>", INDEXER_URL, OutageVerdict("auth", "HTTP 401")
+        )
+        with patch(
+            "app.services.indexers.newznab.fetch_nzb_bytes",
+            new=AsyncMock(side_effect=auth_exc),
+        ):
+            res = await async_client.post(
+                "/api/torbox/add", data={"magnet": INDEXER_URL}
+            )
+        assert res.status_code == 400
+        assert "<bad>" not in res.text
+    finally:
+        newznab._indexer_names.pop("indexer.example.com", None)
+
+
+async def test_resume_endpoint_clears_outages(async_client, nzbgeek_outage):
+    assert has_active_outage()
+    res = await async_client.post("/api/pushes/resume-rate-limited")
+    assert res.status_code == 200
+    assert not has_active_outage()
