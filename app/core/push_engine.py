@@ -57,6 +57,7 @@ from app.core.rate_limit_queue import (
     is_indexer_rate_limit_error,
     is_rate_limit_error,
     longest_downloader_cooldown,
+    outage_episode,
     rate_limit_episode,
     rate_limit_queue,
     rate_limit_source_label,
@@ -1426,6 +1427,32 @@ def _failure_reason_from_partitioned(partitioned: dict[str, Any] | None) -> str:
     return "failed: downloader upload failed — all candidates exhausted"
 
 
+async def _notify_terminal_outage(
+    session: AsyncSession,
+    item: MediaItem,
+    season: Season | None,
+    episode: Episode | None,
+    reason: str,
+) -> None:
+    """Terminal outage failure alerts through the regular failure event (notify_on_failure)."""
+    from app.services.notifications import (
+        dispatch_notification_event,
+        format_target_label,
+    )
+
+    try:
+        await dispatch_notification_event(
+            session,
+            event_type="failure",
+            media_title=item.title,
+            media_year=item.year,
+            target_label=format_target_label(item, season, episode),
+            status_reason=reason.removeprefix("failed: "),
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Terminal outage alert failed: %s", exc)
+
+
 def _is_queueable_error(msg: str | None) -> bool:
     """429 rate limits and outage markers both queue the target (ADR-159)."""
     return is_rate_limit_error(msg) or _marker_of(msg) is not None
@@ -1608,6 +1635,7 @@ async def _record_auto_push_failure(
         )
     elif terminal_outage:
         log_failure(session, episode or season or item, "outage", reason)
+        await _notify_terminal_outage(session, item, season, episode, reason)
 
     await session.flush()
     from app.core.transfer_poller import _recalculate_parent_status
@@ -1643,7 +1671,7 @@ async def _record_auto_push_failure(
             "⏸️ Queued rate-limited push for '%s' (%s).", item.title, resume_time_label()
         )
         rate_limit_queue.wake()
-        rate_limit_episode.on_enqueue()
+        (outage_episode if marker is not None else rate_limit_episode).on_enqueue()
     return history
 
 

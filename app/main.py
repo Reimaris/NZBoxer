@@ -291,9 +291,23 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         if await count_rate_limited_pushes(session) == 0:
             rate_limit_queue.sleep()
         else:
-            from app.core.rate_limit_queue import rate_limit_episode
+            from sqlalchemy import select
+
+            from app.core.rate_limit_queue import outage_episode, rate_limit_episode
+            from app.db.models import DownloadHistory
 
             rate_limit_episode.adopt_existing_queue()
+            if (
+                await session.execute(
+                    select(DownloadHistory.id)
+                    .where(
+                        DownloadHistory.status_detail.like("paused: %"),
+                        DownloadHistory.is_dismissed.is_(False),
+                    )
+                    .limit(1)
+                )
+            ).first():
+                outage_episode.adopt_existing_queue()
 
     async with async_session_factory() as session:
         active_dl_count = await count_downloading_entities(session)

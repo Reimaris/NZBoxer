@@ -2342,6 +2342,7 @@ async def abort_all_active_transfers(session: AsyncSession) -> dict[str, Any]:
     try:
         from app.core.rate_limit_queue import (
             count_rate_limited_pushes,
+            outage_episode,
             rate_limit_episode,
             rate_limit_queue,
         )
@@ -2349,6 +2350,7 @@ async def abort_all_active_transfers(session: AsyncSession) -> dict[str, Any]:
         if (await count_rate_limited_pushes(session)) == 0:
             rate_limit_queue.sleep()
             rate_limit_episode.reset()
+            outage_episode.reset()
     except Exception as exc:
         logger.debug("Rate-limit queue sleep check skipped: %s", exc)
 
@@ -2552,6 +2554,7 @@ async def abort_item_transfer(
     try:
         from app.core.rate_limit_queue import (
             count_rate_limited_pushes,
+            outage_episode,
             rate_limit_episode,
             rate_limit_queue,
         )
@@ -2559,6 +2562,7 @@ async def abort_item_transfer(
         if (await count_rate_limited_pushes(session)) == 0:
             rate_limit_queue.sleep()
             rate_limit_episode.reset()
+            outage_episode.reset()
     except Exception as exc:
         logger.debug("Rate-limit queue sleep check skipped: %s", exc)
 

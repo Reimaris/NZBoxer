@@ -119,10 +119,9 @@ def reset_downloader_state():
     transfer_poller.in_flight_pushes.clear()
     transfer_poller.set_scheduler(None)
     transfer_poller.sleep(0)
+    from app.core.outage import clear_outages
     from app.core.rate_limit_queue import rate_limit_episode
     from app.services.indexers.newznab import clear_all_indexer_cooldowns
-
-    from app.core.outage import clear_outages
 
     clear_all_indexer_cooldowns()
     clear_outages()

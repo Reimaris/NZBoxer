@@ -161,3 +161,85 @@ async def test_429_flow_unchanged(db_session):
     (row,) = await _live(db_session, item)
     assert row.status_detail == "rate_limited"
     assert row.outage_attempts == 0
+
+
+@pytest.fixture
+def alert_spy(monkeypatch):
+    """Capture dispatch_alert_message calls; episode settle delay is skipped."""
+    from app.core import rate_limit_queue as rlq
+
+    async def no_delay():
+        return None
+
+    monkeypatch.setattr(rlq, "_reached_settle_delay", no_delay)
+    rlq.outage_episode.reset()
+    rlq.rate_limit_episode.reset()
+    calls: list[tuple[str, str]] = []
+
+    async def fake(_session, flag, title, body, **_kw):
+        calls.append((flag, title))
+        return {}
+
+    monkeypatch.setattr("app.services.notifications.dispatch_alert_message", fake)
+    return calls
+
+
+async def _outage_pause_two_items(session):
+    from app.core.rate_limit_queue import outage_episode
+
+    for i in range(2):
+        item = await make_movie(session, simkl_id=500 + i)
+        await _push(session, item, fetch=_fetch_raising("outage", "HTTP 503"))
+    if outage_episode._task is not None:
+        await outage_episode._task
+
+
+async def test_outage_pause_and_resume_alert_once_each(db_session, alert_spy):
+    await _outage_pause_two_items(db_session)
+    newznab.set_indexer_cooldown(INDEXER_URL, 0)
+    clear_outages()
+    p1, p2, p3 = _patches()
+    with p1, p2, p3:
+        await resume_rate_limited_pushes()
+    assert alert_spy == [
+        ("notify_on_outages", "⏸️ Service Outage — Pushes Paused"),
+        ("notify_on_outages", "▶️ Service Recovered — Queue Resumed"),
+    ]
+
+
+async def test_outage_alerts_gated_by_notify_on_outages(db_session, alert_spy):
+    from app.db.models import SystemSettings
+    from app.services import discord
+
+    db_session.add(
+        SystemSettings(
+            id=1,
+            discord_webhook_url="https://discord.example.com/api/webhooks/1/x",
+            discord_enabled=True,
+            notify_on_outages=False,
+            notify_on_errors=True,
+        )
+    )
+    await db_session.commit()
+    real = discord.dispatch_alert_message
+    with patch(
+        "app.services.discord.send_discord_webhook", new_callable=AsyncMock
+    ) as hook:
+        res = await real(db_session, "notify_on_outages", "t", "b")
+    assert res["dispatched"] is False
+    hook.assert_not_awaited()
+
+
+async def test_terminal_outage_failure_alerts_via_failure_event(db_session, alert_spy):
+    item = await make_movie(db_session)
+    with patch(
+        "app.services.notifications.dispatch_notification_event",
+        new_callable=AsyncMock,
+    ) as event:
+        for _ in range(6):
+            await _push(db_session, item, fetch=_fetch_raising("outage", "HTTP 503"))
+            newznab.set_indexer_cooldown(INDEXER_URL, 0)
+            clear_outages()
+    event.assert_awaited_once()
+    assert event.await_args.kwargs["event_type"] == "failure"
+    assert "5 attempts failed" in event.await_args.kwargs["status_reason"]

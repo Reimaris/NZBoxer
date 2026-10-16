@@ -494,3 +494,12 @@ async def test_notification_test_endpoints(
             assert sys_settings.discord_enabled is True
             assert sys_settings.notify_on_push_initiated is True
             assert sys_settings.notify_on_failure is False
+
+
+def test_outage_events_map_to_notify_on_outages_flag():
+    from app.services.discord import EVENT_FLAG_ATTRS, EVENT_HEADERS
+
+    for event in ("outage_paused", "outage_resumed"):
+        assert EVENT_FLAG_ATTRS[event] == "notify_on_outages"
+    assert EVENT_HEADERS["outage_paused"] == "⏸️ Service Outage — Pushes Paused"
+    assert EVENT_HEADERS["outage_resumed"] == "▶️ Service Recovered — Queue Resumed"

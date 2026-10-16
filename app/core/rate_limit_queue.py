@@ -26,6 +26,7 @@ from sqlalchemy import func, select
 from app.core.outage import active_outages, clear_outages, queued_detail_clause
 from app.core.prerequisites import setup_blocks
 from app.db.models import DownloadHistory, MediaItem
+from app.services.discord import EVENT_HEADERS
 from app.services.downloaders.base import DOWNLOADER_DISPLAY_NAMES
 from app.services.downloaders.factory import downloader_classes
 from app.services.indexers import newznab as newznab_client
@@ -190,7 +191,8 @@ class RateLimitEpisode:
     ``resumed`` alert when the queue restarts, and ends when the queue is empty.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, *, outage: bool = False) -> None:
+        self.outage = outage  # outage episodes alert via notify_on_outages
         self.active = False
         self.resumed_sent = False
         self.label = "Rate limit"
@@ -243,13 +245,21 @@ class RateLimitEpisode:
             self.label = rate_limit_source_label(active_rate_limit_sources())
             async with async_session_factory() as session:
                 pending = await count_rate_limited_pushes(session)
-                await _send_alert(
+                await self._alert(
                     session,
-                    f"⏸️ {self.label} rate limit reached",
+                    EVENT_HEADERS["outage_paused"]
+                    if self.outage
+                    else f"⏸️ {self.label} rate limit reached",
                     f"{pending} push(es) paused — {resume_time_label()}.",
                 )
         except Exception as exc:  # noqa: BLE001
             logger.warning("Rate-limit reached alert failed: %s", exc)
+
+    async def _alert(self, session: AsyncSession, title: str, body: str) -> None:
+        if self.outage:
+            await _send_alert(session, title, body, flag="notify_on_outages")
+        else:
+            await _send_alert(session, title, body)
 
     async def on_resume(self, pending: int) -> None:
         """Send the single ``resumed`` alert when the queue restarts."""
@@ -260,22 +270,27 @@ class RateLimitEpisode:
 
         try:
             async with async_session_factory() as session:
-                await _send_alert(
+                await self._alert(
                     session,
-                    f"▶️ {self.label} rate limit over — queue resumed",
+                    EVENT_HEADERS["outage_resumed"]
+                    if self.outage
+                    else f"▶️ {self.label} rate limit over — queue resumed",
                     f"Resuming {pending} paused push(es).",
                 )
         except Exception as exc:  # noqa: BLE001
             logger.warning("Rate-limit resumed alert failed: %s", exc)
 
 
-async def _send_alert(session: AsyncSession, title: str, body: str) -> None:
+async def _send_alert(
+    session: AsyncSession, title: str, body: str, flag: str = "notify_on_errors"
+) -> None:
     from app.services.notifications import dispatch_alert_message
 
-    await dispatch_alert_message(session, "notify_on_errors", title, body)
+    await dispatch_alert_message(session, flag, title, body)
 
 
 rate_limit_episode = RateLimitEpisode()
+outage_episode = RateLimitEpisode(outage=True)
 
 
 async def count_rate_limited_pushes(session: AsyncSession) -> int:
@@ -324,6 +339,7 @@ async def resume_rate_limited_pushes() -> int:
 
     if not rows:
         rate_limit_episode.reset()
+        outage_episode.reset()
         rate_limit_queue.sleep()
         return 0
 
@@ -335,6 +351,7 @@ async def resume_rate_limited_pushes() -> int:
     )
 
     await rate_limit_episode.on_resume(len(rows))
+    await outage_episode.on_resume(len(rows))
 
     # Preserve FIFO order of queued rows (manual picks keep their chosen release;
     # auto-push targets are grouped per item).
@@ -431,6 +448,7 @@ async def resume_rate_limited_pushes() -> int:
     async with async_session_factory() as session:
         if await count_rate_limited_pushes(session) == 0:
             rate_limit_episode.reset()
+            outage_episode.reset()
             rate_limit_queue.sleep()
     return resumed
 

@@ -43,6 +43,8 @@ EVENT_COLORS: dict[str, int] = {
     "auto_advance": 0x9333EA,  # Purple (#9333ea) — Auto-Advance Season Triggered
     "push_initiated": 0xD40060,  # Pink (#d40060) — Push Initiated
     "dry_run": 0xF59E0B,  # Amber (#f59e0b) — Dry Run Simulation
+    "outage_paused": 0xEF4444,  # Red — Service Outage
+    "outage_resumed": 0x10B981,  # Green — Service Recovered
     "test": 0x10B981,
 }
 
@@ -55,6 +57,8 @@ EVENT_HEADERS: dict[str, str] = {
     "auto_advance": "⏭️ Auto-Advance Season Triggered",
     "push_initiated": "🚀 Push Initiated",
     "dry_run": "Simulated Push Summary",
+    "outage_paused": "⏸️ Service Outage — Pushes Paused",
+    "outage_resumed": "▶️ Service Recovered — Queue Resumed",
     "test": "🔔 NZBoxer Test Notification",
 }
 
@@ -68,6 +72,8 @@ EVENT_FLAG_ATTRS: dict[str, str] = {
     "auto_replaced": "notify_on_failure",
     "auto_advance": "notify_on_auto_advance",
     "dry_run": "notify_on_dry_run",
+    "outage_paused": "notify_on_outages",
+    "outage_resumed": "notify_on_outages",
 }
 
 
