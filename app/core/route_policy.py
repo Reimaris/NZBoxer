@@ -51,6 +51,7 @@ CORE_PREFIXES: tuple[str, ...] = (
     # provider-specific code (allowlisted)
     "/api/torbox/add",
     "/api/pushes",
+    "/api/outages",
     "/api/history",
 )
 CORE_EXACT_PATHS: tuple[str, ...] = ("/",)
