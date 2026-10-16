@@ -627,21 +627,29 @@ document.addEventListener('alpine:init', () => {
                 </button>
                 <div x-show="showStatus" @click.away="showStatus = false" style="display: none;" x-transition class="absolute top-full right-0 mt-2 w-80 bg-[#2a2a32] border border-[#3f3f46] rounded-lg shadow-xl p-4 z-10 text-xs text-gray-300">
                     <div class="space-y-3">
-                        <div class="flex items-start gap-3">
-                            <span class="bg-amber-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider shrink-0 w-20 text-center">IN PROGRESS</span>
+                        <div class="flex items-center gap-3">
+                            <span class="bg-amber-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider shrink-0 w-24 text-center leading-tight">IN PROGRESS</span>
                             <span>Currently downloading on your downloader, failed needing attention, or partially/fully downloaded on your downloader.</span>
                         </div>
-                        <div class="flex items-start gap-3">
-                            <span class="bg-[#d40060] text-white text-[10px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider shrink-0 w-20 text-center">READY</span>
+                        <div class="mx-8 border-t border-[#3f3f46]"></div>
+                        <div class="flex items-center gap-3">
+                            <span class="bg-[#d40060] text-white text-[10px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider shrink-0 w-24 text-center leading-tight">READY</span>
                             <span>Released and ready for on-demand Search / Push to your downloader.</span>
                         </div>
-                        <div class="flex items-start gap-3">
-                            <span class="bg-blue-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider shrink-0 w-20 text-center">FUTURE / TBA</span>
+                        <div class="mx-8 border-t border-[#3f3f46]"></div>
+                        <div class="flex items-center gap-3">
+                            <span class="bg-blue-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider shrink-0 w-24 text-center leading-tight">FUTURE / TBA</span>
                             <span>Upcoming release or unannounced release date (TBA).</span>
                         </div>
-                        <div class="flex items-start gap-3">
-                            <span class="bg-gray-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider shrink-0 w-20 text-center">ON HOLD</span>
-                            <span>Paused on your watchlist (On hold), or all released seasons are downloaded and the next season is not out yet (Awaiting next season). Held items are skipped by season auto-advance.</span>
+                        <div class="mx-8 border-t border-[#3f3f46]"></div>
+                        <div class="flex items-center gap-3">
+                            <span class="bg-gray-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider shrink-0 w-24 text-center leading-tight">ON HOLD</span>
+                            <span>Paused on your watchlist (On hold). Held items are skipped by season auto-advance.</span>
+                        </div>
+                        <div class="mx-8 border-t border-[#3f3f46]"></div>
+                        <div class="flex items-center gap-3">
+                            <span class="bg-gray-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider shrink-0 w-24 text-center leading-tight">AWAITING NEXT SEASON</span>
+                            <span>All released seasons are downloaded and the next season is not out yet.</span>
                         </div>
                     </div>
                 </div>
