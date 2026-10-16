@@ -57,6 +57,7 @@ from app.db.models import (
     SystemSettings,
 )
 from app.services import discord
+from app.services.availability_notifier import schedule_availability_notification
 from app.services.downloaders.base import (
     DOWNLOADER_DISPLAY_NAMES,
     BaseDownloader,
@@ -1212,6 +1213,7 @@ async def _run_transfer_poller_tick_with_session(
             ),
         )
 
+    completed_item_ids: set[int] = set()
     affected_items: dict[int, MediaItem] = {}
 
     for m in movies:
@@ -1476,6 +1478,7 @@ async def _run_transfer_poller_tick_with_session(
 
             if history.is_upgrade and history.replaces_history_id:
                 await _finalize_upgrade_replacement(session, history)
+            completed_item_ids.add(item.id)
             continue
 
         # 1b. Check Expired (Previously completed transfer whose cloud files aged out on the downloader)
@@ -1552,6 +1555,8 @@ async def _run_transfer_poller_tick_with_session(
         await _recalculate_parent_status(session, aff_item)
 
     await session.commit()
+    for completed_id in completed_item_ids:
+        schedule_availability_notification(completed_id)
 
     # Dispatch show-level batch notifications for any show/movie whose active transfers have all settled
     await _dispatch_settled_show_notifications(
