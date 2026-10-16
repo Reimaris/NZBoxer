@@ -189,6 +189,9 @@ class SystemSettings(Base):
     notify_on_dry_run: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default="1"
     )
+    notify_on_outages: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="0"
+    )
     onboarding_completed: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="0", nullable=False
     )
@@ -1470,6 +1473,9 @@ class DownloadHistory(Base):
         Boolean, nullable=False, default=False, server_default="0"
     )
     auto_replaced_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    outage_attempts: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, server_default="0"
     )
     completed_at: Mapped[datetime | None] = mapped_column(

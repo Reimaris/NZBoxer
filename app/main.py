@@ -1696,6 +1696,9 @@ async def save_global_settings(request: Request):
         if "notify_on_dry_run" in payload:
             db_settings.notify_on_dry_run = _to_bool(payload.get("notify_on_dry_run"))
 
+        if "notify_on_outages" in payload:
+            db_settings.notify_on_outages = _to_bool(payload.get("notify_on_outages"))
+
         if "debug_mode" in payload:
             db_settings.debug_mode = _to_bool(payload.get("debug_mode"))
 
@@ -2485,6 +2488,9 @@ async def save_notification_settings(request: Request) -> Response:
         )
         db_settings.notify_on_errors = _to_bool(
             payload.get("notify_on_errors", db_settings.notify_on_errors)
+        )
+        db_settings.notify_on_outages = _to_bool(
+            payload.get("notify_on_outages", db_settings.notify_on_outages)
         )
 
         await session.commit()

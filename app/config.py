@@ -73,6 +73,7 @@ class Settings:
     )
     notify_on_errors: bool = os.getenv("NOTIFY_ON_ERRORS", "True").lower() == "true"
     notify_on_dry_run: bool = os.getenv("NOTIFY_ON_DRY_RUN", "True").lower() == "true"
+    notify_on_outages: bool = os.getenv("NOTIFY_ON_OUTAGES", "False").lower() == "true"
     # Seconds the "rate limit reached" alert waits for a burst of queued pushes to settle
     rate_limit_notify_delay_seconds: float = float(
         os.getenv("RATE_LIMIT_NOTIFY_DELAY_SECONDS", "3.0")
@@ -118,6 +119,9 @@ class Settings:
         self.notify_on_errors = os.getenv("NOTIFY_ON_ERRORS", "True").lower() == "true"
         self.notify_on_dry_run = (
             os.getenv("NOTIFY_ON_DRY_RUN", "True").lower() == "true"
+        )
+        self.notify_on_outages = (
+            os.getenv("NOTIFY_ON_OUTAGES", "False").lower() == "true"
         )
         self.rate_limit_notify_delay_seconds = float(
             os.getenv("RATE_LIMIT_NOTIFY_DELAY_SECONDS", "3.0")
@@ -176,6 +180,7 @@ async def reload_settings_from_db(session: AsyncSession) -> None:
             notify_on_auto_advance=settings.notify_on_auto_advance,
             notify_on_errors=settings.notify_on_errors,
             notify_on_dry_run=settings.notify_on_dry_run,
+            notify_on_outages=settings.notify_on_outages,
             debug_mode=settings.debug_mode,
             dry_run=settings.dry_run,
             scoring_settings=scoring_config,
@@ -210,6 +215,7 @@ async def reload_settings_from_db(session: AsyncSession) -> None:
     )
     settings.notify_on_errors = bool(getattr(db_settings, "notify_on_errors", True))
     settings.notify_on_dry_run = bool(getattr(db_settings, "notify_on_dry_run", True))
+    settings.notify_on_outages = bool(getattr(db_settings, "notify_on_outages", False))
 
     env_debug = (
         os.getenv("DEBUG", "False").lower() in ("true", "1", "yes")

@@ -516,6 +516,24 @@
 </span>
                         <span class="text-xs text-white font-medium">Dry-Run Simulation Alerts (Batch Summary)</span>
                     </label>
+<label class="flex items-center gap-2.5 p-3 rounded-lg bg-[#111115] border border-[#3f3f46] cursor-pointer hover:border-zinc-500 transition-colors">
+                        <span class="relative inline-flex shrink-0">
+<input type="checkbox"
+                               name="notify_on_outages"
+                               value="true"
+                               {% if db_settings and db_settings.notify_on_outages %}checked{% endif %}
+                               hx-post="/settings/auto-save"
+                               hx-trigger="change"
+                               hx-vals='js:{"notify_on_outages": event.target.checked ? "true" : "false"}'
+                               hx-swap="none"
+                               class="sr-only peer">
+<div class="w-9 h-5 bg-[#3f3f46] peer-focus:outline-none peer-focus-visible:ring-2 peer-focus-visible:ring-[#d40060] rounded-full peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#d40060]"></div>
+</span>
+                        <span class="flex flex-col">
+                            <span class="text-xs text-white font-medium">Notify on Service Outages &amp; Retries</span>
+                            <span class="text-[11px] text-zinc-500">Alert on each outage pause and resume. Off: only the final failure after 5 attempts alerts you.</span>
+                        </span>
+                    </label>
                 </div>
             </div>
         </div>

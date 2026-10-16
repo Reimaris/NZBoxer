@@ -1048,6 +1048,7 @@ async def init_db(database_url: str) -> None:
                 "ALTER TABLE download_history ADD COLUMN is_dismissed BOOLEAN NOT NULL DEFAULT 0;",
                 "ALTER TABLE download_history ADD COLUMN notification_sent BOOLEAN NOT NULL DEFAULT 0;",
                 "ALTER TABLE download_history ADD COLUMN auto_replaced_count INTEGER NOT NULL DEFAULT 0;",
+                "ALTER TABLE download_history ADD COLUMN outage_attempts INTEGER NOT NULL DEFAULT 0;",
                 "ALTER TABLE download_history ADD COLUMN media_title VARCHAR(500);",
                 "ALTER TABLE download_history ADD COLUMN media_year INTEGER;",
                 "ALTER TABLE download_history ADD COLUMN media_type_label VARCHAR(30);",
@@ -1068,6 +1069,7 @@ async def init_db(database_url: str) -> None:
                 "ALTER TABLE system_settings ADD COLUMN notify_on_auto_advance BOOLEAN NOT NULL DEFAULT 1;",
                 "ALTER TABLE system_settings ADD COLUMN notify_on_errors BOOLEAN NOT NULL DEFAULT 1;",
                 "ALTER TABLE system_settings ADD COLUMN notify_on_dry_run BOOLEAN NOT NULL DEFAULT 1;",
+                "ALTER TABLE system_settings ADD COLUMN notify_on_outages BOOLEAN NOT NULL DEFAULT 0;",
                 # SystemSettings decoupled Debug Mode & Dry-Run Sandbox (ADR-108)
                 "ALTER TABLE system_settings ADD COLUMN debug_mode BOOLEAN NOT NULL DEFAULT 0;",
                 "ALTER TABLE system_settings ADD COLUMN dry_run BOOLEAN NOT NULL DEFAULT 0;",
