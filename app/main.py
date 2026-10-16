@@ -49,6 +49,7 @@ from app.core.anime_titles import (
     normalize_anime_title_language,
     search_names,
 )
+from app.core.outage import has_active_outage, outage_banner_context
 from app.core.time_utils import format_local_datetime
 from app.db.database import (
     async_session_factory,
@@ -196,6 +197,8 @@ def _current_rate_limit_source() -> str:
 
 
 templates.env.globals["rate_limit_source"] = _current_rate_limit_source
+templates.env.globals["outage_banner"] = outage_banner_context
+templates.env.globals["outage_active"] = has_active_outage
 from app.services.indexers.catalog import (  # noqa: E402
     INDEXER_PRESETS,
     get_preset,
@@ -1155,6 +1158,12 @@ async def reset_anime_metadata_endpoint(request: Request, item_id: int):
         content="<script>window.location.reload();</script>",
         headers={"HX-Refresh": "true"},
     )
+
+
+@app.get("/api/outages/banner", response_class=HTMLResponse)
+async def outage_banner_partial(request: Request) -> HTMLResponse:
+    """Outage banner partial (empty when no outage is active)."""
+    return templates.TemplateResponse(request, "partials/outage_banner.html", {})
 
 
 def _outage_span(provider: str, label: str) -> HTMLResponse:

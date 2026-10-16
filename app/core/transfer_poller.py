@@ -1857,7 +1857,12 @@ async def get_active_pushes(session: AsyncSession) -> list[dict[str, Any]]:
         elif is_rate_limited:
             from app.core.rate_limit_queue import resume_time_label
 
-            if "indexer" in detail_lower:
+            if outage_match is not None:
+                status_badge = (
+                    f"Paused — {outage_match.group(1).capitalize()} Outage "
+                    f"({resume_time_label()})"
+                )
+            elif "indexer" in detail_lower:
                 status_badge = f"Paused — indexer limit ({resume_time_label()})"
             else:
                 status_badge = f"Paused — rate limit ({resume_time_label()})"

@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 
 {% block content %}
+<div id="outage-banner" hx-get="/api/outages/banner" hx-trigger="every 30s" hx-swap="innerHTML">{% include "partials/outage_banner.html" %}</div>
 {% if show_onboarding %}
 <div hx-get="/onboarding/modal"
      hx-trigger="load[(function(){ try { return sessionStorage.getItem('nzb_onboarding_dismissed') !== '1'; } catch (e) { return true; } })()]"
@@ -838,7 +839,7 @@ document.addEventListener('alpine:init', () => {
                             {% if item.status.value == 'downloading' %}
                                 <span class="bg-cyan-600 animate-pulse text-white text-[10px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider shadow-sm">DOWNLOADING</span>
                             {% elif item.status.value == 'rate_limited' %}
-                                <span class="bg-amber-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider shadow-sm" title="Paused by {{ rate_limit_source() }} rate limit — resumes automatically">PAUSED</span>
+                                <span class="bg-amber-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider shadow-sm" title="Paused by {{ rate_limit_source() }} {{ 'outage' if outage_active() else 'rate limit' }} — resumes automatically">PAUSED</span>
                             {% elif item.status.value == 'failed' %}
                                 <span class="bg-red-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider shadow-sm">FAILED</span>
                             {% elif item.status.value == 'downloaded' or item.status.value == 'completed' %}
@@ -896,7 +897,7 @@ document.addEventListener('alpine:init', () => {
                         {% if item.status.value == 'downloading' %}
                             <span class="bg-cyan-600 animate-pulse text-white text-[11px] font-bold px-2 py-0.5 rounded uppercase tracking-wider shadow-sm">DOWNLOADING</span>
                         {% elif item.status.value == 'rate_limited' %}
-                            <span class="bg-amber-600 text-white text-[11px] font-bold px-2 py-0.5 rounded uppercase tracking-wider shadow-sm" title="Paused by {{ rate_limit_source() }} rate limit — resumes automatically">PAUSED</span>
+                            <span class="bg-amber-600 text-white text-[11px] font-bold px-2 py-0.5 rounded uppercase tracking-wider shadow-sm" title="Paused by {{ rate_limit_source() }} {{ 'outage' if outage_active() else 'rate limit' }} — resumes automatically">PAUSED</span>
                         {% elif item.status.value == 'failed' %}
                             <span class="bg-red-600 text-white text-[11px] font-bold px-2 py-0.5 rounded uppercase tracking-wider shadow-sm">FAILED</span>
                         {% elif item.status.value == 'downloaded' or item.status.value == 'completed' %}

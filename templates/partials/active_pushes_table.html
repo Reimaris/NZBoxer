@@ -96,7 +96,7 @@
                                 </div>
                             </div>
                             {% if p.status_detail %}
-                            <div class="text-[10px] {% if p.is_dry_run %}text-amber-400{% elif p.is_failed %}text-red-400{% else %}text-gray-400{% endif %} truncate max-w-full" title="{{ p.status_detail }}">{{ p.status_detail }}</div>
+                            <div class="text-[10px] {% if p.is_dry_run %}text-amber-400{% elif p.is_failed %}text-red-400{% else %}text-gray-400{% endif %} truncate max-w-full" title="{{ p.status_detail }}">{% if p.is_outage %}Paused: {{ p.rate_limit_source }} server error ({{ p.outage_label }}){% else %}{{ p.status_detail }}{% endif %}</div>
                             {% endif %}
                         </div>
                     </div>
@@ -139,12 +139,12 @@
                             <span>DRY RUN (SIMULATED)</span>
                         </span>
                         {% if p.status_detail %}
-                        <div class="text-[10px] text-amber-400 mt-1 max-w-[180px] truncate" title="{{ p.status_detail }}">{{ p.status_detail }}</div>
+                        <div class="text-[10px] text-amber-400 mt-1 max-w-[180px] truncate" title="{{ p.status_detail }}">{% if p.is_outage %}Paused: {{ p.rate_limit_source }} server error ({{ p.outage_label }}){% else %}{{ p.status_detail }}{% endif %}</div>
                         {% endif %}
                     {% elif p.is_failed %}
                         <span class="bg-red-900/90 text-red-200 border border-red-700 text-[11px] font-bold px-2.5 py-1 rounded uppercase tracking-wider shadow-sm">{{ p.status }}</span>
                         {% if p.status_detail %}
-                        <div class="text-[10px] text-red-400 mt-1 max-w-[180px] truncate" title="{{ p.status_detail }}">{{ p.status_detail }}</div>
+                        <div class="text-[10px] text-red-400 mt-1 max-w-[180px] truncate" title="{{ p.status_detail }}">{% if p.is_outage %}Paused: {{ p.rate_limit_source }} server error ({{ p.outage_label }}){% else %}{{ p.status_detail }}{% endif %}</div>
                         {% endif %}
                     {% elif p.is_rate_limited %}
                         <span class="bg-amber-900/80 text-amber-200 border border-amber-600 text-[11px] font-bold px-2.5 py-1 rounded uppercase tracking-wider shadow-sm" title="{{ p.status_detail if p.status_detail else 'Provider rate limit active — resumes automatically' }}">{{ p.status }}</span>

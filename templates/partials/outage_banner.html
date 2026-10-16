@@ -1,0 +1,8 @@
+{% set b = outage_banner() %}
+{% if b %}
+<div data-outage-banner="true" class="bg-red-950/90 border border-red-600/70 text-red-100 shadow-lg shadow-red-950/40 rounded-lg px-4 py-3 mb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+    <div class="text-sm font-semibold">🚨 Service Outage Active: {{ b.provider_name }} returned {{ b.label }}. Pushes are paused until upstream service recovers (resuming in {{ b.remaining_minutes }}m)</div>
+    <button hx-post="/api/pushes/resume-rate-limited" hx-swap="none"
+            class="shrink-0 bg-red-800 hover:bg-red-700 text-white text-xs font-bold px-3 py-1.5 rounded-md transition-colors">⚡ Resume Queue</button>
+</div>
+{% endif %}

@@ -51,3 +51,55 @@ async def test_outage_toggle_autosaves(
         )
     ).scalar()
     assert int(val) == expected
+
+
+@pytest.fixture
+def nzbgeek_outage():
+    from app.core.outage import clear_outages, record_outage
+    from app.services.indexers import newznab
+
+    newznab._indexer_names["indexer.example.com"] = "NZBgeek"
+    record_outage("indexer", "indexer.example.com", "NZBgeek", "HTTP 503", 1)
+    yield
+    newznab._indexer_names.pop("indexer.example.com", None)
+    clear_outages()
+
+
+RED = "bg-red-950/90 border border-red-600/70 text-red-100 shadow-lg shadow-red-950/40"
+
+
+def test_banner_present_during_outage_only_on_dashboard(nzbgeek_outage):
+    dash = client.get("/").text
+    assert RED in dash
+    assert 'data-outage-banner="true"' in dash
+    assert "Service Outage Active: NZBgeek returned HTTP 503" in dash
+    assert "⚡ Resume Queue" in dash
+    assert "data-outage-banner" not in client.get("/settings").text
+    api = client.get("/api/outages/banner")
+    assert api.status_code == 200 and RED in api.text
+
+
+def test_banner_absent_without_outage():
+    assert "data-outage-banner" not in client.get("/").text
+    assert client.get("/api/outages/banner").text.strip() == ""
+
+
+@pytest.mark.asyncio
+async def test_card5_shows_outage_badge(db_session: AsyncSession, nzbgeek_outage):
+    from app.core.transfer_poller import get_active_pushes
+    from tests.conftest import make_history, make_movie
+
+    item = await make_movie(db_session)
+    await make_history(
+        db_session,
+        item=item,
+        is_dismissed=False,
+        status_detail="paused: indexer outage (HTTP 503)",
+        outage_attempts=1,
+    )
+    await db_session.commit()
+    (push,) = await get_active_pushes(db_session)
+    assert push["status"].startswith("Paused — Indexer Outage (resumes ")
+    html = client.get("/").text
+    assert "Paused — Indexer Outage (resumes " in html
+    assert "Paused: NZBgeek server error (HTTP 503)" in html

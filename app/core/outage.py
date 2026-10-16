@@ -136,3 +136,23 @@ def has_active_outage() -> bool:
 
 def clear_outages() -> None:
     _active.clear()
+
+
+def outage_banner_context() -> dict[str, Any] | None:
+    """Banner data for the longest-remaining active outage, else None."""
+    import math
+
+    from app.core.rate_limit_queue import resume_time_label
+
+    outages = active_outages()
+    if not outages:
+        return None
+    o = max(outages, key=lambda x: x.remaining_seconds)
+    return {
+        "provider_name": o.provider_name,
+        "label": o.label,
+        "remaining_minutes": max(1, math.ceil(o.remaining_seconds / 60)),
+        "kind": o.kind,
+        "attempt": o.attempt,
+        "resume_time": resume_time_label(),
+    }
