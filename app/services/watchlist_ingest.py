@@ -17,6 +17,7 @@ from sqlalchemy.orm import selectinload
 
 from app.db.models import (
     ACTIVE_LIST_STATUSES,
+    INACTIVE_LIST_STATUSES,
     DownloadHistory,
     Episode,
     EpisodeStatus,
@@ -27,6 +28,7 @@ from app.db.models import (
     Provider,
     Season,
     SeasonStatus,
+    best_list_status,
 )
 from app.services.watchlist_providers import WatchlistEntry
 
@@ -342,13 +344,11 @@ async def _upsert_source(
     if source.remote_id == entry.remote_id:
         new_status = entry.list_status
     else:
-        # Several provider entries consolidated into one franchise item: stay active
-        # while any of them is active.
+        # Several provider entries consolidated into one franchise item: keep the
+        # highest-precedence status, so an active one never regresses to inactive.
         new_status = (
-            entry.list_status
-            if entry.list_status in ACTIVE_LIST_STATUSES
-            or source.list_status not in ACTIVE_LIST_STATUSES
-            else source.list_status
+            best_list_status([source.list_status, entry.list_status])
+            or entry.list_status
         )
         if entry.list_status in ACTIVE_LIST_STATUSES and not await _remote_id_taken(
             session, provider, entry.remote_id, source.id
@@ -549,6 +549,13 @@ async def ingest_entries(
         item = await resolve_existing_item(session, entry, mal_to_anilist)
         if item is not None and anilist_id and item.anilist_id == anilist_id:
             item = await _prefer_franchise_parent(session, item, anilist_id)
+        if item is None and entry.list_status in INACTIVE_LIST_STATUSES:
+            logger.debug(
+                "[SYNC] Skipping inactive watchlist entry '%s' (%s): no local item.",
+                entry.title,
+                entry.remote_id,
+            )
+            continue
         if item is None:
             item = await _create_item(session, provider, entry, anilist_id)
             result.added += 1

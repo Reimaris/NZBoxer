@@ -133,3 +133,64 @@ def test_simkl_hold_row_maps_to_on_hold():
     from app.services.watchlists.simkl_adapter import _simkl_list_status
 
     assert _simkl_list_status("hold") == "on_hold"
+
+
+def _entry(remote_id: str, status: str, tmdb_id: int = 603):
+    from app.services.watchlist_providers import WatchlistEntry
+
+    return WatchlistEntry(
+        remote_id=remote_id,
+        media_kind="movie",
+        title="Example Movie",
+        list_status=status,  # type: ignore[arg-type]
+        tmdb_id=tmdb_id,
+    )
+
+
+@pytest.mark.parametrize("status", ["completed", "dropped"])
+async def test_inactive_unmatched_entry_creates_no_item(db_session, status):
+    from app.services.watchlist_ingest import ingest_entries
+
+    provider = await make_watchlist_provider(db_session, "simkl")
+    result = await ingest_entries(db_session, provider, [_entry("x1", status)])
+    assert result.added == 0
+    assert (await db_session.execute(select(MediaItem.id))).first() is None
+
+
+async def test_inactive_matched_entry_updates_source(db_session):
+    from app.db.models import MediaItemWatchlistSource
+    from app.services.watchlist_ingest import ingest_entries
+
+    provider = await make_watchlist_provider(db_session, "simkl")
+    item = await make_movie(db_session, provider_id=provider.id, tmdb_id=603)
+    src = await make_source(db_session, item, provider, "plantowatch", "x1")
+    await db_session.commit()
+
+    await ingest_entries(db_session, provider, [_entry("x1", "completed")])
+    src = (await db_session.execute(select(MediaItemWatchlistSource))).scalar_one()
+    assert src.list_status == "completed"
+
+
+@pytest.mark.parametrize(
+    ("existing", "incoming", "expected"),
+    [
+        ("watching", "plantowatch", "watching"),
+        ("on_hold", "completed", "on_hold"),
+        ("plantowatch", "on_hold", "on_hold"),
+        ("completed", "watching", "watching"),
+    ],
+)
+async def test_consolidated_ids_never_regress_active_status(
+    db_session, existing, incoming, expected
+):
+    from app.db.models import MediaItemWatchlistSource
+    from app.services.watchlist_ingest import ingest_entries
+
+    provider = await make_watchlist_provider(db_session, "simkl")
+    item = await make_movie(db_session, provider_id=provider.id, tmdb_id=603)
+    await make_source(db_session, item, provider, existing, "old-id")
+    await db_session.commit()
+
+    await ingest_entries(db_session, provider, [_entry("new-id", incoming)])
+    src = (await db_session.execute(select(MediaItemWatchlistSource))).scalar_one()
+    assert src.list_status == expected

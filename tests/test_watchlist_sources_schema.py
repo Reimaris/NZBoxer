@@ -43,7 +43,7 @@ async def _count(session: AsyncSession) -> int:
 
 
 def test_status_constants():
-    assert ACTIVE_LIST_STATUSES == {"plantowatch", "watching"}
+    assert ACTIVE_LIST_STATUSES == {"plantowatch", "watching", "on_hold"}
     assert INACTIVE_LIST_STATUSES == {"completed", "dropped"}
 
 
