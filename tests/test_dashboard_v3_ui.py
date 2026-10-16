@@ -501,7 +501,7 @@ async def test_single_deck_navigation_unified_six_column_history_and_fluid_colum
         # 6. Mobile overflow-free Card 4 layout assertions (Ticket 02)
         assert "block md:table-row p-3 md:p-0 transition-colors" in html
         assert (
-            "block md:table-cell md:px-4 md:py-3.5 w-full md:min-w-[260px] break-words"
+            "block md:table-cell md:px-4 md:py-3.5 w-full md:w-auto md:min-w-[260px] break-words"
             in html
         )
         assert "truncate max-w-full" in html

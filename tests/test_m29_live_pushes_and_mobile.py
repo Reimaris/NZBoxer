@@ -558,7 +558,7 @@ async def test_mobile_responsive_dashboard_navbar_and_push_modal(
         "block md:table-row-group divide-y divide-[#3f3f46] bg-[#24242b] w-full" in html
     )
     assert (
-        "block md:table-cell md:px-4 md:py-3.5 w-full md:min-w-[260px] break-words max-w-full min-w-0"
+        "block md:table-cell md:px-4 md:py-3.5 w-full md:w-auto md:min-w-[260px] break-words max-w-full min-w-0"
         in html
     )
     assert "hidden md:table-cell md:px-4 md:py-3.5 md:w-px md:whitespace-nowrap" in html
