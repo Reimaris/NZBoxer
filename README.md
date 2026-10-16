@@ -111,7 +111,7 @@ Open **Settings → Capabilities Matrix** in the app for the same comparison. Se
 | Premiumize | Cloud | ✗ (reported by Premiumize) | ✓ | ✗ |
 | SABnzbd | Local | ✓ | ✓ | ✓ |
 
-All indexers (presets and custom Newznab) cover movies, series and anime and support custom categories.
+All indexers (presets and custom Newznab) are searched for movies, series and anime, and support custom category overrides.
 
 ---
 
