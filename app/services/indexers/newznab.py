@@ -6,6 +6,7 @@ Searches the configured Usenet indexer for NZB releases.
 
 from __future__ import annotations
 
+import json
 import logging
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
@@ -15,6 +16,12 @@ import httpx
 
 from app.config import DEFAULT_USER_AGENT
 from app.core.rate_limiter import RateLimiter
+from app.services.outage_classifier import (
+    OutageVerdict,
+    classify_exception,
+    classify_newznab_error,
+    classify_non_json_body,
+)
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -29,6 +36,41 @@ _indexer_names: dict[str, str] = {}
 
 class IndexerError(Exception):
     pass
+
+
+class IndexerOutageError(IndexerError):
+    """Transient indexer outage (5xx, timeout, TLS, HTML intercept) — ADR-158."""
+
+    def __init__(
+        self,
+        message: str,
+        indexer_url: str = "",
+        verdict: OutageVerdict | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.indexer_url = indexer_url
+        self.verdict = verdict
+
+
+class IndexerAuthError(IndexerError):
+    """Credential failure (HTTP 401/403, Newznab 100-102) — never retried."""
+
+    def __init__(
+        self,
+        message: str,
+        indexer_url: str = "",
+        verdict: OutageVerdict | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.indexer_url = indexer_url
+        self.verdict = verdict
+
+
+def _verdict_error(
+    verdict: OutageVerdict, message: str, indexer_url: str
+) -> IndexerOutageError | IndexerAuthError:
+    cls = IndexerAuthError if verdict.kind == "auth" else IndexerOutageError
+    return cls(message, indexer_url=indexer_url, verdict=verdict)
 
 
 class IndexerRateLimitError(IndexerError):
@@ -421,9 +463,17 @@ async def _execute_search(url: str, params: dict[str, Any]) -> list[dict[str, An
                     content_type,
                     response.text[:200],
                 )
-                return []
+                verdict = classify_non_json_body(content_type, response.text[:200])
+                raise _verdict_error(
+                    verdict, f"{verdict.label} (Content-Type: {content_type})", url
+                )
 
             data = response.json()
+
+            nz_verdict = classify_newznab_error(data)
+            if nz_verdict is not None:
+                logger.error("Indexer returned API error (%s)", nz_verdict.label)
+                raise _verdict_error(nz_verdict, f"API Error: {nz_verdict.label}", url)
 
             # Check for API error
             if "@attributes" in data and "code" in data["@attributes"]:
@@ -516,20 +566,34 @@ async def _execute_search(url: str, params: dict[str, Any]) -> list[dict[str, An
                     retry_after_seconds=retry_after,
                     status_code=429,
                 ) from e
-            if status_code == 503:
+            status_verdict = classify_exception(e)
+            if status_verdict is not None:
                 logger.warning(
-                    "Indexer returned HTTP %d (unavailable): %s",
+                    "Indexer returned HTTP %d (%s): %s",
                     status_code,
+                    status_verdict.kind,
                     e,
                 )
-                raise IndexerError(f"HTTP {status_code}: {e}") from e
+                raise _verdict_error(
+                    status_verdict, f"HTTP {status_code}: {e}", url
+                ) from e
             logger.error("Indexer search failed with HTTP %d: %s", status_code, e)
             return []
         except httpx.HTTPError as e:
             logger.error("Indexer search failed: %s", e)
+            transport_verdict = classify_exception(e)
+            if transport_verdict is not None:
+                raise _verdict_error(
+                    transport_verdict, str(e) or transport_verdict.label, url
+                ) from e
             return []
         except IndexerError:
             raise
+        except json.JSONDecodeError as e:
+            logger.error("Indexer returned undecodable JSON: %s", e)
+            raise _verdict_error(
+                OutageVerdict("outage", "JSONDecodeError"), f"JSONDecodeError: {e}", url
+            ) from e
         except Exception as e:  # noqa: BLE001
             logger.error("Failed to parse indexer results: %s", e)
             return []
@@ -592,6 +656,11 @@ async def fetch_nzb_bytes(
 
             content = response.content
             if not content or b"<nzb" not in content.lower():
+                if "html" in response.headers.get("content-type", "").lower():
+                    verdict = classify_non_json_body("html", "")
+                    raise _verdict_error(
+                        verdict, f"{verdict.label} (HTML instead of NZB)", url
+                    )
                 logger.error(
                     "Indexer returned response that does not appear to be an NZB XML document"
                 )
@@ -629,7 +698,17 @@ async def fetch_nzb_bytes(
                 status_code,
                 e,
             )
+            status_verdict = classify_exception(e)
+            if status_verdict is not None:
+                raise _verdict_error(
+                    status_verdict, f"HTTP error fetching NZB: {e}", url
+                ) from e
             raise IndexerError(f"HTTP error fetching NZB: {e}") from e
         except httpx.HTTPError as e:
             logger.error("Failed to fetch NZB bytes from indexer: %s", e)
+            transport_verdict = classify_exception(e)
+            if transport_verdict is not None:
+                raise _verdict_error(
+                    transport_verdict, f"HTTP error fetching NZB: {e}", url
+                ) from e
             raise IndexerError(f"HTTP error fetching NZB: {e}") from e
