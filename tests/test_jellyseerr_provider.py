@@ -207,3 +207,251 @@ async def test_mark_available(seerr_http) -> None:
     set_handler(lambda r: httpx.Response(500))
     with pytest.raises(httpx.HTTPStatusError):
         await jc.mark_available(URL, KEY, 42)
+
+
+# --- m68-03: adapter + ingest ------------------------------------------------
+
+from unittest.mock import AsyncMock  # noqa: E402
+
+from sqlalchemy import select  # noqa: E402
+
+from app.db.models import (  # noqa: E402
+    DownloadHistory,
+    MediaItem,
+    MediaItemWatchlistSource,
+    MediaStatus,
+)
+from app.services import anilist, tmdb  # noqa: E402
+from app.services.watchlist_ingest import (  # noqa: E402
+    ingest_entries,
+    mark_absent_sources_completed,
+    prune_inactive_media_items,
+)
+from app.services.watchlist_providers import (  # noqa: E402
+    WatchlistFetchError,
+    get_adapter,
+)
+from tests.conftest import make_history, make_watchlist_provider  # noqa: E402
+
+TV_REQ = {
+    "id": 12,
+    "status": 2,
+    "type": "tv",
+    "media": {"id": 7, "tmdbId": 1399, "tvdbId": 121361},
+    "seasons": [{"seasonNumber": 1}, {"seasonNumber": 2}],
+}
+MOVIE_REQ = {
+    "id": 15,
+    "status": 2,
+    "type": "movie",
+    "media": {"id": 9, "tmdbId": 603},
+    "seasons": [],
+}
+
+
+@pytest.fixture
+def seerr_api(monkeypatch):
+    """Patch client functions; returns a dict the test can tweak."""
+    state: dict = {"requests": [TV_REQ, MOVIE_REQ], "watchlist": [], "wl_calls": 0}
+
+    async def requests(url, key):
+        return state["requests"]
+
+    async def watchlist(url, key):
+        state["wl_calls"] += 1
+        return state["watchlist"]
+
+    async def title(url, key, media_type, tmdb_id):
+        if state.get("title_error"):
+            raise httpx.ConnectError("boom")
+        return (
+            ("The Matrix", 1999) if media_type == "movie" else ("Game of Thrones", 2011)
+        )
+
+    monkeypatch.setattr(jc, "get_approved_requests", requests)
+    monkeypatch.setattr(jc, "get_admin_watchlist", watchlist)
+    monkeypatch.setattr(jc, "get_title", title)
+    return state
+
+
+async def _seerr_provider(db_session, **cfg):
+    cfg = {"server_url": URL, "api_key": KEY, **cfg}
+    return await make_watchlist_provider(
+        db_session, "jellyseerr", config_json=json.dumps(cfg)
+    )
+
+
+async def test_adapter_maps_requests(db_session, seerr_api) -> None:
+    seerr_api["requests"] = [
+        TV_REQ,
+        MOVIE_REQ,
+        {"id": 13, "status": 1, "type": "movie", "media": {"id": 8, "tmdbId": 604}},
+        {"id": 16, "status": 2, "type": "movie", "media": {"id": 10, "tmdbId": 0}},
+    ]
+    entries = await get_adapter("jellyseerr").fetch_entries(
+        await _seerr_provider(db_session)
+    )
+    by_id = {e.remote_id: e for e in entries}
+    assert set(by_id) == {"7", "9"}  # TMDB-less request skipped
+    tv = by_id["7"]
+    assert (tv.media_kind, tv.tmdb_id, tv.tvdb_id) == ("show", 1399, 121361)
+    assert tv.list_status == "plantowatch"
+    assert tv.requested_seasons == frozenset({1, 2})
+    assert (tv.title, tv.year) == ("Game of Thrones", 2011)
+    movie = by_id["9"]
+    assert (movie.media_kind, movie.tvdb_id, movie.requested_seasons) == (
+        "movie",
+        None,
+        None,
+    )
+
+
+def test_adapters_shared() -> None:
+    assert get_adapter("jellyseerr") is get_adapter("overseerr")
+
+
+@pytest.mark.parametrize(
+    ("extra", "expected"),
+    [
+        ([{"seasonNumber": 3}], frozenset({1, 2, 3})),
+        ([], None),
+    ],
+)
+async def test_merged_requests(db_session, seerr_api, extra, expected) -> None:
+    second = {**TV_REQ, "id": 99, "seasons": extra}
+    seerr_api["requests"] = [TV_REQ, second]
+    entries = await get_adapter("jellyseerr").fetch_entries(
+        await _seerr_provider(db_session)
+    )
+    assert len(entries) == 1
+    assert entries[0].requested_seasons == expected
+
+
+async def test_title_fallback(db_session, seerr_api) -> None:
+    seerr_api["title_error"] = True
+    entries = await get_adapter("jellyseerr").fetch_entries(
+        await _seerr_provider(db_session)
+    )
+    tv = next(e for e in entries if e.remote_id == "7")
+    assert (tv.title, tv.year) == ("TMDB 1399", None)
+
+
+async def test_admin_watchlist(db_session, seerr_api) -> None:
+    seerr_api["watchlist"] = [
+        {"tmdbId": 603, "mediaType": "movie", "title": "The Matrix"},  # duplicate
+        {"tmdbId": 27205, "mediaType": "movie", "title": "Inception"},
+    ]
+    adapter = get_adapter("jellyseerr")
+    off = await adapter.fetch_entries(await _seerr_provider(db_session))
+    assert seerr_api["wl_calls"] == 0
+    assert {e.remote_id for e in off} == {"7", "9"}
+
+    on = await adapter.fetch_entries(
+        await _seerr_provider(db_session, sync_admin_watchlist=True)
+    )
+    assert seerr_api["wl_calls"] == 1
+    extra = [e for e in on if e.remote_id.startswith("wl-")]
+    assert [(e.remote_id, e.title, e.tvdb_id) for e in extra] == [
+        ("wl-27205", "Inception", None)
+    ]
+
+
+async def test_adapter_errors(db_session, monkeypatch) -> None:
+    provider = await _seerr_provider(db_session)
+
+    async def unauthorized(url, key):
+        raise jc.JellyseerrUnauthorizedError("HTTP 401")
+
+    monkeypatch.setattr(jc, "get_approved_requests", unauthorized)
+    with pytest.raises(WatchlistFetchError, match="API key rejected"):
+        await get_adapter("jellyseerr").fetch_entries(provider)
+
+    async def broken(url, key):
+        raise httpx.ConnectError(f"cannot reach {KEY}")
+
+    monkeypatch.setattr(jc, "get_approved_requests", broken)
+    install_model_listeners()
+    await db_session.commit()
+    with pytest.raises(WatchlistFetchError) as exc:
+        await get_adapter("jellyseerr").fetch_entries(provider)
+    assert KEY not in str(exc.value)
+
+
+@pytest.fixture
+def _no_metadata(monkeypatch):
+    monkeypatch.setattr(tmdb, "get_movie_details", AsyncMock(return_value=None))
+    monkeypatch.setattr(tmdb, "get_show_details", AsyncMock(return_value=None))
+    monkeypatch.setattr(tmdb, "get_digital_release_date", AsyncMock(return_value=None))
+    monkeypatch.setattr(anilist, "get_anime_ids_by_mal_ids", AsyncMock(return_value={}))
+
+
+async def _sync(db_session, provider, seerr_api) -> set[str]:
+    entries = await get_adapter("jellyseerr").fetch_entries(provider)
+    await ingest_entries(db_session, provider, entries)
+    seen = {e.remote_id for e in entries}
+    await mark_absent_sources_completed(db_session, provider, seen)
+    await prune_inactive_media_items(db_session)
+    await db_session.commit()
+    return seen
+
+
+async def test_ingest_creates_pending_without_dispatch(
+    db_session, seerr_api, _no_metadata
+) -> None:
+    provider = await _seerr_provider(db_session)
+    await _sync(db_session, provider, seerr_api)
+    items = (await db_session.execute(select(MediaItem))).scalars().all()
+    assert len(items) == 2
+    # Created PENDING; the standard enrichment may settle on FUTURE/SEARCHING,
+    # but nothing is ever dispatched.
+    assert {i.status for i in items} <= {
+        MediaStatus.PENDING,
+        MediaStatus.FUTURE,
+        MediaStatus.SEARCHING,
+    }
+    assert not (await db_session.execute(select(DownloadHistory))).scalars().all()
+    sources = (await db_session.execute(select(MediaItemWatchlistSource))).scalars()
+    assert {(s.remote_id, s.list_status) for s in sources} == {
+        ("7", "plantowatch"),
+        ("9", "plantowatch"),
+    }
+
+
+async def test_departed_request_prunes_item_keeps_history(
+    db_session, seerr_api, _no_metadata
+) -> None:
+    provider = await _seerr_provider(db_session)
+    await _sync(db_session, provider, seerr_api)
+    movie = (
+        await db_session.execute(select(MediaItem).where(MediaItem.tmdb_id == 603))
+    ).scalar_one()
+    await make_history(db_session, item=movie)
+    await db_session.commit()
+
+    seerr_api["requests"] = [TV_REQ]
+    await _sync(db_session, provider, seerr_api)
+
+    tmdb_ids = {
+        i.tmdb_id for i in (await db_session.execute(select(MediaItem))).scalars()
+    }
+    assert tmdb_ids == {1399}
+    assert len((await db_session.execute(select(DownloadHistory))).scalars().all()) == 1
+
+
+async def test_departed_request_with_active_transfer_not_pruned(
+    db_session, seerr_api, _no_metadata
+) -> None:
+    provider = await _seerr_provider(db_session)
+    await _sync(db_session, provider, seerr_api)
+    movie = (
+        await db_session.execute(select(MediaItem).where(MediaItem.tmdb_id == 603))
+    ).scalar_one()
+    movie.status = MediaStatus.DOWNLOADING
+    await db_session.commit()
+
+    seerr_api["requests"] = [TV_REQ]
+    await _sync(db_session, provider, seerr_api)
+
+    assert (
+        await db_session.execute(select(MediaItem).where(MediaItem.tmdb_id == 603))
+    ).scalar_one_or_none() is not None
