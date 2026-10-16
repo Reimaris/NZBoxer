@@ -7,7 +7,7 @@ from app.services.indexers.catalog import INDEXER_PRESETS, get_preset
 # Non-indexer provider types without maintainer testing; indexers carry
 # `IndexerPreset.experimental` instead.
 EXPERIMENTAL_PROVIDER_TYPES: frozenset[str] = frozenset(
-    {"anilist", "plex", "mal", "sabnzbd", "premiumize"}
+    {"anilist", "plex", "mal", "sabnzbd", "premiumize", "jellyseerr", "overseerr"}
 )
 
 

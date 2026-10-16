@@ -10,6 +10,7 @@ condition = "AND"
 paths = ['''^tests/''']
 regexes = [
   '''tmdb-key-0123456789abcdef''',
+  '''test-key-0123456789abcdef''',
   '''abcd1234efgh5678ijkl''',
   '''abcdef123456''',
   '''legacy_v1_tok''',

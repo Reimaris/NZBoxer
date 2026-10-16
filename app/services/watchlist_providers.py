@@ -36,6 +36,7 @@ class WatchlistEntry:
     anilist_id: int | None = None
     mal_id: int | None = None
     poster_url: str | None = None
+    requested_seasons: frozenset[int] | None = None
 
 
 class WatchlistAdapter(Protocol):

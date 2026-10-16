@@ -128,6 +128,7 @@ def _register_row_secrets(_mapper: Any, _connection: Any, target: Any) -> None:
         return
     if isinstance(cfg, dict):
         register_secret(str(cfg.get("refresh_token") or ""))
+        register_secret(str(cfg.get("api_key") or ""))
 
 
 _listeners_installed = False

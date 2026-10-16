@@ -345,6 +345,10 @@ class Provider(Base):
             "last_synced_at": None,
             "refresh_token": None,
             "token_expires_at": None,
+            "server_url": "",
+            "api_key": "",
+            "sync_admin_watchlist": False,
+            "notify_available": True,
         }
         try:
             raw = json.loads(self.config_json or "{}")
@@ -370,7 +374,16 @@ class Provider(Base):
             return bool((self.username or "").strip())
         if ptype in ("plex", "mal"):
             return bool(token)
+        if ptype in ("jellyseerr", "overseerr"):
+            return self._seerr_configured(cfg)
         return False
+
+    @staticmethod
+    def _seerr_configured(cfg: dict[str, Any]) -> bool:
+        return bool(
+            str(cfg.get("server_url") or "").strip()
+            and str(cfg.get("api_key") or "").strip()
+        )
 
     @property
     def sync_eligible(self) -> bool:
@@ -414,6 +427,8 @@ class Provider(Base):
             return "connected" if (self.username or "").strip() else "not_connected"
         if ptype == "plex":
             return "connected" if token else "not_connected"
+        if ptype in ("jellyseerr", "overseerr"):
+            return "connected" if self._seerr_configured(cfg) else "not_connected"
         if ptype == "mal":
             if not token:
                 return "not_connected"
@@ -965,6 +980,9 @@ class MediaItemWatchlistSource(Base):
     )
     last_synced_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True, default=None
+    )
+    availability_notified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()

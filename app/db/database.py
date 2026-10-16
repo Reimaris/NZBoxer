@@ -259,6 +259,21 @@ async def _migrate_anime_title_columns(conn: AsyncConnection) -> None:
                 )
 
 
+async def _migrate_availability_notified(conn: AsyncConnection) -> None:
+    """m68: availability-notification marker on watchlist source rows."""
+    from sqlalchemy import text as sa_text
+
+    rows = await conn.execute(sa_text('PRAGMA table_info("watchlist_sources")'))
+    existing = {r[1] for r in rows}
+    if existing and "availability_notified_at" not in existing:
+        await conn.execute(
+            sa_text(
+                "ALTER TABLE watchlist_sources "
+                "ADD COLUMN availability_notified_at DATETIME"
+            )
+        )
+
+
 def _backup_db_before_m59(db_path: Path) -> None:
     """Copy the SQLite file to ``<name>.pre-m59.bak`` once (skipped if present)."""
     if str(db_path) == ":memory:" or not db_path.is_file():
@@ -1185,6 +1200,7 @@ async def init_db(database_url: str) -> None:
                 await _migrate_indexer_type(await session.connection())
                 await _migrate_retire_anilist_metadata(await session.connection())
                 await _migrate_anime_title_columns(await session.connection())
+                await _migrate_availability_notified(await session.connection())
                 await session.execute(
                     sa_text(
                         "CREATE INDEX IF NOT EXISTS ix_download_history_downloader_transfer_id "
