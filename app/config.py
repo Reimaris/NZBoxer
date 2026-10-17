@@ -1,5 +1,5 @@
 """
-NZBoxer Application Configuration
+Smewlet Application Configuration
 ====================================
 Loads settings from environment variables and the database.
 Provides a single validated settings object to the rest of the application.
@@ -20,11 +20,15 @@ from functools import lru_cache
 from typing import TYPE_CHECKING, Any
 
 from app.core.default_scoring import DEFAULT_SCORING_CONFIG
+from app.version import APP_NAME, APP_VERSION
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
-DEFAULT_USER_AGENT = "NZBoxer/1.4.0 (Linux; x64)"
+DATABASE_FILE: str = "smewlet.db"
+LEGACY_DATABASE_FILE: str = "nzboxer.db"
+DEFAULT_DATABASE_URL: str = "sqlite+aiosqlite:///./config/smewlet.db"
+DEFAULT_USER_AGENT: str = f"{APP_NAME}/{APP_VERSION} (Linux; x64)"
 
 
 class Settings:
@@ -35,9 +39,7 @@ class Settings:
     """
 
     # --- Database ---
-    database_url: str = os.getenv(
-        "DATABASE_URL", "sqlite+aiosqlite:///./config/nzboxer.db"
-    )
+    database_url: str = os.getenv("DATABASE_URL", DEFAULT_DATABASE_URL)
 
     # Downloader Transfer Poller & Failure Recovery
     sh_max_retries: int = int(os.getenv("SH_MAX_RETRIES", "3"))
@@ -91,9 +93,7 @@ class Settings:
     log_level: str = os.getenv("LOG_LEVEL", "INFO")
 
     def __init__(self) -> None:
-        self.database_url = os.getenv(
-            "DATABASE_URL", "sqlite+aiosqlite:///./config/nzboxer.db"
-        )
+        self.database_url = os.getenv("DATABASE_URL", DEFAULT_DATABASE_URL)
         self.sh_max_retries = int(os.getenv("SH_MAX_RETRIES", "3"))
         self.download_timeout_minutes = (
             int(os.environ["DOWNLOAD_TIMEOUT_MINUTES"])
