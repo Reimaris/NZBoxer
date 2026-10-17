@@ -17,6 +17,15 @@ def test_static_icon_svg_endpoint():
     assert response.status_code == 200
     assert "image/svg+xml" in response.headers.get("content-type", "")
     assert "<svg" in response.text
+    assert "nzboxer" not in response.text.lower()
+
+
+def test_static_favicon_svg_endpoint():
+    """Verify that /static/favicon.svg is served as SVG."""
+    response = client.get("/static/favicon.svg")
+    assert response.status_code == 200
+    assert "image/svg+xml" in response.headers.get("content-type", "")
+    assert "<svg" in response.text
 
 
 def test_base_template_branding_elements():
@@ -26,7 +35,7 @@ def test_base_template_branding_elements():
     html = response.text
 
     # Favicon link in head
-    assert '<link rel="icon" type="image/svg+xml" href="/static/icon.svg">' in html
+    assert '<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">' in html
 
     assert "<title>Smewlet</title>" in html
 
