@@ -28,15 +28,16 @@ shots use the Pixel 9 preset. Save each file to `screenshots/` under the name sh
 5. [ ] `anime-franchise.png`: Anime tab → *Skybound Tide* → push modal (seasons plus the movie entry).
 6. [ ] `active-pushes.png`: *Active Pushes* card (two simulated transfers, 62 %, dry-run banner visible).
 7. [ ] `providers.png`: Settings → Providers (Simkl, AniList, Jellyseerr, TMDB, TorBox, SABnzbd, indexer).
-8. [ ] `capabilities-matrix.png`: Settings → *Capabilities Matrix*.
-9. [ ] `ad-hoc-search.png`: *Manual Search* card, query `neon`, then *Search* on a result so releases show.
-10. [ ] Switch responsive mode to the **Pixel 9** preset (this is the only size change; desktop shots are done).
-11. [ ] `mobile-dashboard.png`: dashboard.
-12. [ ] `mobile-push-modal.png`: push modal.
-13. [ ] Review each image for anything personal (bookmarks, tabs, usernames, real hostnames); crop to the page, not the browser chrome.
-14. [ ] Strip metadata and compress, e.g. `python3 -c "from PIL import Image; import sys; [Image.open(f).save(f, optimize=True) for f in sys.argv[1:]]" screenshots/*.png` (re-saving with Pillow drops EXIF/text chunks).
-15. [ ] If a new image was added (`capabilities-matrix.png`), reference it in the main README gallery.
-16. [ ] Commit (`docs: refresh screenshots`), then `docker compose -f demo/compose.demo.yaml down`.
+8. [ ] `add-provider.png`: Settings → Providers → *Add Provider* dialog, watchlist category visible (capability pills and Experimental pills on the Jellyseerr/Overseerr cards).
+9. [ ] `capabilities-matrix.png`: Settings → *Capabilities Matrix*.
+10. [ ] `ad-hoc-search.png`: *Manual Search* card, query `neon`, then *Search* on a result so releases show.
+11. [ ] Switch responsive mode to the **Pixel 9** preset (this is the only size change; desktop shots are done).
+12. [ ] `mobile-dashboard.png`: dashboard.
+13. [ ] `mobile-push-modal.png`: push modal.
+14. [ ] Review each image for anything personal (bookmarks, tabs, usernames, real hostnames); crop to the page, not the browser chrome.
+15. [ ] Strip metadata and compress, e.g. `python3 -c "from PIL import Image; import sys; [Image.open(f).save(f, optimize=True) for f in sys.argv[1:]]" screenshots/*.png` (re-saving with Pillow drops EXIF/text chunks).
+16. [ ] If new images were added (`capabilities-matrix.png`, `add-provider.png`), reference them in the main README gallery.
+17. [ ] Commit (`docs: refresh screenshots`), then `docker compose -f demo/compose.demo.yaml down`.
 
 ## What it contains
 
