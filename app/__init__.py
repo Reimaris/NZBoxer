@@ -1,1 +1,1 @@
-"""NZBoxer Application Package."""
+"""Smewlet Application Package."""

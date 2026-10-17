@@ -1,5 +1,5 @@
 """
-NZBoxer Main Application Entrypoint
+Smewlet Main Application Entrypoint
 ====================================
 FastAPI application with lifespan for database initialization and
 APScheduler background jobs. Contains HTML routes for the dashboard
@@ -67,7 +67,7 @@ config_dir = Path("/app/config")
 if not config_dir.exists():
     config_dir = Path("config")  # Fallback for local testing
 log_dir = config_dir / "logs"
-log_file = log_dir / "nzboxer.log"
+log_file = log_dir / "smewlet.log"
 
 formatter = logging.Formatter(
     "%(asctime)s - [%(levelname)s] - %(name)s - %(message)s",
@@ -175,6 +175,7 @@ templates.env.filters["relative_date"] = relative_date
 templates.env.filters["local_datetime"] = format_local_datetime
 templates.env.globals["settings"] = settings
 templates.env.globals["app_version"] = APP_VERSION
+templates.env.globals["app_name"] = APP_NAME
 from app.services.provider_service import ActiveDownloaderName  # noqa: E402
 
 templates.env.globals["downloader_name"] = ActiveDownloaderName()
@@ -358,7 +359,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
 # FastAPI App
 app = FastAPI(
-    title="NZBoxer",
+    title=APP_NAME,
     description="Autonomous Media Processing System",
     version=APP_VERSION,
     lifespan=lifespan,

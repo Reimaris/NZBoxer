@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NZBoxer</title>
+    <title>{{ app_name }}</title>
     <link rel="icon" type="image/svg+xml" href="/static/icon.svg">
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
@@ -109,8 +109,8 @@
                 <div class="flex items-center gap-4">
                     <div class="flex items-center gap-2.5">
                         <a href="/" class="flex items-center gap-2.5 group">
-                            <img src="/static/icon.svg" alt="NZBoxer Logo" class="w-9 h-9 sm:w-11 sm:h-11 shrink-0 transition-transform group-hover:scale-105">
-                            <span class="text-lg font-semibold text-white tracking-wide group-hover:text-pink-400 transition-colors">NZBoxer</span>
+                            <img src="/static/icon.svg" alt="{{ app_name }} Logo" class="w-9 h-9 sm:w-11 sm:h-11 shrink-0 transition-transform group-hover:scale-105">
+                            <span class="text-lg font-semibold text-white tracking-wide group-hover:text-pink-400 transition-colors">{{ app_name }}</span>
                         </a>
                         <span class="hidden sm:inline-block bg-[#3f3f46] text-[#d1d5db] text-xs font-mono font-medium px-2.5 py-0.5 rounded-full mt-0.5 shadow-sm">
                             v{{ app_version }}

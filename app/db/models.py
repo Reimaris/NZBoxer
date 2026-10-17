@@ -1,5 +1,5 @@
 """
-NZBoxer Database Models
+Smewlet Database Models
 =======================
 SQLAlchemy 2.0 ORM definitions for all database entities.
 
@@ -53,7 +53,7 @@ class MediaType(str, enum.Enum):
 
 
 class MediaStatus(str, enum.Enum):
-    """Lifecycle status of a MediaItem within NZBoxer."""
+    """Lifecycle status of a MediaItem within Smewlet."""
 
     FUTURE = "future"
     PENDING = "pending"

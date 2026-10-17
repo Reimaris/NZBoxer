@@ -1,5 +1,5 @@
 """
-Tests for NZBoxer SVG Icon and Branding Integration.
+Tests for Smewlet SVG Icon and Branding Integration.
 """
 
 from __future__ import annotations
@@ -28,5 +28,7 @@ def test_base_template_branding_elements():
     # Favicon link in head
     assert '<link rel="icon" type="image/svg+xml" href="/static/icon.svg">' in html
 
+    assert "<title>Smewlet</title>" in html
+
     # Navbar logo image
-    assert '<img src="/static/icon.svg" alt="NZBoxer Logo"' in html
+    assert '<img src="/static/icon.svg" alt="Smewlet Logo"' in html
