@@ -307,5 +307,5 @@ def test_dockerfile_gosu_and_readme_quickstart() -> None:
     readme_text = (PROJECT_ROOT / "README.md").read_text(encoding="utf-8")
     assert "Unlike traditional automation stacks" not in readme_text
     assert "**zero background indexer polling**" in readme_text
-    assert "ghcr.io/reimaris/nzboxer:latest" in readme_text
+    assert "ghcr.io/reimaris/smewlet:latest" in readme_text
     assert "docker compose up -d" in readme_text

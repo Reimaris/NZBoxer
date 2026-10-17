@@ -1,12 +1,14 @@
 <p align="center">
-  <img src="app/static/icon.svg" width="128" height="128" alt="NZBoxer Logo" />
+  <img src="app/static/icon.svg" width="128" height="128" alt="Smewlet Logo" />
 </p>
 
-<h1 align="center">NZBoxer</h1>
+<h1 align="center">Smewlet</h1>
 
 <p align="center">
   <strong>Self-hosted media manager &amp; on-demand Usenet push companion bridging multi-provider watchlists, Newznab indexers, and cloud or local downloaders.</strong>
 </p>
+
+<p align="center"><em>Formerly NZBoxer.</em></p>
 
 <p align="center">
   <img src="https://img.shields.io/badge/version-v1.4.0-pink" alt="Version" />
@@ -15,17 +17,17 @@
 </p>
 
 <p align="center">
-  <img src="screenshots/dashboard.png" alt="NZBoxer dashboard with watchlist categories, per-title Auto-Push switches and season progress" width="900" /><br />
+  <img src="screenshots/dashboard.png" alt="Smewlet dashboard with watchlist categories, per-title Auto-Push switches and season progress" width="900" /><br />
   <sub><b>Dashboard:</b> watchlist categories, season and movie progress, and a per-title Auto-Push switch</sub>
 </p>
 
 ---
 
-## What is NZBoxer?
+## What is Smewlet?
 
-**NZBoxer** connects your watchlists, metadata sources, Newznab Usenet indexers and your downloader in one lightweight web app, and only does work when you ask it to.
+**Smewlet** connects your watchlists, metadata sources, Newznab Usenet indexers and your downloader in one lightweight web app, and only does work when you ask it to.
 
-It keeps your **Movies**, **TV Series** and **Anime** in sync with your watchlists and tracks release dates, episode air dates and chronological anime watch orders. It performs **zero background indexer polling**: your indexer API limits and downloader storage are untouched until you decide to push a movie, season or episode. At that point NZBoxer searches your indexers, vets and scores the releases, sends the best NZB to your downloader, monitors the transfer, and replaces it automatically if it fails.
+It keeps your **Movies**, **TV Series** and **Anime** in sync with your watchlists and tracks release dates, episode air dates and chronological anime watch orders. It performs **zero background indexer polling**: your indexer API limits and downloader storage are untouched until you decide to push a movie, season or episode. At that point Smewlet searches your indexers, vets and scores the releases, sends the best NZB to your downloader, monitors the transfer, and replaces it automatically if it fails.
 
 ---
 
@@ -92,11 +94,11 @@ It keeps your **Movies**, **TV Series** and **Anime** in sync with your watchlis
 | **Indexers** | 10 Curated Presets | API Key / URL | ✅ TreasureMaps<br>🧪 Other 9 | DrunkenSlug, NZBGeek, NzbPlanet, AltHUB, NinjaCentral, etc. |
 |  | Custom Newznab | API Key / URL | 🧪 Experimental | Any Newznab-compatible indexer with custom category mappings |
 
-> **🧪 Experimental** means the maintainer has not tested that integration against the live service. It is implemented and covered by automated tests, but may have rough edges. These providers carry an *Experimental* pill in Settings, so please [report any problems](https://github.com/Reimaris/NZBoxer/issues).
+> **🧪 Experimental** means the maintainer has not tested that integration against the live service. It is implemented and covered by automated tests, but may have rough edges. These providers carry an *Experimental* pill in Settings, so please [report any problems](https://github.com/Reimaris/Smewlet/issues).
 >
 > An integration becomes **✅ Tested** once the maintainer has verified a live end-to-end sync or transfer, or at least two independent users have reported it working via GitHub issues or discussions.
 
-> MyAnimeList requires its redirect URI, `<your NZBoxer base URL>/settings/provider/mal/auth/callback` (shown in the provider dialog), to be registered in your MAL API app. SABnzbd must be reachable from the NZBoxer container via its LAN IP, not `localhost` (inside the container, `localhost` is NZBoxer itself). `host.docker.internal` also works if you add `extra_hosts: ["host.docker.internal:host-gateway"]` to the compose service. Only one downloader is active at a time.
+> MyAnimeList requires its redirect URI, `<your Smewlet base URL>/settings/provider/mal/auth/callback` (shown in the provider dialog), to be registered in your MAL API app. SABnzbd must be reachable from the Smewlet container via its LAN IP, not `localhost` (inside the container, `localhost` is Smewlet itself). `host.docker.internal` also works if you add `extra_hosts: ["host.docker.internal:host-gateway"]` to the compose service. Only one downloader is active at a time.
 
 ### Provider Capabilities
 
@@ -127,7 +129,7 @@ All indexers (presets and custom Newznab) are searched for movies, series and an
 - **Docker & Docker Compose** (recommended) or **Python 3.12+**
 - A [TMDB](https://www.themoviedb.org/) API key, at least one Newznab-compatible **indexer**, and at least one **downloader**.
 
-Until these are configured, NZBoxer shows a **Setup Required** screen and background jobs stay idle. Without a connected watchlist provider it runs in **Ad-Hoc mode**: only the Ad-Hoc Search card is shown and watchlist sync is disabled.
+Until these are configured, Smewlet shows a **Setup Required** screen and background jobs stay idle. Without a connected watchlist provider it runs in **Ad-Hoc mode**: only the Ad-Hoc Search card is shown and watchlist sync is disabled.
 
 *(Optional)* A Discord webhook or Telegram bot for push and completion notifications.
 
@@ -135,13 +137,13 @@ Until these are configured, NZBoxer shows a **Setup Required** screen and backgr
 
 ## Getting Started
 
-**1. Create a `compose.yaml`** and start the container (image: `ghcr.io/reimaris/nzboxer:latest`):
+**1. Create a `compose.yaml`** and start the container (image: `ghcr.io/reimaris/smewlet:latest`):
 
 ```yaml
 services:
-  nzboxer:
-    image: ghcr.io/reimaris/nzboxer:latest
-    container_name: nzboxer
+  smewlet:
+    image: ghcr.io/reimaris/smewlet:latest
+    container_name: smewlet
     restart: unless-stopped
     ports:
       - "8000:8000"
@@ -162,7 +164,7 @@ docker compose up -d
 <details>
 <summary><strong>Upgrading</strong></summary>
 
-On first start after upgrading from v1.1.x, NZBoxer migrates the database to provider-neutral column names. A backup is written automatically to `config/nzboxer.db.pre-m59.bak` (once; an existing backup is never overwritten) before any change is made. The migration is one-way: **older builds cannot open an upgraded database**. To roll back, stop the container, restore the `.bak` file over `config/nzboxer.db`, and start the older image.
+On first start after upgrading from v1.1.x, Smewlet migrates the database to provider-neutral column names. A backup is written automatically to `config/smewlet.db.pre-m59.bak` (once; an existing backup is never overwritten) before any change is made. The migration is one-way: **older builds cannot open an upgraded database**. To roll back, stop the container, restore the `.bak` file over `config/smewlet.db`, and start the older image.
 
 Installs without a TMDB key, indexer or downloader will see the Setup Required screen until they are added in Settings.
 
@@ -172,8 +174,8 @@ Installs without a TMDB key, indexer or downloader will see the Setup Required s
 <summary><strong>Running locally with Python</strong></summary>
 
 ```bash
-git clone https://github.com/Reimaris/NZBoxer.git
-cd NZBoxer
+git clone https://github.com/Reimaris/Smewlet.git
+cd Smewlet
 mkdir -p config
 python3 -m venv .venv
 source .venv/bin/activate
@@ -185,10 +187,20 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000
 
 ---
 
+## Upgrading from NZBoxer
+
+Smewlet is the new name of NZBoxer. Existing installs keep their data:
+
+1. Run `docker compose down` first. The service and container names change, so this avoids an orphaned container and a port clash.
+2. In your `compose.yaml`, change the image to `ghcr.io/reimaris/smewlet:latest` and the service and `container_name` to `smewlet`. Keep the `./config` volume.
+3. Run `docker compose up -d`.
+
+On first start, `config/nzboxer.db` is copied to `config/smewlet.db`. The old file is kept as a rollback copy; delete it once you are happy. The old image path `ghcr.io/reimaris/nzboxer` receives no further updates. An explicit `DATABASE_URL` is not migrated; point it at your database yourself.
+
 ## Tech Stack
 
 - **Backend:** Python 3.12, FastAPI, SQLAlchemy 2.0 (Async), APScheduler
-- **Database:** SQLite in WAL mode (stored persistently in `./config/nzboxer.db`)
+- **Database:** SQLite in WAL mode (stored persistently in `./config/smewlet.db`)
 - **Release Verification & Scoring:** GuessIt + custom 3-layer fake detection pipeline, archive unpack grace monitor, and weighted release scoring engine
 - **Frontend:** Jinja2, HTMX, Alpine.js, TailwindCSS (mobile-optimized card and deck layouts)
 
@@ -196,7 +208,7 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000
 
 ## Reporting Problems
 
-- **Feedback Helper:** *Report a Bug* / *Request a Feature* / *Ask a Question* buttons on the Settings page open a launcher with privacy-safe diagnostics (version, Python, OS, deployment, active provider types; no keys, URLs or names). NZBoxer never contacts GitHub itself. Security issues go through GitHub Private Vulnerability Reporting.
+- **Feedback Helper:** *Report a Bug* / *Request a Feature* / *Ask a Question* buttons on the Settings page open a launcher with privacy-safe diagnostics (version, Python, OS, deployment, active provider types; no keys, URLs or names). Smewlet never contacts GitHub itself. Security issues go through GitHub Private Vulnerability Reporting.
 - **Export Sanitized DB:** Settings → System Diagnostics & Health (and the Bug Report tab of the feedback launcher) downloads a copy of your database with API keys, tokens, bot credentials and webhooks removed, for attaching to bug reports when maintainers ask. Your library and server URLs stay in the file, so review it first, and zip it because GitHub rejects `.db` attachments.
 
 ---
