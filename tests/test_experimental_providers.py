@@ -59,5 +59,14 @@ async def test_banner_shown_only_with_experimental_provider(
         html = (await async_client.get("/settings")).text
         assert "data-experimental-banner" in html
         assert "template=bug_report.yml" in html
+        # Both top banners share one sticky wrapper so they stay pinned together.
+        wrapper = html[html.index('id="top-banners"') :]
+        assert (
+            "sticky top-14"
+            in html[html.rindex("<div", 0, html.index('id="top-banners"')) :][:200]
+        )
+        assert wrapper.index("data-experimental-banner") < wrapper.index(
+            "<!-- Global Alerts"
+        )
     finally:
         app.state.setup_guard_enabled = False
