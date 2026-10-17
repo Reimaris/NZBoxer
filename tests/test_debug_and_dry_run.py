@@ -707,4 +707,4 @@ def test_discord_embed_footer_uses_app_version(is_dry_run: bool):
         resolution="1080p",
         is_dry_run=is_dry_run,
     )
-    assert embed["footer"]["text"].startswith(f"NZBoxer v{APP_VERSION}")
+    assert embed["footer"]["text"].startswith(f"Smewlet v{APP_VERSION}")

@@ -24,7 +24,7 @@ from sqlalchemy import select
 from app.config import DEFAULT_USER_AGENT, settings
 from app.services import telegram
 from app.services.downloaders.base import DOWNLOADER_DISPLAY_NAMES
-from app.version import APP_VERSION
+from app.version import APP_NAME, APP_VERSION
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -59,7 +59,7 @@ EVENT_HEADERS: dict[str, str] = {
     "dry_run": "Simulated Push Summary",
     "outage_paused": "⏸️ Service Outage — Pushes Paused",
     "outage_resumed": "▶️ Service Recovered — Queue Resumed",
-    "test": "🔔 NZBoxer Test Notification",
+    "test": f"🔔 {APP_NAME} Test Notification",
 }
 
 # Maps canonical and alias event names to the corresponding SystemSettings flag attribute
@@ -156,7 +156,7 @@ def build_discord_embed(
     """Construct a rich Discord Webhook embed dictionary for the given notification event."""
     norm_event = _normalize_event(event_type)
     color = 0xF59E0B if is_dry_run else EVENT_COLORS.get(norm_event, 0x10B981)
-    header = EVENT_HEADERS.get(norm_event, "🔔 NZBoxer Notification").format(
+    header = EVENT_HEADERS.get(norm_event, f"🔔 {APP_NAME} Notification").format(
         downloader=downloader_label(downloader_name)
     )
     if is_dry_run:
@@ -213,9 +213,9 @@ def build_discord_embed(
         "color": color,
         "fields": fields,
         "footer": {
-            "text": f"NZBoxer v{APP_VERSION} (Dry-Run Sandbox)"
+            "text": f"{APP_NAME} v{APP_VERSION} (Dry-Run Sandbox)"
             if is_dry_run
-            else f"NZBoxer v{APP_VERSION}"
+            else f"{APP_NAME} v{APP_VERSION}"
         },
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
@@ -264,7 +264,7 @@ async def send_discord_webhook(
         return False
 
     clean_url = str(webhook_url).strip()
-    payload: dict[str, Any] = {"username": "NZBoxer"}
+    payload: dict[str, Any] = {"username": APP_NAME}
     if content:
         payload["content"] = content
     if embed:
@@ -326,7 +326,7 @@ def format_telegram_event_message(
 ) -> str:
     """Format an HTML notification message for Telegram matching the event details."""
     norm_event = _normalize_event(event_type)
-    header = EVENT_HEADERS.get(norm_event, "🔔 NZBoxer Notification").format(
+    header = EVENT_HEADERS.get(norm_event, f"🔔 {APP_NAME} Notification").format(
         downloader=downloader_label(downloader_name)
     )
     if is_dry_run:
@@ -537,7 +537,7 @@ async def dispatch_alert_message(
             "description": f"```\n{body}\n```"[:4096],
             "color": color,
             "timestamp": datetime.now(timezone.utc).isoformat(),
-            "footer": {"text": "NZBoxer"},
+            "footer": {"text": APP_NAME},
         }
         discord_sent = await send_discord_webhook(discord_url, embed=embed)
 

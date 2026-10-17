@@ -57,7 +57,7 @@ from app.db.database import (
     get_session_factory,
     init_db,
 )
-from app.version import APP_VERSION
+from app.version import APP_NAME, APP_VERSION
 
 if TYPE_CHECKING:
     from app.db.models import MediaItem
@@ -2410,10 +2410,10 @@ async def test_discord_notification(request: Request) -> Response:
 
         embed = discord.build_discord_embed(
             event_type="completed",
-            media_title="NZBoxer Test Notification",
+            media_title=f"{APP_NAME} Test Notification",
             media_year=2026,
             target_label="Test Connection",
-            release_name="NZBoxer.v3.0.0.2160p.WEB-DL.DDP5.1.Atmos.H.265",
+            release_name="Smewlet.v3.0.0.2160p.WEB-DL.DDP5.1.Atmos.H.265",
             resolution="2160p",
             source="WEB-DL",
             video_codec="H.265",
@@ -2498,9 +2498,7 @@ async def test_telegram_notification(
             status_code=400,
         )
 
-    test_msg = (
-        "<b>🔔 NZBoxer Test Notification</b>\nTelegram notification channel verified!"
-    )
+    test_msg = f"<b>🔔 {APP_NAME} Test Notification</b>\nTelegram notification channel verified!"
     sent_count = 0
     for token, cid in channels_to_test:
         if await telegram.send_notification(test_msg, token, cid):

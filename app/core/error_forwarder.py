@@ -26,6 +26,7 @@ from contextvars import ContextVar
 from typing import Any
 
 from app.core.log_redaction import redact_text
+from app.version import APP_NAME
 
 DEDUP_WINDOW_SECONDS = 600.0
 MAX_TRACKED_FINGERPRINTS = 200
@@ -121,7 +122,7 @@ class ErrorForwarderHandler(logging.Handler):
             if record.exc_text:
                 text += f"\n{record.exc_text}"
             body = truncate_body(redact_text(text))
-            title = f"❌ NZBoxer {record.levelname}"
+            title = f"❌ {APP_NAME} {record.levelname}"
             if repeats:
                 title += (
                     f" (×{repeats + 1} in last {int(self._dedup_window // 60)} min)"

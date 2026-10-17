@@ -248,7 +248,7 @@ async def test_system_check_notifications_discord_and_telegram(
         if "api.telegram.org" in url_str:
             return httpx.Response(
                 200,
-                json={"ok": True, "result": {"username": "NZBoxerBot"}},
+                json={"ok": True, "result": {"username": "SmewletBot"}},
                 request=request,
             )
         if "graphql.anilist.co" in url_str:
