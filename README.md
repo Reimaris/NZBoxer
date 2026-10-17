@@ -72,7 +72,7 @@ It keeps your **Movies**, **TV Series** and **Anime** in sync with your watchlis
   <img src="screenshots/mobile-dashboard.png" alt="Mobile dashboard" width="300" />
   &nbsp;&nbsp;
   <img src="screenshots/mobile-push-modal.png" alt="Mobile push modal" width="300" /><br />
-  <sub><b>Mobile-friendly:</b> watchlist search and the push modal work on your phone</sub>
+  <sub><b>Mobile-friendly:</b> the full dashboard and the push modal work on your phone</sub>
 </p>
 
 ---
