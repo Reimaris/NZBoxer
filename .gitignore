@@ -55,3 +55,6 @@ scratch/
 compose.override.yaml
 compose.dev.yaml
 PROVIDER_CANDIDATES.md
+
+# Demo README lives in the maintainer notes (symlink, local only)
+demo/README.md
