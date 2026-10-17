@@ -27,6 +27,8 @@ python -m venv .venv
 ```
 
 - Add or update tests for behavior changes. CI runs the same checks on every pull request.
+- There is no pull request template; CI (lint, format, mypy, pytest, gitleaks) is the gate.
+- Reports that an Experimental provider works live help promote it to Tested (see the README).
 - Use [Conventional Commits](https://www.conventionalcommits.org/) (`feat:`, `fix:`, `docs:`, ...).
 - Keep code, UI labels and commit messages in English.
 - By contributing you agree your work is licensed under the project's AGPL-3.0 license.

@@ -89,6 +89,8 @@ It keeps your **Movies**, **TV Series** and **Anime** in sync with your watchlis
 |  | Custom Newznab | API Key / URL | 🧪 Experimental | Any Newznab-compatible indexer with custom category mappings |
 
 > **🧪 Experimental** means the maintainer has not tested that integration against the live service. It is implemented and covered by automated tests, but may have rough edges. These providers carry an *Experimental* pill in Settings, so please [report any problems](https://github.com/Reimaris/NZBoxer/issues).
+>
+> An integration becomes **✅ Tested** once the maintainer has verified a live end-to-end sync or transfer, or at least two independent users have reported it working via GitHub issues or discussions.
 
 > MyAnimeList requires its redirect URI, `<your NZBoxer base URL>/settings/provider/mal/auth/callback` (shown in the provider dialog), to be registered in your MAL API app. SABnzbd must be reachable from the NZBoxer container via its LAN IP, not `localhost` (inside the container, `localhost` is NZBoxer itself). `host.docker.internal` also works if you add `extra_hosts: ["host.docker.internal:host-gateway"]` to the compose service. Only one downloader is active at a time.
 
