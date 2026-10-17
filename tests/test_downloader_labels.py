@@ -1,5 +1,6 @@
 """Provider-neutral downloader labels (m57-11, spec §4.7-4.8, case 12)."""
 
+import re
 from datetime import datetime, timezone
 
 import pytest
@@ -84,3 +85,24 @@ async def test_push_modal_and_table_use_downloader_name(
     table = await async_client.get("/api/pushes/active", headers={"HX-Request": "true"})
     assert "Delete from SABnzbd" in table.text
     assert "TorBox" not in table.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("dtype", "badge"),
+    [("torbox", "TB"), ("sabnzbd", "SB"), ("premiumize", "PM")],
+)
+async def test_settings_card_avatar_matches_downloader(
+    db_session: AsyncSession, async_client: AsyncClient, dtype: str, badge: str
+) -> None:
+    await make_downloader_provider(db_session, dtype, name=f"{dtype}-card")
+    await db_session.commit()
+
+    html = (await async_client.get("/settings")).text
+
+    match = re.search(
+        rf'data-avatar="(\w+)"(?:(?!data-avatar).)*?<h4[^>]*>\s*{dtype}-card',
+        html,
+        re.DOTALL,
+    )
+    assert match and match.group(1) == badge
