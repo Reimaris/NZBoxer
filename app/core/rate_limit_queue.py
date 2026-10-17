@@ -1,7 +1,7 @@
 """
 Rate-Limit Push Queue (ADR-094)
 ===============================
-When a downloader rate-limits NZBoxer (HTTP 429 / active cooldown), Auto-Push targets
+When a downloader rate-limits Smewlet (HTTP 429 / active cooldown), Auto-Push targets
 are not failed. Instead a persisted ``rate_limited`` ``DownloadHistory`` row
 (and ``RATE_LIMITED`` entity status) marks the target as paused. A lightweight
 APScheduler job (``rate_limit_resume_job``) re-runs Auto-Push Best for the

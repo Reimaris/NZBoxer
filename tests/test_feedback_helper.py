@@ -113,7 +113,7 @@ DIAG = FeedbackDiagnostics(
 
 def test_diagnostics_table_markdown_exact():
     assert build_diagnostics_table_markdown(DIAG) == (
-        "| Field | Value |\n| --- | --- |\n| NZBoxer Version | 1.0.0 |\n"
+        "| Field | Value |\n| --- | --- |\n| Smewlet Version | 1.0.0 |\n"
         "| Python | 3.12.3 |\n| OS / Architecture | Linux x86_64 |\n"
         "| Deployment | Docker |\n| Active Providers | Newznab, TorBox |\n"
     )
@@ -127,7 +127,7 @@ def test_diagnostics_table_markdown_no_providers():
 
 
 def test_url_constants():
-    base = "https://github.com/Reimaris/NZBoxer"
+    base = "https://github.com/Reimaris/Smewlet"
     assert GITHUB_BUG_REPORT_URL == f"{base}/issues/new?template=bug_report.yml"
     assert (
         GITHUB_FEATURE_REQUEST_URL == f"{base}/issues/new?template=feature_request.yml"

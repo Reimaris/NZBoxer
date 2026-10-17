@@ -3006,7 +3006,7 @@ async def export_sanitized_db() -> Response:
         sanitized_export_filename,
     )
 
-    fd, path = tempfile.mkstemp(prefix="nzboxer_sanitized_", suffix=".db")
+    fd, path = tempfile.mkstemp(prefix="smewlet_sanitized_", suffix=".db")
     os.close(fd)
     Path(path).unlink()
     try:

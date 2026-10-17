@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 _limiter = RateLimiter(1.0)
 
 SIMKL_BASE_URL = "https://api.simkl.com"
-SIMKL_APP_NAME = "nzboxer"
+SIMKL_APP_NAME: str = "smewlet"
 SIMKL_APP_VERSION = APP_VERSION
 SIMKL_DEFAULT_SCOPE = "media:read"
 PROACTIVE_REFRESH_BUFFER_SECONDS = 86400  # 24 hours

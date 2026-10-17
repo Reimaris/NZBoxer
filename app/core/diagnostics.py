@@ -15,7 +15,7 @@ from app.services.indexers.catalog import INDEXER_PRESETS
 from app.services.watchlists import WATCHLIST_DISPLAY_NAMES
 from app.version import APP_VERSION
 
-GITHUB_REPO_URL: str = "https://github.com/Reimaris/NZBoxer"
+GITHUB_REPO_URL: str = "https://github.com/Reimaris/Smewlet"
 GITHUB_BUG_REPORT_URL: str = f"{GITHUB_REPO_URL}/issues/new?template=bug_report.yml"
 GITHUB_FEATURE_REQUEST_URL: str = (
     f"{GITHUB_REPO_URL}/issues/new?template=feature_request.yml"
@@ -75,7 +75,7 @@ def build_diagnostics_table_markdown(diag: FeedbackDiagnostics) -> str:
     return (
         "| Field | Value |\n"
         "| --- | --- |\n"
-        f"| NZBoxer Version | {diag.app_version} |\n"
+        f"| Smewlet Version | {diag.app_version} |\n"
         f"| Python | {diag.python_version} |\n"
         f"| OS / Architecture | {diag.os_arch} |\n"
         f"| Deployment | {diag.deployment} |\n"

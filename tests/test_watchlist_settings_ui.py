@@ -41,7 +41,7 @@ async def test_plex_start_and_poll_saves_token(async_client, db_session, monkeyp
     assert resp.status_code == 200
     assert "WXYZ" in resp.text and 'hx-trigger="every 3s"' in resp.text
     assert "https://app.plex.tv/auth#?clientID=" in resp.text
-    assert "context[device][product]=NZBoxer" in resp.text
+    assert "context[device][product]=Smewlet" in resp.text
     (session_id,) = plex._PIN_SESSIONS
 
     pending = await async_client.get(

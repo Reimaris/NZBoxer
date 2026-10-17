@@ -278,7 +278,7 @@ async def test_plex_watchlist_paginates_with_headers(monkeypatch):
     assert starts == ["0", "50"]
     assert headers[0]["X-Plex-Token"] == "tok"
     assert headers[0]["X-Plex-Client-Identifier"] == "cid-1"
-    assert headers[0]["X-Plex-Product"] == "NZBoxer"
+    assert headers[0]["X-Plex-Product"] == "Smewlet"
     assert headers[0]["User-Agent"]
 
 

@@ -16,7 +16,7 @@ from app.config import DEFAULT_USER_AGENT
 
 logger = logging.getLogger(__name__)
 
-PLEX_PRODUCT = "NZBoxer"
+PLEX_PRODUCT: str = "Smewlet"
 PLEX_PINS_URL = "https://plex.tv/api/v2/pins"
 PLEX_USER_URL = "https://plex.tv/api/v2/user"
 PLEX_WATCHLIST_URL = "https://discover.provider.plex.tv/library/sections/watchlist/all"

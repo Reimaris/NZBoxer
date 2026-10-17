@@ -10,7 +10,7 @@ Only the latest release receives security fixes. Please update to the newest
 Please **do not open a public issue** for security problems.
 
 Report privately through GitHub:
-[Report a vulnerability](https://github.com/Reimaris/NZBoxer/security/advisories/new)
+[Report a vulnerability](https://github.com/Reimaris/Smewlet/security/advisories/new)
 
 Include the affected version, steps to reproduce, and the impact you see.
 Never include real API keys, tokens or personal data in a report.

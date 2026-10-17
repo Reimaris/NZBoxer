@@ -55,7 +55,7 @@ async def test_request_device_code_and_oauth_error_handling():
     assert req["url"] == "https://api.simkl.com/oauth2/device"
     assert req["params"] == {
         "client_id": "my_v2_client_id",
-        "app-name": "nzboxer",
+        "app-name": "smewlet",
         "app-version": APP_VERSION,
     }
     assert req["headers"]["simkl-api-key"] == "my_v2_client_id"

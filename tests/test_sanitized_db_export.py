@@ -61,7 +61,7 @@ def test_sanitize_config_json(raw, expected):
 
 def test_filename():
     name = sanitized_export_filename(datetime(2026, 10, 16, 14, 25, 30))
-    assert name == "nzboxer_sanitized_20261016_142530.db"
+    assert name == "smewlet_sanitized_20261016_142530.db"
 
 
 async def _seed(db_session):
@@ -107,7 +107,7 @@ async def test_export_scrubs_and_preserves(async_client, db_session, tmp_path):
     assert resp.status_code == 200
     assert resp.headers["content-type"] == "application/vnd.sqlite3"
     assert re.fullmatch(
-        r'attachment; filename="nzboxer_sanitized_\d{8}_\d{6}\.db"',
+        r'attachment; filename="smewlet_sanitized_\d{8}_\d{6}\.db"',
         resp.headers["content-disposition"],
     )
     assert resp.headers["cache-control"] == "no-store"

@@ -125,6 +125,6 @@ async def create_sanitized_snapshot(engine: AsyncEngine, dest_path: str) -> None
 
 
 def sanitized_export_filename(now: datetime | None = None) -> str:
-    """Return ``nzboxer_sanitized_<YYYYMMDD_HHMMSS>.db`` (server timezone)."""
+    """Return ``smewlet_sanitized_<YYYYMMDD_HHMMSS>.db`` (server timezone)."""
     now = now or datetime.now()
-    return f"nzboxer_sanitized_{now:%Y%m%d_%H%M%S}.db"
+    return f"smewlet_sanitized_{now:%Y%m%d_%H%M%S}.db"

@@ -1,7 +1,7 @@
 """Watchlist provider adapter contract and implementations (m56, ADR-130).
 
 Adapters normalize provider-specific lists into :class:`WatchlistEntry` objects.
-They are read-only: NZBoxer never writes to any watchlist.
+They are read-only: Smewlet never writes to any watchlist.
 """
 
 from __future__ import annotations
