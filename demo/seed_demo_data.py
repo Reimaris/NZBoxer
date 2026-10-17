@@ -176,11 +176,13 @@ async def seed(out: Path) -> None:
             return item
 
         history_targets: list[tuple[MediaItem, Season | None, Episode | None]] = []
+        # Finished titles are COMPLETED: startup maintenance resets a bare DOWNLOADED
+        # (a push awaiting confirmation) back to SEARCHING.
         status_map = {
             "downloaded": (
-                MediaStatus.DOWNLOADED,
-                SeasonStatus.DOWNLOADED,
-                EpisodeStatus.DOWNLOADED,
+                MediaStatus.COMPLETED,
+                SeasonStatus.COMPLETED,
+                EpisodeStatus.COMPLETED,
             ),
             "searching": (
                 MediaStatus.SEARCHING,
@@ -207,7 +209,7 @@ async def seed(out: Path) -> None:
                 status=status_map[state][0],
                 release_date=(NOW + timedelta(days=75))
                 if future
-                else NOW - timedelta(days=40),
+                else NOW - timedelta(days=40 + (m["tmdb"] % 5) * 23),
             )
             await s.flush()
             link(item, simkl, "plantowatch", 0)
@@ -233,7 +235,7 @@ async def seed(out: Path) -> None:
                     episode_count=None if etype == "movie" else 8,
                     air_date=(NOW + timedelta(days=90 + idx))
                     if future
-                    else NOW - timedelta(days=400 - idx * 90),
+                    else NOW - timedelta(days=400 - idx * 90 - (item.tmdb_id % 7) * 31),
                 )
                 s.add(season)
                 seasons.append(season)
@@ -325,7 +327,7 @@ async def seed(out: Path) -> None:
                 return f"{base}.{item.year}.1080p.WEB-DL.DDP5.1.H264-{grp}"
             return f"{base}.S{season.season_number:02d}.1080p.WEB-DL.DDP5.1.H264-{grp}"
 
-        def hist(item, season, *, grp="NOVA", detail="Ready on TorBox", age_h=30, **kw):
+        def hist(item, season, *, grp="NOVA", detail="completed", age_h=30, **kw):
             when = NOW - timedelta(hours=age_h)
             row = DownloadHistory(
                 media_item_id=item.id,
@@ -365,7 +367,7 @@ async def seed(out: Path) -> None:
                 hist(
                     item,
                     season,
-                    detail="Downloading",
+                    detail="downloading",
                     age_h=0,
                     is_dismissed=False,
                     is_dry_run=True,
@@ -383,17 +385,17 @@ async def seed(out: Path) -> None:
             item,
             season,
             grp="TIDE",
-            detail="FAILED: stalled transfer",
+            detail="failed: stalled transfer",
             age_h=80,
             failed_at=NOW - timedelta(hours=79),
         )
-        hist(item, season, grp="FORGE", detail="Canceled by user", age_h=70)
-        hist(item, season, grp="LUMEN", detail="Replaced by better release", age_h=60)
+        hist(item, season, grp="FORGE", detail="canceled", age_h=70)
+        hist(item, season, grp="LUMEN", detail="replaced", age_h=60)
         hist(
             item,
             season,
             grp="NOVA",
-            detail="Dry-run: simulated push",
+            detail="completed",
             age_h=5,
             is_dry_run=True,
         )

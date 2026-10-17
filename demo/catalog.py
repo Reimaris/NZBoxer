@@ -54,6 +54,13 @@ SHOWS: list[dict[str, Any]] = [
         "list_status": "on_hold",
     },
     {
+        "tmdb": 920006,
+        "title": "Starfall Protocol",
+        "year": 2027,
+        "seasons": ["future"],
+        "watched": 0,
+    },
+    {
         "tmdb": 920005,
         "title": "Paper Lanterns",
         "year": 2024,
