@@ -63,7 +63,7 @@ It keeps your **Movies**, **TV Series** and **Anime** in sync with your watchlis
 
 <p align="center">
   <img src="screenshots/ad-hoc-search.png" alt="Ad-hoc search" width="800" /><br />
-  <sub><b>Ad-hoc search:</b> filters, season and episode drill-down and one-click search for any title outside your watchlist</sub>
+  <sub><b>Ad-hoc search:</b> filters, scored releases and one-click Auto-Push Best for any title outside your watchlist</sub>
 </p>
 
 <p align="center">
