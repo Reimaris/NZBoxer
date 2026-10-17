@@ -55,11 +55,15 @@ It keeps your **Movies**, **TV Series** and **Anime** in sync with your watchlis
     <td><img src="screenshots/active-pushes.png" alt="Live transfer monitor" /><br /><sub><b>Live transfer monitor:</b> progress, speed and ETA per transfer</sub></td>
     <td><img src="screenshots/providers.png" alt="Connected providers" /><br /><sub><b>Connected providers:</b> watchlists, metadata, downloaders, indexers</sub></td>
   </tr>
+  <tr>
+    <td><img src="screenshots/add-provider.png" alt="Add provider dialog with capability pills" /><br /><sub><b>Add a provider:</b> capability pills and Experimental flags up front</sub></td>
+    <td><img src="screenshots/capabilities-matrix.png" alt="Provider capabilities matrix" /><br /><sub><b>Capabilities Matrix:</b> what each watchlist provider supports</sub></td>
+  </tr>
 </table>
 
 <p align="center">
   <img src="screenshots/ad-hoc-search.png" alt="Ad-hoc search" width="800" /><br />
-  <sub><b>Ad-hoc search:</b> filters, scored releases and one-click Auto-Push Best for any title outside your watchlist</sub>
+  <sub><b>Ad-hoc search:</b> filters, season and episode drill-down and one-click search for any title outside your watchlist</sub>
 </p>
 
 <p align="center">
