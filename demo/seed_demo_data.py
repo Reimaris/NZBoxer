@@ -242,7 +242,10 @@ async def seed(out: Path) -> None:
                 if etype == "movie":
                     continue
                 for e in range(1, 9):
-                    ep_status = status_map[status][2]
+                    # transfers are counted per downloading entity; keep episodes of an in-flight season out of it
+                    ep_status = status_map[
+                        "searching" if status == "downloading" else status
+                    ][2]
                     s.add(
                         Episode(
                             season_id=season.id,
@@ -340,7 +343,7 @@ async def seed(out: Path) -> None:
                 downloader_type="torbox",
                 downloader_transfer_id=f"demo-{item.id}-{age_h}",
                 score=8650.0,
-                size_bytes=int(4.6 * 1024**3),
+                size_bytes=int((4.6 if season is None else 22.0) * 1024**3),
                 resolution="1080p",
                 video_codec="H264",
                 audio_codec="DDP5.1",

@@ -144,3 +144,18 @@ async def test_dashboard_script_is_valid_javascript(
         [node, "--check", str(tmp_path / "dash.js")], capture_output=True, text=True
     )
     assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.asyncio
+async def test_active_pushes_oob_counters_only_in_htmx_response(
+    async_client: AsyncClient, dashboard_html: str
+):
+    """The out-of-band card counters must not render as stray text in the full page."""
+    for counter in (
+        "card-active-pushes-total",
+        "card-active-pushes-downloading",
+        "card-active-pushes-poller",
+    ):
+        assert dashboard_html.count(f'id="{counter}"') == 1
+    resp = await async_client.get("/api/pushes/active", headers={"HX-Request": "true"})
+    assert 'id="card-active-pushes-total" hx-swap-oob="true"' in resp.text

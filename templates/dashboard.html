@@ -1566,7 +1566,7 @@ document.addEventListener('alpine:init', () => {
              hx-get="/api/pushes/active"
              hx-trigger="load, refreshActivePushes"
              hx-swap="innerHTML">
-            {% include "partials/active_pushes_table.html" %}
+            {% with embedded_in_page = true %}{% include "partials/active_pushes_table.html" %}{% endwith %}
         </div>
     </div>
 
