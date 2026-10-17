@@ -47,6 +47,11 @@ function initVideoDashboard() {
         pollerAwake: {{ (poller_awake if poller_awake is defined else false) | tojson }},
         lastActivePushesCount: {{ (active_pushes_count if active_pushes_count is defined else 0) | tojson }},
         lastDownloadingCount: {{ (downloading_count if downloading_count is defined else 0) | tojson }},
+        lastInFlightCount: 0,
+        toast: { show: false, message: '' },
+        _toastTimer: null,
+        _refreshing: false,
+        _refreshQueued: false,
         search: '',
         historySearch: '',
         isSelectingHistory: false,
@@ -90,8 +95,58 @@ function initVideoDashboard() {
                     });
                 }
             });
+            // Auto-Push / dry-run dispatched from the push modal: stay on the current card
+            window.addEventListener('nzboxer:push-dispatched', (ev) => {
+                const d = (ev && ev.detail) || {};
+                this.pollerAwake = true;
+                this.lastInFlightCount = Math.max(this.lastInFlightCount, 1);
+                const label = d.mode === 'dry_run' ? 'Dry-run started for "' : 'Auto-Push started for "';
+                this.showDashboardToast(label + (d.title || '') + '"');
+                this.$nextTick(() => {
+                    if (!window.htmx) return;
+                    htmx.trigger(document.body, 'refreshDashboard');
+                    const el = document.getElementById('active-pushes-container');
+                    if (el) htmx.trigger(el, 'refreshActivePushes');
+                });
+            });
             // Handle HTMX HX-Trigger: refreshDashboard to live-refresh tables & counters
-            const handleRefreshDashboard = async () => {
+            document.body.addEventListener('refreshDashboard', () => this.refreshDashboard());
+            document.body.addEventListener('nzboxer:poller-state', (ev) => {
+                const d = (ev && ev.detail) || {};
+                const nextAwake = !!d.pollerAwake;
+                const nextActiveCount = typeof d.activePushesCount === 'number' ? d.activePushesCount : this.lastActivePushesCount;
+                const nextDownloadingCount = typeof d.downloadingCount === 'number' ? d.downloadingCount : this.lastDownloadingCount;
+                const nextInFlight = typeof d.inFlightCount === 'number' ? d.inFlightCount : this.lastInFlightCount;
+                const inFlightDropped = this.lastInFlightCount > 0 && nextInFlight === 0;
+                const awakeToSleeping = this.pollerAwake && !nextAwake;
+                const countsChanged = (
+                    nextActiveCount !== this.lastActivePushesCount ||
+                    nextDownloadingCount !== this.lastDownloadingCount
+                );
+                this.pollerAwake = nextAwake;
+                this.lastActivePushesCount = nextActiveCount;
+                this.lastDownloadingCount = nextDownloadingCount;
+                this.lastInFlightCount = nextInFlight;
+                if (countsChanged || awakeToSleeping || inFlightDropped) {
+                    this.refreshDashboard();
+                }
+            });
+            this._activePushesPollTimer = setInterval(() => {
+                if (this.pollerAwake || this.lastActivePushesCount > 0 || this.lastInFlightCount > 0) {
+                    const el = document.getElementById('active-pushes-container');
+                    if (el && window.htmx) {
+                        htmx.trigger(el, 'refreshActivePushes');
+                    }
+                }
+            }, 3000);
+        },
+        async refreshDashboard() {
+            if (this._refreshing) {
+                this._refreshQueued = true;
+                return;
+            }
+            this._refreshing = true;
+            try {
                 try {
                     const res = await fetch(window.location.pathname + window.location.search, {
                         headers: { 'X-Requested-With': 'XMLHttpRequest' }
@@ -105,7 +160,7 @@ function initVideoDashboard() {
                         'video-table-body-upcoming',
                         'video-table-body-on-hold',
                         'dashboard-history-table-body',
-                        'history-toolbar-actions',
+                        'history-toolbar-container',
                         'deck-card-count-movie',
                         'deck-card-count-show',
                         'deck-card-count-anime',
@@ -119,6 +174,10 @@ function initVideoDashboard() {
                         const cur = document.getElementById(id);
                         const next = doc.getElementById(id);
                         if (cur && next) {
+                            if (id === 'history-toolbar-container') {
+                                const ae = document.activeElement;
+                                if (ae && ae.tagName === 'INPUT' && cur.contains(ae)) return;
+                            }
                             cur.innerHTML = next.innerHTML;
                             if (window.htmx) htmx.process(cur);
                         }
@@ -136,33 +195,20 @@ function initVideoDashboard() {
                 } catch (err) {
                     console.error('Failed to refresh dashboard:', err);
                 }
-            };
-            document.body.addEventListener('refreshDashboard', handleRefreshDashboard);
-            document.body.addEventListener('nzboxer:poller-state', (ev) => {
-                const d = (ev && ev.detail) || {};
-                const nextAwake = !!d.pollerAwake;
-                const nextActiveCount = typeof d.activePushesCount === 'number' ? d.activePushesCount : this.lastActivePushesCount;
-                const nextDownloadingCount = typeof d.downloadingCount === 'number' ? d.downloadingCount : this.lastDownloadingCount;
-                const awakeToSleeping = this.pollerAwake && !nextAwake;
-                const countsChanged = (
-                    nextActiveCount !== this.lastActivePushesCount ||
-                    nextDownloadingCount !== this.lastDownloadingCount
-                );
-                this.pollerAwake = nextAwake;
-                this.lastActivePushesCount = nextActiveCount;
-                this.lastDownloadingCount = nextDownloadingCount;
-                if (countsChanged || awakeToSleeping) {
-                    handleRefreshDashboard();
+            }
+            } finally {
+                this._refreshing = false;
+                if (this._refreshQueued) {
+                    this._refreshQueued = false;
+                    this.refreshDashboard();
                 }
-            });
-            this._activePushesPollTimer = setInterval(() => {
-                if (this.activeCard === 'active_pushes' && (this.pollerAwake || this.lastActivePushesCount > 0)) {
-                    const el = document.getElementById('active-pushes-container');
-                    if (el && window.htmx) {
-                        htmx.trigger(el, 'refreshActivePushes');
-                    }
-                }
-            }, 3000);
+            }
+        },
+        showDashboardToast(message) {
+            this.toast.message = message;
+            this.toast.show = true;
+            if (this._toastTimer) clearTimeout(this._toastTimer);
+            this._toastTimer = setTimeout(() => { this.toast.show = false; }, 4000);
         },
         applySearchPreset(presetId) {
             if (!presetId) return;
@@ -199,6 +245,12 @@ function initVideoDashboard() {
             const url = new URL(window.location);
             url.searchParams.set('tab', cardName);
             window.history.replaceState({}, '', url);
+            if (cardName === 'history') {
+                this.refreshDashboard();
+            } else if (cardName === 'active_pushes' && window.htmx) {
+                const el = document.getElementById('active-pushes-container');
+                if (el) htmx.trigger(el, 'refreshActivePushes');
+            }
         },
         setTab(newTab) {
             this.setCard(newTab);
@@ -1084,7 +1136,7 @@ document.addEventListener('alpine:init', () => {
     <!-- =================================================================== -->
     <div x-show="activeCard === 'history'" style="display: none;"
          class="bg-[#24242b] border border-[#3f3f46] rounded-lg shadow overflow-hidden">
-        <div class="p-4 border-b border-[#3f3f46] bg-[#1e1e24] flex flex-col gap-4">
+        <div id="history-toolbar-container" class="p-4 border-b border-[#3f3f46] bg-[#1e1e24] flex flex-col gap-4">
             <div x-show="!isSelectingHistory" class="grid grid-cols-1 md:grid-cols-[1fr_auto_1fr] items-stretch md:items-center gap-3 w-full">
                 <div class="relative w-full sm:w-80">
                     <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-[#a1a1aa]">
@@ -1734,5 +1786,7 @@ document.addEventListener('alpine:init', () => {
             </div>
         </div>
     </div>
+    <div id="dashboard-toast" x-show="toast.show" x-cloak role="status" aria-live="polite" x-text="toast.message"
+         class="fixed bottom-6 right-6 z-50 px-4 py-2 rounded-lg bg-[#24242b] border border-[#3f3f46] text-sm text-white shadow-lg"></div>
 </div>
 {% endblock %}
