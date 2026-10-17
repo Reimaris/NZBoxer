@@ -170,7 +170,10 @@ def _load(name):
 def test_issue_config():
     cfg = _load("config.yml")
     assert cfg["blank_issues_enabled"] is False
-    assert any(l["url"] == GITHUB_SECURITY_ADVISORY_URL for l in cfg["contact_links"])
+    # GitHub already lists SECURITY.md in the chooser; a contact link would duplicate it.
+    assert "contact_links" not in cfg
+    security = (TEMPLATE_DIR.parents[1] / "SECURITY.md").read_text(encoding="utf-8")
+    assert GITHUB_SECURITY_ADVISORY_URL in security
 
 
 @pytest.mark.parametrize("name", list(FORMS))
@@ -196,5 +199,9 @@ def test_issue_form_field_details():
     bug = {f["id"]: f for f in _load("bug_report.yml")["body"] if "id" in f}
     assert bug["logs"]["attributes"]["render"] == "shell"
     assert not bug["logs"]["validations"]["required"]
+    assert not bug["sanitized_database"]["validations"]["required"]
+    assert (
+        "Export Sanitized DB" in bug["sanitized_database"]["attributes"]["description"]
+    )
     q = {f["id"]: f for f in _load("question.yml")["body"] if "id" in f}
     assert q["question_summary"]["type"] == "input"

@@ -927,3 +927,74 @@ async def test_modal_indexer_dropdown_fresh_and_preselected(async_client, db_ses
     html = (await async_client.get("/onboarding/modal")).text
     assert 'value="nzbgeek" selected' in html
     assert "indexerType: &#34;nzbgeek&#34;" in html
+
+
+# --- Jellyseerr / Overseerr onboarding --------------------------------------
+
+STEP1_SEERR = {
+    "watchlist_type": "jellyseerr",
+    "seerr_server_url": "http://seerr.example.com:5055/",
+    "seerr_api_key": "seerr-key-0123",
+}
+
+
+@pytest.mark.parametrize("ptype", ["jellyseerr", "overseerr"])
+async def test_step1_seerr_creates_provider(async_client, db_session, ptype):
+    resp = await _step1(async_client, {**STEP1_SEERR, "watchlist_type": ptype})
+    assert resp.status_code == 200
+    prov = (await _providers(db_session))[ptype]
+    assert (prov.category, prov.is_active) == ("watchlist", True)
+    assert resp.json()["provider_ids"]["watchlist"] == prov.id
+    cfg = json.loads(prov.config_json)
+    assert cfg["server_url"] == "http://seerr.example.com:5055"
+    assert cfg["api_key"] == "seerr-key-0123"
+    assert not prov.api_key
+    assert (cfg["sync_movies"], cfg["sync_series"], cfg["notify_available"]) == (
+        True,
+        True,
+        True,
+    )
+    assert cfg["sync_admin_watchlist"] is False
+
+
+@pytest.mark.parametrize(
+    ("data", "error"),
+    [
+        ({"seerr_server_url": "seerr.example.com"}, "Server URL is required"),
+        ({"seerr_api_key": ""}, "API key is required."),
+    ],
+)
+async def test_step1_seerr_validation_writes_nothing(
+    async_client, db_session, data, error
+):
+    resp = await _step1(async_client, {**STEP1_SEERR, **data})
+    assert resp.status_code == 400
+    assert error in resp.json()["error"]
+    assert await _providers(db_session) == {}
+
+
+async def test_step1_seerr_blank_key_keeps_existing(async_client, db_session):
+    await _step1(async_client, STEP1_SEERR)
+    resp = await _step1(
+        async_client,
+        {
+            **STEP1_SEERR,
+            "seerr_api_key": "",
+            "seerr_server_url": "https://new.example.com",
+        },
+    )
+    assert resp.status_code == 200
+    cfg = json.loads((await _providers(db_session))["jellyseerr"].config_json)
+    assert cfg["api_key"] == "seerr-key-0123"
+    assert cfg["server_url"] == "https://new.example.com"
+
+
+async def test_onboarding_modal_lists_seerr_without_echoing_key(
+    async_client, db_session
+):
+    await _step1(async_client, STEP1_SEERR)
+    html = (await async_client.get("/onboarding/modal")).text
+    assert '<option value="jellyseerr"' in html
+    assert '<option value="overseerr"' in html
+    assert "http://seerr.example.com:5055" in html
+    assert "seerr-key-0123" not in html

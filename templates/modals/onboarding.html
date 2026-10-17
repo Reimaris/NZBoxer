@@ -102,6 +102,8 @@
                         <option value="anilist">AniList</option>
                         <option value="plex">Plex</option>
                         <option value="mal">MyAnimeList</option>
+                        <option value="jellyseerr">Jellyseerr</option>
+                        <option value="overseerr">Overseerr</option>
                     </select>
                     <input type="hidden" name="watchlist_prepare" id="onboarding-watchlist-prepare" value="">
                     <div id="onboarding-watchlist-panel-simkl" x-show="watchlistType === 'simkl'" x-cloak class="space-y-3">
@@ -127,6 +129,20 @@
                             <span class="block mt-1 text-[11px]">Only needed for private profiles.</span>
                         </label>
                     </div>
+                    {% for seerr_type, seerr_label in (('jellyseerr', 'Jellyseerr'), ('overseerr', 'Overseerr')) %}
+                    <div id="onboarding-watchlist-panel-{{ seerr_type }}" x-show="watchlistType === '{{ seerr_type }}'" x-cloak class="space-y-3">
+                        <label class="block text-xs text-[#a1a1aa]">{{ seerr_label }} Server URL (required)
+                            <input type="text" name="seerr_server_url" :disabled="watchlistType !== '{{ seerr_type }}'" value="{{ seerr[seerr_type].server_url }}" autocomplete="off" placeholder="http://192.168.1.10:5055" class="mt-1 w-full bg-[#111115] border border-[#3f3f46] rounded-lg px-3 py-2 text-white text-xs focus:border-[#d40060] focus:outline-none">
+                        </label>
+                        <label class="block text-xs text-[#a1a1aa]">API Key (required)
+                            <div class="relative mt-1" x-data="{ show: false }">
+                                <input :type="show ? 'text' : 'password'" name="seerr_api_key" :disabled="watchlistType !== '{{ seerr_type }}'" value="" autocomplete="off" placeholder="{% if seerr[seerr_type].has_key %}set{% endif %}" class="w-full bg-[#111115] border border-[#3f3f46] rounded-lg px-3 py-2 text-white text-xs focus:border-[#d40060] focus:outline-none pr-12">
+                                <button type="button" @click="show = !show" class="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-[#a1a1aa] hover:text-white" x-text="show ? 'Hide' : 'Show'">Show</button>
+                            </div>
+                            <span class="block mt-1 text-[11px]">Find it in {{ seerr_label }} under Settings &rarr; General. Experimental.</span>
+                        </label>
+                    </div>
+                    {% endfor %}
                     <div id="onboarding-watchlist-panel-plex" x-show="watchlistType === 'plex'" x-cloak class="space-y-3">
                         <button type="button" @click="getPlexPin()" :disabled="saving" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition-colors disabled:opacity-50">Get PIN</button>
                         <div id="onboarding-plex-pin">{% if plex.connected %}<span class="text-xs text-green-400">✓ Connected</span>{% endif %}</div>

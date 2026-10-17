@@ -182,7 +182,10 @@ from app.services.downloaders.base import (  # noqa: E402
     DOWNLOADER_DISPLAY_NAMES as _DL_NAMES,
 )
 from app.services.downloaders.base import DOWNLOADER_TYPES  # noqa: E402
-from app.services.watchlists import WATCHLIST_TYPES  # noqa: E402
+from app.services.watchlists import (  # noqa: E402
+    WATCHLIST_DISPLAY_NAMES,
+    WATCHLIST_TYPES,
+)
 
 templates.env.globals["downloader_display_names"] = _DL_NAMES
 
@@ -3084,6 +3087,42 @@ def _resolve_onboarding_type(
 
 
 _ONBOARDING_WATCHLIST_TYPES = WATCHLIST_TYPES
+_ONBOARDING_SEERR_TYPES = ("jellyseerr", "overseerr")
+
+
+async def _existing_seerr_key(ptype: str) -> bool:
+    """True when a Jellyseerr/Overseerr provider of ``ptype`` already stores an API key."""
+    from sqlalchemy import select
+
+    from app.db.models import Provider
+
+    async with async_session_factory() as session:
+        prov = (
+            (
+                await session.execute(
+                    select(Provider).where(Provider.type == ptype).order_by(Provider.id)
+                )
+            )
+            .scalars()
+            .first()
+        )
+    return _seerr_onboarding_context(prov)["has_key"]
+
+
+def _seerr_onboarding_context(provider: Any) -> dict[str, Any]:
+    """Prefill values for a Jellyseerr/Overseerr onboarding panel (the key is never echoed)."""
+    try:
+        cfg = json.loads(provider.config_json or "{}") if provider else {}
+    except ValueError:
+        cfg = {}
+    if not isinstance(cfg, dict):
+        cfg = {}
+    return {
+        "server_url": str(cfg.get("server_url") or ""),
+        "has_key": bool(cfg.get("api_key")),
+    }
+
+
 _ONBOARDING_DOWNLOADER_TYPES = DOWNLOADER_TYPES
 
 
@@ -3123,6 +3162,9 @@ async def onboarding_modal(request: Request) -> Response:
         anilist_p = await _first_provider(session, "anilist")
         plex_p = await _first_provider(session, "plex")
         mal_p = await _first_provider(session, "mal")
+        seerr_ps = {
+            t: await _first_provider(session, t) for t in _ONBOARDING_SEERR_TYPES
+        }
         active_wl = (
             (
                 await session.execute(
@@ -3212,6 +3254,7 @@ async def onboarding_modal(request: Request) -> Response:
             else "",
             "redirect_uri": str(request.base_url).rstrip("/") + _MAL_CALLBACK_PATH,
         },
+        "seerr": {t: _seerr_onboarding_context(p) for t, p in seerr_ps.items()},
         "tmdb": {"api_key": (tmdb_p.api_key if tmdb_p else None) or ""},
         "torbox": {
             "api_key": (torbox_p.api_key if torbox_p else None) or "",
@@ -3335,16 +3378,30 @@ async def onboarding_step1(request: Request) -> Response:
     plex_token = _f("plex_auth_token")
     plex_prepare = _f("watchlist_prepare").lower() in ("1", "true", "on", "yes")
     mal_client_id = _f("mal_client_id")
+    seerr_url = _f("seerr_server_url").rstrip("/")
+    seerr_key = _f("seerr_api_key")
     wl_provided = {
         "simkl": bool(simkl_client_id or simkl_username),
         "anilist": bool(anilist_username or anilist_token),
         "plex": bool(plex_token or plex_prepare),
         "mal": bool(mal_client_id),
+        "jellyseerr": bool(seerr_url or seerr_key),
+        "overseerr": bool(seerr_url or seerr_key),
     }.get(watchlist_type, False)
     if watchlist_type == "anilist" and wl_provided and not anilist_username:
         return JSONResponse(
             {"ok": False, "error": "AniList requires a username."}, status_code=400
         )
+    if watchlist_type in _ONBOARDING_SEERR_TYPES and wl_provided:
+        seerr_error = ""
+        if not re.fullmatch(r"https?://\S+", seerr_url, re.IGNORECASE):
+            seerr_error = (
+                "Server URL is required and must start with http:// or https://."
+            )
+        elif not seerr_key and not (await _existing_seerr_key(watchlist_type)):
+            seerr_error = "API key is required."
+        if seerr_error:
+            return JSONResponse({"ok": False, "error": seerr_error}, status_code=400)
 
     try:
         indexer_type = _resolve_onboarding_type(
@@ -3446,7 +3503,7 @@ async def onboarding_step1(request: Request) -> Response:
         if watchlist_type == "simkl":
             selected_wl = providers["simkl"]
         elif watchlist_type:
-            names = {"anilist": "AniList", "plex": "Plex", "mal": "MyAnimeList"}
+            names = WATCHLIST_DISPLAY_NAMES
             selected_wl = await _first(watchlist_type)
             if wl_provided:
                 if selected_wl is None:
@@ -3460,6 +3517,22 @@ async def onboarding_step1(request: Request) -> Response:
                     selected_wl.username = anilist_username
                     if anilist_token:
                         selected_wl.access_token = anilist_token
+                elif watchlist_type in _ONBOARDING_SEERR_TYPES:
+                    try:
+                        seerr_cfg = json.loads(selected_wl.config_json or "{}")
+                    except ValueError:
+                        seerr_cfg = {}
+                    if not isinstance(seerr_cfg, dict):
+                        seerr_cfg = {}
+                    seerr_cfg.setdefault("sync_admin_watchlist", False)
+                    seerr_cfg.setdefault("notify_available", True)
+                    seerr_cfg.setdefault("sync_movies", True)
+                    seerr_cfg.setdefault("sync_series", True)
+                    seerr_cfg["server_url"] = seerr_url
+                    if seerr_key:
+                        seerr_cfg["api_key"] = seerr_key
+                    selected_wl.api_key = ""
+                    selected_wl.config_json = json.dumps(seerr_cfg)
                 elif watchlist_type == "plex":
                     if plex_token:
                         selected_wl.access_token = plex_token
