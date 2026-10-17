@@ -51,6 +51,14 @@ body:
       render: shell
     validations:
       required: false
+  - type: textarea
+    id: sanitized_database
+    attributes:
+      label: Sanitized Database (only if a maintainer asks)
+      description: |
+        Export it in NZBoxer via **Settings → System Diagnostics & Health → Export Sanitized DB**. API keys, tokens and webhooks are removed, but your library and server URLs are not, so review it first. GitHub does not accept `.db` files: zip it, then drag the `.zip` into this box.
+    validations:
+      required: false
   - type: checkboxes
     id: checklist
     attributes:

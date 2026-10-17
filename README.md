@@ -32,11 +32,11 @@ It keeps your **Movies**, **TV Series** and **Anime** in sync with your watchlis
 ## Key Features
 
 - **Multi-Provider Watchlists:** Sync Simkl, AniList, Plex, MyAnimeList, Jellyseerr and Overseerr simultaneously, with cross-provider deduplication and furthest-progress tracking.
-- **Five Watch States & On Hold:** Plan to watch, watching, on hold, completed and dropped are tracked from every provider. Paused lists and fully watched series waiting for a new season move to an "On Hold & Awaiting Seasons" dashboard section and are never auto-pushed.
+- **Five Watch States & On Hold:** Plan to watch, watching, on hold, completed and dropped are tracked from every provider. Paused lists and fully watched series waiting for a new season move to an "On Hold & Awaiting Seasons" dashboard section and are never auto-pushed. A series only counts as awaiting once one of its released seasons has been downloaded; until then it stays ready to push.
 - **Anime Title Language:** Choose romaji, English or native titles in Settings; dashboard search matches every language, including the seasons and movies inside a franchise.
 - **Smart On-Demand Acquisition:** 1-click auto-push, a preset-governed season pack matrix, opt-in air-date auto-pushes, and time-bounded episode upgrades.
 - **3-Layer Security & Fake Detection:** Layer 1 filters indexer metadata, Layer 2 inspects the NZB XML in memory before dispatch, and Layer 3 verifies the downloader's filelist, with an unpack grace period for archives.
-- **Live Transfer Monitoring & Auto-Recovery:** Real-time speed and ETA via an Alpine poller, a stalled-transfer watchdog, and automated candidate replacement.
+- **Live Transfer Monitoring & Auto-Recovery:** Real-time speed and ETA via an Alpine poller, a stalled-transfer watchdog, and automated candidate replacement. Dashboard cards refresh on their own while transfers run.
 - **Ad-Hoc Multi-Tier Search:** Search any title, IMDb ID, or TMDB/AniList ID and grab releases without adding anything to a watchlist.
 - **Release Scoring & Presets:** Scoring by codec, source, HDR and bitrate density, plus a primary/fallback language hierarchy, all tunable through reusable search presets.
 - **Service Outage Resilience:** When an indexer or downloader returns a server error, times out or serves an HTML error page, affected pushes pause automatically and retry after 10, 20, then 30 minutes (up to 5 attempts) before failing. A red dashboard banner shows the outage with a Resume Queue button, manual searches offer Retry Search, and optional outage alerts can be enabled in Settings.
@@ -187,8 +187,13 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000
 - **Database:** SQLite in WAL mode (stored persistently in `./config/nzboxer.db`)
 - **Release Verification & Scoring:** GuessIt + custom 3-layer fake detection pipeline, archive unpack grace monitor, and weighted release scoring engine
 - **Frontend:** Jinja2, HTMX, Alpine.js, TailwindCSS (mobile-optimized card and deck layouts)
-- **Export Sanitized DB:** Settings → System Diagnostics & Health (and the Bug Report tab of the feedback launcher) downloads a copy of your database with API keys, tokens, bot credentials and webhooks removed, for attaching to bug reports when maintainers ask. Your library and server URLs stay in the file, so review it before sharing.
+
+---
+
+## Reporting Problems
+
 - **Feedback Helper:** *Report a Bug* / *Request a Feature* / *Ask a Question* buttons on the Settings page open a launcher with privacy-safe diagnostics (version, Python, OS, deployment, active provider types; no keys, URLs or names). NZBoxer never contacts GitHub itself. Security issues go through GitHub Private Vulnerability Reporting.
+- **Export Sanitized DB:** Settings → System Diagnostics & Health (and the Bug Report tab of the feedback launcher) downloads a copy of your database with API keys, tokens, bot credentials and webhooks removed, for attaching to bug reports when maintainers ask. Your library and server URLs stay in the file, so review it first, and zip it because GitHub rejects `.db` attachments.
 
 ---
 
