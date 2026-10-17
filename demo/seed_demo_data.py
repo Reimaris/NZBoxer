@@ -235,7 +235,10 @@ async def seed(out: Path) -> None:
                     episode_count=None if etype == "movie" else 8,
                     air_date=(NOW + timedelta(days=90 + idx))
                     if future
-                    else NOW - timedelta(days=400 - idx * 90 - (item.tmdb_id % 7) * 31),
+                    else NOW
+                    - timedelta(
+                        days=max(30, 400 - idx * 90 - (item.tmdb_id % 7) * 31)
+                    ),  # released seasons always dated in the past
                 )
                 s.add(season)
                 seasons.append(season)
