@@ -289,7 +289,7 @@ def _backup_db_before_m59(db_path: Path) -> None:
 
 
 def migrate_legacy_database(db_file: Path) -> bool:
-    """Copy ``nzboxer.db`` next to ``db_file`` to ``db_file`` once; return True if copied.
+    """Copy ``config/nzboxer.db`` next to ``db_file`` to ``db_file`` once; return True if copied.
 
     Only applies to the default ``smewlet.db`` name. The legacy file is never
     modified so reverting to an older image keeps working. Any copy failure
