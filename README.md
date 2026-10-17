@@ -52,7 +52,7 @@ It keeps your **Movies**, **TV Series** and **Anime** in sync with your watchlis
     <td width="50%"><img src="screenshots/anime-franchise.png" alt="Anime franchise push modal" /><br /><sub><b>Anime franchises:</b> pick seasons, movies or single episodes</sub></td>
   </tr>
   <tr>
-    <td><img src="screenshots/active-pushes.png" alt="Live transfer monitor" /><br /><sub><b>Live transfer monitor</b> with the dry-run banner (no NZBs are sent)</sub></td>
+    <td><img src="screenshots/active-pushes.png" alt="Live transfer monitor" /><br /><sub><b>Live transfer monitor:</b> progress, speed and ETA per transfer</sub></td>
     <td><img src="screenshots/providers.png" alt="Connected providers" /><br /><sub><b>Connected providers:</b> watchlists, metadata, downloaders, indexers</sub></td>
   </tr>
 </table>

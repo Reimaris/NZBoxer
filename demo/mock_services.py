@@ -3,7 +3,7 @@
 Serves, on one port:
   /newznab/api          Newznab JSON search with fake releases
   /tmdb/3/...           the TMDB endpoints NZBoxer uses
-  /torbox/...           empty TorBox lists (the demo never sends a real NZB)
+  /torbox/...           TorBox stand-in: reports the seeded in-flight transfers, accepts nothing real
   /poster/<n>.svg       generated placeholder posters
 Nothing here touches the network; all data comes from demo/catalog.py.
 """
@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import sqlite3
 import sys
 import threading
 from datetime import datetime, timedelta, timezone
@@ -199,6 +201,36 @@ def tmdb_response(path: str, q: dict[str, list[str]]) -> tuple[int, dict]:
     return 404, {"status_message": "unsupported"}
 
 
+def usenet_list() -> list[dict]:
+    """Report the seeded in-flight transfers back to NZBoxer's poller (read-only DB peek)."""
+    db = os.environ.get("DEMO_DB", "/app/config/nzboxer.db")
+    try:
+        con = sqlite3.connect(f"file:{db}?mode=ro", uri=True, timeout=2)
+        rows = con.execute(
+            "SELECT downloader_transfer_id, nzb_title, progress_pct, download_speed_bytes,"
+            " eta_seconds, size_bytes FROM download_history"
+            " WHERE is_dismissed = 0 AND is_dry_run = 0 AND status_detail = 'downloading'"
+        ).fetchall()
+        con.close()
+    except sqlite3.Error:
+        return []
+    return [
+        {
+            "id": tid,
+            "hash": hashlib.md5(str(tid).encode()).hexdigest(),
+            "name": title,
+            "size": size,
+            "progress": pct / 100.0,
+            "download_speed": speed,
+            "eta": eta,
+            "download_state": "downloading",
+            "active": True,
+            "download_finished": False,
+        }
+        for tid, title, pct, speed, eta, size in rows
+    ]
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *_a: object) -> None:  # quiet
         pass
@@ -231,9 +263,10 @@ class Handler(BaseHTTPRequestHandler):
                     200, json.dumps(search_results(q)).encode(), "application/json"
                 )
         elif u.path.startswith("/torbox/"):
+            data = usenet_list() if u.path.endswith("/usenet/mylist") else []
             self._send(
                 200,
-                json.dumps({"success": True, "detail": "demo", "data": []}).encode(),
+                json.dumps({"success": True, "detail": "demo", "data": data}).encode(),
                 "application/json",
             )
         elif u.path.startswith("/tmdb/"):

@@ -28,6 +28,10 @@ INDEXER_URL = "http://127.0.0.1:9100/newznab/api"
 NOW = datetime.now(timezone.utc)
 
 
+# (progress %, bytes/s, eta seconds) for the in-flight transfers, in seeding order
+LIVE_TRANSFERS = [(27.0, 14_200_000, 412), (62.0, 38_500_000, 95)]
+
+
 def poster(tmdb: int) -> str:
     return f"{PUBLIC}/poster/{tmdb}.svg"
 
@@ -363,20 +367,24 @@ async def seed(out: Path) -> None:
             s.add(row)
             return row
 
+        live_idx = 0
         for item, season, _ in history_targets:
             if item.status == MediaStatus.DOWNLOADING or (
                 season and season.status == SeasonStatus.DOWNLOADING
             ):
+                # Real in-flight transfers (dry-run never shows live progress); the mock
+                # TorBox reports these same values back to the poller.
+                live = LIVE_TRANSFERS[min(live_idx, len(LIVE_TRANSFERS) - 1)]
+                live_idx += 1
                 hist(
                     item,
                     season,
                     detail="downloading",
                     age_h=0,
                     is_dismissed=False,
-                    is_dry_run=True,
-                    progress_pct=62.0,
-                    download_speed_bytes=38_500_000,
-                    eta_seconds=95,
+                    progress_pct=live[0],
+                    download_speed_bytes=live[1],
+                    eta_seconds=live[2],
                 )
             else:
                 hist(item, season, completed_at=NOW - timedelta(hours=29))
