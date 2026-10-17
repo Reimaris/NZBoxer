@@ -8,8 +8,6 @@
   <strong>Self-hosted media manager &amp; on-demand Usenet push companion bridging multi-provider watchlists, Newznab indexers, and cloud or local downloaders.</strong>
 </p>
 
-<p align="center"><em>Formerly NZBoxer.</em></p>
-
 <p align="center">
   <img src="https://img.shields.io/badge/version-v1.4.0-pink" alt="Version" />
   <img src="https://img.shields.io/badge/docker-ready-blue" alt="Docker Ready" />
@@ -186,16 +184,6 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000
 </details>
 
 ---
-
-## Upgrading from NZBoxer
-
-Smewlet is the new name of NZBoxer. Existing installs keep their data:
-
-1. Run `docker compose down` first. The service and container names change, so this avoids an orphaned container and a port clash.
-2. In your `compose.yaml`, change the image to `ghcr.io/reimaris/smewlet:latest` and the service and `container_name` to `smewlet`. Keep the `./config` volume.
-3. Run `docker compose up -d`.
-
-On first start, `config/nzboxer.db` is copied to `config/smewlet.db`. The old file is kept as a rollback copy; delete it once you are happy. The old image path `ghcr.io/reimaris/nzboxer` receives no further updates. An explicit `DATABASE_URL` is not migrated; point it at your database yourself.
 
 ## Tech Stack
 
