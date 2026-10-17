@@ -195,7 +195,6 @@ function initVideoDashboard() {
                 } catch (err) {
                     console.error('Failed to refresh dashboard:', err);
                 }
-            }
             } finally {
                 this._refreshing = false;
                 if (this._refreshQueued) {

@@ -1,6 +1,9 @@
 """Dashboard live sync & push modal navigation: template-level contract tests."""
 
 import re
+import shutil
+import subprocess
+from pathlib import Path
 
 import pytest
 from httpx import AsyncClient
@@ -121,3 +124,21 @@ async def test_push_modal_dispatches_event_without_card_switch(
     assert 'card: "active_pushes"' not in body
     assert "nzboxer:switch-card" not in body
     assert f"mode: '{mode}'" in body
+
+
+@pytest.mark.asyncio
+async def test_dashboard_script_is_valid_javascript(
+    dashboard_html: str, tmp_path: Path
+):
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("node not installed")
+    idx = dashboard_html.index("window.videoDashboard = initVideoDashboard")
+    start = dashboard_html.rindex("<script", 0, idx)
+    end = dashboard_html.index("</script>", idx)
+    js = dashboard_html[dashboard_html.index(">", start) + 1 : end]
+    (tmp_path / "dash.js").write_text(js)
+    result = subprocess.run(
+        [node, "--check", str(tmp_path / "dash.js")], capture_output=True, text=True
+    )
+    assert result.returncode == 0, result.stderr
