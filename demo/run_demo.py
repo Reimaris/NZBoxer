@@ -44,4 +44,20 @@ torbox.DEFAULT_API_URL = "http://127.0.0.1:9100/torbox/v1/api"
 
 import uvicorn  # noqa: E402
 
-uvicorn.run("app.main:app", host="0.0.0.0", port=8000)
+import app.main as app_main  # noqa: E402
+
+# Show "demo mode" instead of the version badge: swap the text in the base template
+# at load time so the real template stays untouched.
+_loader = app_main.templates.env.loader
+assert _loader is not None
+_orig_get_source = _loader.get_source
+
+
+def _demo_get_source(environment, template):  # type: ignore[no-untyped-def]
+    source, filename, uptodate = _orig_get_source(environment, template)
+    return source.replace("v{{ app_version }}", "demo mode"), filename, uptodate
+
+
+_loader.get_source = _demo_get_source  # type: ignore[method-assign]
+
+uvicorn.run(app_main.app, host="0.0.0.0", port=8000)
