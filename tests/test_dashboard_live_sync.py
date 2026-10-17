@@ -95,7 +95,7 @@ async def test_hybrid_polling_and_tab_switch_refresh(dashboard_html: str):
 async def test_toast_and_push_dispatched_listener(dashboard_html: str):
     assert 'id="dashboard-toast"' in dashboard_html
     assert "showDashboardToast(message)" in dashboard_html
-    assert "nzboxer:push-dispatched" in dashboard_html
+    assert "smewlet:push-dispatched" in dashboard_html
     assert "Auto-Push started for" in dashboard_html
     assert "Dry-run started for" in dashboard_html
 
@@ -120,9 +120,9 @@ async def test_push_modal_dispatches_event_without_card_switch(
     html = resp.text
     body = html[html.index("async runAutoPush()") :]
     body = body[: body.index("async runManualSearch()")]
-    assert "nzboxer:push-dispatched" in body
+    assert "smewlet:push-dispatched" in body
     assert 'card: "active_pushes"' not in body
-    assert "nzboxer:switch-card" not in body
+    assert "smewlet:switch-card" not in body
     assert f'mode: "{mode}"' in body
     # x-data is single-quoted: the script must not contain a bare single quote
     assert "'" not in body

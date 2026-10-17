@@ -81,7 +81,7 @@ function initVideoDashboard() {
             url.searchParams.set('tab', this.activeCard);
             window.history.replaceState({}, '', url);
             // Handle post-push card switch from push modal (avoids full page reload)
-            window.addEventListener('nzboxer:switch-card', (ev) => {
+            window.addEventListener('smewlet:switch-card', (ev) => {
                 const card = ev.detail && ev.detail.card;
                 if (card) {
                     if (card === 'active_pushes') {
@@ -96,7 +96,7 @@ function initVideoDashboard() {
                 }
             });
             // Auto-Push / dry-run dispatched from the push modal: stay on the current card
-            window.addEventListener('nzboxer:push-dispatched', (ev) => {
+            window.addEventListener('smewlet:push-dispatched', (ev) => {
                 const d = (ev && ev.detail) || {};
                 this.pollerAwake = true;
                 this.lastInFlightCount = Math.max(this.lastInFlightCount, 1);
@@ -111,7 +111,7 @@ function initVideoDashboard() {
             });
             // Handle HTMX HX-Trigger: refreshDashboard to live-refresh tables & counters
             document.body.addEventListener('refreshDashboard', () => this.refreshDashboard());
-            document.body.addEventListener('nzboxer:poller-state', (ev) => {
+            document.body.addEventListener('smewlet:poller-state', (ev) => {
                 const d = (ev && ev.detail) || {};
                 const nextAwake = !!d.pollerAwake;
                 const nextActiveCount = typeof d.activePushesCount === 'number' ? d.activePushesCount : this.lastActivePushesCount;

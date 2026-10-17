@@ -274,7 +274,7 @@ async def test_completed_card5_actions_dismiss_delete_and_blacklist(
         resp_del = await async_client.post(f"/api/pushes/{h2.id}/delete-transfer")
         assert resp_del.status_code == 200
         hx_trig = json.loads(resp_del.headers["HX-Trigger"])
-        assert "nzboxer:poller-state" in hx_trig
+        assert "smewlet:poller-state" in hx_trig
         assert hx_trig.get("refreshDashboard") is True
         mock_del_tb.assert_awaited_once_with(
             1002, session=mock_del_tb.call_args.kwargs["session"]

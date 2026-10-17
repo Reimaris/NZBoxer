@@ -5054,7 +5054,7 @@ def _build_poller_state_header(
     refresh_active_pushes: bool = False,
 ) -> dict[str, str]:
     payload: dict[str, Any] = {
-        "nzboxer:poller-state": {
+        "smewlet:poller-state": {
             "pollerAwake": poller_awake,
             "activePushesCount": active_pushes_count,
             "downloadingCount": downloading_count,

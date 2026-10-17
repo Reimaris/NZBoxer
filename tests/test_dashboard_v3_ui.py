@@ -715,7 +715,7 @@ async def test_active_pushes_in_flight_banner_and_gated_poller_state_header(
     2. When `transfer_poller.register_in_flight_push(...)` is active and there are no active downloads yet,
        `GET /api/pushes/active` (with `HX-Request: true`) renders the pulsing cyan status banner
        and the tailored message (`Searching indexers for best releases — episodes will appear here momentarily...`),
-       and emits `HX-Trigger: {"nzboxer:poller-state": {"pollerAwake": true, ...}}`.
+       and emits `HX-Trigger: {"smewlet:poller-state": {"pollerAwake": true, ...}}`.
     """
     import json
 
@@ -743,8 +743,8 @@ async def test_active_pushes_in_flight_banner_and_gated_poller_state_header(
         hx_trigger_raw = hx_resp.headers.get("HX-Trigger")
         assert hx_trigger_raw is not None
         hx_trigger = json.loads(hx_trigger_raw)
-        assert "nzboxer:poller-state" in hx_trigger
-        poller_state = hx_trigger["nzboxer:poller-state"]
+        assert "smewlet:poller-state" in hx_trigger
+        poller_state = hx_trigger["smewlet:poller-state"]
         assert poller_state["pollerAwake"] is True
         assert poller_state["inFlightCount"] == 1
     finally:

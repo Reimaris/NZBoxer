@@ -595,7 +595,7 @@ async def test_api_abort_all_json_and_htmx(
     )
     assert resp_htmx.status_code == 200
     assert "refreshDashboard" in resp_htmx.headers.get("HX-Trigger", "")
-    assert "nzboxer:poller-state" in resp_htmx.headers.get("HX-Trigger", "")
+    assert "smewlet:poller-state" in resp_htmx.headers.get("HX-Trigger", "")
 
 
 @pytest.mark.asyncio
