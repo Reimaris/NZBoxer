@@ -2115,8 +2115,32 @@ def has_future_seasons(item: MediaItem) -> bool:
     )
 
 
+def _has_downloaded_released_season(item: MediaItem) -> bool:
+    """True when any released regular season (or one of its episodes) is downloaded."""
+    from sqlalchemy import inspect as sa_inspect
+
+    done_season = (SeasonStatus.DOWNLOADED, SeasonStatus.COMPLETED)
+    done_ep = (EpisodeStatus.DOWNLOADED, EpisodeStatus.COMPLETED)
+    for s in _loaded_seasons(item):
+        if s.season_number <= 0 or s.status in (
+            SeasonStatus.IGNORED,
+            SeasonStatus.FUTURE,
+        ):
+            continue
+        if s.status in done_season:
+            return True
+        if "episodes" not in sa_inspect(s).unloaded and any(
+            ep.status in done_ep for ep in s.episodes or []
+        ):
+            return True
+    return False
+
+
 def is_awaiting_seasons(item: MediaItem) -> bool:
-    """True for a series whose user has watched every released season while more are pending."""
+    """True for a series whose user has watched every released season while more are pending.
+
+    A series with nothing downloaded yet is never awaiting: its released season still needs pushing.
+    """
     from app.core.push_engine import effective_watch_order
 
     if item.media_type not in (MediaType.SHOW, MediaType.ANIME):
@@ -2124,7 +2148,11 @@ def is_awaiting_seasons(item: MediaItem) -> bool:
     if not has_future_seasons(item):
         return False
     lro = latest_released_order(item)
-    return lro > 0 and effective_watch_order(item) >= lro
+    return (
+        lro > 0
+        and effective_watch_order(item) >= lro
+        and _has_downloaded_released_season(item)
+    )
 
 
 def is_on_hold(item: MediaItem) -> bool:

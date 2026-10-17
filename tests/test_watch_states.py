@@ -209,7 +209,9 @@ async def test_consolidated_ids_never_regress_active_status(
 _PAST = datetime(2020, 1, 1, tzinfo=timezone.utc)
 
 
-async def _awaiting_series(session, *, s2: dict | None = None, watched: int = 1):
+async def _awaiting_series(
+    session, *, s2: dict | None = None, watched: int = 1, s1_downloaded: bool = True
+):
     from app.db.models import SeasonStatus
 
     provider = await make_watchlist_provider(session, "simkl")
@@ -223,7 +225,14 @@ async def _awaiting_series(session, *, s2: dict | None = None, watched: int = 1)
     item, _, _ = await make_series(
         session,
         seasons=[
-            {"season_number": 1, "watch_order": 1, "air_date": _PAST},
+            {
+                "season_number": 1,
+                "watch_order": 1,
+                "air_date": _PAST,
+                "status": SeasonStatus.DOWNLOADED
+                if s1_downloaded
+                else SeasonStatus.SEARCHING,
+            },
             s2_cfg,
         ],
         provider_id=provider.id,
@@ -253,6 +262,13 @@ async def test_fully_watched_with_future_season_is_on_hold(db_session):
     assert has_future_seasons(item)
     assert is_awaiting_seasons(item)
     assert classify_v3_status_tier(item) == "on_hold"
+
+
+async def test_undownloaded_released_season_is_not_on_hold(db_session):
+    item = await _awaiting_series(db_session, s1_downloaded=False)
+    assert has_future_seasons(item)
+    assert not is_awaiting_seasons(item)
+    assert classify_v3_status_tier(item) == "ready_to_push"
 
 
 async def test_released_second_season_is_not_on_hold(db_session):
