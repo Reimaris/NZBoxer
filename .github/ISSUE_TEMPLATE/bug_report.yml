@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thanks for reporting! In NZBoxer use **Settings → Report a Bug → Copy Diagnostics Table** and paste it below. Never post API keys or private URLs.
+        Thanks for reporting! In Smewlet use **Settings → Report a Bug → Copy Diagnostics Table** and paste it below. Never post API keys or private URLs.
   - type: textarea
     id: what_happened
     attributes:
@@ -40,7 +40,7 @@ body:
     id: diagnostics
     attributes:
       label: Environment Diagnostics
-      description: Paste the table copied from NZBoxer (Settings → Report a Bug → Copy Diagnostics Table).
+      description: Paste the table copied from Smewlet (Settings → Report a Bug → Copy Diagnostics Table).
     validations:
       required: true
   - type: textarea
@@ -56,7 +56,7 @@ body:
     attributes:
       label: Sanitized Database (only if a maintainer asks)
       description: |
-        Export it in NZBoxer via **Settings → System Diagnostics & Health → Export Sanitized DB**. API keys, tokens and webhooks are removed, but your library and server URLs are not, so review it first. GitHub does not accept `.db` files: zip it, then drag the `.zip` into this box.
+        Export it in Smewlet via **Settings → System Diagnostics & Health → Export Sanitized DB**. API keys, tokens and webhooks are removed, but your library and server URLs are not, so review it first. GitHub does not accept `.db` files: zip it, then drag the `.zip` into this box.
     validations:
       required: false
   - type: checkboxes
@@ -64,7 +64,7 @@ body:
     attributes:
       label: Pre-submission Checklist
       options:
-        - label: I am running the latest NZBoxer version
+        - label: I am running the latest Smewlet version
           required: true
         - label: I searched existing issues and found no duplicate
           required: true

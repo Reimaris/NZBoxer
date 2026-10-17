@@ -1,4 +1,4 @@
-# Contributing to NZBoxer
+# Contributing to Smewlet
 
 Thanks for your interest! Bug reports, feature requests and pull requests are welcome.
 

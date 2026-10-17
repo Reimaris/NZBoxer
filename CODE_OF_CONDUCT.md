@@ -5,7 +5,7 @@ This project follows the spirit of the
 
 ## Our Pledge
 
-We want participation in NZBoxer to be a harassment-free experience for everyone,
+We want participation in Smewlet to be a harassment-free experience for everyone,
 regardless of age, background, experience level, identity, or opinion.
 
 ## Expected Behavior
@@ -21,7 +21,7 @@ regardless of age, background, experience level, identity, or opinion.
 - Trolling or deliberately disruptive behavior
 - Publishing others' private information without permission
 - Spam or promotion unrelated to the project
-- Requests for or discussion of piracy or copyrighted content. NZBoxer is a
+- Requests for or discussion of piracy or copyrighted content. Smewlet is a
   management tool and does not support or condone infringement.
 
 ## Enforcement

@@ -3,7 +3,7 @@
 ## Supported Versions
 
 Only the latest release receives security fixes. Please update to the newest
-`ghcr.io/reimaris/nzboxer` image before reporting.
+`ghcr.io/reimaris/smewlet` image before reporting.
 
 ## Reporting a Vulnerability
 

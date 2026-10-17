@@ -1,5 +1,5 @@
 name: Question
-description: Ask a question about using NZBoxer
+description: Ask a question about using Smewlet
 title: "[Question]: "
 labels: ["question"]
 body:
@@ -28,7 +28,7 @@ body:
     id: diagnostics
     attributes:
       label: Environment Diagnostics
-      description: Paste the table copied from NZBoxer (Settings → Ask a Question → Copy Diagnostics Table).
+      description: Paste the table copied from Smewlet (Settings → Ask a Question → Copy Diagnostics Table).
     validations:
       required: false
   - type: checkboxes

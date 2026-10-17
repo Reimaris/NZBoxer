@@ -1,7 +1,7 @@
 services:
-  nzboxer:
-    image: ghcr.io/reimaris/nzboxer:latest
-    container_name: nzboxer
+  smewlet:
+    image: ghcr.io/reimaris/smewlet:latest
+    container_name: smewlet
     ports:
       - "8000:8000"
     environment:
