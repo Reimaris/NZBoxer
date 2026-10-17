@@ -27,3 +27,4 @@ compose.dev.yaml
 *.log
 file:testdb*
 screenshots/
+demo/config/
