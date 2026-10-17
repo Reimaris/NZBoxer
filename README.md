@@ -51,7 +51,7 @@ It keeps your **Movies**, **TV Series** and **Anime** in sync with your watchlis
 <table>
   <tr>
     <td width="50%"><img src="screenshots/push-modal.png" alt="Push modal with scored releases" /><br /><sub><b>Push modal:</b> scored releases, presets and language rules</sub></td>
-    <td width="50%"><img src="screenshots/anime-franchise.png" alt="Anime franchise push modal" /><br /><sub><b>Anime franchises:</b> pick seasons, movies or single episodes</sub></td>
+    <td width="50%"><img src="screenshots/anime-franchise.png" alt="Anime franchise push modal" /><br /><sub><b>Anime franchises:</b> pick whole seasons, canon movies, or expand a season for single episodes</sub></td>
   </tr>
   <tr>
     <td><img src="screenshots/active-pushes.png" alt="Live transfer monitor" /><br /><sub><b>Live transfer monitor:</b> progress, speed and ETA per transfer</sub></td>
