@@ -403,7 +403,7 @@ async def test_dashboard_history_filter_bar_and_row_markup(
         )
     ]
     assert positions == sorted(positions)
-    assert "toggleHistoryStatusFilter('simulated')" not in html
+    assert "Simulated (0)" in html
     assert "toggleHistoryStatusFilter('')" not in html
     assert "ring-2 ring-white/60" in html
     assert (
@@ -515,3 +515,14 @@ async def test_dashboard_selection_quick_selects_exclude_dry_run_from_ready(
 
     assert "Ready (1)" in html[html.index("selectHistoryByStatus('ready')") :][:450]
     assert "[data-status='${key}']" not in html
+
+
+@pytest.mark.asyncio
+async def test_dashboard_history_simulated_filter_always_shown_disabled_at_zero(
+    async_client: AsyncClient,
+):
+    html = (await async_client.get("/?tab=history")).text
+
+    btn = html[html.index("toggleHistoryStatusFilter('simulated')") :][:700]
+    assert "Simulated (0)" in btn
+    assert "disabled" in btn
