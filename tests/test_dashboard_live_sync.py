@@ -123,7 +123,9 @@ async def test_push_modal_dispatches_event_without_card_switch(
     assert "nzboxer:push-dispatched" in body
     assert 'card: "active_pushes"' not in body
     assert "nzboxer:switch-card" not in body
-    assert f"mode: '{mode}'" in body
+    assert f'mode: "{mode}"' in body
+    # x-data is single-quoted: the script must not contain a bare single quote
+    assert "'" not in body
 
 
 @pytest.mark.asyncio

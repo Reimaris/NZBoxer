@@ -159,7 +159,7 @@
                 if (resp.ok && (data.status === "started" || data.pushed)) {
                     const container = document.getElementById("modal-container");
                     if (container) container.innerHTML = "";
-                    window.dispatchEvent(new CustomEvent("nzboxer:push-dispatched", { detail: { title: data.title, mode: '{{ 'dry_run' if settings.dry_run else 'auto' }}' } }));
+                    window.dispatchEvent(new CustomEvent("nzboxer:push-dispatched", { detail: { title: data.title, mode: "{{ 'dry_run' if settings.dry_run else 'auto' }}" } }));
                 } else {
                     const reason = data.no_release_reason;
                     if (reason === "candidates_not_dispatched") {
