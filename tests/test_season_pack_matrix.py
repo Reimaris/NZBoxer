@@ -315,7 +315,7 @@ async def test_state_2_score_decides_pack_wins_when_pack_score_higher_or_equal(
 ) -> None:
     """
     In Score Decides mode (`allow_season_packs=True, prefer_season_packs=False`):
-    When `best_pack` (2160p Remux) scores >= `E01` (1080p WEB-DL), NZBoxer probes only `E01`
+    When `best_pack` (2160p Remux) scores >= `E01` (1080p WEB-DL), Smewlet probes only `E01`
     (does not query E02 or E03) and dispatches ONLY the Season Pack to TorBox.
     """
     show, s1, _ = await _seed_show_with_3_episodes(
@@ -451,7 +451,7 @@ async def test_state_2_score_decides_missing_episode_falls_back_to_pack_with_zer
     CRITICAL PRE-FLIGHT GUARANTEE:
     In Score Decides mode (`allow_season_packs=True, prefer_season_packs=False`),
     if `E01` (4K Remux) beats `best_pack` (1080p WEB-DL), `E02` (4K Remux) exists,
-    but `E03` is missing (`[]`), NZBoxer aborts the episode route BEFORE uploading
+    but `E03` is missing (`[]`), Smewlet aborts the episode route BEFORE uploading
     anything to TorBox and pushes ONLY the single Season Pack (`1` TorBox upload total, `0` episode uploads).
     """
     show, s1, eps = await _seed_show_with_3_episodes(
@@ -533,7 +533,7 @@ async def test_state_2_score_decides_average_score_drop_falls_back_to_pack(
     """
     In Score Decides mode (`allow_season_packs=True, prefer_season_packs=False`),
     if `E01` (2160p Remux) beats `best_pack` (1080p BluRay), but `E02` and `E03` are only
-    480p SD (pulling the season's average episode score below `best_pack`), NZBoxer
+    480p SD (pulling the season's average episode score below `best_pack`), Smewlet
     pushes ONLY `best_pack` to TorBox (`0` episode uploads).
     """
     show, s1, _ = await _seed_show_with_3_episodes(
@@ -603,9 +603,9 @@ async def test_state_2_score_decides_skips_pack_when_season_partially_downloaded
 ) -> None:
     """
     When `E01` is already `COMPLETED` and `E02..E03` are `SEARCHING`:
-    - In `Score Decides` (`allow=True, prefer=False`), NZBoxer skips the Season Pack query
+    - In `Score Decides` (`allow=True, prefer=False`), Smewlet skips the Season Pack query
       and pushes only `E02` and `E03`.
-    - In `Prefer Season Pack` (`allow=True, prefer=True`), NZBoxer still grabs the Season Pack.
+    - In `Prefer Season Pack` (`allow=True, prefer=True`), Smewlet still grabs the Season Pack.
     """
     show, s1, eps = await _seed_show_with_3_episodes(
         db_session, allow_season_packs=True, prefer_season_packs=False
@@ -677,7 +677,7 @@ async def test_state_3_prefer_season_pack_always_grabs_pack_regardless_of_score(
 ) -> None:
     """
     In Prefer Season Pack mode (`allow_season_packs=True, prefer_season_packs=True`):
-    Even if `best_pack` is 720p HDTV and `E01` is 2160p Remux, NZBoxer immediately grabs
+    Even if `best_pack` is 720p HDTV and `E01` is 2160p Remux, Smewlet immediately grabs
     `best_pack` without probing `E01`.
     """
     show, s1, _ = await _seed_show_with_3_episodes(

@@ -77,10 +77,10 @@ async def test_both_absent_is_noop(mig_engine):
 
 
 def test_backup_created_once_and_not_overwritten(tmp_path: Path):
-    db = tmp_path / "nzboxer.db"
+    db = tmp_path / "smewlet.db"
     db.write_bytes(b"v1")
     _backup_db_before_m59(db)
-    bak = tmp_path / "nzboxer.db.pre-m59.bak"
+    bak = tmp_path / "smewlet.db.pre-m59.bak"
     assert bak.read_bytes() == b"v1"
     db.write_bytes(b"v2")
     _backup_db_before_m59(db)

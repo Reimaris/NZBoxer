@@ -81,7 +81,7 @@
 
         <div class="px-6 py-4 bg-[#2a2a32] border-b border-[#3f3f46] flex items-center justify-between">
             <div>
-                <h3 class="text-lg font-bold text-white">Welcome to NZBoxer — Setup</h3>
+                <h3 class="text-lg font-bold text-white">Welcome to Smewlet — Setup</h3>
                 <div class="text-xs text-[#a1a1aa]" x-text="'Step ' + step + ' of 3'">Step 1 of 3</div>
             </div>
             <button type="button" @click="dismiss()" class="p-1.5 text-[#a1a1aa] hover:text-white hover:bg-[#3f3f46]/50 rounded-lg transition-colors" title="Close">
@@ -197,7 +197,7 @@
                     <div id="onboarding-downloader-panel-sabnzbd" x-show="downloaderType === 'sabnzbd'" x-cloak class="space-y-3">
                         <label class="block text-xs text-[#a1a1aa]">Host
                             <input type="text" name="sabnzbd_host" value="{{ sabnzbd.host }}" autocomplete="off" placeholder="192.168.1.10" class="mt-1 w-full bg-[#111115] border border-[#3f3f46] rounded-lg px-3 py-2 text-white text-xs focus:border-[#d40060] focus:outline-none">
-                            <span class="block mt-1 text-[11px]">Must be reachable from the NZBoxer container (not <code>localhost</code> unless SABnzbd runs in the same container).</span>
+                            <span class="block mt-1 text-[11px]">Must be reachable from the Smewlet container (not <code>localhost</code> unless SABnzbd runs in the same container).</span>
                         </label>
                         <label class="block text-xs text-[#a1a1aa]">Port
                             <input type="text" inputmode="numeric" name="sabnzbd_port" value="{{ sabnzbd.port }}" autocomplete="off" placeholder="8080" class="mt-1 w-full bg-[#111115] border border-[#3f3f46] rounded-lg px-3 py-2 text-white text-xs focus:border-[#d40060] focus:outline-none">
