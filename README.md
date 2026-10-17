@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="app/static/icon.svg" width="128" height="128" alt="Smewlet Logo" />
+  <img src="https://raw.githubusercontent.com/Reimaris/Smewlet/main/app/static/icon.svg?v=1.5.0" width="128" height="128" alt="Smewlet Logo" />
 </p>
 
 <h1 align="center">Smewlet</h1>
@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  <img src="screenshots/dashboard.png" alt="Smewlet dashboard with watchlist categories, per-title Auto-Push switches and season progress" width="900" /><br />
+  <img src="https://raw.githubusercontent.com/Reimaris/Smewlet/main/screenshots/dashboard.png?v=1.5.0" alt="Smewlet dashboard with watchlist categories, per-title Auto-Push switches and season progress" width="900" /><br />
   <sub><b>Dashboard:</b> watchlist categories, season and movie progress, and a per-title Auto-Push switch</sub>
 </p>
 
@@ -48,28 +48,28 @@ It keeps your **Movies**, **TV Series** and **Anime** in sync with your watchlis
 
 <table>
   <tr>
-    <td width="50%"><img src="screenshots/push-modal.png" alt="Push modal with scored releases" /><br /><sub><b>Push modal:</b> scored releases, presets and language rules</sub></td>
-    <td width="50%"><img src="screenshots/anime-franchise.png" alt="Anime franchise push modal" /><br /><sub><b>Anime franchises:</b> pick whole seasons, canon movies, or expand a season for single episodes</sub></td>
+    <td width="50%"><img src="https://raw.githubusercontent.com/Reimaris/Smewlet/main/screenshots/push-modal.png?v=1.5.0" alt="Push modal with scored releases" /><br /><sub><b>Push modal:</b> scored releases, presets and language rules</sub></td>
+    <td width="50%"><img src="https://raw.githubusercontent.com/Reimaris/Smewlet/main/screenshots/anime-franchise.png?v=1.5.0" alt="Anime franchise push modal" /><br /><sub><b>Anime franchises:</b> pick whole seasons, canon movies, or expand a season for single episodes</sub></td>
   </tr>
   <tr>
-    <td><img src="screenshots/active-pushes.png" alt="Live transfer monitor" /><br /><sub><b>Live transfer monitor:</b> progress, speed and ETA per transfer</sub></td>
-    <td><img src="screenshots/providers.png" alt="Connected providers" /><br /><sub><b>Connected providers:</b> watchlists, metadata, downloaders, indexers</sub></td>
+    <td><img src="https://raw.githubusercontent.com/Reimaris/Smewlet/main/screenshots/active-pushes.png?v=1.5.0" alt="Live transfer monitor" /><br /><sub><b>Live transfer monitor:</b> progress, speed and ETA per transfer</sub></td>
+    <td><img src="https://raw.githubusercontent.com/Reimaris/Smewlet/main/screenshots/providers.png?v=1.5.0" alt="Connected providers" /><br /><sub><b>Connected providers:</b> watchlists, metadata, downloaders, indexers</sub></td>
   </tr>
   <tr>
-    <td><img src="screenshots/add-provider.png" alt="Add provider dialog with capability pills" /><br /><sub><b>Add a provider:</b> capability pills and Experimental flags up front</sub></td>
-    <td><img src="screenshots/capabilities-matrix.png" alt="Provider capabilities matrix" /><br /><sub><b>Capabilities Matrix:</b> what each watchlist provider supports</sub></td>
+    <td><img src="https://raw.githubusercontent.com/Reimaris/Smewlet/main/screenshots/add-provider.png?v=1.5.0" alt="Add provider dialog with capability pills" /><br /><sub><b>Add a provider:</b> capability pills and Experimental flags up front</sub></td>
+    <td><img src="https://raw.githubusercontent.com/Reimaris/Smewlet/main/screenshots/capabilities-matrix.png?v=1.5.0" alt="Provider capabilities matrix" /><br /><sub><b>Capabilities Matrix:</b> what each watchlist provider supports</sub></td>
   </tr>
 </table>
 
 <p align="center">
-  <img src="screenshots/ad-hoc-search.png" alt="Ad-hoc search" width="800" /><br />
+  <img src="https://raw.githubusercontent.com/Reimaris/Smewlet/main/screenshots/ad-hoc-search.png?v=1.5.0" alt="Ad-hoc search" width="800" /><br />
   <sub><b>Ad-hoc search:</b> filters, scored releases and one-click Auto-Push Best for any title outside your watchlist</sub>
 </p>
 
 <p align="center">
-  <img src="screenshots/mobile-dashboard.png" alt="Mobile dashboard" width="300" />
+  <img src="https://raw.githubusercontent.com/Reimaris/Smewlet/main/screenshots/mobile-dashboard.png?v=1.5.0" alt="Mobile dashboard" width="300" />
   &nbsp;&nbsp;
-  <img src="screenshots/mobile-push-modal.png" alt="Mobile push modal" width="300" /><br />
+  <img src="https://raw.githubusercontent.com/Reimaris/Smewlet/main/screenshots/mobile-push-modal.png?v=1.5.0" alt="Mobile push modal" width="300" /><br />
   <sub><b>Mobile-friendly:</b> the full dashboard and the push modal work on your phone</sub>
 </p>
 
