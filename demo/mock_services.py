@@ -38,6 +38,10 @@ RELEASES = [
 ]
 
 
+# Per-episode sizes (GB), index-aligned with RELEASES; a season pack is 8 episodes.
+EPISODE_GB = [8.0, 16.0, 3.2, 6.0, 1.8, 1.4, 3.1, 3.2]
+
+
 def poster_svg(key: str) -> bytes:
     h = int(hashlib.sha1(key.encode()).hexdigest(), 16)
     c1, c2 = PALETTE[h % len(PALETTE)], PALETTE[(h // 7) % len(PALETTE)]
@@ -99,9 +103,11 @@ def search_results(q: dict[str, list[str]]) -> dict:
             name = f"{base}.{meta['year']}.{res}.{src}.{audio.replace(' ', '.')}.{codec}-{grp}"
         else:
             tag = f"S{int(season):02d}" if season else "S01"
+            gb = EPISODE_GB[i]
             if ep:
                 tag += f"E{int(ep):02d}"
-                gb = round(gb / 8, 2)
+            else:
+                gb = round(gb * 8, 1)
             name = f"{base}.{tag}.{res}.{src}.{audio.replace(' ', '.')}.{codec}-{grp}"
         items.append(_release_item(name, i, gb, pw))
     return {"channel": {"item": items}}
