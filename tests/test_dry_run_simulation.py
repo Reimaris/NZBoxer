@@ -674,7 +674,7 @@ async def test_dashboard_renders_delete_dry_run_button_when_count_positive(
     resp = client.get("/")
     assert resp.status_code == 200
     assert 'id="history-toolbar-actions"' in resp.text
-    assert "'history-toolbar-actions'" in resp.text
+    assert "'history-toolbar-container'" in resp.text
     assert "Delete Dry-Run (2)" in resp.text
     assert 'hx-post="/api/history/delete-dry-run"' in resp.text
     assert (
