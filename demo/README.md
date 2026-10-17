@@ -18,23 +18,25 @@ Stop with `docker compose -f demo/compose.demo.yaml down`. Re-seeding replaces t
 
 ## Screenshot checklist
 
-Run down this list top to bottom. Capture at 1440 px wide for desktop and a ~390 px wide
-window for mobile. Save each file to `screenshots/` under the name shown.
+Run down this list top to bottom. Desktop shots use responsive mode at 1440x900, mobile
+shots use the Pixel 9 preset. Save each file to `screenshots/` under the name shown.
 
 1. [ ] Seed and start the demo (see [Start](#start)); confirm the top-left badge reads *demo mode* and the yellow dry-run banner shows.
-2. [ ] `dashboard.png`: dashboard, *Movies*/*Series* tab with every category card visible (hold counts, status legend).
-3. [ ] `push-modal.png`: open *The Glass Orchard* → push modal, click *Search* so scored releases are listed.
-4. [ ] `anime-franchise.png`: Anime tab → *Skybound Tide* → push modal (seasons plus the movie entry).
-5. [ ] `active-pushes.png`: *Active Pushes* card (two simulated transfers, 62 %, dry-run banner visible).
-6. [ ] `providers.png`: Settings → Providers (Simkl, AniList, Jellyseerr, TMDB, TorBox, SABnzbd, indexer).
-7. [ ] `capabilities-matrix.png`: Settings → *Capabilities Matrix*.
-8. [ ] `ad-hoc-search.png`: *Manual Search* card, query `neon`, then *Search* on a result so releases show.
-9. [ ] `mobile-dashboard.png`: dashboard at phone width.
-10. [ ] `mobile-push-modal.png`: push modal at phone width.
-11. [ ] Review each image for anything personal (bookmarks, tabs, usernames, real hostnames); crop to the page, not the browser chrome.
-12. [ ] Strip metadata and compress, e.g. `python3 -c "from PIL import Image; import sys; [Image.open(f).save(f, optimize=True) for f in sys.argv[1:]]" screenshots/*.png` (re-saving with Pillow drops EXIF/text chunks).
-13. [ ] If a new image was added (`capabilities-matrix.png`), reference it in the main README gallery.
-14. [ ] Commit (`docs: refresh screenshots`), then `docker compose -f demo/compose.demo.yaml down`.
+2. [ ] Browser responsive mode (F12, Ctrl+Shift+M): set the size to **1440x900**.
+3. [ ] `dashboard.png`: dashboard, *Movies*/*Series* tab with every category card visible (hold counts, status legend).
+4. [ ] `push-modal.png`: open *The Glass Orchard* → push modal, click *Search* so scored releases are listed.
+5. [ ] `anime-franchise.png`: Anime tab → *Skybound Tide* → push modal (seasons plus the movie entry).
+6. [ ] `active-pushes.png`: *Active Pushes* card (two simulated transfers, 62 %, dry-run banner visible).
+7. [ ] `providers.png`: Settings → Providers (Simkl, AniList, Jellyseerr, TMDB, TorBox, SABnzbd, indexer).
+8. [ ] `capabilities-matrix.png`: Settings → *Capabilities Matrix*.
+9. [ ] `ad-hoc-search.png`: *Manual Search* card, query `neon`, then *Search* on a result so releases show.
+10. [ ] Switch responsive mode to the **Pixel 9** preset (this is the only size change; desktop shots are done).
+11. [ ] `mobile-dashboard.png`: dashboard.
+12. [ ] `mobile-push-modal.png`: push modal.
+13. [ ] Review each image for anything personal (bookmarks, tabs, usernames, real hostnames); crop to the page, not the browser chrome.
+14. [ ] Strip metadata and compress, e.g. `python3 -c "from PIL import Image; import sys; [Image.open(f).save(f, optimize=True) for f in sys.argv[1:]]" screenshots/*.png` (re-saving with Pillow drops EXIF/text chunks).
+15. [ ] If a new image was added (`capabilities-matrix.png`), reference it in the main README gallery.
+16. [ ] Commit (`docs: refresh screenshots`), then `docker compose -f demo/compose.demo.yaml down`.
 
 ## What it contains
 
